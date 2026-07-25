@@ -14,12 +14,15 @@ const PRIORITY_BADGES = {
 
 function formatMatchDate(rawDate) {
   if (!rawDate) return 'Por agendar'
-  const num = parseFloat(rawDate)
-  if (!isNaN(num) && num > 40000 && num < 60000) {
+  const str = String(rawDate).trim()
+  const num = parseFloat(str)
+  if (!isNaN(num) && num > 30000 && num < 70000) {
     const d = new Date((num - 25569) * 86400 * 1000)
-    return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+    }
   }
-  return String(rawDate)
+  return str
 }
 
 export default function MatchmakerDashboard() {

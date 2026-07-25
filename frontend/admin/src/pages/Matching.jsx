@@ -29,6 +29,19 @@ const PSYCHOLOGISTS = [
   { id: 'MAPE D', label: 'Mape D (María Paula)' }
 ]
 
+function formatExcelDate(val) {
+  if (!val) return 'Por agendar'
+  const str = String(val).trim()
+  const num = parseFloat(str)
+  if (!isNaN(num) && num > 30000 && num < 70000) {
+    const date = new Date((num - 25569) * 86400 * 1000)
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+    }
+  }
+  return str
+}
+
 function OceanBar({ label, value }) {
   const pct = Math.round((value || 0) * 100)
   return (
@@ -1031,7 +1044,7 @@ function CandidateModal({ candidateName, token, onClose }) {
                         {m.person_a} 💘 {m.person_b}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                        📅 {m.match_date || 'Fecha no registrada'} • 👩‍⚕️ Psicóloga: {m.matchmaker || 'SILVI'}
+                        📅 {formatExcelDate(m.match_date)} • 👩‍⚕️ Psicóloga: {m.matchmaker || 'SILVI'}
                       </div>
                     </div>
                     <span className="badge badge-yellow" style={{ fontSize: 11 }}>{m.status || 'PENDIENTE'}</span>

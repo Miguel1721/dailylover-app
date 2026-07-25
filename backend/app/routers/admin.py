@@ -1069,14 +1069,27 @@ async def get_historical_matches(
         LIMIT :limit OFFSET :offset
     """), params)
 
+def clean_excel_date_str(raw):
+    if not raw:
+        return None
+    s = str(raw).strip()
+    try:
+        val = float(s)
+        if 30000 <= val <= 70000:
+            dt = datetime(1899, 12, 30) + timedelta(days=val)
+            return dt.strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        pass
+    return s
+
     matches = [{
         "id": r.id,
         "person_a": r.person_a,
         "person_b": r.person_b,
         "matchmaker": r.matchmaker,
-        "match_date": r.match_date,
+        "match_date": clean_excel_date_str(r.match_date) or "Por agendar",
         "city": r.city,
-        "status": r.status or "PENDIENTE",
+        "status": clean_excel_date_str(r.status) if (r.status and str(r.status).replace('.', '').isdigit()) else (r.status or "PENDIENTE"),
         "observations": r.observations,
     } for r in rows_res.fetchall()]
 
