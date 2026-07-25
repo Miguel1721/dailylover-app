@@ -126,3 +126,55 @@ WHERE unaccent(lower(COALESCE(name, ''))) ILIKE '%test%'
    OR unaccent(lower(COALESCE(name, ''))) ILIKE '%dummy%'
    OR unaccent(lower(COALESCE(name, ''))) ILIKE '%demo%';
 
+-- 15. ★ Poblar columna gender en profiles si está nula (inferir por nombres comunes)
+UPDATE profiles p
+SET gender = 'Masculino'
+FROM users u
+WHERE p.user_id = u.id
+  AND (p.gender IS NULL OR p.gender = '')
+  AND (
+    unaccent(lower(u.name)) ILIKE 'wilson%' OR
+    unaccent(lower(u.name)) ILIKE 'andres%' OR
+    unaccent(lower(u.name)) ILIKE 'juan%' OR
+    unaccent(lower(u.name)) ILIKE 'mauricio%' OR
+    unaccent(lower(u.name)) ILIKE 'santiago%' OR
+    unaccent(lower(u.name)) ILIKE 'carlos%' OR
+    unaccent(lower(u.name)) ILIKE 'diego%' OR
+    unaccent(lower(u.name)) ILIKE 'felipe%' OR
+    unaccent(lower(u.name)) ILIKE 'mateo%' OR
+    unaccent(lower(u.name)) ILIKE 'sebastian%' OR
+    unaccent(lower(u.name)) ILIKE 'daniel%' OR
+    unaccent(lower(u.name)) ILIKE 'miguel%' OR
+    unaccent(lower(u.name)) ILIKE 'nicolas%' OR
+    unaccent(lower(u.name)) ILIKE 'matthew%' OR
+    unaccent(lower(u.name)) ILIKE 'julian%'
+  );
+
+UPDATE profiles p
+SET gender = 'Femenino'
+FROM users u
+WHERE p.user_id = u.id
+  AND (p.gender IS NULL OR p.gender = '')
+  AND (
+    unaccent(lower(u.name)) ILIKE 'fiorella%' OR
+    unaccent(lower(u.name)) ILIKE 'maria%' OR
+    unaccent(lower(u.name)) ILIKE 'andrea%' OR
+    unaccent(lower(u.name)) ILIKE 'paola%' OR
+    unaccent(lower(u.name)) ILIKE 'camila%' OR
+    unaccent(lower(u.name)) ILIKE 'valentina%' OR
+    unaccent(lower(u.name)) ILIKE 'nathalia%' OR
+    unaccent(lower(u.name)) ILIKE 'genesis%' OR
+    unaccent(lower(u.name)) ILIKE 'catalina%' OR
+    unaccent(lower(u.name)) ILIKE 'laura%' OR
+    unaccent(lower(u.name)) ILIKE 'sofia%' OR
+    unaccent(lower(u.name)) ILIKE 'daniela%' OR
+    unaccent(lower(u.name)) ILIKE 'isabella%' OR
+    unaccent(lower(u.name)) ILIKE 'carolina%'
+  );
+
+-- 16. ★ Formatear fechas feas de Excel en historical_matches (ej. "4.25 7pm" -> "25 Abr, 7PM")
+UPDATE historical_matches
+SET match_date = '25 Abr, 7PM'
+WHERE match_date ILIKE '%4.25%';
+
+

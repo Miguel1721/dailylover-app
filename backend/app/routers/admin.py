@@ -11,10 +11,22 @@ import json
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
 
+import re
+
+MONTH_NAMES_ES = {
+    1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"
+}
+
+
 def clean_excel_date_str(raw):
     if not raw:
         return None
     s = str(raw).strip()
+    if not s or s.lower() in ("null", "none", "nan", "por agendar"):
+        return None
+
+    # 1. Si es serial numérico de Excel (ej: 45400 o 45400.0)
     try:
         val = float(s)
         if 30000 <= val <= 70000:
@@ -22,7 +34,32 @@ def clean_excel_date_str(raw):
             return dt.strftime("%d/%m/%Y")
     except (ValueError, TypeError):
         pass
+
+    # 2. Si es un formato de texto tipo "4.25 7pm", "4.25", "4/25 7:00pm", "25/4 7pm"
+    m = re.search(r'(\d{1,2})[\./-](\d{1,2})(?:\s+(.*))?', s, re.IGNORECASE)
+    if m:
+        p1 = int(m.group(1))
+        p2 = int(m.group(2))
+        time_part = (m.group(3) or "").strip()
+
+        # Determinar cuál es mes y cuál es día
+        if p1 <= 12 and p2 <= 31:
+            month_num, day_num = p1, p2
+        elif p2 <= 12 and p1 <= 31:
+            month_num, day_num = p2, p1
+        else:
+            return s
+
+        if 1 <= month_num <= 12 and 1 <= day_num <= 31:
+            month_name = MONTH_NAMES_ES.get(month_num, f"{month_num:02d}")
+            formatted = f"{day_num} {month_name}"
+            if time_part:
+                clean_time = time_part.upper().replace('.', '')
+                formatted += f", {clean_time}"
+            return formatted
+
     return s
+
 
 
 # ─── DATA DIAGNOSTICS ─────────────────────────────────────────────────────────
@@ -593,9 +630,11 @@ async def analyze_user_matchmaking_viability(
     """
     params = {"uid": user_id, "city": f"%{user_city}%"}
 
-    if target_gender != "todos":
-        pool_query += " AND (lower(p.gender) ILIKE :target_g OR p.gender IS NULL)"
-        params["target_g"] = f"%{target_gender}%"
+    if target_gender == "femenino":
+        pool_query += " AND lower(COALESCE(p.gender, '')) IN ('femenino', 'mujer', 'f')"
+    elif target_gender == "masculino":
+        pool_query += " AND lower(COALESCE(p.gender, '')) IN ('masculino', 'hombre', 'm')"
+
 
     total_target_gender = (await db.execute(text(pool_query), params)).scalar() or 0
 
@@ -1403,9 +1442,11 @@ async def get_historical_matches(
             """
             c_params = {"target_id": usr_row.id, "city": f"%{u_city}%"}
 
-            if target_g != "todos":
-                cand_query += " AND (lower(p.gender) ILIKE :tg OR p.gender IS NULL)"
-                c_params["tg"] = f"%{target_g}%"
+            if target_g == "femenino":
+                cand_query += " AND lower(COALESCE(p.gender, '')) IN ('femenino', 'mujer', 'f')"
+            elif target_g == "masculino":
+                cand_query += " AND lower(COALESCE(p.gender, '')) IN ('masculino', 'hombre', 'm')"
+
 
             cand_query += " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
             cand_query += " ORDER BY u.id DESC LIMIT 6"
