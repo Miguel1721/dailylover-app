@@ -11,6 +11,20 @@ import json
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
 
+def clean_excel_date_str(raw):
+    if not raw:
+        return None
+    s = str(raw).strip()
+    try:
+        val = float(s)
+        if 30000 <= val <= 70000:
+            dt = datetime(1899, 12, 30) + timedelta(days=val)
+            return dt.strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        pass
+    return s
+
+
 # ─── STATS ────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
@@ -1068,19 +1082,6 @@ async def get_historical_matches(
         ORDER BY id DESC
         LIMIT :limit OFFSET :offset
     """), params)
-
-def clean_excel_date_str(raw):
-    if not raw:
-        return None
-    s = str(raw).strip()
-    try:
-        val = float(s)
-        if 30000 <= val <= 70000:
-            dt = datetime(1899, 12, 30) + timedelta(days=val)
-            return dt.strftime("%d/%m/%Y")
-    except (ValueError, TypeError):
-        pass
-    return s
 
     matches = [{
         "id": r.id,
