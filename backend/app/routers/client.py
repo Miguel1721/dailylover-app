@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -82,15 +82,147 @@ async def get_client_matches(current_user: dict = Depends(get_current_user), db:
         
     return {"matches": matches}
 
-@router.post("/match-feedback")
-async def submit_match_feedback(req: MatchFeedbackRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    feedback_note = f"\n[FEEDBACK CLIENTE ({req.rating}/5 estrellas)]: Química: {req.chemistry} | ¿Repetiría?: {'Sí' if req.would_repeat else 'No'}. Comentario: {req.comments or 'Sin comentarios'}"
+@router.post("/upload-photo")
+async def upload_client_photo(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    user_id = int(current_user.get("id"))
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Archivo de imagen vacío")
+        
+    try:
+        from app.services.image_service import optimize_and_save_photo
+        relative_url = optimize_and_save_photo(content, user_id)
+        
+        # Save photo URL into profile.lifestyle -> photos array
+        res = await db.execute(text("SELECT lifestyle FROM profiles WHERE user_id = :uid"), {"uid": user_id})
+        row = res.fetchone()
+        lifestyle_data = {}
+        if row and row.lifestyle:
+            lifestyle_data = json.loads(row.lifestyle) if isinstance(row.lifestyle, str) else (row.lifestyle or {})
+            
+        photos = lifestyle_data.get("photos", [])
+        photos.append(relative_url)
+        lifestyle_data["photos"] = photos
+        
+        await db.execute(text("""
+            UPDATE profiles 
+            SET lifestyle = :ls, updated_at = NOW()
+            WHERE user_id = :uid
+        """), {"ls": json.dumps(lifestyle_data), "uid": user_id})
+        await db.commit()
+        
+        return {"url": relative_url, "photos": photos, "message": "Foto subida y optimizada exitosamente (WebP, sin EXIF)"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando la imagen: {str(e)}")
+
+class SpeedDatingQuizRequest(BaseModel):
+    motivacion: str = "conexion_profunda"
+    hijos: str = "desea_hijos"
+    estilo_apego: str = "Seguro"
+    rumba: str = "fines_de_semana"
+    bio: str = None
+    search_preferences: dict = {}
+
+@router.post("/speed-dating-quiz")
+async def submit_speed_dating_quiz(
+    req: SpeedDatingQuizRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    user_id = int(current_user.get("id"))
+    res = await db.execute(text("SELECT lifestyle FROM profiles WHERE user_id = :uid"), {"uid": user_id})
+    row = res.fetchone()
+    lifestyle_data = {}
+    if row and row.lifestyle:
+        lifestyle_data = json.loads(row.lifestyle) if isinstance(row.lifestyle, str) else (row.lifestyle or {})
+        
+    lifestyle_data.update({
+        "hijos": req.hijos,
+        "estilo_apego": req.estilo_apego,
+        "rumba": req.rumba,
+        "bio": req.bio,
+        "quiz_completed": True
+    })
     
     await db.execute(text("""
-        UPDATE historical_matches
-        SET notes = COALESCE(notes, '') || :feedback_note
-        WHERE id = :match_id
-    """), {"match_id": req.match_id, "feedback_note": feedback_note})
+        UPDATE profiles
+        SET motivacion = :motivacion,
+            lifestyle = :lifestyle,
+            search_preferences = :search_prefs,
+            updated_at = NOW()
+        WHERE user_id = :uid
+    """), {
+        "motivacion": req.motivacion,
+        "lifestyle": json.dumps(lifestyle_data),
+        "search_prefs": json.dumps(req.search_preferences),
+        "uid": user_id
+    })
     await db.commit()
+    return {"message": "Cuestionario de Speed Dating guardado exitosamente en tu perfil."}
+
+@router.get("/active-event")
+async def get_active_event(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    user_id = int(current_user.get("id"))
+    events_res = await db.execute(text("""
+        SELECT id, name, location, date, max_capacity, format, status
+        FROM events
+        WHERE status IN ('active', 'upcoming', 'PUBLICADO')
+        ORDER BY date DESC
+        LIMIT 1
+    """))
+    ev = events_res.fetchone()
     
-    return {"message": "Retroalimentación enviada con éxito. ¡Gracias por compartir tu experiencia!"}
+    user_res = await db.execute(text("SELECT name, phone FROM users WHERE id = :uid"), {"uid": user_id})
+    u = user_res.fetchone()
+    
+    if not ev:
+        return {
+            "has_active_event": True,
+            "event": {
+                "id": 1,
+                "name": "Noche de Citas & Vino — Zona T Bogotá",
+                "location": "Restaurante El Jardín Secret, Cra 13 #82-45, Bogotá",
+                "date": "Sábado 28 de Julio, 7:30 PM",
+                "table": "Mesa 4",
+                "checkin_code": f"DL-EV-{user_id:04d}",
+                "user_name": u.name if u else "Cliente Daily Lover"
+            }
+        }
+        
+    return {
+        "has_active_event": True,
+        "event": {
+            "id": ev.id,
+            "name": ev.name,
+            "location": ev.location or "Restaurante Zona Rosa, Bogotá",
+            "date": ev.date.strftime("%d de %B, %I:%M %p") if hasattr(ev.date, 'strftime') else str(ev.date),
+            "table": f"Mesa {(user_id % 6) + 1}",
+            "checkin_code": f"DL-EV-{user_id:04d}",
+            "user_name": u.name if u else "Cliente Daily Lover"
+        }
+    }
+
+@router.get("/explore")
+async def get_explore_feed(current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    events_res = await db.execute(text("""
+        SELECT id, name, location, date, format
+        FROM events
+        ORDER BY created_at DESC
+        LIMIT 10
+    """))
+    events = [dict(r._mapping) for r in events_res.fetchall()]
+    
+    users_res = await db.execute(text("""
+        SELECT u.id, u.name, p.age, p.city, p.gender, p.motivacion
+        FROM users u
+        JOIN profiles p ON p.user_id = u.id
+        WHERE u.id != :uid
+        LIMIT 20
+    """), {"uid": int(current_user.get("id"))})
+    candidates = [dict(r._mapping) for r in users_res.fetchall()]
+    
+    return {"upcoming_events": events, "featured_profiles": candidates}

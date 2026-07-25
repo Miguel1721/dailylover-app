@@ -1017,6 +1017,142 @@ function Profile() {
             </button>
           </div>
 
+          {/* Photo Upload & Gallery Card */}
+          <div className="card" style={{ padding: 20 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              📷 Mis Fotos de Perfil (Optimización WebP)
+            </h3>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+              {p.lifestyle?.photos?.length > 0 ? (
+                p.lifestyle.photos.map((url, idx) => (
+                  <img key={idx} src={url} alt={`Foto ${idx+1}`} style={{ width: 68, height: 68, borderRadius: 12, objectFit: 'cover', border: '1px solid var(--border-color)' }} />
+                ))
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>Sin fotos de perfil cargadas aún.</div>
+              )}
+            </div>
+
+            <label className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '10px 14px', fontSize: 12, width: '100%', justifyContent: 'center' }}>
+              <span>➕ Subir Nueva Foto de Perfil</span>
+              <input 
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const token = localStorage.getItem('dl_client_token')
+                  const formData = new FormData()
+                  formData.append('file', file)
+                  try {
+                    const res = await fetch('/api/v1/client/upload-photo', {
+                      method: 'POST',
+                      headers: { Authorization: `Bearer ${token}` },
+                      body: formData
+                    })
+                    const data = await res.json()
+                    if (res.ok) {
+                      alert('¡Foto subida y optimizada exitosamente (WebP sin EXIF)!')
+                      window.location.reload()
+                    } else {
+                      alert(data.detail || 'Error subiendo la foto')
+                    }
+                  } catch (err) {
+                    alert('Error de conexión al subir la foto')
+                  }
+                }}
+              />
+            </label>
+          </div>
+
+          {/* Speed Dating Questionnaire Form */}
+          <div className="card" style={{ padding: 20 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              📋 Formulario de Preguntas & Speed Dating
+            </h3>
+
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              const token = localStorage.getItem('dl_client_token')
+              const form = e.target
+              const bodyData = {
+                motivacion: form.motivacion.value,
+                hijos: form.hijos.value,
+                estilo_apego: form.estilo_apego.value,
+                rumba: form.rumba.value,
+                bio: form.bio.value
+              }
+              try {
+                const res = await fetch('/api/v1/client/speed-dating-quiz', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify(bodyData)
+                })
+                const data = await res.json()
+                if (res.ok) {
+                  alert('¡Respuestas de Speed Dating guardadas en la base de datos!')
+                  window.location.reload()
+                } else {
+                  alert(data.detail || 'Error guardando respuestas')
+                }
+              } catch (err) {
+                alert('Error de conexión')
+              }
+            }} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>¿Qué buscas en Daily Lover?</label>
+                <select name="motivacion" defaultValue={p.motivacion || 'conexion_profunda'} style={{ width: '100%', padding: '10px', borderRadius: 8, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontSize: 12 }}>
+                  <option value="conexion_profunda">Conexión profunda / Pareja estable</option>
+                  <option value="exploracion">Exploración / Salir a citas</option>
+                  <option value="matrimonio">Relación formal / Matrimonio</option>
+                  <option value="diversion">Conocer gente divertida</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>¿Visión sobre hijos?</label>
+                  <select name="hijos" defaultValue={p.lifestyle?.hijos || 'desea_hijos'} style={{ width: '100%', padding: '10px', borderRadius: 8, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontSize: 12 }}>
+                    <option value="desea_hijos">Quiero tener hijos</option>
+                    <option value="no_desea_hijos">No quiero tener hijos</option>
+                    <option value="ya_tiene_hijos">Ya tengo hijos</option>
+                    <option value="abierto">Abierto(a) a la posibilidad</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Estilo de Apego</label>
+                  <select name="estilo_apego" defaultValue={p.lifestyle?.estilo_apego || 'Seguro'} style={{ width: '100%', padding: '10px', borderRadius: 8, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontSize: 12 }}>
+                    <option value="Seguro">Seguro</option>
+                    <option value="Ansioso">Ansioso</option>
+                    <option value="Evitativo">Evitativo</option>
+                    <option value="Desorganizado">Desorganizado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Frecuencia de Salidas / Rumba</label>
+                <select name="rumba" defaultValue={p.lifestyle?.rumba || 'fines_de_semana'} style={{ width: '100%', padding: '10px', borderRadius: 8, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontSize: 12 }}>
+                  <option value="fines_de_semana">Fines de semana tranquilos</option>
+                  <option value="rumbero">De fiesta frecuente</option>
+                  <option value="hogareno">100% Hogareño(a)</option>
+                  <option value="viajero">Viajero ocasional</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Biografía & Pasatiempos para Citas</label>
+                <textarea name="bio" rows={2} defaultValue={p.lifestyle?.bio || ''} placeholder="Tus gustos, hobbys..." style={{ width: '100%', padding: '10px', borderRadius: 8, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontSize: 12 }} />
+              </div>
+
+              <button type="submit" className="btn btn-primary" style={{ padding: '12px', fontSize: 13, marginTop: 4 }}>
+                💾 Actualizar Respuestas de Speed Dating
+              </button>
+            </form>
+          </div>
+
           {/* Real Matches List */}
           <div className="card" style={{ padding: 20 }}>
             <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.05em', marginBottom: 12 }}>
