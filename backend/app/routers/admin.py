@@ -1097,13 +1097,29 @@ async def get_historical_matches(
             if not assigned_mm or assigned_mm.lower() == "all":
                 assigned_mm = "SILVI"
 
-            potential_partners = [
-                "Camila Gómez Test",
-                "Andrea Velez Alvarez",
-                "Paola Andrea Pachon",
-                "Nathalia Sandoval Amaya",
-                "Genesis Kilzis"
-            ]
+            # Query real candidates from database
+            real_partners_res = await db.execute(text("""
+                SELECT u.name FROM users u
+                JOIN profiles p ON p.user_id = u.id
+                WHERE u.name IS NOT NULL AND length(trim(u.name)) > 3 AND unaccent(lower(u.name)) != unaccent(lower(:tname))
+                ORDER BY u.id DESC
+                LIMIT 5
+            """), {"tname": target_name})
+            r_rows = real_partners_res.fetchall()
+            potential_partners = [r.name.strip() for r in r_rows if r.name]
+
+            if len(potential_partners) < 5:
+                hm_partners = await db.execute(text("""
+                    SELECT DISTINCT person_b AS name FROM historical_matches 
+                    WHERE person_b IS NOT NULL AND length(trim(person_b)) > 3 AND unaccent(lower(person_b)) != unaccent(lower(:tname))
+                    LIMIT 5
+                """), {"tname": target_name})
+                for r in hm_partners.fetchall():
+                    if r.name and r.name.strip() not in potential_partners and len(potential_partners) < 5:
+                        potential_partners.append(r.name.strip())
+
+            if not potential_partners:
+                potential_partners = ["Paola Andrea Pachon", "Nathalia Sandoval Amaya", "Genesis Kilzis", "Andrea Velez Alvarez", "Carolina Andrea Gomez"]
 
             ai_matches = []
             for idx, partner in enumerate(potential_partners, start=1):

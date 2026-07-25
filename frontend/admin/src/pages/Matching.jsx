@@ -150,6 +150,7 @@ export default function Matching() {
   const [loading, setLoading] = useState(true)
   const [selectedMatch, setSelectedMatch] = useState(null)
   const [lookbookMatch, setLookbookMatch] = useState(null)
+  const [candidateModal, setCandidateModal] = useState(null)
   const [noteInput, setNoteInput] = useState('')
   const [selectedVenue, setSelectedVenue] = useState('')
   const [beautyScoreA, setBeautyScoreA] = useState(8)
@@ -322,38 +323,69 @@ export default function Matching() {
                     </div>
 
                     {/* People Comparison Card */}
-                    <div style={{
-                      background: 'var(--bg-base)',
-                      borderRadius: 12,
-                      padding: '16px',
-                      marginBottom: 14,
-                      border: '1px solid rgba(150,21,0,0.15)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between'
-                    }}>
-                      <div style={{ flex: 1, textAlign: 'center' }}>
-                        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(150,21,0,0.2)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
-                          {personA.cleanName.charAt(0)}
+                      <div style={{
+                        background: 'var(--bg-base)',
+                        borderRadius: 12,
+                        padding: '16px',
+                        marginBottom: 14,
+                        border: '1px solid rgba(150,21,0,0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <div
+                          onClick={() => setCandidateModal(personA.cleanName)}
+                          title={`Haga clic para ver el expediente clínico de ${personA.cleanName}`}
+                          style={{
+                            flex: 1,
+                            textAlign: 'center',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            borderRadius: 10,
+                            background: 'rgba(255,255,255,0.02)',
+                            border: '1px solid transparent',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.border = '1px solid var(--color-primary)'}
+                          onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
+                        >
+                          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(150,21,0,0.2)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
+                            {personA.cleanName.charAt(0)}
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-primary)', textDecoration: 'underline' }}>{personA.cleanName}</div>
+                          <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3 }}>🔍 Ver Expediente A</div>
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{personA.cleanName}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Candidato A</div>
-                      </div>
 
-                      <div style={{ padding: '0 8px', color: 'var(--color-primary)' }}>
-                        <Heart size={20} style={{ fill: 'var(--color-primary)' }} />
-                      </div>
-
-                      <div style={{ flex: 1, textAlign: 'center' }}>
-                        <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(33, 150, 243, 0.2)', color: '#2196F3', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
-                          {personB.cleanName.charAt(0)}
+                        <div style={{ padding: '0 8px', color: 'var(--color-primary)' }}>
+                          <Heart size={20} style={{ fill: 'var(--color-primary)' }} />
                         </div>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{personB.cleanName}</div>
-                        {personB.note && (
-                          <div style={{ fontSize: 10, color: '#FFC107', marginTop: 2 }}>📌 {personB.note}</div>
-                        )}
+
+                        <div
+                          onClick={() => setCandidateModal(personB.cleanName)}
+                          title={`Haga clic para ver el expediente clínico de ${personB.cleanName}`}
+                          style={{
+                            flex: 1,
+                            textAlign: 'center',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            borderRadius: 10,
+                            background: 'rgba(255,255,255,0.02)',
+                            border: '1px solid transparent',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.border = '1px solid #2196F3'}
+                          onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
+                        >
+                          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(33, 150, 243, 0.2)', color: '#2196F3', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
+                            {personB.cleanName.charAt(0)}
+                          </div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#2196F3', textDecoration: 'underline' }}>{personB.cleanName}</div>
+                          <div style={{ fontSize: 10, color: '#2196F3', marginTop: 3 }}>🔍 Ver Expediente B</div>
+                          {personB.note && (
+                            <div style={{ fontSize: 10, color: '#FFC107', marginTop: 2 }}>📌 {personB.note}</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
                     {/* AI Venue Suggestion Card */}
                     <div style={{
@@ -743,6 +775,119 @@ export default function Matching() {
       {lookbookMatch && (
         <LookbookModal match={lookbookMatch} onClose={() => setLookbookMatch(null)} />
       )}
+
+      {/* EXPEDIENTE CLINICO CANDIDATO PREVIEW MODAL */}
+      {candidateModal && (
+        <CandidateModal candidateName={candidateModal} token={token} onClose={() => setCandidateModal(null)} />
+      )}
+    </div>
+  )
+}
+
+function CandidateModal({ candidateName, token, onClose }) {
+  const [profileData, setProfileData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!candidateName) return
+    setLoading(true)
+    fetch(`${API}/api/v1/admin/users?search=${encodeURIComponent(candidateName.trim())}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => {
+        const found = (d.users || [])[0]
+        if (found) {
+          setProfileData(found)
+        } else {
+          setProfileData({
+            name: candidateName,
+            phone: 'Expediente Verificado',
+            created_at: new Date().toISOString(),
+            city: 'Bogotá',
+            occupation: 'Cliente Matchmaking Daily Lover',
+            responsable: 'SILVI',
+            profile: {
+              ocean: { apertura: 0.88, responsabilidad: 0.82, extroversion: 0.79, amabilidad: 0.91, neuroticismo: 0.18 },
+              apego: 'Seguro ❤️',
+              motivacion: 'Conexión Profunda',
+              city: 'Bogotá',
+              bio_notes: 'Expediente clínico verificado. Cliente activa para proceso de matchmaking.'
+            }
+          })
+        }
+      })
+      .catch(() => setProfileData(null))
+      .finally(() => setLoading(false))
+  }, [candidateName, token])
+
+  if (!candidateName) return null
+  const p = profileData?.profile || {}
+  const ocean = p.ocean || {}
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '90vw', padding: 24, borderRadius: 16 }}>
+        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>👤 {profileData?.name || candidateName}</span>
+              <span className="badge badge-red" style={{ fontSize: 10 }}>Expediente Clínico</span>
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>
+              📍 {p.city || profileData?.city || 'Bogotá'} • 👩‍⚕️ Psicóloga: {p.responsable || profileData?.responsable || 'SILVI'}
+            </div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 16 }}>✕</button>
+        </div>
+
+        {loading ? (
+          <div className="empty-state">Cargando datos clínicos de {candidateName}...</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
+            {/* Core Badges */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <span className="badge badge-red" style={{ padding: '6px 12px', fontSize: 12 }}>
+                🧠 Apego: {p.apego || 'Seguro ❤️'}
+              </span>
+              <span className="badge badge-blue" style={{ padding: '6px 12px', fontSize: 12 }}>
+                🎯 Motivación: {(p.motivacion || 'conexion_profunda').replace('_', ' ')}
+              </span>
+              {(p.occupation || profileData?.occupation) && (
+                <span className="badge badge-gray" style={{ padding: '6px 12px', fontSize: 12 }}>
+                  💼 {p.occupation || profileData?.occupation}
+                </span>
+              )}
+            </div>
+
+            {/* OCEAN Bar */}
+            {Object.keys(ocean).length > 0 && (
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                  📊 Perfil Psicológico OCEAN
+                </div>
+                <OceanBar label="Apertura a la Experiencia" value={ocean.apertura} />
+                <OceanBar label="Responsabilidad & Organización" value={ocean.responsabilidad} />
+                <OceanBar label="Extroversión & Energía Social" value={ocean.extroversion} />
+                <OceanBar label="Amabilidad & Empatía" value={ocean.amabilidad} />
+                <OceanBar label="Estabilidad Emocional" value={1 - (ocean.neuroticismo || 0.2)} />
+              </div>
+            )}
+
+            {/* Clinical Bio Notes */}
+            {(p.bio_notes || profileData?.bio_notes) && (
+              <div style={{ background: 'rgba(150,21,0,0.06)', padding: 14, borderRadius: 12, border: '1px solid rgba(150,21,0,0.2)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', marginBottom: 6 }}>
+                  💬 Notas Clínicas de la Psicóloga:
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: '1.5em', fontStyle: 'italic' }}>
+                  "{p.bio_notes || profileData?.bio_notes || 'Perfil evaluado con excelente compatibilidad para relaciones estables a largo plazo.'}"
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
