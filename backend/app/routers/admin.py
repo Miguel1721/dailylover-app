@@ -1239,78 +1239,8 @@ async def get_historical_matches(
         "observations": r.observations,
     } for r in rows_res.fetchall()]
 
-    if search and len(matches) == 0:
-        target_search_clean = search.strip()
-        usr_res = await db.execute(text("""
-            SELECT u.id, u.name, p.gender, p.city, p.responsable
-            FROM users u
-            LEFT JOIN profiles p ON p.user_id = u.id
-            WHERE unaccent(lower(u.name)) ILIKE unaccent(lower(:search))
-            LIMIT 1
-        """), {"search": f"%{target_search_clean}%"})
-        target_usr = usr_res.fetchone()
+    return {"matches": matches, "total": total, "page": page, "pages": math.ceil(total / limit) if limit > 0 else 1}
 
-        if target_usr or len(target_search_clean) >= 3:
-            target_name = target_usr.name if target_usr else target_search_clean.title()
-            assigned_mm = (target_usr.responsable if target_usr and target_usr.responsable else matchmaker) or "SILVI"
-            if not assigned_mm or assigned_mm.lower() == "all":
-                assigned_mm = "SILVI"
-
-            target_city = (target_usr.city if (target_usr and target_usr.city) else "Bogotá").strip()
-            if not target_city:
-                target_city = "Bogotá"
-
-            # Query real candidates from database from the EXACT SAME CITY (excluding test users)
-            real_partners_res = await db.execute(text("""
-                SELECT u.name FROM users u
-                JOIN profiles p ON p.user_id = u.id
-                WHERE u.name IS NOT NULL AND length(trim(u.name)) > 3 
-                  AND unaccent(lower(u.name)) != unaccent(lower(:tname))
-                  AND unaccent(lower(u.name)) NOT ILIKE '%test%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%prueba%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%consentimiento%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%no terms%'
-                  AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:tcity)) OR unaccent(lower(COALESCE(p.city, ''))) = '')
-                ORDER BY u.id DESC
-                LIMIT 5
-            """), {"tname": target_name, "tcity": f"%{target_city}%"})
-            r_rows = real_partners_res.fetchall()
-            potential_partners = [r.name.strip() for r in r_rows if r.name]
-
-            if len(potential_partners) < 5:
-                hm_partners = await db.execute(text("""
-                    SELECT DISTINCT person_b AS name FROM historical_matches 
-                    WHERE person_b IS NOT NULL AND length(trim(person_b)) > 3 
-                      AND unaccent(lower(person_b)) != unaccent(lower(:tname))
-                      AND unaccent(lower(person_b)) NOT ILIKE '%test%'
-                      AND unaccent(lower(person_b)) NOT ILIKE '%prueba%'
-                      AND unaccent(lower(person_b)) NOT ILIKE '%consentimiento%'
-                      AND unaccent(lower(person_b)) NOT ILIKE '%no terms%'
-                      AND (unaccent(lower(COALESCE(city, ''))) ILIKE unaccent(lower(:tcity)) OR unaccent(lower(COALESCE(city, ''))) = '')
-                    LIMIT 5
-                """), {"tname": target_name, "tcity": f"%{target_city}%"})
-                for r in hm_partners.fetchall():
-                    if r.name and r.name.strip() not in potential_partners and len(potential_partners) < 5:
-                        potential_partners.append(r.name.strip())
-
-            if not potential_partners:
-                potential_partners = ["Valentina Ospina Velazquez", "Nathalia Sandoval Amaya", "Genesis Kilzis", "Andrea Velez Alvarez", "Paola Andrea Pachon"]
-
-            ai_matches = []
-            for idx, partner in enumerate(potential_partners, start=1):
-                ai_matches.append({
-                    "id": 8800 + idx,
-                    "person_a": target_name,
-                    "person_b": partner,
-                    "matchmaker": f"MATCHES {assigned_mm.upper()}",
-                    "match_date": datetime.now().strftime("%Y-%m-%d"),
-                    "city": target_usr.city if (target_usr and target_usr.city) else "Bogotá",
-                    "status": "PENDIENTE",
-                    "observations": "Propuesta de match sugerida por el Algoritmo Clínico de IA basada en compatibilidad OCEAN y Estilo de Apego Seguro."
-                })
-            return {"matches": ai_matches, "total": len(ai_matches), "page": page, "pages": 1}
-
-    return {"matches": matches, "total": total, "page": page, "pages": math.ceil(total / limit)}
 
 
 @router.patch("/historical-matches/{match_id}/status")
