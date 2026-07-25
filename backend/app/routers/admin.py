@@ -1115,12 +1115,16 @@ async def get_historical_matches(
             if not target_city:
                 target_city = "Bogotá"
 
-            # Query real candidates from database from the EXACT SAME CITY
+            # Query real candidates from database from the EXACT SAME CITY (excluding test users)
             real_partners_res = await db.execute(text("""
                 SELECT u.name FROM users u
                 JOIN profiles p ON p.user_id = u.id
                 WHERE u.name IS NOT NULL AND length(trim(u.name)) > 3 
                   AND unaccent(lower(u.name)) != unaccent(lower(:tname))
+                  AND unaccent(lower(u.name)) NOT ILIKE '%test%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%prueba%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%consentimiento%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%no terms%'
                   AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:tcity)) OR unaccent(lower(COALESCE(p.city, ''))) = '')
                 ORDER BY u.id DESC
                 LIMIT 5
@@ -1133,6 +1137,10 @@ async def get_historical_matches(
                     SELECT DISTINCT person_b AS name FROM historical_matches 
                     WHERE person_b IS NOT NULL AND length(trim(person_b)) > 3 
                       AND unaccent(lower(person_b)) != unaccent(lower(:tname))
+                      AND unaccent(lower(person_b)) NOT ILIKE '%test%'
+                      AND unaccent(lower(person_b)) NOT ILIKE '%prueba%'
+                      AND unaccent(lower(person_b)) NOT ILIKE '%consentimiento%'
+                      AND unaccent(lower(person_b)) NOT ILIKE '%no terms%'
                       AND (unaccent(lower(COALESCE(city, ''))) ILIKE unaccent(lower(:tcity)) OR unaccent(lower(COALESCE(city, ''))) = '')
                     LIMIT 5
                 """), {"tname": target_name, "tcity": f"%{target_city}%"})
