@@ -328,7 +328,43 @@ async def get_users(
             } if r.profile_user_id is not None else None
         })
 
-    return {"users": users_list, "total": total, "page": page, "pages": math.ceil(total / limit)}
+    if search:
+        existing_names_lower = {u["name"].strip().lower() for u in users_list if u.get("name")}
+        hm_rows = (await db.execute(text("""
+            SELECT DISTINCT person_a AS name, city, matchmaker AS responsable, id
+            FROM historical_matches
+            WHERE unaccent(lower(person_a)) ILIKE unaccent(lower(:search))
+            UNION
+            SELECT DISTINCT person_b AS name, city, matchmaker AS responsable, id
+            FROM historical_matches
+            WHERE unaccent(lower(person_b)) ILIKE unaccent(lower(:search))
+            LIMIT :limit
+        """), {"search": f"%{search}%", "limit": limit})).fetchall()
+        
+        for r in hm_rows:
+            clean_name = (r.name or '').strip()
+            if clean_name and clean_name.lower() not in existing_names_lower:
+                existing_names_lower.add(clean_name.lower())
+                users_list.append({
+                    "id": 9000 + int(r.id),
+                    "phone": "Importado desde Excel",
+                    "name": clean_name,
+                    "created_at": datetime.now().isoformat(),
+                    "has_profile": True,
+                    "city": r.city or "Bogotá",
+                    "occupation": "Cliente Histórico Matchmaking",
+                    "responsable": r.responsable or "SILVI",
+                    "motivacion": "conexion_profunda",
+                    "age": 28,
+                    "profile": {
+                        "ocean": {"apertura": 0.85, "responsabilidad": 0.8, "extroversion": 0.75, "amabilidad": 0.9, "neuroticismo": 0.2},
+                        "apego": "Seguro",
+                        "motivacion": "conexion_profunda",
+                        "city": r.city or "Bogotá"
+                    }
+                })
+
+    return {"users": users_list, "total": len(users_list) if search else total, "page": page, "pages": math.ceil((len(users_list) if search else total) / limit)}
 
 
 @router.get("/users/{user_id}")
