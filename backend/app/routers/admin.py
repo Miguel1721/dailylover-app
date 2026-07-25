@@ -635,13 +635,38 @@ async def analyze_user_matchmaking_viability(
     elif target_gender == "masculino":
         pool_query += " AND lower(COALESCE(p.gender, '')) IN ('masculino', 'hombre', 'm')"
 
+    # 4b. Análisis de tendencias del pool de candidatos en la misma ciudad
+    cands_traits_res = await db.execute(text(f"""
+        SELECT p.motivacion, p.apego, p.occupation, p.intereses
+        FROM users u
+        JOIN profiles p ON p.user_id = u.id
+        WHERE u.id != :uid
+          AND p.gender IS NOT NULL AND length(trim(p.gender)) > 0
+          AND p.city IS NOT NULL AND unaccent(lower(trim(p.city))) = unaccent(lower(trim(:city)))
+          AND lower(trim(p.gender)) IN ({ "'femenino', 'mujer', 'f'" if target_gender == "femenino" else "'masculino', 'hombre', 'm'" if target_gender == "masculino" else "'femenino', 'masculino'" })
+        LIMIT 30
+    """), {"uid": user_id, "city": user_city})
+    cands_traits = cands_traits_res.fetchall()
+
+    common_motivations = {}
+    common_apego = {}
+    for r in cands_traits:
+        if r.motivacion:
+            mot = r.motivacion.replace('_', ' ').title()
+            common_motivations[mot] = common_motivations.get(mot, 0) + 1
+        if r.apego:
+            ap = r.apego.title()
+            common_apego[ap] = common_apego.get(ap, 0) + 1
+
+    top_mot = max(common_motivations, key=common_motivations.get) if common_motivations else None
+    top_ap = max(common_apego, key=common_apego.get) if common_apego else None
 
     total_target_gender = (await db.execute(text(pool_query), params)).scalar() or 0
 
     pool_city_query = pool_query + " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
     city_compatible_candidates = (await db.execute(text(pool_city_query), params)).scalar() or 0
 
-    # 5. Generar diagnóstico clínico y recomendación de la IA
+    # 5. Generar diagnóstico clínico y recomendación indagatoria para la psicóloga
     clinical_reasons = []
     recommended_action = ""
 
@@ -654,14 +679,19 @@ async def analyze_user_matchmaking_viability(
 
         if len(missing_fields) > 0:
             clinical_reasons.append(f"Ficha clínica incompleta ({completeness}% completado). Campos faltantes: {', '.join(missing_fields)}.")
-            recommended_action = f"Completar la información clínica faltante ({', '.join(missing_fields)}) para activar el cruce algorítmico automatizado."
+            recommended_action = f"Completar la información clínica faltante ({', '.join(missing_fields)}) para ingresar al proceso de matching."
         
         if city_compatible_candidates == 0:
-            clinical_reasons.append(f"Escasez de candidatos registrados del género {target_gender} en la ciudad de {user_city}.")
-            recommended_action = f"Ampliar el rango geográfico de prospección o importar nuevos perfiles activos en {user_city}."
+            clinical_reasons.append(f"Sin candidatos con perfil 100% completo del género {target_gender.capitalize()} en {user_city}.")
+            recommended_action = f"Ampliar la prospección clínica en {user_city} o invitar a completar fichas pendientes."
         else:
-            clinical_reasons.append(f"Existen {city_compatible_candidates} candidatos potenciales en {user_city} ({target_gender}) en la base de datos.")
-            recommended_action = f"La psicóloga {usr.responsable or 'asignada'} puede proceder a evaluar los expedientes de estos {city_compatible_candidates} candidatos en {user_city} para armar la propuesta."
+            inquiry_points = []
+            if top_mot: inquiry_points.append(f"Motivación dominante en candidatas/os: '{top_mot}'")
+            if top_ap: inquiry_points.append(f"Estilo de apego predominante: '{top_ap}'")
+            inquiry_str = f" ({', '.join(inquiry_points)})" if inquiry_points else ""
+
+            clinical_reasons.append(f"Existen {city_compatible_candidates} candidatos potenciales en {user_city} ({target_gender.capitalize()}) con perfil verificado.")
+            recommended_action = f"Se recomienda a la psicóloga {usr.responsable or 'asignada'} indagar en la entrevista clínica sobre proyecto de vida y valores{inquiry_str} para filtrar de forma exacta con las {city_compatible_candidates} opciones de {user_city}."
 
     return {
         "user_id": usr.id,
@@ -676,7 +706,9 @@ async def analyze_user_matchmaking_viability(
         "pool_metrics": {
             "target_gender_searched": target_gender.capitalize(),
             "total_in_system": total_target_gender,
-            "city_compatible": city_compatible_candidates
+            "city_compatible": city_compatible_candidates,
+            "top_motivation": top_mot,
+            "top_apego": top_ap
         },
         "diagnostic": {
             "title": diagnosis_title,
