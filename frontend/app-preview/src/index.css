@@ -131,17 +131,22 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 72px;
-  background: rgba(28, 17, 19, 0.95);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--border-color);
+  height: 68px;
+  background: #180F11;
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 90, 54, 0.2);
   display: flex;
   justify-content: space-around;
   align-items: center;
-  padding: 0 12px 12px 12px;
+  padding: 6px 10px;
   z-index: 99;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
 }
 .tab-item {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -150,17 +155,23 @@ body {
   text-decoration: none;
   font-size: 11px;
   font-weight: 600;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   cursor: pointer;
   flex: 1;
-  padding-top: 12px;
+  padding: 8px 0;
+  border-radius: 12px;
 }
 .tab-item:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
 }
 .tab-item.active {
   color: var(--color-coral);
-  transform: translateY(-2px);
+  background: rgba(255, 90, 54, 0.12);
+}
+.tab-item.active .tab-icon {
+  color: var(--color-coral);
+  filter: drop-shadow(0 0 6px rgba(255, 90, 54, 0.4));
 }
 .tab-icon {
   margin-bottom: 4px;
