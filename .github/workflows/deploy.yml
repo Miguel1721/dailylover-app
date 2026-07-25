@@ -50,11 +50,8 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
-            echo "=== Extrayendo estáticos ==="
             cd /home/ubuntu/dailylover
-            tar -xzf /tmp/static_update.tar.gz -C .
-
-            echo "=== Actualizando backend desde git ==="
+            echo "=== Actualizando código fuente desde git ==="
             if [ ! -d .git ]; then
               git init
             fi
@@ -62,6 +59,9 @@ jobs:
             git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/Miguel1721/dailylover-app.git
             git fetch origin main
             git reset --hard origin/main
+
+            echo "=== Aplicando estáticos compilados más recientes ==="
+            tar -xzf /tmp/static_update.tar.gz -C .
 
             echo "=== Reiniciando API ==="
             docker compose restart api
