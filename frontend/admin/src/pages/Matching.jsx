@@ -29,6 +29,21 @@ const PSYCHOLOGISTS = [
   { id: 'MAPE D', label: 'Mape D (María Paula)' }
 ]
 
+function OceanBar({ label, value }) {
+  const pct = Math.round((value || 0) * 100)
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+        <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+        <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{pct}%</span>
+      </div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
 function VividStatusBadge({ status }) {
   const s = (status || 'PENDIENTE').toUpperCase()
   let bg = 'rgba(245, 158, 11, 0.15)'
