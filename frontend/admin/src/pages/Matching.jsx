@@ -184,6 +184,8 @@ export default function Matching() {
   const [beautyScoreA, setBeautyScoreA] = useState(8)
   const [beautyScoreB, setBeautyScoreB] = useState(8)
 
+  const [targetUserDiagnostic, setTargetUserDiagnostic] = useState(null)
+
   useEffect(() => {
     if (user?.role === 'Matchmaker' && user?.name) {
       const matchName = user.name.split(' ')[0].toUpperCase()
@@ -211,13 +213,16 @@ export default function Matching() {
       .then(d => {
         setMatches(d.matches || [])
         setTotal(d.total || 0)
+        setTargetUserDiagnostic(d.target_user_diagnostic || null)
       })
       .catch(() => {
         setMatches([])
         setTotal(0)
+        setTargetUserDiagnostic(null)
       })
       .finally(() => setLoading(false))
   }, [token, page, search, matchmaker, statusFilter])
+
 
   useEffect(() => {
     fetchMatches()
@@ -309,7 +314,73 @@ export default function Matching() {
           </select>
         </div>
 
+        {/* Banner de Diagnóstico Algorítmico del Formulario Inicial al buscar un cliente */}
+        {targetUserDiagnostic && (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(150,21,0,0.15) 0%, rgba(168,85,247,0.12) 100%)',
+            border: '1px solid rgba(168,85,247,0.3)',
+            borderRadius: 14,
+            padding: '18px 20px',
+            marginBottom: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 20 }}>🧠</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>Análisis Algorítmico del Formulario Inicial: {targetUserDiagnostic.user_name}</span>
+                    <span style={{
+                      background: 'linear-gradient(135deg, #6c3ff5, #a855f7)',
+                      color: '#fff',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 12,
+                      fontFamily: 'monospace'
+                    }}>{targetUserDiagnostic.client_code}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <span>📍 Ciudad: {targetUserDiagnostic.city}</span>
+                    <span>👤 Género: {targetUserDiagnostic.gender}</span>
+                    <span>🎂 Edad: {targetUserDiagnostic.age} años</span>
+                    <span>🔍 Búsqueda: Candidatas/os {targetUserDiagnostic.target_gender_searched}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Formulario Inicial</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: targetUserDiagnostic.completeness >= 70 ? '#4CAF50' : '#FF9800' }}>
+                    {targetUserDiagnostic.completeness}% Llenado
+                  </div>
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setCandidateModal(targetUserDiagnostic.user_name)}
+                  style={{ fontSize: 12, border: '1px solid #a855f7', color: '#a855f7' }}
+                >
+                  👁️ Ver Expediente
+                </button>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', background: 'rgba(0,0,0,0.2)', padding: '10px 14px', borderRadius: 8, marginTop: 4, lineHeight: 1.4 }}>
+              💡 <strong>Diagnóstico de la IA:</strong> {targetUserDiagnostic.summary}
+              {targetUserDiagnostic.missing_fields?.length > 0 && (
+                <div style={{ fontSize: 11, color: '#FF9800', marginTop: 4, fontWeight: 600 }}>
+                  ⚠️ Campos faltantes en el formulario: {targetUserDiagnostic.missing_fields.join(', ')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {loading ? (
+
           <div className="card"><div className="empty-state">Cargando sugerencias de la IA y expedientes clínicos...</div></div>
         ) : matches.length === 0 ? (
           <div className="card">

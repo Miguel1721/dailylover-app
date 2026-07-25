@@ -1354,7 +1354,99 @@ async def get_historical_matches(
         "observations": r.observations,
     } for r in rows_res.fetchall()]
 
-    return {"matches": matches, "total": total, "page": page, "pages": math.ceil(total / limit) if limit > 0 else 1}
+    target_user_diagnostic = None
+
+    # Si hay una búsqueda de usuario (ej: "miguel" o "DL-0001") y se encuentra en la BD de usuarios registrados:
+    if search and len(search.strip()) >= 2:
+        search_clean = search.strip()
+        usr_row = (await db.execute(text("""
+            SELECT u.id, u.name, u.phone, u.client_code,
+                   p.gender, p.city, p.age, p.occupation, p.photo_url, p.responsable, p.motivacion
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE unaccent(lower(u.name)) ILIKE unaccent(lower(:s))
+               OR unaccent(lower(COALESCE(u.client_code, ''))) ILIKE unaccent(lower(:s))
+            ORDER BY u.id DESC
+            LIMIT 1
+        """), {"s": f"%{search_clean}%"})).fetchone()
+
+        if usr_row:
+            # 1. Evaluar completitud del formulario inicial
+            missing = []
+            if not usr_row.name: missing.append("Nombre")
+            if not usr_row.phone: missing.append("Teléfono")
+            if not usr_row.gender: missing.append("Género")
+            if not usr_row.city: missing.append("Ciudad")
+            if not usr_row.age: missing.append("Edad")
+            if not usr_row.photo_url: missing.append("Foto de perfil")
+            if not usr_row.responsable: missing.append("Psicóloga responsable")
+
+            completeness = round(((7 - len(missing)) / 7) * 100)
+            u_gender = (usr_row.gender or "").strip().lower()
+            target_g = "femenino" if u_gender in ["masculino", "hombre", "m"] else ("masculino" if u_gender in ["femenino", "mujer", "f"] else "todos")
+            u_city = (usr_row.city or "Bogotá").strip()
+
+            # 2. Consultar candidatas/os reales en la BD de la misma ciudad que tengan perfil registrado
+            cand_query = """
+                SELECT u.id, u.name, u.client_code, p.city, p.age, p.occupation, p.gender, p.photo_url
+                FROM users u
+                JOIN profiles p ON p.user_id = u.id
+                WHERE u.id != :target_id
+                  AND u.name IS NOT NULL AND length(trim(u.name)) > 2
+            """
+            c_params = {"target_id": usr_row.id, "city": f"%{u_city}%"}
+
+            if target_g != "todos":
+                cand_query += " AND (lower(p.gender) ILIKE :tg OR p.gender IS NULL)"
+                c_params["tg"] = f"%{target_g}%"
+
+            cand_query += " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
+            cand_query += " ORDER BY u.id DESC LIMIT 6"
+
+            cands = (await db.execute(text(cand_query), c_params)).fetchall()
+
+            # 3. Generar propuestas algorítmicas reales si el usuario no tiene citas en la consulta actual
+            if len(matches) == 0 and len(cands) > 0:
+                for idx, c in enumerate(cands, start=1):
+                    matches.append({
+                        "id": 90000 + c.id,
+                        "person_a": usr_row.name or "Cliente",
+                        "person_b": c.name,
+                        "user_id_a": usr_row.id,
+                        "user_id_b": c.id,
+                        "code_a": usr_row.client_code or f"DL-{usr_row.id:04d}",
+                        "code_b": c.client_code or f"DL-{c.id:04d}",
+                        "matchmaker": f"PSICÓLOGA { (usr_row.responsable or 'SILVI').upper() }",
+                        "match_date": "Propuesta Formulario Inicial",
+                        "city": u_city,
+                        "status": "SUGERIDO IA (FORMULARIO)",
+                        "observations": f"Sugerencia algorítmica real basada en formulario inicial ({u_city}, compatibilidad de género {target_g.capitalize()})."
+                    })
+                total = len(matches)
+
+            # 4. Construir resumen de diagnóstico del formulario inicial
+            target_user_diagnostic = {
+                "user_id": usr_row.id,
+                "user_name": usr_row.name,
+                "client_code": usr_row.client_code or f"DL-{usr_row.id:04d}",
+                "city": u_city,
+                "gender": usr_row.gender or "No especificado",
+                "age": usr_row.age or "Sin registrar",
+                "completeness": completeness,
+                "missing_fields": missing,
+                "compatible_candidates_count": len(cands),
+                "target_gender_searched": target_g.capitalize(),
+                "summary": f"Perfil inicial de {usr_row.name} ({completeness}% completado). Se identifican {len(cands)} candidatos/as afines en {u_city}." if completeness >= 70 else f"Perfil inicial incompleto ({completeness}%). Falta registrar: {', '.join(missing)}."
+            }
+
+    return {
+        "matches": matches,
+        "total": total,
+        "page": page,
+        "pages": math.ceil(total / limit) if limit > 0 else 1,
+        "target_user_diagnostic": target_user_diagnostic
+    }
+
 
 
 
