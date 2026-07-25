@@ -41,6 +41,30 @@ async def add_security_headers(request, call_next):
 
 # ─── API ROUTES ───────────────────────────────────────────────────────────────
 
+@app.on_event("startup")
+async def startup_seed():
+    """Ensure system roles and admin user account exist for María Paula."""
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.auth_service import hash_password
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            # Ensure admin role
+            await db.execute(text("""
+                INSERT INTO roles (id, name, is_system) VALUES (1, 'Super Admin', true)
+                ON CONFLICT (id) DO NOTHING;
+            """))
+            h_pass = hash_password('Daily2026!')
+            # Ensure Maria Paula in user_accounts
+            await db.execute(text("""
+                INSERT INTO user_accounts (email, password_hash, status, must_change_password, role_id)
+                VALUES ('mariapaula@dailylover.com', :pass, 'active', false, 1)
+                ON CONFLICT (email) DO UPDATE SET password_hash = :pass;
+            """), {'pass': h_pass})
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"Startup seed warning: {e}")
+
 @app.get("/api/health", tags=["Health"])
 async def health_check():
     """Endpoint de monitoreo de salud para Traefik y despliegue continuo."""
