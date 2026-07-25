@@ -196,13 +196,20 @@ function Sidebar({ isOpen, onClose }) {
     if (onClose) onClose()
   }
 
+  const isAdmin = user?.role && (
+    user.role === 'Admin' || 
+    user.role === 'Super Admin' || 
+    user.role.toLowerCase().includes('admin') || 
+    user.role.toLowerCase().includes('director')
+  )
+
   // Groups and items configuration
   const coreItems = [
     { to: '/', icon: Heart, label: 'Panel Clínico (Psicólogas)', module: 'dashboard', action: 'view', end: true },
-    { to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' },
+    ...(isAdmin ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
     { to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' },
     { to: '/eventos', icon: Calendar, label: 'Eventos', module: 'eventos', action: 'view' },
-    { to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' },
+    ...(isAdmin ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
     { to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' },
     { to: '/matching', icon: Heart, label: 'Matching', module: 'matching', action: 'view' },
   ]
