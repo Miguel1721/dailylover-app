@@ -901,6 +901,72 @@ async def update_event(
     return {"ok": True}
 
 
+@router.get("/psychologist/agenda")
+async def get_psychologist_agenda(
+    psychologist_name: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "view"))
+):
+    """
+    Obtiene la agenda personal de entrevistas y el listado de clientes asignados a una psicóloga específica.
+    """
+    psyc = (psychologist_name or user.get("name", "SILVI")).strip().upper()
+    if "SILVI" in psyc: psyc_clean = "SILVI"
+    elif "MANU" in psyc: psyc_clean = "MANU"
+    elif "MAPE" in psyc: psyc_clean = "MAPE D"
+    elif "ALEJA" in psyc: psyc_clean = "ALEJA"
+    else: psyc_clean = psyc
+
+    # 1. Entrevistas de agendamiento
+    interviews_res = await db.execute(text("""
+        SELECT ia.id, ia.user_id, ia.appointment_date, ia.time_slot, ia.status, ia.notes,
+               u.name AS user_name, u.phone AS user_phone, u.client_code
+        FROM interview_appointments ia
+        JOIN users u ON u.id = ia.user_id
+        WHERE UPPER(ia.psychologist_name) ILIKE :psyc
+        ORDER BY ia.appointment_date ASC
+    """), {"psyc": f"%{psyc_clean}%"})
+    interviews = [{
+        "id": r.id,
+        "user_id": r.user_id,
+        "user_name": r.user_name,
+        "client_code": r.client_code or f"DL-{r.user_id:04d}",
+        "phone": r.user_phone,
+        "date": r.appointment_date.strftime("%d de %B, %Y") if hasattr(r.appointment_date, 'strftime') else str(r.appointment_date),
+        "time": r.time_slot,
+        "status": r.status,
+        "notes": r.notes,
+        "whatsapp_link": f"https://wa.me/{''.join(filter(str.isdigit, r.user_phone or ''))}" if r.user_phone else None
+    } for r in interviews_res.fetchall()]
+
+    # 2. Clientes asignados a esta psicóloga
+    clients_res = await db.execute(text("""
+        SELECT u.id, u.name, u.phone, u.client_code, p.city, p.age, p.motivacion, u.created_at
+        FROM users u
+        JOIN profiles p ON p.user_id = u.id
+        WHERE UPPER(COALESCE(p.responsable, '')) ILIKE :psyc
+        ORDER BY u.id DESC
+    """), {"psyc": f"%{psyc_clean}%"})
+    clients = [{
+        "id": r.id,
+        "name": r.name,
+        "client_code": r.client_code or f"DL-{r.id:04d}",
+        "phone": r.phone,
+        "city": r.city or "Bogotá",
+        "age": r.age,
+        "motivacion": r.motivacion
+    } for r in clients_res.fetchall()]
+
+    return {
+        "psychologist": psyc_clean,
+        "total_interviews": len(interviews),
+        "total_assigned_clients": len(clients),
+        "interviews": interviews,
+        "assigned_clients": clients
+    }
+
+
+
 @router.get("/events/{event_id}/budget-comparison")
 async def get_event_budget_comparison(
     event_id: int,

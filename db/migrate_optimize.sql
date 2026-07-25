@@ -172,9 +172,40 @@ WHERE p.user_id = u.id
     unaccent(lower(u.name)) ILIKE 'carolina%'
   );
 
--- 16. ★ Formatear fechas feas de Excel en historical_matches (ej. "4.25 7pm" -> "25 Abr, 7PM")
-UPDATE historical_matches
-SET match_date = '25 Abr, 7PM'
-WHERE match_date ILIKE '%4.25%';
+-- 17. ★ Módulo de Agendamiento de Entrevistas y Disponibilidad de Psicólogas
+CREATE TABLE IF NOT EXISTS psychologist_availability (
+    id SERIAL PRIMARY KEY,
+    psychologist_name VARCHAR(100) NOT NULL,
+    day_of_week INT NOT NULL, -- 0=Domingo, 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes, 6=Sábado
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    slot_duration_minutes INT DEFAULT 45,
+    max_simultaneous INT DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS interview_appointments (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    psychologist_name VARCHAR(100) NOT NULL,
+    appointment_date TIMESTAMP NOT NULL,
+    time_slot VARCHAR(50) NOT NULL,
+    status VARCHAR(50) DEFAULT 'CONFIRMADA',
+    meet_link VARCHAR(255),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_psyc_avail ON psychologist_availability(psychologist_name, day_of_week);
+CREATE INDEX IF NOT EXISTS idx_interview_app ON interview_appointments(appointment_date, psychologist_name);
+
+-- Semillas iniciales de disponibilidad de Lunes a Viernes de 9:00 AM a 5:00 PM para psicólogas principales
+INSERT INTO psychologist_availability (psychologist_name, day_of_week, start_time, end_time)
+SELECT p, d, '09:00:00'::TIME, '17:00:00'::TIME
+FROM (VALUES ('SILVI'), ('MANU'), ('MAPE D'), ('ALEJA')) AS ps(p)
+CROSS JOIN (VALUES (1), (2), (3), (4), (5)) AS days(d)
+ON CONFLICT DO NOTHING;
+
 
 

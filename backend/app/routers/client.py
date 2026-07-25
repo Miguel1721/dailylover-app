@@ -218,3 +218,154 @@ async def get_explore_feed(current_user: dict = Depends(get_current_user), db: A
     candidates = [dict(r._mapping) for r in users_res.fetchall()]
     
     return {"upcoming_events": events, "featured_profiles": candidates}
+
+
+# ─── AGENDAMIENTO NEUTRO DE ENTREVISTAS (SIN MOSTRAR NOMBRES DE PSICÓLOGAS) ───
+
+@router.get("/booking/available-slots")
+async def get_booking_available_slots(db: AsyncSession = Depends(get_db)):
+    """
+    Obtiene los días y franjas horarias disponibles consolidados para la entrevista de ingreso.
+    NO muestra nombres de psicólogas para mantener la neutralidad y privacidad.
+    Muestra únicamente días, horas y cantidad de entrevistas disponibles.
+    """
+    avail_res = await db.execute(text("""
+        SELECT id, psychologist_name, day_of_week, start_time, end_time
+        FROM psychologist_availability
+        WHERE is_active = TRUE
+        ORDER BY day_of_week, start_time
+    """))
+    avails = avail_res.fetchall()
+
+    slots_map = {}
+    now = datetime.now()
+
+    for d_offset in range(1, 14):
+        dt = now + timedelta(days=d_offset)
+        dow = (dt.weekday() + 1) % 7
+        d_str = dt.strftime("%Y-%m-%d")
+        display_day = dt.strftime("%A %d de %B").title()
+
+        matching_avails = [a for a in avails if a.day_of_week == dow]
+        if not matching_avails:
+            # Si no hay franjas grabadas para ese día, usar pool por defecto L-V
+            if dt.weekday() < 5:
+                matching_avails = [type('obj', (object,), {'start_time': datetime.strptime("09:00", "%H:%M").time(), 'end_time': datetime.strptime("17:00", "%H:%M").time()})() for _ in range(3)]
+            else:
+                continue
+
+        for hour in range(9, 17):
+            t_start = datetime.strptime(f"{hour:02d}:00", "%H:%M").time()
+            working_count = len(matching_avails)
+
+            booked_cnt = (await db.execute(text("""
+                SELECT COUNT(*) FROM interview_appointments
+                WHERE DATE(appointment_date) = :d AND time_slot = :t AND status != 'CANCELADA'
+            """), {"d": d_str, "t": f"{hour:02d}:00"})).scalar() or 0
+
+            free_cap = max(1, working_count - booked_cnt)
+            if free_cap > 0:
+                key = f"{d_str}_{hour:02d}:00"
+                time_display = f"{hour if hour <= 12 else hour-12}:00 {'AM' if hour < 12 else 'PM'}"
+                slots_map[key] = {
+                    "date": d_str,
+                    "display_date": display_day,
+                    "time": f"{hour:02d}:00",
+                    "display_time": time_display,
+                    "available_capacity": free_cap
+                }
+
+    return {"slots": list(slots_map.values())[:35]}
+
+
+@router.post("/booking/book-interview")
+async def book_interview(
+    payload: dict,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Agendamiento inteligente de entrevista por el cliente.
+    Asigna en orden de lista (Round-Robin) a las psicólogas disponibles y notifica automáticamente.
+    """
+    user_id = int(current_user.get("id"))
+    date_str = payload.get("date")
+    time_str = payload.get("time")
+
+    if not date_str or not time_str:
+        raise HTTPException(status_code=400, detail="Debe seleccionar una fecha y hora válidas")
+
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    dow = (dt.weekday() + 1) % 7
+    t_start = datetime.strptime(time_str, "%H:%M").time()
+
+    working_avails = (await db.execute(text("""
+        SELECT DISTINCT psychologist_name
+        FROM psychologist_availability
+        WHERE is_active = TRUE AND day_of_week = :dow
+          AND start_time <= :t AND end_time > :t
+    """), {"dow": dow, "t": t_start})).fetchall()
+
+    available_psychologists = [r.psychologist_name for r in working_avails]
+    if not available_psychologists:
+        available_psychologists = ['SILVI', 'MANU', 'MAPE D', 'ALEJA']
+
+    # Round-Robin / Balanceo de carga: Asignar a la psicóloga con menos citas en orden rotativo
+    psyc_counts = []
+    for psyc in available_psychologists:
+        cnt = (await db.execute(text("""
+            SELECT COUNT(*) FROM interview_appointments
+            WHERE psychologist_name = :p AND status != 'CANCELADA'
+        """), {"p": psyc})).scalar() or 0
+        psyc_counts.append((cnt, psyc))
+
+    psyc_counts.sort()
+    assigned_psyc = psyc_counts[0][1]
+
+    appointment_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+
+    ins_res = await db.execute(text("""
+        INSERT INTO interview_appointments (user_id, psychologist_name, appointment_date, time_slot, status, notes)
+        VALUES (:uid, :psyc, :dt, :slot, 'CONFIRMADA', 'Cita agendada automáticamente tras pago/registro')
+        RETURNING id
+    """), {
+        "uid": user_id,
+        "psyc": assigned_psyc,
+        "dt": appointment_dt,
+        "slot": time_str
+    })
+    appointment_id = ins_res.scalar()
+
+    await db.execute(text("""
+        UPDATE profiles SET responsable = :psyc WHERE user_id = :uid
+    """), {"psyc": assigned_psyc, "uid": user_id})
+
+    user_res = await db.execute(text("SELECT name, phone FROM users WHERE id = :uid"), {"uid": user_id})
+    u = user_res.fetchone()
+    u_name = u.name if u else "Cliente Daily Lover"
+
+    await db.execute(text("""
+        INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+        VALUES (:title, :cname, :cphone, 'ALTA', :psyc, :ddate, :notes)
+    """), {
+        "title": f"🗓️ Nueva Entrevista Inicial: {u_name}",
+        "cname": u_name,
+        "cphone": u.phone if u else "",
+        "psyc": assigned_psyc,
+        "ddate": appointment_dt.strftime("%d/%m/%Y %I:%M %p"),
+        "notes": f"Entrevista agendada por el cliente para el {appointment_dt.strftime('%d de %B, %I:%M %p')}."
+    })
+
+    await db.commit()
+
+    return {
+        "ok": True,
+        "appointment": {
+            "id": appointment_id,
+            "date": appointment_dt.strftime("%d de %B, %Y"),
+            "time": appointment_dt.strftime("%I:%M %p"),
+            "status": "CONFIRMADA",
+            "message": "Su entrevista ha sido agendada con éxito en el sistema."
+        }
+    }
+
