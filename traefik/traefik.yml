@@ -1,0 +1,39 @@
+api:
+  dashboard: true
+  insecure: false   # dashboard solo con autenticación
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: miguel@agentesia.cloud
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+
+providers:
+  docker:
+    exposedByDefault: false   # solo los que tienen label traefik.enable=true
+    network: dl_network
+  file:
+    directory: /traefik/dynamic
+    watch: true
+
+log:
+  level: WARN
+
+accessLog: {}   # log de peticiones HTTP

@@ -1,0 +1,298 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Inquilinos / Barberías ──────────────────────────────────────────────────────
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users             User[]
+  barbers           Barber[]
+  services          Service[]
+  products          Product[]
+  appointments      Appointment[]
+  sales             Sale[]
+  commissions       Commission[]
+  expenses          Expense[]
+  expenseCategories ExpenseCategory[]
+  settings          Settings?
+
+  @@map("tenants")
+}
+
+// ─── Usuarios del sistema (admin, barberos) ─────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(BARBER)
+  barber    Barber?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum Role {
+  SUPERADMIN
+  ADMIN
+  BARBER
+  CASHIER
+}
+
+// ─── Barberos / Estilistas ───────────────────────────────────────────────────────
+model Barber {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId                 String?  @unique
+  user                   User?    @relation(fields: [userId], references: [id])
+  name                   String
+  specialty              String
+  phone                  String?
+  photoUrl               String?
+  category               String   @default("BARBERIA") // "BARBERIA" | "PELUQUERIA" | "TODOS"
+  isActive               Boolean  @default(true)
+  commissionRateService  Float?
+  commissionRateProduct  Float?
+  schedule               Json     @default("{}")
+  appointments           Appointment[]
+  sales                  Sale[]
+  commissions            Commission[]
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("barbers")
+}
+
+// ─── Servicios de la barbería / peluquería ───────────────────────────────────────
+model Service {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  price           Float
+  durationMinutes Int      @default(30)
+  category        String   @default("BARBERIA") // "BARBERIA" (Hombres) | "PELUQUERIA" (Mujeres)
+  isActive        Boolean  @default(true)
+  saleItems       SaleItem[]
+  appointmentServices AppointmentService[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("services")
+}
+
+// ─── Productos (inventario) ──────────────────────────────────────────────────────
+model Product {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  costPrice    Float
+  salePrice    Float
+  stock        Int      @default(0)
+  minStock     Int      @default(5)
+  photoUrl     String?
+  isActive     Boolean  @default(true)
+  saleItems    SaleItem[]
+  movements    InventoryMovement[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("products")
+}
+
+// ─── Movimientos de inventario ───────────────────────────────────────────────────
+model InventoryMovement {
+  id        String        @id @default(cuid())
+  productId String
+  product   Product       @relation(fields: [productId], references: [id])
+  type      MovementType
+  quantity  Int
+  reason    String?
+  createdAt DateTime      @default(now())
+
+  @@map("inventory_movements")
+}
+
+enum MovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+// ─── Citas ────────────────────────────────────────────────────────────────────────
+model Appointment {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clientName  String
+  clientPhone String?
+  barberId    String
+  barber      Barber      @relation(fields: [barberId], references: [id])
+  date        DateTime
+  timeSlot    String
+  status      AppointmentStatus @default(PENDING)
+  notes       String?
+  services    AppointmentService[]
+  sale        Sale?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("appointments")
+}
+
+model AppointmentService {
+  id            String      @id @default(cuid())
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  serviceId     String
+  service       Service     @relation(fields: [serviceId], references: [id])
+
+  @@map("appointment_services")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+// ─── Ventas (Punto de Venta) ─────────────────────────────────────────────────────
+model Sale {
+  id            String      @id @default(cuid())
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointmentId String?     @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  barberId      String
+  barber        Barber      @relation(fields: [barberId], references: [id])
+  clientName    String?
+  paymentMethod PaymentMethod @default(CASH)
+  subtotal      Float
+  discount      Float       @default(0)
+  total         Float
+  items         SaleItem[]
+  commission    Commission?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id        String   @id @default(cuid())
+  saleId    String
+  sale      Sale     @relation(fields: [saleId], references: [id])
+  itemType  ItemType
+  serviceId String?
+  service   Service? @relation(fields: [serviceId], references: [id])
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  quantity  Int      @default(1)
+  unitPrice Float
+  total     Float
+
+  @@map("sale_items")
+}
+
+enum ItemType {
+  SERVICE
+  PRODUCT
+}
+
+enum PaymentMethod {
+  CASH
+  NEQUI
+  TRANSFER
+  CARD
+  MIXED
+}
+
+// ─── Comisiones de barberos ──────────────────────────────────────────────────────
+model Commission {
+  id               String   @id @default(cuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  barberId         String
+  barber           Barber   @relation(fields: [barberId], references: [id])
+  saleId           String   @unique
+  sale             Sale     @relation(fields: [saleId], references: [id])
+  serviceTotal     Float
+  commissionRate   Float    @default(0.60)
+  commissionAmount Float
+  isPaid           Boolean  @default(false)
+  paidAt           DateTime?
+  createdAt        DateTime @default(now())
+
+  @@map("commissions")
+}
+
+// ─── Gastos ───────────────────────────────────────────────────────────────────────
+model Expense {
+  id          String          @id @default(cuid())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    ExpenseCategory @relation(fields: [categoryId], references: [id])
+  description String
+  amount      Float
+  date        DateTime
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@map("expenses")
+}
+
+model ExpenseCategory {
+  id       String    @id @default(cuid())
+  tenantId String
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  expenses Expense[]
+
+  @@unique([name, tenantId])
+  @@map("expense_categories")
+}
+
+// ─── Configuración global del negocio ───────────────────────────────────────────
+model Settings {
+  id                    String  @id @default(cuid())
+  tenantId              String  @unique
+  tenant                Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  businessName          String  @default("Nueva Barbería")
+  businessSubtitle      String  @default("Gestión Barbería")
+  businessPhone         String? 
+  businessAddress       String?
+  businessEmail         String?
+  logoUrl               String?
+  commissionRateService Float   @default(0.60)
+  commissionRateProduct Float   @default(0.20)
+  appointmentSlotMin    Int     @default(30)
+  businessHours         Json    @default("{}")
+  updatedAt             DateTime @updatedAt
+
+  @@map("settings")
+}

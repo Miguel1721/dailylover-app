@@ -1,0 +1,43 @@
+# API
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# Base de datos
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.29.0
+alembic==1.13.0
+pgvector==0.3.2
+
+# Cache y queue
+redis[asyncio]==5.0.8
+celery[redis]==5.4.0
+
+# IA
+anthropic==0.34.0
+openai==1.45.0
+
+# WhatsApp & HTTP client
+httpx==0.27.0
+python-jose[cryptography]==3.3.0
+
+# AWS S3 (backups)
+boto3==1.35.0
+
+# ML / clustering & Graph Analysis
+scikit-learn==1.5.2
+numpy==1.26.4
+networkx==3.3
+
+# Utils
+pydantic-settings==2.5.0
+structlog==24.4.0
+python-dotenv==1.0.1
+
+# Excel import
+pandas==2.2.2
+openpyxl==3.1.5
+passlib==1.7.4
+bcrypt==4.1.2
+email-validator==2.2.0
+fpdf2==2.8.7

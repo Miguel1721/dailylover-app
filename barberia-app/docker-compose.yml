@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # ─── Base de datos PostgreSQL (aislada, solo visible internamente) ─────────────
+  barberia-db:
+    image: postgres:15-alpine
+    container_name: barberia-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-barberia}
+      POSTGRES_USER: ${POSTGRES_USER:-barberia_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - barberia_pgdata:/var/lib/postgresql/data
+    networks:
+      - barberia_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-barberia_user} -d ${POSTGRES_DB:-barberia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Migración y seed inicial (corre una sola vez) ───────────────────────────
+  barberia-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    container_name: barberia-migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-barberia_user}:${POSTGRES_PASSWORD}@barberia-db:5432/${POSTGRES_DB:-barberia}
+    depends_on:
+      barberia-db:
+        condition: service_healthy
+    networks:
+      - barberia_internal
+    restart: "no"
+
+  # ─── Aplicación Next.js ──────────────────────────────────────────────────────
+  barberia-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: barberia-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-barberia_user}:${POSTGRES_PASSWORD}@barberia-db:5432/${POSTGRES_DB:-barberia}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-https://barberclub.com.co}
+      NODE_ENV: production
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@barberia.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin123!}
+    depends_on:
+      barberia-db:
+        condition: service_healthy
+      barberia-migrate:
+        condition: service_completed_successfully
+    networks:
+      - barberia_internal
+      - frontend_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontend_net"
+      - 'traefik.http.routers.barberia-app.rule=Host(`barberclub.com.co`) || Host(`www.barberclub.com.co`)'
+      - "traefik.http.routers.barberia-app.entrypoints=web,websecure"
+      - "traefik.http.routers.barberia-app.tls.certresolver=myresolver"
+      - "traefik.http.services.barberia-app.loadbalancer.server.port=3500"
+    ports:
+      - "3500:3500"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3500/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ─── Volúmenes ───────────────────────────────────────────────────────────────────
+volumes:
+  barberia_pgdata:
+    name: barberia_pgdata
+
+# ─── Redes ───────────────────────────────────────────────────────────────────────
+networks:
+  barberia_internal:
+    name: barberia_internal
+    driver: bridge
+
+  frontend_net:
+    external: true

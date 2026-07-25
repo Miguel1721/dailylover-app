@@ -1,0 +1,23 @@
+http:
+  middlewares:
+
+    # Rate limiting — máx 100 req/min por IP
+    ratelimit:
+      rateLimit:
+        average: 100
+        period: 1m
+        burst: 50
+
+    # Headers de seguridad HTTP
+    secure-headers:
+      headers:
+        sslRedirect: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        frameDeny: true
+        customResponseHeaders:
+          X-Powered-By: ""   # ocultar que usa Python/FastAPI
+          Server: ""           # ocultar versión de servidor
