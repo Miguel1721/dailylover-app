@@ -54,7 +54,12 @@ jobs:
             cd /home/ubuntu/dailylover
             tar -xzf /tmp/static_update.tar.gz -C .
 
-            echo "=== Actualizando backend desde git (git reset --hard) ==="
+            echo "=== Actualizando backend desde git ==="
+            if [ ! -d .git ]; then
+              git init
+            fi
+            git remote remove origin 2>/dev/null || true
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/Miguel1721/dailylover-app.git
             git fetch origin main
             git reset --hard origin/main
 
