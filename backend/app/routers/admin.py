@@ -1410,9 +1410,9 @@ async def get_historical_matches(
         """), {"s": f"%{search_clean}%"})).fetchone()
 
         if usr_row:
-            # 1. Evaluar completitud del formulario inicial
+            # 1. Evaluar completitud del formulario inicial del usuario buscado
             missing = []
-            if not usr_row.name: missing.append("Nombre")
+            if not usr_row.name or len(usr_row.name.strip()) < 2: missing.append("Nombre")
             if not usr_row.phone: missing.append("Teléfono")
             if not usr_row.gender: missing.append("Género")
             if not usr_row.city: missing.append("Ciudad")
@@ -1422,39 +1422,45 @@ async def get_historical_matches(
 
             completeness = round(((7 - len(missing)) / 7) * 100)
             u_gender = (usr_row.gender or "").strip().lower()
-            target_g = "femenino" if u_gender in ["masculino", "hombre", "m"] else ("masculino" if u_gender in ["femenino", "mujer", "f"] else "todos")
-            u_city = (usr_row.city or "Bogotá").strip()
+            u_city = (usr_row.city or "").strip()
 
-            # 2. Consultar candidatas/os reales en la BD de la misma ciudad que tengan perfil registrado (excluyendo registros de prueba)
-            cand_query = """
-                SELECT u.id, u.name, u.client_code, p.city, p.age, p.occupation, p.gender, p.photo_url
-                FROM users u
-                JOIN profiles p ON p.user_id = u.id
-                WHERE u.id != :target_id
-                  AND u.name IS NOT NULL AND length(trim(u.name)) > 2
-                  AND unaccent(lower(u.name)) NOT ILIKE '%test%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%prueba%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%consentimiento%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%no terms%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%demo%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%dummy%'
-                  AND unaccent(lower(u.name)) NOT ILIKE '%faltante%'
-            """
-            c_params = {"target_id": usr_row.id, "city": f"%{u_city}%"}
+            target_g = "femenino" if u_gender in ["masculino", "hombre", "m"] else ("masculino" if u_gender in ["femenino", "mujer", "f"] else "ninguno")
 
-            if target_g == "femenino":
-                cand_query += " AND lower(COALESCE(p.gender, '')) IN ('femenino', 'mujer', 'f')"
-            elif target_g == "masculino":
-                cand_query += " AND lower(COALESCE(p.gender, '')) IN ('masculino', 'hombre', 'm')"
+            cands = []
+            # 2. SOLO buscar candidatas/os si el usuario buscado tiene sus datos básicos y se conoce el género buscado
+            if target_g != "ninguno" and u_city:
+                cand_query = """
+                    SELECT u.id, u.name, u.client_code, p.city, p.age, p.occupation, p.gender, p.photo_url
+                    FROM users u
+                    JOIN profiles p ON p.user_id = u.id
+                    WHERE u.id != :target_id
+                      AND u.name IS NOT NULL AND length(trim(u.name)) > 2
+                      -- Exclusión estricta de cuentas de prueba
+                      AND unaccent(lower(u.name)) NOT ILIKE '%test%'
+                      AND unaccent(lower(u.name)) NOT ILIKE '%prueba%'
+                      AND unaccent(lower(u.name)) NOT ILIKE '%consentimiento%'
+                      AND unaccent(lower(u.name)) NOT ILIKE '%no terms%'
+                      AND unaccent(lower(u.name)) NOT ILIKE '%demo%'
+                      AND unaccent(lower(u.name)) NOT ILIKE '%dummy%'
+                      AND unaccent(lower(u.name)) NOT ILIKE '%faltante%'
+                      -- Requisito estricto: Perfil del candidato debe estar 100% COMPLETO (género, ciudad y edad no nulos)
+                      AND p.gender IS NOT NULL AND length(trim(p.gender)) > 0
+                      AND p.city IS NOT NULL AND length(trim(p.city)) > 0
+                      AND p.age IS NOT NULL AND p.age > 17
+                      -- Filtro estricto de Ciudad (coincidencia exacta)
+                      AND unaccent(lower(trim(p.city))) = unaccent(lower(trim(:city)))
+                """
+                c_params = {"target_id": usr_row.id, "city": u_city}
 
+                if target_g == "femenino":
+                    cand_query += " AND lower(trim(p.gender)) IN ('femenino', 'mujer', 'f')"
+                elif target_g == "masculino":
+                    cand_query += " AND lower(trim(p.gender)) IN ('masculino', 'hombre', 'm')"
 
-            cand_query += " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
-            cand_query += " ORDER BY u.id DESC LIMIT 6"
+                cand_query += " ORDER BY u.id DESC LIMIT 6"
+                cands = (await db.execute(text(cand_query), c_params)).fetchall()
 
-            cands = (await db.execute(text(cand_query), c_params)).fetchall()
-
-
-            # 3. Generar propuestas algorítmicas reales si el usuario no tiene citas en la consulta actual
+            # 3. Generar propuestas algorítmicas reales SOLO SI el usuario tiene formulario completo y no tiene citas previas
             if len(matches) == 0 and len(cands) > 0:
                 for idx, c in enumerate(cands, start=1):
                     matches.append({
@@ -1469,24 +1475,32 @@ async def get_historical_matches(
                         "match_date": "Propuesta Formulario Inicial",
                         "city": u_city,
                         "status": "SUGERIDO IA (FORMULARIO)",
-                        "observations": f"Sugerencia algorítmica real basada en formulario inicial ({u_city}, compatibilidad de género {target_g.capitalize()})."
+                        "observations": f"Sugerencia estricta basada en formulario inicial completo ({u_city}, género {target_g.capitalize()})."
                     })
                 total = len(matches)
 
-            # 4. Construir resumen de diagnóstico del formulario inicial
+            # 4. Resumen y diagnóstico estricto del formulario inicial
+            if target_g == "ninguno" or not u_city or "Género" in missing or "Ciudad" in missing:
+                summary_msg = f"⛔ Formulario incompleto ({completeness}%). Para proteger la calidad del proceso, este cliente NO entra al proceso de matching hasta registrar: {', '.join(missing)}."
+            elif len(cands) > 0:
+                summary_msg = f"✅ Formulario completo. Se identifican {len(cands)} candidatas/os reales en {u_city} que cumplen el 100% de los filtros estrictos."
+            else:
+                summary_msg = f"⚠️ Formulario completo ({completeness}%). No hay candidatos/as registrados en {u_city} del género {target_g.capitalize()} con perfil 100% completo en este momento."
+
             target_user_diagnostic = {
                 "user_id": usr_row.id,
                 "user_name": usr_row.name,
                 "client_code": usr_row.client_code or f"DL-{usr_row.id:04d}",
-                "city": u_city,
-                "gender": usr_row.gender or "No especificado",
+                "city": u_city or "Sin registrar",
+                "gender": usr_row.gender or "Sin registrar",
                 "age": usr_row.age or "Sin registrar",
                 "completeness": completeness,
                 "missing_fields": missing,
                 "compatible_candidates_count": len(cands),
-                "target_gender_searched": target_g.capitalize(),
-                "summary": f"Perfil inicial de {usr_row.name} ({completeness}% completado). Se identifican {len(cands)} candidatos/as afines en {u_city}." if completeness >= 70 else f"Perfil inicial incompleto ({completeness}%). Falta registrar: {', '.join(missing)}."
+                "target_gender_searched": target_g.capitalize() if target_g != "ninguno" else "Sin especificar",
+                "summary": summary_msg
             }
+
 
     return {
         "matches": matches,
