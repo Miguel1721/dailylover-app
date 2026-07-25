@@ -160,12 +160,27 @@ function ClienteModal({ cliente, token, onClose }) {
             )}
 
             <div>
-              <div style={{ fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>{cliente.name || 'Sin nombre'}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>{cliente.name || 'Sin nombre'}</span>
+                {cliente.client_code && (
+                  <span style={{
+                    background: 'linear-gradient(135deg, #6c3ff5, #a855f7)',
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    letterSpacing: 1,
+                    fontFamily: 'monospace'
+                  }}>{cliente.client_code}</span>
+                )}
+              </div>
               <div style={{ color: 'var(--text-muted)', fontSize: 13, display: 'flex', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={13} /> {cliente.phone}</span>
                 {p.city && <span>📍 {p.city}</span>}
                 {p.age && <span>🎂 {p.age} años</span>}
                 {p.estatura && <span>📏 {p.estatura}m</span>}
+                {cliente.id_number && <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>🪪 CC: {cliente.id_number}</span>}
               </div>
             </div>
           </div>
@@ -641,8 +656,19 @@ export default function Clientes() {
                         }}>
                           {u.name || 'Sin nombre'}
                         </div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                          {u.phone}
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'monospace', display: 'flex', gap: 8, alignItems: 'center' }}>
+                          {u.client_code && (
+                            <span style={{
+                              background: 'linear-gradient(135deg, #6c3ff5, #a855f7)',
+                              color: '#fff',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: 10,
+                              letterSpacing: 0.5
+                            }}>{u.client_code}</span>
+                          )}
+                          <span>{u.phone}</span>
                         </div>
                       </div>
                     </div>
@@ -700,9 +726,14 @@ export default function Clientes() {
                     fontSize: 11,
                     color: 'var(--text-muted)'
                   }}>
-                    <span>ID: #{u.id}</span>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'monospace', color: u.client_code ? '#a855f7' : 'var(--text-muted)', fontWeight: 600 }}>
+                        {u.client_code || `#${u.id}`}
+                      </span>
+                      {u.id_number && <span style={{ color: 'var(--text-muted)' }}>🪪 {u.id_number}</span>}
+                    </div>
                     <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
-                      Expediente Clínico & Fit →
+                      Expediente Clínico &amp; Fit →
                     </span>
                   </div>
                 </div>

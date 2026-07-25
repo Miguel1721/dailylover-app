@@ -246,7 +246,7 @@ async def get_users(
     params: dict = {"limit": limit, "offset": offset}
 
     if search:
-        where_clauses.append("(unaccent(u.name) ILIKE unaccent(:search) OR u.email ILIKE :search OR u.phone ILIKE :search OR unaccent(COALESCE(p.occupation, '')) ILIKE unaccent(:search) OR unaccent(COALESCE(p.city, '')) ILIKE unaccent(:search))")
+        where_clauses.append("(unaccent(u.name) ILIKE unaccent(:search) OR u.email ILIKE :search OR u.phone ILIKE :search OR COALESCE(u.client_code,'') ILIKE :search OR COALESCE(u.id_number,'') ILIKE :search OR unaccent(COALESCE(p.occupation, '')) ILIKE unaccent(:search) OR unaccent(COALESCE(p.city, '')) ILIKE unaccent(:search))")
         params["search"] = f"%{search}%"
 
     if responsable and responsable != "all":
@@ -287,6 +287,7 @@ async def get_users(
     rows = (await db.execute(text(f"""
         SELECT
             u.id, u.phone, u.name, u.created_at,
+            u.client_code, u.id_number,
             p.user_id AS profile_user_id, p.ocean, p.apego, p.motivacion, p.rol_social,
             p.energia_social, p.momento_vital, p.intereses, p.valores,
             p.city, p.occupation, p.education, p.religion, p.love_language,
@@ -306,10 +307,13 @@ async def get_users(
         intereses = json.loads(r.intereses) if isinstance(r.intereses, str) else (r.intereses or [])
         valores = json.loads(r.valores) if isinstance(r.valores, str) else (r.valores or [])
 
+        client_code = r.client_code or f"DL-{str(r.id).zfill(4)}"
         users_list.append({
             "id": r.id,
             "phone": r.phone,
             "name": r.name or "Sin nombre",
+            "client_code": client_code,
+            "id_number": r.id_number,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "has_profile": r.profile_user_id is not None,
             "city": r.city,
@@ -391,6 +395,7 @@ async def get_user(
     row = (await db.execute(text("""
         SELECT
             u.id, u.phone, u.name, u.created_at,
+            u.client_code, u.id_number,
             p.ocean, p.apego, p.motivacion, p.rol_social,
             p.energia_social, p.momento_vital, p.intereses, p.valores, p.raw_answers
         FROM users u
@@ -411,10 +416,13 @@ async def get_user(
         LIMIT 10
     """), {"uid": user_id})).fetchall()
 
+    client_code = row.client_code or f"DL-{str(row.id).zfill(4)}"
     return {
         "id": row.id,
         "phone": row.phone,
         "name": row.name,
+        "client_code": client_code,
+        "id_number": row.id_number,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "profile": {
             "ocean": row.ocean,
@@ -438,15 +446,74 @@ async def update_user(
     user: dict = Depends(require_permission("clientes", "edit"))
 ):
     """Update basic user fields."""
-    allowed = {k: v for k, v in data.items() if k in ("name", "phone")}
+    allowed = {k: v for k, v in data.items() if k in ("name", "phone", "id_number")}
     if not allowed:
         raise HTTPException(status_code=400, detail="No hay campos válidos para actualizar")
-    
+
+    # If id_number is provided, check for duplicates before saving
+    if "id_number" in allowed and allowed["id_number"]:
+        dup = (await db.execute(text(
+            "SELECT id FROM users WHERE id_number = :idn AND id != :uid"
+        ), {"idn": allowed["id_number"].strip(), "uid": user_id})).fetchone()
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya existe otro usuario registrado con esa cédula/documento (ID: DL-{str(dup.id).zfill(4)}). Verifica que no sea un duplicado."
+            )
+        allowed["id_number"] = allowed["id_number"].strip() or None
+
     set_clause = ", ".join(f"{k} = :{k}" for k in allowed)
     allowed["uid"] = user_id
     await db.execute(text(f"UPDATE users SET {set_clause} WHERE id = :uid"), allowed)
     await db.commit()
     return {"ok": True}
+
+
+@router.get("/users/check-duplicate")
+async def check_duplicate_user(
+    id_number: Optional[str] = Query(None),
+    phone: Optional[str] = Query(None),
+    exclude_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "view"))
+):
+    """Check if a cedula/document or phone already exists in the system."""
+    result = {"exists": False, "conflicts": []}
+
+    if id_number and id_number.strip():
+        q = "SELECT id, name, client_code FROM users WHERE id_number = :idn"
+        params = {"idn": id_number.strip()}
+        if exclude_id:
+            q += " AND id != :exc"
+            params["exc"] = exclude_id
+        dup = (await db.execute(text(q), params)).fetchone()
+        if dup:
+            cc = dup.client_code or f"DL-{str(dup.id).zfill(4)}"
+            result["exists"] = True
+            result["conflicts"].append({
+                "field": "id_number",
+                "message": f"La cédula ya está registrada para {dup.name or 'Sin nombre'} ({cc})",
+                "existing_user": {"id": dup.id, "name": dup.name, "client_code": cc}
+            })
+
+    if phone and phone.strip():
+        q = "SELECT id, name, client_code FROM users WHERE phone = :ph"
+        params = {"ph": phone.strip()}
+        if exclude_id:
+            q += " AND id != :exc"
+            params["exc"] = exclude_id
+        dup = (await db.execute(text(q), params)).fetchone()
+        if dup:
+            cc = dup.client_code or f"DL-{str(dup.id).zfill(4)}"
+            result["exists"] = True
+            result["conflicts"].append({
+                "field": "phone",
+                "message": f"El teléfono ya está registrado para {dup.name or 'Sin nombre'} ({cc})",
+                "existing_user": {"id": dup.id, "name": dup.name, "client_code": cc}
+            })
+
+    return result
+
 
 @router.post("/users/{user_id}/assign-matchmaker")
 async def assign_matchmaker(

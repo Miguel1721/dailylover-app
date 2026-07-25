@@ -912,15 +912,28 @@ function CandidateModal({ candidateName, token, onClose }) {
               {(profileData?.name || candidateName).charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span>{profileData?.name || candidateName}</span>
                 <span className="badge badge-red" style={{ fontSize: 11, padding: '3px 10px' }}>Expediente Clínico</span>
+                {profileData?.client_code && (
+                  <span style={{
+                    background: 'linear-gradient(135deg, #6c3ff5, #a855f7)',
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    letterSpacing: 1,
+                    fontFamily: 'monospace'
+                  }}>{profileData.client_code}</span>
+                )}
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: 13, display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
                 <span>📍 {p.city || profileData?.city || 'Bogotá'}</span>
                 <span>🎂 {p.age || 27} años</span>
                 <span>📏 {p.estatura || '1.68'}m</span>
                 <span>👩‍⚕️ Psicóloga: {p.responsable || profileData?.responsable || 'SILVI'}</span>
+                {profileData?.id_number && <span style={{ fontSize: 12 }}>🪪 CC: {profileData.id_number}</span>}
               </div>
             </div>
           </div>

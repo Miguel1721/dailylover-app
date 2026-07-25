@@ -60,6 +60,49 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
+            echo "=== Ejecutando migraciones de base de datos ==="
+            docker compose exec -T postgres psql -U postgres -d dailylover << 'SQLEOF'
+              -- Agregar columnas si no existen
+              ALTER TABLE users ADD COLUMN IF NOT EXISTS id_number VARCHAR(30);
+              ALTER TABLE users ADD COLUMN IF NOT EXISTS client_code VARCHAR(20);
+
+              -- Poblar client_code para usuarios existentes que no lo tienen
+              UPDATE users
+              SET client_code = 'DL-' || LPAD(id::text, 4, '0')
+              WHERE client_code IS NULL;
+
+              -- Constraint UNIQUE (ignorar si ya existe)
+              DO $$
+              BEGIN
+                IF NOT EXISTS (
+                  SELECT 1 FROM pg_constraint WHERE conname = 'users_id_number_key'
+                ) THEN
+                  ALTER TABLE users ADD CONSTRAINT users_id_number_key UNIQUE (id_number);
+                END IF;
+                IF NOT EXISTS (
+                  SELECT 1 FROM pg_constraint WHERE conname = 'users_client_code_key'
+                ) THEN
+                  ALTER TABLE users ADD CONSTRAINT users_client_code_key UNIQUE (client_code);
+                END IF;
+              END $$;
+
+              -- Función + Trigger para asignar client_code automáticamente en nuevos registros
+              CREATE OR REPLACE FUNCTION assign_client_code()
+              RETURNS TRIGGER LANGUAGE plpgsql AS $$
+              BEGIN
+                IF NEW.client_code IS NULL THEN
+                  NEW.client_code := 'DL-' || LPAD(NEW.id::text, 4, '0');
+                END IF;
+                RETURN NEW;
+              END;
+              $$;
+
+              DROP TRIGGER IF EXISTS trigger_assign_client_code ON users;
+              CREATE TRIGGER trigger_assign_client_code
+              BEFORE INSERT ON users
+              FOR EACH ROW EXECUTE FUNCTION assign_client_code();
+SQLEOF
+
             echo "=== Aplicando estáticos compilados más recientes ==="
             tar -xzf /tmp/static_update.tar.gz -C .
 
@@ -70,6 +113,7 @@ jobs:
             sleep 5
             curl -sf http://localhost:8000/api/health && echo "✅ API saludable" || echo "⚠️ API no responde, revisar logs"
           EOF
+
 
       - name: ✅ Deploy completado
         run: |
