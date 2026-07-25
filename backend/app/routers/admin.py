@@ -232,7 +232,7 @@ async def get_users(
     params: dict = {"limit": limit, "offset": offset}
 
     if search:
-        where_clauses.append("(unaccent(u.name) ILIKE unaccent(:search) OR u.phone ILIKE :search OR unaccent(COALESCE(p.occupation, '')) ILIKE unaccent(:search) OR unaccent(COALESCE(p.city, '')) ILIKE unaccent(:search))")
+        where_clauses.append("(unaccent(u.name) ILIKE unaccent(:search) OR u.email ILIKE :search OR u.phone ILIKE :search OR unaccent(COALESCE(p.occupation, '')) ILIKE unaccent(:search) OR unaccent(COALESCE(p.city, '')) ILIKE unaccent(:search))")
         params["search"] = f"%{search}%"
 
     if responsable and responsable != "all":
