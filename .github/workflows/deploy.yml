@@ -54,13 +54,12 @@ jobs:
             cd /home/ubuntu/dailylover
             tar -xzf /tmp/static_update.tar.gz -C .
 
-            echo "=== Actualizando backend desde git ==="
-            git fetch origin main || true
-            git pull origin main || true
+            echo "=== Actualizando backend desde git (git reset --hard) ==="
+            git fetch origin main
+            git reset --hard origin/main
 
-            echo "=== Reconstruyendo y Reiniciando API ==="
-            docker compose build api
-            docker compose up -d --no-deps api
+            echo "=== Reiniciando API ==="
+            docker compose restart api
 
             echo "=== Verificando salud ==="
             sleep 5
