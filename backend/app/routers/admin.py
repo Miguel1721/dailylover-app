@@ -534,6 +534,121 @@ async def update_user(
     return {"ok": True}
 
 
+@router.get("/users/{user_id}/match-analysis")
+async def analyze_user_matchmaking_viability(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("matching", "view"))
+):
+    """
+    Algoritmo de diagnóstico clínico de IA para analizar la viabilidad de matches de un cliente.
+    Identifica razones cuando un usuario no tiene matches (perfil incompleto, falta de candidatas/os en la ciudad, etc.).
+    """
+    usr_res = await db.execute(text("""
+        SELECT u.id, u.name, u.phone, u.client_code, u.id_number,
+               p.gender, p.city, p.age, p.occupation, p.photo_url, p.bio_notes,
+               p.responsable, p.search_preferences, p.motivacion
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE u.id = :uid
+    """), {"uid": user_id})
+    usr = usr_res.fetchone()
+
+    if not usr:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    # 1. Contar citas reales en historial
+    matches_count_res = await db.execute(text("""
+        SELECT COUNT(*) FROM historical_matches
+        WHERE user_id_a = :uid OR user_id_b = :uid
+           OR unaccent(lower(trim(person_a))) = unaccent(lower(trim(:name)))
+           OR unaccent(lower(trim(person_b))) = unaccent(lower(trim(:name)))
+    """), {"uid": user_id, "name": (usr.name or "").strip()})
+    real_matches_count = matches_count_res.scalar() or 0
+
+    # 2. Evaluar completitud del perfil
+    missing_fields = []
+    if not usr.name: missing_fields.append("Nombre")
+    if not usr.phone: missing_fields.append("Teléfono")
+    if not usr.gender: missing_fields.append("Género")
+    if not usr.city: missing_fields.append("Ciudad")
+    if not usr.age: missing_fields.append("Edad")
+    if not usr.photo_url: missing_fields.append("Fotografía de Lookbook")
+    if not usr.responsable: missing_fields.append("Psicóloga asignada")
+
+    completeness = round(((7 - len(missing_fields)) / 7) * 100)
+
+    # 3. Determinar género buscado
+    user_gender = (usr.gender or "").strip().lower()
+    target_gender = "femenino" if user_gender in ["masculino", "hombre", "m"] else ("masculino" if user_gender in ["femenino", "mujer", "f"] else "todos")
+
+    user_city = (usr.city or "Bogotá").strip()
+    user_age = usr.age or 30
+
+    # 4. Consultar pool de candidatos compatibles
+    pool_query = """
+        SELECT COUNT(*) FROM users u
+        JOIN profiles p ON p.user_id = u.id
+        WHERE u.id != :uid
+    """
+    params = {"uid": user_id, "city": f"%{user_city}%"}
+
+    if target_gender != "todos":
+        pool_query += " AND (lower(p.gender) ILIKE :target_g OR p.gender IS NULL)"
+        params["target_g"] = f"%{target_gender}%"
+
+    total_target_gender = (await db.execute(text(pool_query), params)).scalar() or 0
+
+    pool_city_query = pool_query + " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
+    city_compatible_candidates = (await db.execute(text(pool_city_query), params)).scalar() or 0
+
+    # 5. Generar diagnóstico clínico y recomendación de la IA
+    clinical_reasons = []
+    recommended_action = ""
+
+    if real_matches_count > 0:
+        diagnosis_title = f"Cliente Activo con {real_matches_count} Citas Registradas"
+        clinical_reasons.append(f"El usuario tiene {real_matches_count} propuestas/citas agendadas en su expediente histórico.")
+        recommended_action = "Continuar seguimiento post-cita y recabar retroalimentación del cliente."
+    else:
+        diagnosis_title = "Sin Citas Agendadas Actuales"
+
+        if len(missing_fields) > 0:
+            clinical_reasons.append(f"Ficha clínica incompleta ({completeness}% completado). Campos faltantes: {', '.join(missing_fields)}.")
+            recommended_action = f"Completar la información clínica faltante ({', '.join(missing_fields)}) para activar el cruce algorítmico automatizado."
+        
+        if city_compatible_candidates == 0:
+            clinical_reasons.append(f"Escasez de candidatos registrados del género {target_gender} en la ciudad de {user_city}.")
+            recommended_action = f"Ampliar el rango geográfico de prospección o importar nuevos perfiles activos en {user_city}."
+        else:
+            clinical_reasons.append(f"Existen {city_compatible_candidates} candidatos potenciales en {user_city} ({target_gender}) en la base de datos.")
+            recommended_action = f"La psicóloga {usr.responsable or 'asignada'} puede proceder a evaluar los expedientes de estos {city_compatible_candidates} candidatos en {user_city} para armar la propuesta."
+
+    return {
+        "user_id": usr.id,
+        "client_code": usr.client_code,
+        "user_name": usr.name,
+        "city": user_city,
+        "gender": usr.gender,
+        "age": usr.age,
+        "real_matches_count": real_matches_count,
+        "completeness": completeness,
+        "missing_fields": missing_fields,
+        "pool_metrics": {
+            "target_gender_searched": target_gender.capitalize(),
+            "total_in_system": total_target_gender,
+            "city_compatible": city_compatible_candidates
+        },
+        "diagnostic": {
+            "title": diagnosis_title,
+            "reasons": clinical_reasons,
+            "recommended_action": recommended_action
+        }
+    }
+
+
+
+
 @router.get("/users/check-duplicate")
 async def check_duplicate_user(
     id_number: Optional[str] = Query(None),

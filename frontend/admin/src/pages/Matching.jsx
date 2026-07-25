@@ -832,8 +832,7 @@ function CandidateModal({ candidateName, token, onClose }) {
   const [profileData, setProfileData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('perfil')
-  const [matchHistory, setMatchHistory] = useState([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [aiDiagnostic, setAiDiagnostic] = useState(null)
 
   useEffect(() => {
     if (!candidateName) return
@@ -846,39 +845,23 @@ function CandidateModal({ candidateName, token, onClose }) {
         const found = (d.users || [])[0]
         if (found) {
           setProfileData(found)
+          if (found.id) {
+            fetch(`${API}/api/v1/admin/users/${found.id}/match-analysis`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            })
+              .then(res => res.json())
+              .then(diag => setAiDiagnostic(diag))
+              .catch(() => setAiDiagnostic(null))
+          }
         } else {
           setProfileData({
-            id: 9999,
             name: candidateName,
-            phone: '+573000008899',
-            created_at: new Date().toISOString(),
-            city: 'Bogotá',
-            occupation: 'Diseñadora UX/UI & Consultora Creativa',
-            responsable: 'SILVI',
+            client_code: null,
+            phone: 'No registrado',
+            city: 'Por definir',
+            is_unregistered: true,
             profile: {
-              age: 27,
-              estatura: '1.68',
-              occupation: 'Diseñadora UX/UI & Consultora Creativa',
-              education: 'Universidad de los Andes',
-              love_language: 'Tiempo de Calidad & Palabras de Afirmación',
-              ocean: { apertura: 0.88, responsabilidad: 0.82, extroversion: 0.79, amabilidad: 0.91, neuroticismo: 0.18 },
-              apego: 'Seguro ❤️',
-              motivacion: 'conexion_profunda',
-              city: 'Bogotá',
-              bio_notes: 'Persona analítica, empática y comunicativa. Disfruta de planes culturales, lectura, viajes y conversación profunda. Busca una relación seria con proyecto de vida compartido y comunicación asertiva.',
-              lifestyle: {
-                hijos: 'No tiene, desea a futuro',
-                ejercicio: '3 a 4 veces por semana (Pilates & Running)',
-                mascotas: 'Tiene un perro',
-                rumba: 'Tranquilo / Ocasional',
-                fumar: 'No fuma',
-                bebida: 'Social / Vino'
-              },
-              search_preferences: {
-                rango_edad: '27 a 38 años',
-                ubicacion: 'Bogotá (Zona Norte / Metro)',
-                valores_clave: 'Honestidad, Estabilidad Emocional, Ambición Profesional'
-              }
+              bio_notes: 'Persona en historial de citas de Excel sin expediente clínico completo registrado en el CRM.'
             }
           })
         }
@@ -899,6 +882,7 @@ function CandidateModal({ candidateName, token, onClose }) {
         .finally(() => setLoadingHistory(false))
     }
   }, [candidateName, token])
+
 
   if (!candidateName) return null
   const p = profileData?.profile || {}
@@ -1021,6 +1005,37 @@ function CandidateModal({ candidateName, token, onClose }) {
                 "{p.bio_notes || 'Cliente con excelente disposición relacional, proyectos de vida claros y perfil idóneo para proceso de matchmaking maduro.'}"
               </div>
             </div>
+
+            {/* AI Clinical Diagnostic for Matchmaking Viability */}
+            {aiDiagnostic && (
+              <div style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.1) 0%, rgba(108,63,245,0.05) 100%)', padding: 16, borderRadius: 12, border: '1px solid rgba(168,85,247,0.3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#a855f7', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    🧠 <span>Diagnóstico Clínico de Viabilidad (IA)</span>
+                  </div>
+                  <span className={`badge ${aiDiagnostic.completeness >= 80 ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 10 }}>
+                    {aiDiagnostic.completeness}% Expediente Completado
+                  </span>
+                </div>
+                
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  📌 {aiDiagnostic.diagnostic?.title}
+                </div>
+
+                {aiDiagnostic.diagnostic?.reasons?.map((reason, idx) => (
+                  <div key={idx} style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4, lineHeight: 1.4 }}>
+                    • {reason}
+                  </div>
+                ))}
+
+                {aiDiagnostic.diagnostic?.recommended_action && (
+                  <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(168,85,247,0.2)', fontSize: 12, color: '#a855f7', fontWeight: 600 }}>
+                    💡 <strong>Acción Sugerida para la Psicóloga:</strong> {aiDiagnostic.diagnostic.recommended_action}
+                  </div>
+                )}
+              </div>
+            )}
+
 
             {/* Lifestyle & Habits */}
             <div style={{ background: 'var(--bg-base)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>

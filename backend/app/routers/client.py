@@ -181,16 +181,8 @@ async def get_active_event(current_user: dict = Depends(get_current_user), db: A
     
     if not ev:
         return {
-            "has_active_event": True,
-            "event": {
-                "id": 1,
-                "name": "Noche de Citas & Vino — Zona T Bogotá",
-                "location": "Restaurante El Jardín Secret, Cra 13 #82-45, Bogotá",
-                "date": "Sábado 28 de Julio, 7:30 PM",
-                "table": "Mesa 4",
-                "checkin_code": f"DL-EV-{user_id:04d}",
-                "user_name": u.name if u else "Cliente Daily Lover"
-            }
+            "has_active_event": False,
+            "event": None
         }
         
     return {
