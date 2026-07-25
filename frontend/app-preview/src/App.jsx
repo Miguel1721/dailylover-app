@@ -67,6 +67,7 @@ function Layout({ children }) {
   const navigate = useNavigate()
   const { checkedIn, emergencyOpen, setEmergencyOpen, showQrModal, setShowQrModal, resetState } = useContext(AppStateContext)
   const isSplash = location.pathname === '/'
+  const isAuthOrRegister = location.pathname === '/' || location.pathname === '/registro' || location.pathname === '/login'
   const [safetyCallStatus, setSafetyCallStatus] = useState(null)
 
   const handleSafetyCall = (type) => {
@@ -94,7 +95,7 @@ function Layout({ children }) {
           borderBottom: '1px solid var(--border-color)',
           zIndex: 10
         }}>
-          {/* Emergency shield button (Idea 7) */}
+          {/* Emergency shield button */}
           <button className="emergency-btn" onClick={() => setEmergencyOpen(true)} title="Seguridad">
             <Shield size={18} fill="currentColor" />
           </button>
@@ -103,29 +104,14 @@ function Layout({ children }) {
             DAILY LOVER
           </span>
 
-          {/* Hidden reset button to restart demo easily */}
-          <button 
-            onClick={() => { resetState(); navigate('/'); }}
-            style={{ 
-              background: 'transparent', 
-              border: 'none', 
-              color: 'var(--text-muted)', 
-              fontSize: 11, 
-              cursor: 'pointer',
-              fontWeight: 500
-            }}
-          >
-            Reiniciar
-          </button>
+          <div style={{ width: 24 }} />
         </div>
       )}
 
       {children}
 
-      <div className="watermark">Vista previa conceptual — Fase futura</div>
-
-      {/* Bottom Tab Navigation (visible everywhere except splash) */}
-      {!isSplash && (
+      {/* Bottom Tab Navigation (visible only inside logged-in app screens) */}
+      {!isAuthOrRegister && (
         <nav className="tab-bar">
           <button 
             className={`tab-item ${location.pathname === '/evento' || location.pathname === '/confirmacion' || location.pathname === '/mesa' ? 'active' : ''}`}
@@ -1428,7 +1414,7 @@ function Register() {
     rumba: 'fines_de_semana',
     hijos: 'desea_hijos',
     bio: '',
-    accepted_terms: false
+    accepted_terms: true
   })
 
   const handleChange = (field, val) => {
@@ -1487,9 +1473,8 @@ function Register() {
 
   return (
     <div className="screen-wrapper">
-      <div className="screen-header">
-        <button className="back-btn" onClick={() => navigate('/')}><ArrowLeft size={16} /></button>
-        <span className="screen-title">Registro en Evento</span>
+      <div className="screen-header" style={{ justifyContent: 'center' }}>
+        <span className="screen-title" style={{ fontSize: 18, fontWeight: 800 }}>REGISTRO EN EVENTO</span>
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -1500,7 +1485,7 @@ function Register() {
           ))}
         </div>
 
-        {error && <div style={{ color: '#FF5A36', fontSize: 13, marginBottom: 12, textAlign: 'center' }}>{error}</div>}
+        {error && <div style={{ color: '#FF5A36', fontSize: 13, marginBottom: 12, textAlign: 'center', fontWeight: 600 }}>{error}</div>}
 
         {step === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -1585,7 +1570,7 @@ function Register() {
                 setError('');
                 setStep(2);
               }
-            }} style={{ marginTop: 6, padding: '12px' }}>
+            }} style={{ marginTop: 6, padding: '12px', width: '100%' }}>
               Siguiente: Preferencias ➔
             </button>
           </div>
@@ -1645,10 +1630,9 @@ function Register() {
               />
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-              <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>Atrás</button>
-              <button className="btn btn-primary" onClick={() => setStep(3)} style={{ flex: 2 }}>Siguiente ➔</button>
-            </div>
+            <button className="btn btn-primary" onClick={() => setStep(3)} style={{ marginTop: 10, padding: '12px', width: '100%' }}>
+              Siguiente: Estilo de Vida ➔
+            </button>
           </div>
         )}
 
@@ -1695,27 +1679,40 @@ function Register() {
               />
             </div>
 
-            {/* HABEAS DATA & LEGAL CONSENT CHECKBOX */}
-            <div style={{ background: 'rgba(255, 90, 54, 0.08)', padding: 12, borderRadius: 10, border: '1px solid rgba(255, 90, 54, 0.2)', marginTop: 4 }}>
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            {/* HABEAS DATA & LEGAL CONSENT CHECKBOX CARD */}
+            <div style={{
+              background: formData.accepted_terms ? 'rgba(76, 175, 80, 0.14)' : 'rgba(255, 90, 54, 0.14)',
+              padding: 14,
+              borderRadius: 12,
+              border: formData.accepted_terms ? '1px solid rgba(76, 175, 80, 0.4)' : '1px solid rgba(255, 90, 54, 0.4)',
+              marginTop: 4
+            }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={formData.accepted_terms}
                   onChange={e => handleChange('accepted_terms', e.target.checked)}
-                  style={{ marginTop: 3, accentColor: 'var(--color-primary)', width: 16, height: 16 }}
+                  style={{ accentColor: '#4CAF50', width: 22, height: 22, cursor: 'pointer', flexShrink: 0 }}
                 />
-                <span style={{ fontSize: 11, color: 'var(--text-primary)', lineHeight: '1.4em' }}>
-                  Autorizo explícitamente el <strong>Tratamiento de mis Datos Personales</strong> (Ley 1581 de 2012 / Habeas Data Colombia) y acepto los <span style={{ color: 'var(--color-coral)', textDecoration: 'underline', fontWeight: 700 }} onClick={e => { e.preventDefault(); setShowLegalModal(true); }}>Términos del Servicio</span> de Daily Lover.
-                </span>
+                <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: '1.4em' }}>
+                  <strong style={{ color: formData.accepted_terms ? '#4CAF50' : '#FF5A36', display: 'block', marginBottom: 2 }}>
+                    {formData.accepted_terms ? '✓ Autorización Seleccionada' : '⚠️ Haz clic para autorizar'}
+                  </strong>
+                  <span>
+                    Acepto el <strong>Tratamiento de Datos Personales</strong> (Ley 1581 / Habeas Data) y los <span style={{ color: 'var(--color-coral)', textDecoration: 'underline', fontWeight: 700 }} onClick={e => { e.preventDefault(); e.stopPropagation(); setShowLegalModal(true); }}>Términos del Servicio</span>.
+                  </span>
+                </div>
               </label>
             </div>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-              <button className="btn btn-secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>Atrás</button>
-              <button className="btn btn-primary" onClick={handleSubmit} disabled={loading || !formData.accepted_terms} style={{ flex: 2, opacity: formData.accepted_terms ? 1 : 0.6 }}>
-                {loading ? 'Creando Perfil...' : '✨ Finalizar Registro'}
-              </button>
-            </div>
+            <button
+              className="btn btn-primary"
+              onClick={handleSubmit}
+              disabled={loading || !formData.accepted_terms}
+              style={{ marginTop: 10, padding: '14px', width: '100%', fontSize: 15, fontWeight: 700, opacity: formData.accepted_terms ? 1 : 0.6 }}
+            >
+              {loading ? 'Creando Perfil...' : '✨ Finalizar Registro'}
+            </button>
           </div>
         )}
 
