@@ -83,8 +83,8 @@ function Layout({ children }) {
 
   return (
     <div className="phone-container">
-      {/* Top Header Bar for all screens except splash */}
-      {!isSplash && (
+      {/* Top Header Bar (visible only inside logged-in app screens) */}
+      {!isAuthOrRegister && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
