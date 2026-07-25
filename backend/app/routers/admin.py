@@ -1143,10 +1143,16 @@ async def get_historical_matches(
     total = total_res.scalar() or 0
 
     rows_res = await db.execute(text(f"""
-        SELECT id, person_a, person_b, matchmaker, match_date, city, status, observations
-        FROM historical_matches
+        SELECT
+            hm.id, hm.person_a, hm.person_b, hm.matchmaker,
+            hm.match_date, hm.city, hm.status, hm.observations,
+            ua.client_code AS code_a,
+            ub.client_code AS code_b
+        FROM historical_matches hm
+        LEFT JOIN users ua ON unaccent(lower(trim(ua.name))) = unaccent(lower(trim(hm.person_a)))
+        LEFT JOIN users ub ON unaccent(lower(trim(ub.name))) = unaccent(lower(trim(hm.person_b)))
         WHERE {where_str}
-        ORDER BY id DESC
+        ORDER BY hm.id DESC
         LIMIT :limit OFFSET :offset
     """), params)
 
@@ -1154,6 +1160,8 @@ async def get_historical_matches(
         "id": r.id,
         "person_a": r.person_a,
         "person_b": r.person_b,
+        "code_a": r.code_a or None,
+        "code_b": r.code_b or None,
         "matchmaker": r.matchmaker,
         "match_date": clean_excel_date_str(r.match_date) or "Por agendar",
         "city": r.city,

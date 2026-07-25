@@ -381,6 +381,9 @@ export default function Matching() {
                             {personA.cleanName.charAt(0)}
                           </div>
                           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-primary)', textDecoration: 'underline' }}>{personA.cleanName}</div>
+                          {m.code_a && (
+                            <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_a}</div>
+                          )}
                           <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3 }}>🔍 Ver Expediente A</div>
                         </div>
 
@@ -408,6 +411,9 @@ export default function Matching() {
                             {personB.cleanName.charAt(0)}
                           </div>
                           <div style={{ fontWeight: 700, fontSize: 14, color: '#2196F3', textDecoration: 'underline' }}>{personB.cleanName}</div>
+                          {m.code_b && (
+                            <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_b}</div>
+                          )}
                           <div style={{ fontSize: 10, color: '#2196F3', marginTop: 3 }}>🔍 Ver Expediente B</div>
                           {personB.note && (
                             <div style={{ fontSize: 10, color: '#FFC107', marginTop: 2 }}>📌 {personB.note}</div>
@@ -547,6 +553,9 @@ export default function Matching() {
                     {cleanPersonName(selectedMatch.person_a).cleanName.charAt(0)}
                   </div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{cleanPersonName(selectedMatch.person_a).cleanName}</div>
+                  {selectedMatch.code_a && (
+                    <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{selectedMatch.code_a}</div>
+                  )}
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{selectedMatch.city || 'Bogotá'}</div>
                 </div>
 
@@ -562,6 +571,9 @@ export default function Matching() {
                     {cleanPersonName(selectedMatch.person_b).cleanName.charAt(0)}
                   </div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{cleanPersonName(selectedMatch.person_b).cleanName}</div>
+                  {selectedMatch.code_b && (
+                    <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{selectedMatch.code_b}</div>
+                  )}
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{selectedMatch.city || 'Bogotá'}</div>
                 </div>
               </div>
@@ -1053,8 +1065,12 @@ function CandidateModal({ candidateName, token, onClose }) {
                 {matchHistory.map(m => (
                   <div key={m.id} style={{ background: 'var(--bg-base)', padding: 12, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>
-                        {m.person_a} 💘 {m.person_b}
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>{m.person_a}</span>
+                        {m.code_a && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_a}</span>}
+                        <span>💘</span>
+                        <span>{m.person_b}</span>
+                        {m.code_b && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_b}</span>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                         📅 {formatExcelDate(m.match_date)} • 👩‍⚕️ Psicóloga: {m.matchmaker || 'SILVI'}
