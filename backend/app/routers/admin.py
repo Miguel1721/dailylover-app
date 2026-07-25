@@ -1036,3 +1036,109 @@ async def update_match_status(
     """), {"status": new_status, "id": match_id})
     await db.commit()
     return {"message": "Estado actualizado correctamente", "id": match_id, "status": new_status}
+
+
+# ─── REMINDERS & PRIORITY TASKS ───────────────────────────────────────────────
+
+@router.get("/reminders")
+async def get_reminders(
+    matchmaker: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("dashboard", "view"))
+):
+    """Retorna lista de recordatorios y tareas prioritarias asignadas a psicólogas."""
+    # Ensure table exists
+    await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            client_name VARCHAR(255),
+            client_phone VARCHAR(50),
+            priority VARCHAR(20) DEFAULT 'ALTA', -- URGENTE, ALTA, MEDIA, BAJA
+            matchmaker VARCHAR(50),              -- SILVI, STEFFY, MANU, MARÍA PAULA
+            due_date VARCHAR(50),
+            completed BOOLEAN DEFAULT FALSE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    await db.commit()
+
+    # Seed initial realistic reminders if table is empty
+    count = (await db.execute(text("SELECT COUNT(*) FROM reminders"))).scalar()
+    if count == 0:
+        await db.execute(text("""
+            INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, completed, notes)
+            VALUES 
+            ('Llamar para feedback post-cita', 'Juan Diego Puerta', '+573101234567', 'URGENTE', 'SILVI', 'Hoy, 5:00 PM', false, 'Verificar impresión de la cita en el restaurante'),
+            ('Aprobar propuesta de match con María Camila', 'María Camila Rodríguez', '+573159876543', 'ALTA', 'SILVI', 'Hoy, 6:30 PM', false, 'Revisar fotos de lookbook lado a lado'),
+            ('Confirmar asistencia a evento del sábado', 'Carlos Eduardo Silva', '+573005551234', 'MEDIA', 'STEFFY', 'Mañana, 10:00 AM', false, 'Enviar código QR y lugar de encuentro'),
+            ('Solicitar actualización de foto de perfil', 'Valentina Ruiz', '+573204449988', 'BAJA', 'MANU', '28 Jul', false, 'Foto actual no cumple calidad mínima de lookbook')
+        """))
+        await db.commit()
+
+    query = "SELECT * FROM reminders WHERE 1=1"
+    params = {}
+    if matchmaker:
+        query += " AND (UPPER(matchmaker) = :mm OR matchmaker IS NULL)"
+        params["mm"] = matchmaker.upper()
+
+    query += " ORDER BY completed ASC, CASE priority WHEN 'URGENTE' THEN 1 WHEN 'ALTA' THEN 2 WHEN 'MEDIA' THEN 3 ELSE 4 END, id DESC"
+
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    return {
+        "reminders": [{
+            "id": r.id,
+            "title": r.title,
+            "client_name": r.client_name,
+            "client_phone": r.client_phone,
+            "priority": r.priority,
+            "matchmaker": r.matchmaker,
+            "due_date": r.due_date,
+            "completed": r.completed,
+            "notes": r.notes,
+            "whatsapp_link": f"https://wa.me/{''.join(filter(str.isdigit, r.client_phone or ''))}" if r.client_phone else None
+        } for r in rows]
+    }
+
+
+@router.post("/reminders")
+async def create_reminder(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("dashboard", "view"))
+):
+    """Crea un nuevo recordatorio o tarea prioritaria para el equipo clínico."""
+    await db.execute(text("""
+        INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+        VALUES (:title, :client_name, :client_phone, :priority, :matchmaker, :due_date, :notes)
+    """), {
+        "title": payload.get("title", "Nuevo Pendiente"),
+        "client_name": payload.get("client_name"),
+        "client_phone": payload.get("client_phone"),
+        "priority": payload.get("priority", "ALTA"),
+        "matchmaker": payload.get("matchmaker", "SILVI"),
+        "due_date": payload.get("due_date", "Hoy"),
+        "notes": payload.get("notes", "")
+    })
+    await db.commit()
+    return {"message": "Recordatorio creado exitosamente"}
+
+
+@router.patch("/reminders/{reminder_id}/toggle")
+async def toggle_reminder(
+    reminder_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("dashboard", "view"))
+):
+    """Marca un recordatorio como completado o pendiente."""
+    await db.execute(text("""
+        UPDATE reminders
+        SET completed = NOT completed
+        WHERE id = :id
+    """), {"id": reminder_id})
+    await db.commit()
+    return {"message": "Estado de recordatorio actualizado"}
+
