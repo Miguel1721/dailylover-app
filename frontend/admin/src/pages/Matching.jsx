@@ -381,8 +381,10 @@ export default function Matching() {
                             {personA.cleanName.charAt(0)}
                           </div>
                           <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-primary)', textDecoration: 'underline' }}>{personA.cleanName}</div>
-                          {m.code_a && (
+                          {m.code_a ? (
                             <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_a}</div>
+                          ) : (
+                            <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
                           )}
                           <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3 }}>🔍 Ver Expediente A</div>
                         </div>
@@ -411,8 +413,10 @@ export default function Matching() {
                             {personB.cleanName.charAt(0)}
                           </div>
                           <div style={{ fontWeight: 700, fontSize: 14, color: '#2196F3', textDecoration: 'underline' }}>{personB.cleanName}</div>
-                          {m.code_b && (
+                          {m.code_b ? (
                             <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_b}</div>
+                          ) : (
+                            <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
                           )}
                           <div style={{ fontSize: 10, color: '#2196F3', marginTop: 3 }}>🔍 Ver Expediente B</div>
                           {personB.note && (

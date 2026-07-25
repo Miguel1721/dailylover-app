@@ -25,6 +25,71 @@ def clean_excel_date_str(raw):
     return s
 
 
+# ─── DATA DIAGNOSTICS ─────────────────────────────────────────────────────────
+
+@router.get("/data-health")
+async def get_data_health(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("dashboard", "view"))
+):
+    """Diagnóstico de salud de datos — cuántos matches están vinculados por ID vs nombre."""
+    total_matches = (await db.execute(text("SELECT COUNT(*) FROM historical_matches"))).scalar() or 0
+    linked_a = (await db.execute(text("SELECT COUNT(*) FROM historical_matches WHERE user_id_a IS NOT NULL"))).scalar() or 0
+    linked_b = (await db.execute(text("SELECT COUNT(*) FROM historical_matches WHERE user_id_b IS NOT NULL"))).scalar() or 0
+    both_linked = (await db.execute(text("SELECT COUNT(*) FROM historical_matches WHERE user_id_a IS NOT NULL AND user_id_b IS NOT NULL"))).scalar() or 0
+    orphan_a = (await db.execute(text("SELECT COUNT(*) FROM historical_matches WHERE user_id_a IS NULL AND person_a IS NOT NULL"))).scalar() or 0
+    orphan_b = (await db.execute(text("SELECT COUNT(*) FROM historical_matches WHERE user_id_b IS NULL AND person_b IS NOT NULL"))).scalar() or 0
+
+    # Personas en matches que NO existen en users
+    unregistered_res = await db.execute(text("""
+        SELECT DISTINCT name FROM (
+            SELECT hm.person_a AS name FROM historical_matches hm
+            WHERE hm.user_id_a IS NULL AND hm.person_a IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM users u WHERE unaccent(lower(trim(u.name))) = unaccent(lower(trim(hm.person_a))))
+            UNION
+            SELECT hm.person_b AS name FROM historical_matches hm
+            WHERE hm.user_id_b IS NULL AND hm.person_b IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM users u WHERE unaccent(lower(trim(u.name))) = unaccent(lower(trim(hm.person_b))))
+        ) orphans
+        ORDER BY name
+        LIMIT 30
+    """))
+    unregistered_names = [r.name for r in unregistered_res.fetchall()]
+
+    # Usuarios con client_code
+    total_users = (await db.execute(text("SELECT COUNT(*) FROM users"))).scalar() or 0
+    with_code = (await db.execute(text("SELECT COUNT(*) FROM users WHERE client_code IS NOT NULL"))).scalar() or 0
+    with_cedula = (await db.execute(text("SELECT COUNT(*) FROM users WHERE id_number IS NOT NULL"))).scalar() or 0
+
+    # Status distribution
+    status_res = await db.execute(text("""
+        SELECT COALESCE(status, 'NULL') as status, COUNT(*) as cnt
+        FROM historical_matches
+        GROUP BY status
+        ORDER BY cnt DESC
+    """))
+    status_dist = {r.status: r.cnt for r in status_res.fetchall()}
+
+    return {
+        "matches": {
+            "total": total_matches,
+            "con_user_id_a": linked_a,
+            "con_user_id_b": linked_b,
+            "ambos_vinculados": both_linked,
+            "persona_a_sin_vincular": orphan_a,
+            "persona_b_sin_vincular": orphan_b,
+            "porcentaje_vinculado": round((both_linked / total_matches * 100), 1) if total_matches > 0 else 0
+        },
+        "personas_no_registradas": unregistered_names,
+        "usuarios": {
+            "total": total_users,
+            "con_codigo_dl": with_code,
+            "con_cedula": with_cedula
+        },
+        "distribucion_status": status_dist
+    }
+
+
 # ─── STATS ────────────────────────────────────────────────────────────────────
 
 @router.get("/stats")
