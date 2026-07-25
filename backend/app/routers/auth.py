@@ -98,14 +98,28 @@ async def client_register(req: ClientRegisterRequest, db: AsyncSession = Depends
     lifestyle_data["accepted_terms"] = True
     lifestyle_data["accepted_terms_date"] = datetime.utcnow().isoformat()
 
-    # Insert profile
+    # 1. Round-Robin Queue Matchmaker Selection (Cola Rotativa de Psicólogas 1 -> 2 -> 3 -> 4)
+    matchmakers_res = await db.execute(text("""
+        SELECT full_name FROM employees 
+        WHERE status = 'active' AND (position ILIKE '%psic%' OR position ILIKE '%matchmaker%' OR full_name ILIKE '%silvi%' OR full_name ILIKE '%paula%')
+    """))
+    mm_rows = matchmakers_res.fetchall()
+    matchmakers_list = [r.full_name.strip() for r in mm_rows if r.full_name]
+    if not matchmakers_list:
+        matchmakers_list = ["SILVI", "MARÍA PAULA", "STEFFY", "MANU"]
+        
+    user_count_res = await db.execute(text("SELECT COUNT(*) FROM users"))
+    total_users_count = (user_count_res.scalar() or 0)
+    assigned_matchmaker = matchmakers_list[total_users_count % len(matchmakers_list)]
+
+    # 2. Insert profile with assigned_matchmaker
     await db.execute(text("""
         INSERT INTO profiles (
             user_id, age, estatura, gender, orientation, occupation, city,
             motivacion, lifestyle, search_preferences, responsable, updated_at
         ) VALUES (
             :user_id, :age, :estatura, :gender, :orientation, :occupation, :city,
-            :motivacion, CAST(:lifestyle AS jsonb), CAST(:search_preferences AS jsonb), 'Registro QR Evento', NOW()
+            :motivacion, CAST(:lifestyle AS jsonb), CAST(:search_preferences AS jsonb), :responsable, NOW()
         )
     """), {
         "user_id": new_user_id,
@@ -117,7 +131,39 @@ async def client_register(req: ClientRegisterRequest, db: AsyncSession = Depends
         "city": req.city,
         "motivacion": req.motivacion,
         "lifestyle": json.dumps(lifestyle_data),
-        "search_preferences": json.dumps(req.search_preferences)
+        "search_preferences": json.dumps(req.search_preferences),
+        "responsable": assigned_matchmaker
+    })
+
+    # 3. Create instant priority reminder/notification for the assigned matchmaker
+    await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            client_name VARCHAR(255),
+            client_phone VARCHAR(50),
+            priority VARCHAR(20) DEFAULT 'ALTA',
+            matchmaker VARCHAR(50),
+            due_date VARCHAR(50),
+            completed BOOLEAN DEFAULT FALSE,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    
+    turn_num = (total_users_count % len(matchmakers_list)) + 1
+    reminder_title = f"🔴 NUEVO CLIENTE EN COLA (#{turn_num}/{len(matchmakers_list)})"
+    reminder_notes = f"Nuevo registro de {req.name.strip()} ({formatted_phone}) asignado automáticamente a {assigned_matchmaker} en cola rotativa."
+    
+    await db.execute(text("""
+        INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, completed, notes)
+        VALUES (:title, :client_name, :client_phone, 'URGENTE', :matchmaker, 'Hoy (Nuevo)', false, :notes)
+    """), {
+        "title": reminder_title,
+        "client_name": req.name.strip(),
+        "client_phone": formatted_phone,
+        "matchmaker": assigned_matchmaker,
+        "notes": reminder_notes
     })
     await db.commit()
     
