@@ -1412,6 +1412,7 @@ function Register() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  const [showLegalModal, setShowLegalModal] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -1426,7 +1427,8 @@ function Register() {
     motivacion: 'conexion_profunda',
     rumba: 'fines_de_semana',
     hijos: 'desea_hijos',
-    bio: ''
+    bio: '',
+    accepted_terms: false
   })
 
   const handleChange = (field, val) => {
@@ -1439,6 +1441,11 @@ function Register() {
       setError('Nombre, celular, correo y contraseña son obligatorios')
       return
     }
+    if (!formData.accepted_terms) {
+      setError('Debes autorizar el Tratamiento de Datos Personales (Ley 1581 de 2012 / Habeas Data) para crear tu perfil.')
+      return
+    }
+
     setLoading(true)
     setError('')
 
@@ -1454,6 +1461,7 @@ function Register() {
       estatura: formData.estatura,
       occupation: formData.occupation,
       motivacion: formData.motivacion,
+      accepted_terms: formData.accepted_terms,
       lifestyle: { rumba: formData.rumba, hijos: formData.hijos, bio: formData.bio },
       search_preferences: {}
     }
@@ -1679,18 +1687,61 @@ function Register() {
             <div>
               <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Breve Biografía / Pasatiempos</label>
               <textarea
-                rows={3}
+                rows={2}
                 placeholder="Cuéntanos un poco sobre tus gustos o hobbies favoritos..."
                 value={formData.bio}
                 onChange={e => handleChange('bio', e.target.value)}
-                style={{ width: '100%', padding: '12px', borderRadius: 10, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontFamily: 'inherit' }}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, background: 'var(--bg-dark-card)', border: '1px solid var(--border-color)', color: 'white', fontFamily: 'inherit', fontSize: 13 }}
               />
+            </div>
+
+            {/* HABEAS DATA & LEGAL CONSENT CHECKBOX */}
+            <div style={{ background: 'rgba(255, 90, 54, 0.08)', padding: 12, borderRadius: 10, border: '1px solid rgba(255, 90, 54, 0.2)', marginTop: 4 }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.accepted_terms}
+                  onChange={e => handleChange('accepted_terms', e.target.checked)}
+                  style={{ marginTop: 3, accentColor: 'var(--color-primary)', width: 16, height: 16 }}
+                />
+                <span style={{ fontSize: 11, color: 'var(--text-primary)', lineHeight: '1.4em' }}>
+                  Autorizo explícitamente el <strong>Tratamiento de mis Datos Personales</strong> (Ley 1581 de 2012 / Habeas Data Colombia) y acepto los <span style={{ color: 'var(--color-coral)', textDecoration: 'underline', fontWeight: 700 }} onClick={e => { e.preventDefault(); setShowLegalModal(true); }}>Términos del Servicio</span> de Daily Lover.
+                </span>
+              </label>
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
               <button className="btn btn-secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>Atrás</button>
-              <button className="btn btn-primary" onClick={handleSubmit} disabled={loading} style={{ flex: 2 }}>
+              <button className="btn btn-primary" onClick={handleSubmit} disabled={loading || !formData.accepted_terms} style={{ flex: 2, opacity: formData.accepted_terms ? 1 : 0.6 }}>
                 {loading ? 'Creando Perfil...' : '✨ Finalizar Registro'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* LEGAL HABEAS DATA MODAL */}
+        {showLegalModal && (
+          <div className="modal-overlay" onClick={() => setShowLegalModal(false)} style={{ zIndex: 3000, background: 'rgba(0,0,0,0.85)' }}>
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ width: '90%', maxWidth: 450, maxHeight: '80vh', overflowY: 'auto', background: '#181113', padding: 24, borderRadius: 16, border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, color: 'white' }}>📜 Política de Tratamiento de Datos Personales</h3>
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowLegalModal(false)}>✕</button>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: '1.6em' }}>
+                <p><strong>RESPONSABLE DEL TRATAMIENTO:</strong> Daily Lover S.A.S. en cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 de la República de Colombia.</p>
+                <br/>
+                <p><strong>FINALIDAD DEL TRATAMIENTO:</strong> Sus datos personales, gustos, orientación y respuestas a cuestionarios serán utilizados exclusivamente para:</p>
+                <ul style={{ paddingLeft: 16, marginTop: 6, marginBottom: 10 }}>
+                  <li>Calcular compatibilidad algorítmica de matchmaking con IA.</li>
+                  <li>Coordinar la logística de citas y asistencia a eventos.</li>
+                  <li>Evaluaciones clínicas confidenciales por parte de las psicólogas del equipo.</li>
+                </ul>
+                <p><strong>DERECHOS DEL TITULAR (ARCO):</strong> Como titular de la información, usted tiene derecho a conocer, actualizar, rectificar y solicitar la supresión de sus datos personales en cualquier momento escribiendo a <code>privacidad@dailylover.com</code>.</p>
+                <br/>
+                <p><strong>CONFIDENCIALIDAD:</strong> Sus datos de contacto o comentarios internos nunca serán vendidos ni compartidos con terceros sin su consentimiento explícito previo.</p>
+              </div>
+              <button className="btn btn-primary" onClick={() => { handleChange('accepted_terms', true); setShowLegalModal(false); }} style={{ width: '100%', marginTop: 18 }}>
+                Entendido y Aceptar Términos
               </button>
             </div>
           </div>

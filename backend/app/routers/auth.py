@@ -35,11 +35,18 @@ class ClientRegisterRequest(BaseModel):
     estatura: str = None
     occupation: str = None
     motivacion: str = None
+    accepted_terms: bool = False
     lifestyle: dict = {}
     search_preferences: dict = {}
 
 @router.post("/client-register")
 async def client_register(req: ClientRegisterRequest, db: AsyncSession = Depends(get_db)):
+    if not req.accepted_terms:
+        raise HTTPException(
+            status_code=400, 
+            detail="Debes autorizar el Tratamiento de Datos Personales (Ley 1581 de 2012 / Habeas Data) para crear tu cuenta en Daily Lover."
+        )
+
     clean_phone = ''.join(filter(str.isdigit, req.phone))
     if not clean_phone or len(clean_phone) < 7:
         raise HTTPException(status_code=400, detail="Por favor ingresa un número celular válido de al menos 10 dígitos.")
@@ -86,6 +93,11 @@ async def client_register(req: ClientRegisterRequest, db: AsyncSession = Depends
     })
     new_user_id = user_res.scalar()
     
+    # Attach legal consent metadata
+    lifestyle_data = req.lifestyle or {}
+    lifestyle_data["accepted_terms"] = True
+    lifestyle_data["accepted_terms_date"] = datetime.utcnow().isoformat()
+
     # Insert profile
     await db.execute(text("""
         INSERT INTO profiles (
@@ -104,7 +116,7 @@ async def client_register(req: ClientRegisterRequest, db: AsyncSession = Depends
         "occupation": req.occupation,
         "city": req.city,
         "motivacion": req.motivacion,
-        "lifestyle": json.dumps(req.lifestyle),
+        "lifestyle": json.dumps(lifestyle_data),
         "search_preferences": json.dumps(req.search_preferences)
     })
     await db.commit()
