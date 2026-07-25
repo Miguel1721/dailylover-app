@@ -16,6 +16,8 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
+import RemindersWidget from '../components/RemindersWidget'
+
 const API = 'https://prueba-daily.agentesia.cloud'
 
 const PLACEHOLDER_STATS = {
@@ -306,24 +308,27 @@ export default function Dashboard() {
 
             {stats.critical_events > 0 && (
               <div className="card" style={{
-                borderLeft: '4px solid var(--color-primary)',
+                borderLeft: '4px solid #ff9f43',
                 padding: '16px 20px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 16,
-                background: 'rgba(150, 21, 0, 0.04)'
+                background: 'rgba(255, 159, 67, 0.04)'
               }}>
-                <div style={{ color: 'var(--color-primary)', display: 'flex', alignItems: 'center' }}>
+                <div style={{ color: '#ff9f43', display: 'flex', alignItems: 'center' }}>
                   <Calendar size={22} />
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{stats.critical_events} Evento con Aforo Lleno</div>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 2 }}>Un evento futuro superó el 85% de capacidad.</div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{stats.critical_events} Evento con Baja Ocupación</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 2 }}>Eventos próximos a 48h con menos del 50% de capacidad.</div>
                 </div>
               </div>
             )}
           </div>
         )}
+
+        {/* 📌 RECORDATORIOS & TAREAS PRIORITARIAS DE SEGUIMIENTO */}
+        <RemindersWidget />
 
         <div className="stats-grid">
           {statCards.map(({ label, value, icon: Icon, trend }) => (

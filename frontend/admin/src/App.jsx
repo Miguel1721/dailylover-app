@@ -198,7 +198,8 @@ function Sidebar({ isOpen, onClose }) {
 
   // Groups and items configuration
   const coreItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard', module: 'dashboard', action: 'view', end: true },
+    { to: '/', icon: LayoutDashboard, label: 'Dashboard General', module: 'dashboard', action: 'view', end: true },
+    { to: '/clinico', icon: Heart, label: 'Panel Clínico (Psicólogas)', module: 'dashboard', action: 'view' },
     { to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' },
     { to: '/eventos', icon: Calendar, label: 'Eventos', module: 'eventos', action: 'view' },
     { to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' },
@@ -422,7 +423,8 @@ function AppContent() {
                 </header>
                 <main className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
                   <Routes>
-                    <Route path="/" element={<ProtectedRoute module="dashboard" action="view">{user?.role === 'Matchmaker' ? <MatchmakerDashboard /> : <Dashboard />}</ProtectedRoute>} />
+                    <Route path="/" element={<ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute>} />
+                    <Route path="/clinico" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
                     <Route path="/clientes" element={<ProtectedRoute module="clientes" action="view"><Clientes /></ProtectedRoute>} />
                     <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />

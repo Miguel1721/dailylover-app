@@ -12,6 +12,16 @@ const PRIORITY_BADGES = {
   BAJA: { bg: 'rgba(76, 175, 80, 0.15)', color: '#4CAF50', border: '1px solid rgba(76,175,80,0.3)', label: '🟢 BAJA' }
 }
 
+function formatMatchDate(rawDate) {
+  if (!rawDate) return 'Por agendar'
+  const num = parseFloat(rawDate)
+  if (!isNaN(num) && num > 40000 && num < 60000) {
+    const d = new Date((num - 25569) * 86400 * 1000)
+    return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  return String(rawDate)
+}
+
 export default function MatchmakerDashboard() {
   const { user, token } = useAuth()
   const navigate = useNavigate()
@@ -127,7 +137,7 @@ export default function MatchmakerDashboard() {
           <button 
             className="btn btn-primary"
             style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-            onClick={() => navigate('/admin/matching')}
+            onClick={() => navigate('/matching')}
           >
             <Heart size={16} />
             Ir a Revisión de Matches
@@ -286,7 +296,7 @@ export default function MatchmakerDashboard() {
               </div>
               <button 
                 className="btn btn-ghost btn-sm"
-                onClick={() => navigate('/admin/matching')}
+                onClick={() => navigate('/matching')}
               >
                 Ver todos <ArrowRight size={13} style={{ marginLeft: 4 }} />
               </button>
@@ -315,7 +325,7 @@ export default function MatchmakerDashboard() {
                       transition: 'transform 0.2s',
                       cursor: 'pointer'
                     }}
-                    onClick={() => navigate('/admin/matching')}
+                    onClick={() => navigate('/matching')}
                   >
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -323,16 +333,16 @@ export default function MatchmakerDashboard() {
                         <Heart size={14} style={{ color: 'var(--color-primary)', fill: 'var(--color-primary)' }} />
                         <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{m.person_b}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12, alignItems: 'center' }}>
                         <span>📍 {m.city || 'Bogotá'}</span>
-                        <span>📅 {m.match_date || 'Por agendar'}</span>
+                        <span>📅 {formatMatchDate(m.match_date)}</span>
                         <span style={{ color: '#FFC107', fontWeight: 600 }}>✨ Compatibilidad IA: 88%</span>
                       </div>
                     </div>
 
                     <button 
                       className="btn btn-primary btn-sm"
-                      onClick={(e) => { e.stopPropagation(); navigate('/admin/matching') }}
+                      onClick={(e) => { e.stopPropagation(); navigate('/matching') }}
                     >
                       Revisar Informe IA
                     </button>
@@ -351,7 +361,7 @@ export default function MatchmakerDashboard() {
               </div>
               <button 
                 className="btn btn-ghost btn-sm"
-                onClick={() => navigate('/admin/clientes')}
+                onClick={() => navigate('/clientes')}
               >
                 Ver todos
               </button>
@@ -383,7 +393,7 @@ export default function MatchmakerDashboard() {
 
                     <button 
                       className="btn btn-ghost btn-sm"
-                      onClick={() => navigate(`/admin/clientes?q=${encodeURIComponent(c.name || c.phone)}`)}
+                      onClick={() => navigate(`/clientes?q=${encodeURIComponent(c.name || c.phone)}`)}
                     >
                       <Eye size={14} />
                     </button>
