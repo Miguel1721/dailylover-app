@@ -1146,11 +1146,14 @@ async def get_historical_matches(
         SELECT
             hm.id, hm.person_a, hm.person_b, hm.matchmaker,
             hm.match_date, hm.city, hm.status, hm.observations,
-            ua.client_code AS code_a,
-            ub.client_code AS code_b
+            hm.user_id_a, hm.user_id_b,
+            COALESCE(ua_id.client_code, ua_name.client_code) AS code_a,
+            COALESCE(ub_id.client_code, ub_name.client_code) AS code_b
         FROM historical_matches hm
-        LEFT JOIN users ua ON unaccent(lower(trim(ua.name))) = unaccent(lower(trim(hm.person_a)))
-        LEFT JOIN users ub ON unaccent(lower(trim(ub.name))) = unaccent(lower(trim(hm.person_b)))
+        LEFT JOIN users ua_id ON hm.user_id_a IS NOT NULL AND ua_id.id = hm.user_id_a
+        LEFT JOIN users ua_name ON hm.user_id_a IS NULL AND unaccent(lower(trim(ua_name.name))) = unaccent(lower(trim(hm.person_a)))
+        LEFT JOIN users ub_id ON hm.user_id_b IS NOT NULL AND ub_id.id = hm.user_id_b
+        LEFT JOIN users ub_name ON hm.user_id_b IS NULL AND unaccent(lower(trim(ub_name.name))) = unaccent(lower(trim(hm.person_b)))
         WHERE {where_str}
         ORDER BY hm.id DESC
         LIMIT :limit OFFSET :offset
@@ -1160,6 +1163,8 @@ async def get_historical_matches(
         "id": r.id,
         "person_a": r.person_a,
         "person_b": r.person_b,
+        "user_id_a": r.user_id_a,
+        "user_id_b": r.user_id_b,
         "code_a": r.code_a or None,
         "code_b": r.code_b or None,
         "matchmaker": r.matchmaker,

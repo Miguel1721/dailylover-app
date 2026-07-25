@@ -3,7 +3,7 @@ name: 🚀 Deploy Daily Lover al VPS
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # permite correr manualmente desde GitHub
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -40,25 +40,21 @@ jobs:
             backend/app/static/admin \
             backend/app/static/app-preview
 
-      - name: ⬆️ Subir estáticos al VPS
+      - name: ⬆️ Subir archivos al VPS
         run: |
           scp -o StrictHostKeyChecking=no \
             static_update.tar.gz \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/static_update.tar.gz
+          scp -o StrictHostKeyChecking=no \
+            db/migrate_optimize.sql \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/migrate_optimize.sql
 
-      - name: 🗄️ Ejecutar migraciones SQL en BD
+      - name: 🗄️ Ejecutar migraciones SQL
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "cd /home/ubuntu/dailylover && \
-            docker compose exec -T postgres psql -U postgres -d dailylover \
-              -c 'ALTER TABLE users ADD COLUMN IF NOT EXISTS id_number VARCHAR(30)' \
-              -c 'ALTER TABLE users ADD COLUMN IF NOT EXISTS client_code VARCHAR(20)' \
-              -c \"UPDATE users SET client_code = 'DL-' || LPAD(id::text, 4, '0') WHERE client_code IS NULL\" \
-              -c \"DO \\\$\\\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='users_id_number_key') THEN ALTER TABLE users ADD CONSTRAINT users_id_number_key UNIQUE (id_number); END IF; IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='users_client_code_key') THEN ALTER TABLE users ADD CONSTRAINT users_client_code_key UNIQUE (client_code); END IF; END \\\$\\\$\" \
-              -c \"CREATE OR REPLACE FUNCTION assign_client_code() RETURNS TRIGGER LANGUAGE plpgsql AS \\\$f\\\$ BEGIN IF NEW.client_code IS NULL THEN NEW.client_code := 'DL-' || LPAD(NEW.id::text, 4, '0'); END IF; RETURN NEW; END \\\$f\\\$\" \
-              -c 'DROP TRIGGER IF EXISTS trigger_assign_client_code ON users' \
-              -c 'CREATE TRIGGER trigger_assign_client_code BEFORE INSERT ON users FOR EACH ROW EXECUTE FUNCTION assign_client_code()' && \
-            echo migrated"
+            docker compose exec -T postgres psql -U postgres -d dailylover -f /dev/stdin < /tmp/migrate_optimize.sql && \
+            echo '✅ Migraciones aplicadas exitosamente'"
 
       - name: 🐳 Desplegar en VPS
         run: |
