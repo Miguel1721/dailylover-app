@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Heart, Filter, CheckCircle, XCircle, Clock, AlertTriangle, Sparkles, User, ShieldCheck, MapPin, ChevronRight, MessageSquare, ThumbsUp, ThumbsDown, Coffee, Camera, CheckSquare, Layers, FileText, Star, Sliders } from 'lucide-react'
+import { Heart, Filter, CheckCircle, XCircle, Clock, AlertTriangle, Sparkles, User, ShieldCheck, MapPin, ChevronRight, MessageSquare, ThumbsUp, ThumbsDown, Coffee, Camera, CheckSquare, Layers, FileText, Star, Sliders, Search } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const API = 'https://prueba-daily.agentesia.cloud'
@@ -144,6 +144,7 @@ export default function Matching() {
   const [matches, setMatches] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
   const [matchmaker, setMatchmaker] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -169,6 +170,7 @@ export default function Matching() {
     const params = new URLSearchParams({
       page,
       limit: 15,
+      ...(search && { search }),
       ...(matchmaker !== 'all' && { matchmaker }),
       ...(statusFilter !== 'all' && { status_filter: statusFilter })
     })
@@ -186,7 +188,7 @@ export default function Matching() {
         setTotal(0)
       })
       .finally(() => setLoading(false))
-  }, [token, page, matchmaker, statusFilter])
+  }, [token, page, search, matchmaker, statusFilter])
 
   useEffect(() => {
     fetchMatches()
@@ -225,8 +227,30 @@ export default function Matching() {
       </div>
 
       <div className="content-area">
-        {/* Filters */}
+        {/* Filters Row with Search */}
         <div className="filters-row" style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', width: 280 }}>
+            <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              placeholder="Buscar candidato por nombre (ej: Diego, Genesis)..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+              style={{
+                width: '100%',
+                paddingLeft: 34,
+                paddingRight: 12,
+                paddingTop: 8,
+                paddingBottom: 8,
+                fontSize: 13,
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 8,
+                color: 'var(--text-primary)'
+              }}
+            />
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Filter size={16} style={{ color: 'var(--text-muted)' }} />
             <select

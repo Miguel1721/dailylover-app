@@ -99,14 +99,15 @@ async def client_register(req: ClientRegisterRequest, db: AsyncSession = Depends
     lifestyle_data["accepted_terms_date"] = datetime.utcnow().isoformat()
 
     # 1. Round-Robin Queue Matchmaker Selection (Cola Rotativa de Psicólogas 1 -> 2 -> 3 -> 4)
-    matchmakers_res = await db.execute(text("""
-        SELECT full_name FROM employees 
-        WHERE status = 'active' AND (position ILIKE '%psic%' OR position ILIKE '%matchmaker%' OR full_name ILIKE '%silvi%' OR full_name ILIKE '%paula%')
-    """))
-    mm_rows = matchmakers_res.fetchall()
-    matchmakers_list = [r.full_name.strip() for r in mm_rows if r.full_name]
-    if not matchmakers_list:
-        matchmakers_list = ["SILVI", "MARÍA PAULA", "STEFFY", "MANU"]
+    matchmakers_list = ["SILVI", "MARÍA PAULA", "STEFFY", "MANU"]
+    try:
+        matchmakers_res = await db.execute(text("SELECT full_name FROM employees WHERE status = 'active'"))
+        mm_rows = matchmakers_res.fetchall()
+        db_mms = [r.full_name.strip() for r in mm_rows if r.full_name]
+        if db_mms:
+            matchmakers_list = db_mms
+    except Exception:
+        pass
         
     user_count_res = await db.execute(text("SELECT COUNT(*) FROM users"))
     total_users_count = (user_count_res.scalar() or 0)

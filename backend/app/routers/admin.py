@@ -280,29 +280,42 @@ async def get_users(
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
         WHERE {where_str}
-        ORDER BY CASE WHEN p.bio_notes IS NOT NULL AND length(p.bio_notes) > 5 THEN 0 ELSE 1 END, u.id ASC
+        ORDER BY u.id DESC
         LIMIT :limit OFFSET :offset
     """), params)).fetchall()
 
-    users = []
+    users_list = []
     for r in rows:
-        users.append({
+        ocean = json.loads(r.ocean) if isinstance(r.ocean, str) else (r.ocean or {})
+        lifestyle = json.loads(r.lifestyle) if isinstance(r.lifestyle, str) else (r.lifestyle or {})
+        search_prefs = json.loads(r.search_preferences) if isinstance(r.search_preferences, str) else (r.search_preferences or {})
+        intereses = json.loads(r.intereses) if isinstance(r.intereses, str) else (r.intereses or [])
+        valores = json.loads(r.valores) if isinstance(r.valores, str) else (r.valores or [])
+
+        users_list.append({
             "id": r.id,
             "phone": r.phone,
-            "name": r.name,
+            "name": r.name or "Sin nombre",
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "has_profile": r.profile_user_id is not None,
+            "city": r.city,
+            "occupation": r.occupation,
+            "education": r.education,
+            "religion": r.religion,
+            "love_language": r.love_language,
+            "bio_notes": r.bio_notes,
+            "responsable": r.responsable,
+            "estatura": r.estatura,
+            "age": r.age,
+            "plan_tier": r.plan_tier,
+            "motivacion": r.motivacion,
             "profile": {
-                "ocean": r.ocean,
+                "ocean": ocean,
                 "apego": r.apego,
                 "motivacion": r.motivacion,
                 "rol_social": r.rol_social,
                 "energia_social": r.energia_social,
                 "momento_vital": r.momento_vital,
-                "intereses": r.intereses,
-                "valores": r.valores,
-                "city": r.city,
-                "occupation": r.occupation,
-                "education": r.education,
                 "religion": r.religion,
                 "love_language": r.love_language,
                 "bio_notes": r.bio_notes,
@@ -1004,7 +1017,7 @@ async def get_historical_matches(
         where_clauses.append("(unaccent(lower(trim(person_a))) = unaccent(lower(trim(:exact_name))) OR unaccent(lower(trim(person_b))) = unaccent(lower(trim(:exact_name))))")
         params["exact_name"] = exact_name
     elif search:
-        where_clauses.append("(person_a ILIKE :search OR person_b ILIKE :search)")
+        where_clauses.append("(unaccent(lower(person_a)) ILIKE unaccent(lower(:search)) OR unaccent(lower(person_b)) ILIKE unaccent(lower(:search)))")
         params["search"] = f"%{search}%"
 
     where_str = " AND ".join(where_clauses)
