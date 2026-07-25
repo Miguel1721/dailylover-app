@@ -6,9 +6,17 @@ const API = 'https://prueba-daily.agentesia.cloud'
 
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
+const DEFAULT_AGENDA = {
+  psychologist: 'SILVI',
+  total_interviews: 0,
+  total_assigned_clients: 0,
+  interviews: [],
+  assigned_clients: []
+}
+
 export default function AgendaPsicologa() {
   const { user, token } = useAuth()
-  const [agenda, setAgenda] = useState(null)
+  const [agenda, setAgenda] = useState(DEFAULT_AGENDA)
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('entrevistas')
 
@@ -20,14 +28,15 @@ export default function AgendaPsicologa() {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(r => r.json())
-      .then(d => setAgenda(d))
-      .catch(() => setAgenda(null))
+      .then(d => setAgenda(d && Array.isArray(d.interviews) ? d : DEFAULT_AGENDA))
+      .catch(() => setAgenda(DEFAULT_AGENDA))
       .finally(() => setLoading(false))
   }, [psychologistName, token])
 
   useEffect(() => {
     fetchAgenda()
   }, [fetchAgenda])
+
 
   return (
     <div>
