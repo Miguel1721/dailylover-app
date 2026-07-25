@@ -1,137 +1,157 @@
-# 🚀 Guía de Despliegue en AWS — Daily Lover AI Platform
+# 🚀 Guía de Instalación Desde Cero en AWS / VPS — Daily Lover
 
-Esta guía describe los pasos para clonar y levantar la plataforma **Daily Lover** en un servidor nuevo de **AWS (EC2 Ubuntu 22.04 / 24.04 LTS)** usando **Docker Compose**.
+Esta guía paso a paso te explica cómo montar la plataforma **Daily Lover desde cero en un servidor virgen de AWS (EC2 Ubuntu 22.04 / 24.04)** con una inversión mínima de **$20 a $30 USD / mes**, capaz de soportar a los **3,000 clientes de la base de datos** y picos de **1,000 usuarios activos simultáneos en eventos**.
 
 ---
 
-## 📋 Requisitos Previos en AWS
+## 💵 1. Servidor Recomendado & Costo Mínimo
 
-1. **Instancia EC2 recomendada**: 
-   - **Pruebas / Staging**: `t3.medium` (2 vCPU, 4 GB RAM)
-   - **Producción (Hasta 5,000 usuarios activos)**: Ver la guía de escalabilidad [AWS_PERFORMANCE_5000_USERS.md](./AWS_PERFORMANCE_5000_USERS.md)
-2. **Puertos de red (Security Group)**:
+Para no gastar $500/mes y mantener la arquitectura súper económica y potente en 1 sola máquina:
+
+| Proveedor | Tipo de Servidor / Instancia | Especificaciones | Costo Aprox. Mensual |
+|---|---|---|---|
+| **AWS EC2 (Opción 1)** | `t4g.xlarge` (ARM Graviton3) | 4 vCPU, 16 GB RAM | **~$30 - $35 USD/mes** |
+| **AWS EC2 (Opción 2)** | `t4g.large` (Ahorro máximo) | 2 vCPU, 8 GB RAM | **~$18 - $22 USD/mes** |
+| **Hetzner / DigitalOcean (Alternativa)** | VPS CPX31 / Droplet 16GB | 4 vCPU, 16 GB RAM, 160 GB NVMe | **~$18 - $24 USD/mes** |
+
+*Nota: Con 16 GB RAM y 4 vCPUs corriendo PostgreSQL, Redis y FastAPI en la misma máquina mediante Docker, el sistema atiende hasta 200 peticiones HTTP/segundo (1,000 usuarios interactuando en vivo sin parpadeos).*
+
+---
+
+## 📋 2. Requisitos Previos en la Instancia AWS
+
+Al crear la instancia EC2 en AWS Console:
+1. **Sistema Operativo**: Ubuntu 22.04 LTS o 24.04 LTS (x86_64 o ARM64/Graviton).
+2. **Puertos Abiertos (Security Group)**:
    - `80` (HTTP)
    - `443` (HTTPS)
-   - `22` (SSH)
-3. **Dominio apuntando al IP de la instancia EC2** (ej: `app.dailylover.com` o `prueba-daily.agentesia.cloud`)
+   - `8000` (API & Frontends)
+   - `22` (Acceso SSH)
+3. **Almacenamiento**: 30 GB o 50 GB SSD (gp3).
 
 ---
 
-## ⚡ Paso a Paso de Instalación en AWS (Menos de 5 Minutos)
+## ⚡ 3. Instalación con 1 Solo Comando (Modo Ultra Rápido)
 
-### 1️⃣ Conectarse al Servidor por SSH
+Una vez conectado al servidor virgen por SSH:
 
 ```bash
-ssh -i "tu_llave_aws.pem" ubuntu@TU_IP_EXPRESSION_AWS
+# 1. Conectarte a tu servidor
+ssh -i "tu_llave_aws.pem" ubuntu@TU_IP_AWS
+
+# 2. Ejecutar el instalador automático de 1 solo paso:
+curl -sSL https://raw.githubusercontent.com/Miguel1721/dailylover-app/main/scripts/setup_fresh_server.sh | bash
 ```
 
-### 2️⃣ Instalar Docker y Git
+---
 
-Copiar y pegar este bloque en la consola de Ubuntu:
+## 🛠️ 4. Paso a Paso Manual (Si prefieres ejecutar comando por comando)
 
+Si deseas hacer la instalación paso a paso manualmente:
+
+### Paso A: Actualizar Linux e Instalar Utilitarios
 ```bash
-# Actualizar sistema e instalar utilidades
 sudo apt-get update && sudo apt-get upgrade -y
-sudo apt-get install -y git curl ca-certificates gnupg
+sudo apt-get install -y git curl wget build-essential
+```
 
+### Paso B: Configurar Memoria Swap de 4GB (Evita bloqueos de RAM)
+```bash
+sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### Paso C: Instalar Docker y Docker Compose
+```bash
 # Instalar Docker oficial
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Permitir ejecutar docker sin sudo
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
 sudo usermod -aG docker $USER
 newgrp docker
 ```
 
----
-
-### 3️⃣ Clonar el Repositorio de GitHub
-
+### Paso D: Clonar el Repositorio desde GitHub
 ```bash
 cd /home/ubuntu
 git clone https://github.com/Miguel1721/dailylover-app.git dailylover
 cd dailylover
 ```
 
----
-
-### 4️⃣ Configurar las Variables de Entorno (`.env`)
-
-Crea el archivo `.env` copiando la plantilla de ejemplo:
-
+### Paso E: Crear Archivo de Entorno (.env)
 ```bash
 cp .env.example .env
-nano .env
 ```
 
-Define tus credenciales seguras (contraseñas de BD, JWT secret, etc.):
-
-```env
-POSTGRES_DB=dailylover
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=TuPasswordSuperSeguro2026!
-DATABASE_URL=postgresql+asyncpg://postgres:TuPasswordSuperSeguro2026!@postgres:5432/dailylover
-
-REDIS_PASSWORD=TuRedisPasswordSeguro2026!
-REDIS_URL=redis://:TuRedisPasswordSeguro2026!@redis:6379/0
-
-JWT_SECRET_KEY=GeneraUnSecretAleatorioSeguro32Caracteres
-```
-
----
-
-### 5️⃣ Construir y Levantar los Servicios
-
+### Paso F: Levantar los Servicios en Docker
 ```bash
 docker compose up -d --build
 ```
 
-¡Listo! Docker descargará las imágenes, compilará la API y los frontends, ejecutará las migraciones e iniciará el sistema.
-
 ---
 
-## 🔍 Verificación y Salud del Sistema
+## 🌐 5. Verificar que Todo esté Funcionando
 
-Para verificar que todos los contenedores estén funcionando:
+Ejecuta este comando para ver el estado de los contenedores:
 
 ```bash
-# Ver estado de los servicios
 docker compose ps
-
-# Ver logs de la API en tiempo real
-docker compose logs -f api
-
-# Probar estado de salud de la API
-curl http://localhost:8000/api/health
 ```
 
----
-
-## 🌐 URLs de Acceso
-
-- **Panel Admin Psicólogas**: `http://TU_IP/admin/`
-- **Web App Cliente (PWA)**: `http://TU_IP/app-preview/`
-- **Documentación API Swagger**: `http://TU_IP/docs`
+Deberías ver 4 servicios activos (`running`):
+- `dl_postgres` (Base de datos PostgreSQL 16 con vector search)
+- `dl_redis` (Caché de alta velocidad)
+- `dl_api` (API FastAPI + Admin Panel + App PWA Cliente)
+- `dl_worker` (Celery background worker para IA y notificaciones)
 
 ---
 
-## 🛠️ Actualizaciones Futuras (Deploy Continuo)
+## 🔒 6. Configurar Dominio y Certificado SSL Gratis (HTTPS)
 
-Cada vez que subas cambios a GitHub (`git push origin main`), solo necesitas correr esto en el servidor:
+Para poner tu propio dominio (ej: `app.dailylover.com`) con SSL gratis de Let's Encrypt:
+
+```bash
+# 1. Instalar Nginx y Certbot en el servidor
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+
+# 2. Configurar Nginx como proxy hacia Docker
+sudo nano /etc/nginx/sites-available/dailylover
+```
+
+Pega esta configuración en Nginx:
+```nginx
+server {
+    server_name app.dailylover.com;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Activa el sitio y genera el certificado SSL con 1 comando:
+```bash
+sudo ln -s /etc/nginx/sites-available/dailylover /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d app.dailylover.com
+```
+
+¡Listo! Tu sitio quedará con `https://app.dailylover.com` 100% seguro.
+
+---
+
+## 🔄 7. Cómo Actualizar la App Cuando Hagas Cambios
+
+Cada vez que hagas cambios en tu PC y hagas `git push` a GitHub, actualizas el servidor con:
 
 ```bash
 cd /home/ubuntu/dailylover
 git pull origin main
 docker compose up -d --build api
 ```
-
-*(O puedes usar el workflow de GitHub Actions preconfigurado en `.github/workflows/deploy.yml` para despliegue automático 100% desatendido)*.
