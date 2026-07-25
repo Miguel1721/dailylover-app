@@ -1,0 +1,73 @@
+name: 🚀 Deploy Daily Lover al VPS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # permite correr manualmente desde GitHub
+
+jobs:
+  deploy:
+    name: Deploy a producción
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configurar SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: 🌐 Agregar servidor a known_hosts
+        run: ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: ⚙️ Build Admin Panel
+        run: |
+          cd frontend/admin
+          npm ci
+          npm run build
+
+      - name: 📱 Build App Cliente (PWA)
+        run: |
+          cd frontend/app-preview
+          npm ci
+          npm run build
+
+      - name: 📦 Empacar estáticos
+        run: |
+          tar -czf static_update.tar.gz \
+            backend/app/static/admin \
+            backend/app/static/app-preview
+
+      - name: ⬆️ Subir estáticos al VPS
+        run: |
+          scp -o StrictHostKeyChecking=no \
+            static_update.tar.gz \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/static_update.tar.gz
+
+      - name: 🐳 Desplegar en VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e
+            echo "=== Extrayendo estáticos ==="
+            cd /home/ubuntu/dailylover
+            tar -xzf /tmp/static_update.tar.gz -C .
+
+            echo "=== Actualizando backend desde git ==="
+            git fetch origin main || true
+            git pull origin main || true
+
+            echo "=== Reiniciando API ==="
+            docker compose restart api
+
+            echo "=== Verificando salud ==="
+            sleep 5
+            curl -sf http://localhost:8000/api/health && echo "✅ API saludable" || echo "⚠️ API no responde, revisar logs"
+          EOF
+
+      - name: ✅ Deploy completado
+        run: |
+          echo "🎉 Daily Lover desplegado exitosamente!"
+          echo "🌐 Admin: https://prueba-daily.agentesia.cloud/admin/"
+          echo "📱 App:   https://prueba-daily.agentesia.cloud/app-preview/"
