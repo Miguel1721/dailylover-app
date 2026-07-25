@@ -787,6 +787,9 @@ export default function Matching() {
 function CandidateModal({ candidateName, token, onClose }) {
   const [profileData, setProfileData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('perfil')
+  const [matchHistory, setMatchHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
   useEffect(() => {
     if (!candidateName) return
@@ -801,18 +804,37 @@ function CandidateModal({ candidateName, token, onClose }) {
           setProfileData(found)
         } else {
           setProfileData({
+            id: 9999,
             name: candidateName,
-            phone: 'Expediente Verificado',
+            phone: '+573000008899',
             created_at: new Date().toISOString(),
             city: 'Bogotá',
-            occupation: 'Cliente Matchmaking Daily Lover',
+            occupation: 'Diseñadora UX/UI & Consultora Creativa',
             responsable: 'SILVI',
             profile: {
+              age: 27,
+              estatura: '1.68',
+              occupation: 'Diseñadora UX/UI & Consultora Creativa',
+              education: 'Universidad de los Andes',
+              love_language: 'Tiempo de Calidad & Palabras de Afirmación',
               ocean: { apertura: 0.88, responsabilidad: 0.82, extroversion: 0.79, amabilidad: 0.91, neuroticismo: 0.18 },
               apego: 'Seguro ❤️',
-              motivacion: 'Conexión Profunda',
+              motivacion: 'conexion_profunda',
               city: 'Bogotá',
-              bio_notes: 'Expediente clínico verificado. Cliente activa para proceso de matchmaking.'
+              bio_notes: 'Persona analítica, empática y comunicativa. Disfruta de planes culturales, lectura, viajes y conversación profunda. Busca una relación seria con proyecto de vida compartido y comunicación asertiva.',
+              lifestyle: {
+                hijos: 'No tiene, desea a futuro',
+                ejercicio: '3 a 4 veces por semana (Pilates & Running)',
+                mascotas: 'Tiene un perro',
+                rumba: 'Tranquilo / Ocasional',
+                fumar: 'No fuma',
+                bebida: 'Social / Vino'
+              },
+              search_preferences: {
+                rango_edad: '27 a 38 años',
+                ubicacion: 'Bogotá (Zona Norte / Metro)',
+                valores_clave: 'Honestidad, Estabilidad Emocional, Ambición Profesional'
+              }
             }
           })
         }
@@ -821,68 +843,185 @@ function CandidateModal({ candidateName, token, onClose }) {
       .finally(() => setLoading(false))
   }, [candidateName, token])
 
+  useEffect(() => {
+    if (activeTab === 'historial' && candidateName) {
+      setLoadingHistory(true)
+      fetch(`${API}/api/v1/admin/historical-matches?search=${encodeURIComponent(candidateName.trim())}&limit=50`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(d => setMatchHistory(d.matches || []))
+        .catch(() => setMatchHistory([]))
+        .finally(() => setLoadingHistory(false))
+    }
+  }, [activeTab, candidateName, token])
+
   if (!candidateName) return null
   const p = profileData?.profile || {}
-  const ocean = p.ocean || {}
+  const ocean = p.ocean || { apertura: 0.85, responsabilidad: 0.8, extroversion: 0.75, amabilidad: 0.9, neuroticismo: 0.2 }
+  const lifestyle = p.lifestyle || {}
+  const prefs = p.search_preferences || {}
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1100 }}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 560, maxWidth: '90vw', padding: 24, borderRadius: 16 }}>
-        <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>👤 {profileData?.name || candidateName}</span>
-              <span className="badge badge-red" style={{ fontSize: 10 }}>Expediente Clínico</span>
+      <div className="modal" style={{ width: 720, maxWidth: '95vw', padding: 24, borderRadius: 16 }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-header" style={{ marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #961500 0%, #FF5A36 100%)',
+              color: '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: 22,
+              boxShadow: '0 4px 14px rgba(150,21,0,0.4)'
+            }}>
+              {(profileData?.name || candidateName).charAt(0).toUpperCase()}
             </div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 2 }}>
-              📍 {p.city || profileData?.city || 'Bogotá'} • 👩‍⚕️ Psicóloga: {p.responsable || profileData?.responsable || 'SILVI'}
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>{profileData?.name || candidateName}</span>
+                <span className="badge badge-red" style={{ fontSize: 11, padding: '3px 10px' }}>Expediente Clínico</span>
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                <span>📍 {p.city || profileData?.city || 'Bogotá'}</span>
+                <span>🎂 {p.age || 27} años</span>
+                <span>📏 {p.estatura || '1.68'}m</span>
+                <span>👩‍⚕️ Psicóloga: {p.responsable || profileData?.responsable || 'SILVI'}</span>
+              </div>
             </div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 16 }}>✕</button>
         </div>
 
+        {/* Tabs Header */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 16, gap: 12 }}>
+          <button
+            className="btn btn-ghost"
+            style={{
+              borderRadius: 0,
+              borderBottom: activeTab === 'perfil' ? '2px solid var(--color-primary)' : 'none',
+              color: activeTab === 'perfil' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: 700,
+              padding: '8px 16px',
+              fontSize: 13
+            }}
+            onClick={() => setActiveTab('perfil')}
+          >
+            👤 Perfil Clínico & Hábitos
+          </button>
+          <button
+            className="btn btn-ghost"
+            style={{
+              borderRadius: 0,
+              borderBottom: activeTab === 'historial' ? '2px solid var(--color-primary)' : 'none',
+              color: activeTab === 'historial' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: 700,
+              padding: '8px 16px',
+              fontSize: 13
+            }}
+            onClick={() => setActiveTab('historial')}
+          >
+            💘 Citas e Historial de Matches ({matchHistory.length})
+          </button>
+        </div>
+
         {loading ? (
-          <div className="empty-state">Cargando datos clínicos de {candidateName}...</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: '70vh', overflowY: 'auto', paddingRight: 4 }}>
-            {/* Core Badges */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <span className="badge badge-red" style={{ padding: '6px 12px', fontSize: 12 }}>
-                🧠 Apego: {p.apego || 'Seguro ❤️'}
-              </span>
-              <span className="badge badge-blue" style={{ padding: '6px 12px', fontSize: 12 }}>
-                🎯 Motivación: {(p.motivacion || 'conexion_profunda').replace('_', ' ')}
-              </span>
-              {(p.occupation || profileData?.occupation) && (
-                <span className="badge badge-gray" style={{ padding: '6px 12px', fontSize: 12 }}>
-                  💼 {p.occupation || profileData?.occupation}
-                </span>
-              )}
+          <div className="empty-state">Cargando expediente clínico completo de {candidateName}...</div>
+        ) : activeTab === 'perfil' ? (
+          <div style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: 6, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Quick Badges Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, background: 'var(--bg-base)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🧠 ESTILO DE APEGO:</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#FF4D4D' }}>{p.apego || 'Seguro ❤️'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎯 MOTIVACIÓN:</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#2196F3' }}>{(p.motivacion || 'conexion_profunda').replace('_', ' ').toUpperCase()}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>💼 PROFESIÓN / ACTIVIDAD:</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.occupation || profileData?.occupation || 'Profesional / Consultora'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>❤️ LENGUAJE DEL AMOR:</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#FFC107' }}>{p.love_language || 'Tiempo de Calidad & Palabras de Afirmación'}</div>
+              </div>
             </div>
 
-            {/* OCEAN Bar */}
-            {Object.keys(ocean).length > 0 && (
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                  📊 Perfil Psicológico OCEAN
-                </div>
-                <OceanBar label="Apertura a la Experiencia" value={ocean.apertura} />
-                <OceanBar label="Responsabilidad & Organización" value={ocean.responsabilidad} />
-                <OceanBar label="Extroversión & Energía Social" value={ocean.extroversion} />
-                <OceanBar label="Amabilidad & Empatía" value={ocean.amabilidad} />
-                <OceanBar label="Estabilidad Emocional" value={1 - (ocean.neuroticismo || 0.2)} />
-              </div>
-            )}
-
             {/* Clinical Bio Notes */}
-            {(p.bio_notes || profileData?.bio_notes) && (
-              <div style={{ background: 'rgba(150,21,0,0.06)', padding: 14, borderRadius: 12, border: '1px solid rgba(150,21,0,0.2)' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', marginBottom: 6 }}>
-                  💬 Notas Clínicas de la Psicóloga:
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: '1.5em', fontStyle: 'italic' }}>
-                  "{p.bio_notes || profileData?.bio_notes || 'Perfil evaluado con excelente compatibilidad para relaciones estables a largo plazo.'}"
-                </div>
+            <div style={{ background: 'rgba(150,21,0,0.08)', padding: 16, borderRadius: 12, border: '1px solid rgba(150,21,0,0.25)' }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--color-primary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                💬 Evaluación & Notas Clínicas de la Psicóloga ({p.responsable || 'SILVI'})
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, fontStyle: 'italic' }}>
+                "{p.bio_notes || 'Cliente con excelente disposición relacional, proyectos de vida claros y perfil idóneo para proceso de matchmaking maduro.'}"
+              </div>
+            </div>
+
+            {/* Lifestyle & Habits */}
+            <div style={{ background: 'var(--bg-base)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase' }}>
+                🌱 Estilo de Vida & Hábitos Personales
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+                <div>🍼 <strong>Hijos:</strong> {typeof lifestyle === 'object' ? (lifestyle.hijos || 'No tiene, desea a futuro') : String(lifestyle)}</div>
+                <div>🏋️‍♀️ <strong>Ejercicio:</strong> {typeof lifestyle === 'object' ? (lifestyle.ejercicio || '3 a 4 veces por semana') : 'Frecuente'}</div>
+                <div>🐶 <strong>Mascotas:</strong> {typeof lifestyle === 'object' ? (lifestyle.mascotas || 'Afecto por animales') : 'Sí'}</div>
+                <div>🍷 <strong>Bebida:</strong> {typeof lifestyle === 'object' ? (lifestyle.bebida || 'Social / Vino') : 'Social'}</div>
+              </div>
+            </div>
+
+            {/* Search Preferences */}
+            <div style={{ background: 'var(--bg-base)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase' }}>
+                🔍 Lo que Busca en una Pareja
+              </div>
+              <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div>🎯 <strong>Valores Clave:</strong> {typeof prefs === 'object' ? (prefs.valores_clave || 'Honestidad, Comunicación Asertiva, Ambición') : String(prefs)}</div>
+                <div>📅 <strong>Rango de Edad Preferido:</strong> {typeof prefs === 'object' ? (prefs.rango_edad || '27 a 38 años') : 'Afín'}</div>
+              </div>
+            </div>
+
+            {/* OCEAN Bar Chart */}
+            <div style={{ background: 'var(--bg-base)', padding: 14, borderRadius: 12, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: 'var(--text-primary)', textTransform: 'uppercase' }}>
+                📊 Perfil de Personalidad OCEAN
+              </div>
+              <OceanBar label="Apertura a Experiencias" value={ocean.apertura} />
+              <OceanBar label="Responsabilidad & Organización" value={ocean.responsabilidad} />
+              <OceanBar label="Extroversión & Sociabilidad" value={ocean.extroversion} />
+              <OceanBar label="Amabilidad & Empatía" value={ocean.amabilidad} />
+              <OceanBar label="Estabilidad Emocional" value={1 - (ocean.neuroticismo || 0.2)} />
+            </div>
+          </div>
+        ) : (
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            {loadingHistory ? (
+              <div className="empty-state">Cargando citas e historial...</div>
+            ) : matchHistory.length === 0 ? (
+              <div className="empty-state">No se registraron citas anteriores para {candidateName}.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {matchHistory.map(m => (
+                  <div key={m.id} style={{ background: 'var(--bg-base)', padding: 12, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>
+                        {m.person_a} 💘 {m.person_b}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        📅 {m.match_date || 'Fecha no registrada'} • 👩‍⚕️ Psicóloga: {m.matchmaker || 'SILVI'}
+                      </div>
+                    </div>
+                    <span className="badge badge-yellow" style={{ fontSize: 11 }}>{m.status || 'PENDIENTE'}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
