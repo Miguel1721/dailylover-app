@@ -904,6 +904,9 @@ function CandidateModal({ candidateName, token, onClose }) {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('perfil')
   const [aiDiagnostic, setAiDiagnostic] = useState(null)
+  const [matchHistory, setMatchHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
 
   useEffect(() => {
     if (!candidateName) return
