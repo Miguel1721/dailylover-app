@@ -116,3 +116,13 @@ CREATE TABLE IF NOT EXISTS reminders (
     notes TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
+
+-- 14. ★ Purga de usuarios ficticios de prueba en la BD (Test No Terms, Prueba Consentimiento, etc.)
+DELETE FROM users
+WHERE unaccent(lower(COALESCE(name, ''))) ILIKE '%test%'
+   OR unaccent(lower(COALESCE(name, ''))) ILIKE '%prueba%'
+   OR unaccent(lower(COALESCE(name, ''))) ILIKE '%consentimiento%'
+   OR unaccent(lower(COALESCE(name, ''))) ILIKE '%no terms%'
+   OR unaccent(lower(COALESCE(name, ''))) ILIKE '%dummy%'
+   OR unaccent(lower(COALESCE(name, ''))) ILIKE '%demo%';
+

@@ -1386,13 +1386,20 @@ async def get_historical_matches(
             target_g = "femenino" if u_gender in ["masculino", "hombre", "m"] else ("masculino" if u_gender in ["femenino", "mujer", "f"] else "todos")
             u_city = (usr_row.city or "Bogotá").strip()
 
-            # 2. Consultar candidatas/os reales en la BD de la misma ciudad que tengan perfil registrado
+            # 2. Consultar candidatas/os reales en la BD de la misma ciudad que tengan perfil registrado (excluyendo registros de prueba)
             cand_query = """
                 SELECT u.id, u.name, u.client_code, p.city, p.age, p.occupation, p.gender, p.photo_url
                 FROM users u
                 JOIN profiles p ON p.user_id = u.id
                 WHERE u.id != :target_id
                   AND u.name IS NOT NULL AND length(trim(u.name)) > 2
+                  AND unaccent(lower(u.name)) NOT ILIKE '%test%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%prueba%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%consentimiento%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%no terms%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%demo%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%dummy%'
+                  AND unaccent(lower(u.name)) NOT ILIKE '%faltante%'
             """
             c_params = {"target_id": usr_row.id, "city": f"%{u_city}%"}
 
@@ -1404,6 +1411,7 @@ async def get_historical_matches(
             cand_query += " ORDER BY u.id DESC LIMIT 6"
 
             cands = (await db.execute(text(cand_query), c_params)).fetchall()
+
 
             # 3. Generar propuestas algorítmicas reales si el usuario no tiene citas en la consulta actual
             if len(matches) == 0 and len(cands) > 0:
