@@ -41,26 +41,18 @@ services:
     build: {context: ./backend, dockerfile: Dockerfile}
     container_name: dl_api
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     env_file: .env
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_started}
     volumes: [./backend:/app]
-    # Connects to internal network for DB/Cache AND external network for Traefik traffic
     networks:
       - dl_network
-      - produccion_web_network
     deploy:
       resources:
-        limits: {memory: 300m}
-    labels:
-      - "traefik.enable=true"
-      # Route all traffic for this host to the Daily Lover backend
-      - "traefik.http.routers.dl_api.rule=Host(`prueba-daily.agentesia.cloud`)"
-      # Hook to the existing Traefik secure entrypoint and cert resolver
-      - "traefik.http.routers.dl_api.entrypoints=websecure"
-      - "traefik.http.routers.dl_api.tls.certresolver=myresolver"
-      - "traefik.http.services.dl_api.loadbalancer.server.port=8000"
+        limits: {memory: 512m}
 
   # ─── CELERY WORKER ──────────────────────────────────
   worker:
@@ -116,5 +108,3 @@ volumes:
 networks:
   dl_network:
     driver: bridge
-  produccion_web_network:
-    external: true
