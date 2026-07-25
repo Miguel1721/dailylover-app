@@ -872,7 +872,7 @@ function CandidateModal({ candidateName, token, onClose }) {
   }, [candidateName, token])
 
   useEffect(() => {
-    if (activeTab === 'historial' && candidateName) {
+    if (candidateName) {
       setLoadingHistory(true)
       fetch(`${API}/api/v1/admin/historical-matches?search=${encodeURIComponent(candidateName.trim())}&limit=50`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -882,7 +882,7 @@ function CandidateModal({ candidateName, token, onClose }) {
         .catch(() => setMatchHistory([]))
         .finally(() => setLoadingHistory(false))
     }
-  }, [activeTab, candidateName, token])
+  }, [candidateName, token])
 
   if (!candidateName) return null
   const p = profileData?.profile || {}

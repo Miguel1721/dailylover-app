@@ -106,7 +106,7 @@ function ClienteModal({ cliente, token, onClose }) {
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   useEffect(() => {
-    if (activeTab === 'historial' && cliente.name) {
+    if (cliente?.name) {
       setLoadingHistory(true)
       const cleanName = cliente.name.trim().toLowerCase()
       fetch(`${API}/api/v1/admin/historical-matches?exact_name=${encodeURIComponent(cliente.name.trim())}&limit=100`, {
@@ -124,7 +124,7 @@ function ClienteModal({ cliente, token, onClose }) {
         .catch(() => setMatchHistory([]))
         .finally(() => setLoadingHistory(false))
     }
-  }, [activeTab, cliente, token])
+  }, [cliente, token])
 
   const avatarBg = getAvatarGradient(cliente.id)
   const lifestyleBadges = renderCleanBadges(p.lifestyle)

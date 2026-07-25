@@ -1110,29 +1110,37 @@ def clean_excel_date_str(raw):
             if not assigned_mm or assigned_mm.lower() == "all":
                 assigned_mm = "SILVI"
 
-            # Query real candidates from database
+            target_city = (target_usr.city if (target_usr and target_usr.city) else "Bogotá").strip()
+            if not target_city:
+                target_city = "Bogotá"
+
+            # Query real candidates from database from the EXACT SAME CITY
             real_partners_res = await db.execute(text("""
                 SELECT u.name FROM users u
                 JOIN profiles p ON p.user_id = u.id
-                WHERE u.name IS NOT NULL AND length(trim(u.name)) > 3 AND unaccent(lower(u.name)) != unaccent(lower(:tname))
+                WHERE u.name IS NOT NULL AND length(trim(u.name)) > 3 
+                  AND unaccent(lower(u.name)) != unaccent(lower(:tname))
+                  AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:tcity)) OR unaccent(lower(COALESCE(p.city, ''))) = '')
                 ORDER BY u.id DESC
                 LIMIT 5
-            """), {"tname": target_name})
+            """), {"tname": target_name, "tcity": f"%{target_city}%"})
             r_rows = real_partners_res.fetchall()
             potential_partners = [r.name.strip() for r in r_rows if r.name]
 
             if len(potential_partners) < 5:
                 hm_partners = await db.execute(text("""
                     SELECT DISTINCT person_b AS name FROM historical_matches 
-                    WHERE person_b IS NOT NULL AND length(trim(person_b)) > 3 AND unaccent(lower(person_b)) != unaccent(lower(:tname))
+                    WHERE person_b IS NOT NULL AND length(trim(person_b)) > 3 
+                      AND unaccent(lower(person_b)) != unaccent(lower(:tname))
+                      AND (unaccent(lower(COALESCE(city, ''))) ILIKE unaccent(lower(:tcity)) OR unaccent(lower(COALESCE(city, ''))) = '')
                     LIMIT 5
-                """), {"tname": target_name})
+                """), {"tname": target_name, "tcity": f"%{target_city}%"})
                 for r in hm_partners.fetchall():
                     if r.name and r.name.strip() not in potential_partners and len(potential_partners) < 5:
                         potential_partners.append(r.name.strip())
 
             if not potential_partners:
-                potential_partners = ["Paola Andrea Pachon", "Nathalia Sandoval Amaya", "Genesis Kilzis", "Andrea Velez Alvarez", "Carolina Andrea Gomez"]
+                potential_partners = ["Valentina Ospina Velazquez", "Nathalia Sandoval Amaya", "Genesis Kilzis", "Andrea Velez Alvarez", "Paola Andrea Pachon"]
 
             ai_matches = []
             for idx, partner in enumerate(potential_partners, start=1):
