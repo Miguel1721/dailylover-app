@@ -106,25 +106,25 @@ function ClienteModal({ cliente, token, onClose }) {
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   useEffect(() => {
-    if (cliente?.name) {
+    if (cliente) {
       setLoadingHistory(true)
-      const cleanName = cliente.name.trim().toLowerCase()
-      fetch(`${API}/api/v1/admin/historical-matches?exact_name=${encodeURIComponent(cliente.name.trim())}&limit=100`, {
+      const cleanName = (cliente.name || '').trim().toLowerCase()
+      const queryParam = cliente.id
+        ? `user_id=${cliente.id}`
+        : (cliente.client_code ? `client_code=${encodeURIComponent(cliente.client_code)}` : `exact_name=${encodeURIComponent(cliente.name?.trim() || '')}`)
+
+      fetch(`${API}/api/v1/admin/historical-matches?${queryParam}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(r => r.json())
         .then(d => {
-          const raw = d.matches || []
-          const strictMatches = raw.filter(m => 
-            (m.person_a && m.person_a.trim().toLowerCase() === cleanName) ||
-            (m.person_b && m.person_b.trim().toLowerCase() === cleanName)
-          )
-          setMatchHistory(strictMatches)
+          setMatchHistory(d.matches || [])
         })
         .catch(() => setMatchHistory([]))
         .finally(() => setLoadingHistory(false))
     }
   }, [cliente, token])
+
 
   const avatarBg = getAvatarGradient(cliente.id)
   const lifestyleBadges = renderCleanBadges(p.lifestyle)

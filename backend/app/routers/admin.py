@@ -1323,10 +1323,12 @@ async def get_historical_matches(
     status_filter: str = None,
     search: str = None,
     exact_name: str = None,
+    user_id: Optional[int] = Query(None),
+    client_code: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("matching", "view"))
 ):
-    """Fetch historical and psychologist matches with support for exact client name matching."""
+    """Fetch historical and psychologist matches with support for exact user_id, client_code (DL-XXXX) or name matching."""
     offset = (page - 1) * limit
     where_clauses = ["1=1"]
     params = {"limit": limit, "offset": offset}
@@ -1349,12 +1351,33 @@ async def get_historical_matches(
             where_clauses.append("status ILIKE :status_filter")
             params["status_filter"] = f"%{status_filter}%"
 
-    if exact_name:
+    # Filtros prioritarios por ID numérico o código DL único
+    if user_id:
+        where_clauses.append("(hm.user_id_a = :uid OR hm.user_id_b = :uid)")
+        params["uid"] = user_id
+    elif client_code:
+        cc_clean = client_code.strip().upper()
+        where_clauses.append("""(
+            ua_id.client_code = :cc OR ub_id.client_code = :cc OR 
+            ua_name.client_code = :cc OR ub_name.client_code = :cc
+        )""")
+        params["cc"] = cc_clean
+    elif exact_name:
         where_clauses.append("(unaccent(lower(trim(person_a))) = unaccent(lower(trim(:exact_name))) OR unaccent(lower(trim(person_b))) = unaccent(lower(trim(:exact_name))))")
         params["exact_name"] = exact_name
     elif search:
-        where_clauses.append("(unaccent(lower(person_a)) ILIKE unaccent(lower(:search)) OR unaccent(lower(person_b)) ILIKE unaccent(lower(:search)))")
-        params["search"] = f"%{search}%"
+        s_clean = search.strip()
+        if s_clean.upper().startswith("DL-"):
+            cc_clean = s_clean.upper()
+            where_clauses.append("""(
+                ua_id.client_code = :cc OR ub_id.client_code = :cc OR 
+                ua_name.client_code = :cc OR ub_name.client_code = :cc
+            )""")
+            params["cc"] = cc_clean
+        else:
+            where_clauses.append("(unaccent(lower(person_a)) ILIKE unaccent(lower(:search)) OR unaccent(lower(person_b)) ILIKE unaccent(lower(:search)))")
+            params["search"] = f"%{s_clean}%"
+
 
     where_str = " AND ".join(where_clauses)
 
