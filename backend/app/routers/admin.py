@@ -385,6 +385,20 @@ async def update_user(
     await db.commit()
     return {"ok": True}
 
+@router.post("/users/{user_id}/assign-matchmaker")
+async def assign_matchmaker(
+    user_id: int,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "edit"))
+):
+    matchmaker = data.get("matchmaker") or data.get("responsable") or "SILVI"
+    await db.execute(text("""
+        UPDATE profiles SET responsable = :m, updated_at = NOW() WHERE user_id = :uid
+    """), {"m": matchmaker, "uid": user_id})
+    await db.commit()
+    return {"message": f"Psicóloga asignada con éxito: {matchmaker}", "user_id": user_id, "responsable": matchmaker}
+
 
 # ─── EVENTS ───────────────────────────────────────────────────────────────────
 
