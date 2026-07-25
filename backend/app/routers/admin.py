@@ -328,7 +328,7 @@ async def get_users(
             } if r.profile_user_id is not None else None
         })
 
-    return {"users": users, "total": total, "page": page, "pages": math.ceil(total / limit)}
+    return {"users": users_list, "total": total, "page": page, "pages": math.ceil(total / limit)}
 
 
 @router.get("/users/{user_id}")
