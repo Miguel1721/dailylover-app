@@ -364,20 +364,8 @@ async def get_users(
             aliases = ["MANU", "MANUELA"]
 
         alias_conds = " OR ".join([f"unaccent(COALESCE(p.responsable, '')) ILIKE '%{a}%'" for a in aliases])
-        mm_conds = " OR ".join([f"unaccent(COALESCE(hm.matchmaker, '')) ILIKE '%{a}%'" for a in aliases])
+        where_clauses.append(f"({alias_conds})")
 
-        where_clauses.append(f"""(
-            {alias_conds}
-            OR u.id IN (
-                SELECT DISTINCT hm.user_id_a FROM historical_matches hm WHERE ({mm_conds}) AND hm.user_id_a IS NOT NULL
-                UNION
-                SELECT DISTINCT hm.user_id_b FROM historical_matches hm WHERE ({mm_conds}) AND hm.user_id_b IS NOT NULL
-                UNION
-                SELECT DISTINCT u2.id FROM historical_matches hm 
-                JOIN users u2 ON unaccent(lower(trim(u2.name))) = unaccent(lower(trim(hm.person_a))) OR unaccent(lower(trim(u2.name))) = unaccent(lower(trim(hm.person_b)))
-                WHERE ({mm_conds})
-            )
-        )""")
 
 
     if has_notes == "with_notes":
