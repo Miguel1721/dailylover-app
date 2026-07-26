@@ -35,17 +35,18 @@ const PLANS = [
 ]
 
 function getPlanStyle(planTier) {
-  if (!planTier) return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: 'Sin plan' }
+  if (!planTier) return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: 'Sin plan', maxCitas: 1 }
   const t = String(planTier).trim()
-  if (t.includes('195')) return { icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)', label: t }
-  if (t.includes('150')) return { icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)', label: t }
-  if (t.includes('98'))  return { icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)',  label: t }
-  if (t.includes('65'))  return { icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)', label: t }
-  if (t.includes('40'))  return { icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)',  label: t }
-  if (t.toLowerCase().includes('vip')) return { icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)', label: t }
-  if (t.toLowerCase().includes('premium')) return { icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)', label: t }
-  return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: t }
+  if (t.includes('195')) return { icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)', label: t, maxCitas: 5 }
+  if (t.includes('150')) return { icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)', label: t, maxCitas: 3 }
+  if (t.includes('98'))  return { icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)',  label: t, maxCitas: 2 }
+  if (t.includes('65'))  return { icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)', label: t, maxCitas: 1 }
+  if (t.includes('40'))  return { icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)',  label: t, maxCitas: 1 }
+  if (t.toLowerCase().includes('vip')) return { icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)', label: t, maxCitas: 5 }
+  if (t.toLowerCase().includes('premium')) return { icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)', label: t, maxCitas: 3 }
+  return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: t, maxCitas: 1 }
 }
+
 
 
 const AVATAR_GRADIENTS = [
@@ -365,18 +366,34 @@ function ClienteModal({ cliente, token, onClose }) {
                 {(() => {
                   const tier = p.plan_tier || targetClient.plan_tier
                   const ps = getPlanStyle(tier)
+                  const used = targetClient.total_matches || 0
+                  const max = ps.maxCitas
+                  const pct = Math.min(100, Math.round((used / max) * 100))
+                  const isCompleted = used >= max
                   return (
                     <>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>💳 PLAN / MEMBRESÍA:</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                        <span style={{ fontSize: 13, fontWeight: 800, padding: '3px 10px', borderRadius: 8, background: ps.bg, color: ps.color, border: `1px solid ${ps.color}55` }}>
-                          {ps.icon} {tier || 'Sin plan asignado'}
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>💳 PLAN & CONSUMO DE CITAS:</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, padding: '3px 8px', borderRadius: 8, background: ps.bg, color: ps.color, border: `1px solid ${ps.color}55` }}>
+                          {ps.icon} {tier || 'Sin plan'}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: isCompleted ? '#FFC107' : 'var(--text-primary)' }}>
+                          {used} / {max} Citas ({pct}%)
                         </span>
                       </div>
+                      <div style={{ width: '100%', height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginTop: 6, overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: isCompleted ? 'linear-gradient(90deg, #FFC107, #FF9800)' : `linear-gradient(90deg, ${ps.color}, ${ps.color}dd)`, borderRadius: 3, transition: 'width 0.3s' }} />
+                      </div>
+                      {isCompleted && (
+                        <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3, fontWeight: 700 }}>
+                          ⚠️ Plan completado ({used}/{max} citas realizadas)
+                        </div>
+                      )}
                     </>
                   )
                 })()}
               </div>
+
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>📍 CIUDAD DE RESIDENCIA:</div>
@@ -872,12 +889,21 @@ export default function Clientes() {
                       {(() => {
                         const plan = getPlanStyle(p.plan_tier || u.plan_tier)
                         if (!p.plan_tier && !u.plan_tier) return null
+                        const used = u.total_matches || 0
+                        const max = plan.maxCitas
+                        const isDone = used >= max
                         return (
-                          <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: plan.bg, color: plan.color, border: `1px solid ${plan.color}44` }}>
-                            {plan.icon} {plan.label}
-                          </span>
+                          <>
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: plan.bg, color: plan.color, border: `1px solid ${plan.color}44` }}>
+                              {plan.icon} {plan.label}
+                            </span>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: isDone ? 'rgba(255,193,7,0.15)' : 'rgba(255,255,255,0.05)', color: isDone ? '#FFC107' : 'var(--text-secondary)', border: `1px solid ${isDone ? '#FFC10755' : 'rgba(255,255,255,0.1)'}` }}>
+                              🎯 {used}/{max} Citas
+                            </span>
+                          </>
                         )
                       })()}
+
                     </div>
 
                     {/* Bio Clinical Snippet */}

@@ -413,7 +413,11 @@ async def get_users(
             p.user_id AS profile_user_id, p.ocean, p.apego, p.motivacion, p.rol_social,
             p.energia_social, p.momento_vital, p.intereses, p.valores,
             p.city, p.occupation, p.education, p.religion, p.love_language,
-            p.bio_notes, p.lifestyle, p.responsable, p.estatura, p.age, p.plan_tier, p.search_preferences
+            p.bio_notes, p.lifestyle, p.responsable, p.estatura, p.age, p.plan_tier, p.search_preferences,
+            (
+                SELECT COUNT(*) FROM historical_matches hm 
+                WHERE (hm.user_id_a = u.id OR hm.user_id_b = u.id OR unaccent(lower(hm.person_a)) = unaccent(lower(u.name)) OR unaccent(lower(hm.person_b)) = unaccent(lower(u.name)))
+            ) AS total_matches
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
         WHERE {where_str}
@@ -448,7 +452,9 @@ async def get_users(
             "estatura": r.estatura,
             "age": r.age,
             "plan_tier": r.plan_tier,
+            "total_matches": r.total_matches or 0,
             "profile": {
+
                 "city": r.city or "Bogotá",
                 "age": r.age or 28,
                 "occupation": r.occupation or "No especificada",
