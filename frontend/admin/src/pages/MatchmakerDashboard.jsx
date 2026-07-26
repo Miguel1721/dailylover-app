@@ -156,7 +156,7 @@ export default function MatchmakerDashboard() {
           <div 
             className="stat-card" 
             style={{ borderLeft: '4px solid #FFC107', cursor: 'pointer', transition: 'all 0.2s' }}
-            onClick={() => navigate('/matching?status_filter=PENDIENTE')}
+            onClick={() => navigate(`/matching?matchmaker=${encodeURIComponent(filterKey)}&status_filter=PENDIENTE`)}
             title="Ver sólo matches pendientes por revisar"
           >
             <div className="stat-icon" style={{ background: 'rgba(255, 193, 7, 0.15)', color: '#FFC107' }}>
@@ -170,7 +170,7 @@ export default function MatchmakerDashboard() {
           <div 
             className="stat-card" 
             style={{ borderLeft: '4px solid #2196F3', cursor: 'pointer', transition: 'all 0.2s' }}
-            onClick={() => navigate('/clientes')}
+            onClick={() => navigate(`/clientes?responsable=${encodeURIComponent(filterKey)}`)}
             title="Ver clientes asignados a tu cargo"
           >
             <div className="stat-icon" style={{ background: 'rgba(33, 150, 243, 0.15)', color: '#2196F3' }}>
@@ -198,7 +198,7 @@ export default function MatchmakerDashboard() {
           <div 
             className="stat-card" 
             style={{ borderLeft: '4px solid #ff4d4d', cursor: 'pointer', transition: 'all 0.2s' }}
-            onClick={() => navigate('/matching?status_filter=TROUBLE')}
+            onClick={() => navigate(`/matching?matchmaker=${encodeURIComponent(filterKey)}&status_filter=TROUBLE`)}
             title="Ver casos especiales / trouble"
           >
             <div className="stat-icon" style={{ background: 'rgba(255, 77, 77, 0.15)', color: '#ff4d4d' }}>

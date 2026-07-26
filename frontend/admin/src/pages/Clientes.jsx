@@ -716,17 +716,19 @@ export default function Clientes() {
   const limit = 20
 
   useEffect(() => {
-    const handleUrlSearch = () => {
-      const q = new URLSearchParams(window.location.search).get('q')
-      if (q) {
-        setSearch(q)
-        setPage(1)
-      }
+    const searchParams = new URLSearchParams(window.location.search)
+    const q = searchParams.get('q')
+    const urlResp = searchParams.get('responsable')
+    if (q) {
+      setSearch(q)
+      setPage(1)
     }
-    handleUrlSearch()
-    window.addEventListener('popstate', handleUrlSearch)
-    return () => window.removeEventListener('popstate', handleUrlSearch)
+    if (urlResp) {
+      setPsychologistFilter(urlResp)
+      setPage(1)
+    }
   }, [])
+
 
   const fetchUsers = useCallback(() => {
     setLoading(true)

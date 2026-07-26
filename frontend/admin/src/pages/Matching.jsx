@@ -221,12 +221,19 @@ export default function Matching() {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
     const urlStatus = searchParams.get('status_filter')
+    const urlMatchmaker = searchParams.get('matchmaker')
     if (urlStatus) {
       setStatusFilter(urlStatus)
+    }
+    if (urlMatchmaker) {
+      setMatchmaker(urlMatchmaker)
     }
   }, [])
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    if (searchParams.get('matchmaker')) return // Don't override if specified in URL
+
     if (user?.role === 'Matchmaker' && user?.name) {
       const matchName = user.name.split(' ')[0].toUpperCase()
       const found = PSYCHOLOGISTS.find(p => p.id.includes(matchName))
@@ -235,6 +242,7 @@ export default function Matching() {
       }
     }
   }, [user])
+
 
   const fetchMatches = useCallback(() => {
     setLoading(true)
