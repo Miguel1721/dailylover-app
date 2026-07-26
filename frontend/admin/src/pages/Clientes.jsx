@@ -698,10 +698,6 @@ function ClienteModal({ cliente, token, onClose }) {
 
 
 
-
-
-
-
 export default function Clientes() {
   const { user, token } = useAuth()
   const [users, setUsers] = useState([])
@@ -713,6 +709,7 @@ export default function Clientes() {
   const [cityFilter, setCityFilter] = useState('all')
   const [matchesFilter, setMatchesFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
+  const [difficultFilter, setDifficultFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const limit = 20
@@ -740,7 +737,8 @@ export default function Clientes() {
       ...(notesFilter !== 'all' && { has_notes: notesFilter }),
       ...(cityFilter !== 'all' && { city: cityFilter }),
       ...(matchesFilter !== 'all' && { has_matches: matchesFilter }),
-      ...(planFilter !== 'all' && { plan_tier: planFilter })
+      ...(planFilter !== 'all' && { plan_tier: planFilter }),
+      ...(difficultFilter !== 'all' && { is_difficult: difficultFilter })
     })
 
     fetch(`${API}/api/v1/admin/users?${params}`, {
@@ -756,7 +754,7 @@ export default function Clientes() {
         setTotal(0)
       })
       .finally(() => setLoading(false))
-  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, token])
+  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, difficultFilter, token])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
@@ -863,7 +861,18 @@ export default function Clientes() {
             <option value="with_matches">💘 Con Citas Previas</option>
             <option value="without_matches">✨ Listos para 1ra Cita</option>
           </select>
+
+          {/* Personas difíciles */}
+          <select
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            value={difficultFilter}
+            onChange={e => { setDifficultFilter(e.target.value); setPage(1) }}
+          >
+            <option value="all">Todos los Casos</option>
+            <option value="difficult_only">⚠️ Casos Complejos / Exigentes</option>
+          </select>
         </div>
+
 
 
 
@@ -959,11 +968,17 @@ export default function Clientes() {
 
                     {/* Metadata Badges */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+                      {u.is_difficult && (
+                        <span className="badge badge-yellow" style={{ fontSize: 10, background: 'rgba(255,193,7,0.2)', color: '#FFC107', border: '1px solid rgba(255,193,7,0.4)' }}>
+                          ⚠️ Caso Complejo
+                        </span>
+                      )}
                       {p.age && (
                         <span className="badge badge-gray" style={{ fontSize: 10 }}>
                           🎂 {p.age} años
                         </span>
                       )}
+
                       {p.city && (
                         <span className="badge badge-gray" style={{ fontSize: 10 }}>
                           📍 {p.city}

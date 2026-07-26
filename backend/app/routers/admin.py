@@ -289,6 +289,27 @@ async def sync_plans_from_excel(
                     """), {"pref": pref_json, "uid": pid})
                     pref_updated += r_pref.rowcount
 
+        # ─── ENRICH PERSONAS DIFICILES FROM PERSONAS DIFICILES SHEET ─────
+        diff_updated = 0
+        if "PERSONAS DÍFICILES" in wb.sheetnames:
+            ws_d = wb["PERSONAS DÍFICILES"]
+            for r in ws_d.iter_rows(min_row=2, values_only=True):
+                if not r or not r[0]: continue
+                p_name = str(r[0]).strip()
+                obs = str(r[2] or '').strip() if len(r) > 2 else ''
+                status_d = str(r[3] or '').strip() if len(r) > 3 else ''
+
+                if p_name and len(p_name) > 2:
+                    r_diff = await db.execute(text("""
+                        UPDATE profiles p
+                        SET is_difficult = true,
+                            difficult_notes = COALESCE(:obs, '')
+                        FROM users u
+                        WHERE p.user_id = u.id
+                          AND unaccent(lower(trim(u.name))) = unaccent(lower(trim(:person)))
+                    """), {"obs": f"{obs} {status_d}".strip(), "person": p_name})
+                    diff_updated += r_diff.rowcount
+
         # General cleanup of remaining legacy yes/no city flags
         await db.execute(text("""
             UPDATE profiles
@@ -298,7 +319,6 @@ async def sync_plans_from_excel(
         """))
 
         await db.commit()
-
 
         # Resumen post-sync
         res_dist = await db.execute(text("SELECT COALESCE(plan_tier, 'Sin Plan') as tier, COUNT(*) as cnt FROM profiles GROUP BY plan_tier ORDER BY cnt DESC"))
@@ -312,11 +332,13 @@ async def sync_plans_from_excel(
             "registros_actualizados": updated,
             "ciudades_enriquecidas": cities_updated,
             "psicologas_enriquecidas": resp_updated,
+            "personas_dificiles_etiquetadas": diff_updated,
             "distribucion_actual": distribucion,
             "distribucion_ciudades": dist_ciudades
         }
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
 
 
 
@@ -533,6 +555,7 @@ async def get_users(
     city: Optional[str] = Query(None),
     has_matches: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
+    is_difficult: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("clientes", "view"))
 ):
@@ -561,7 +584,8 @@ async def get_users(
         alias_conds = " OR ".join([f"unaccent(COALESCE(p.responsable, '')) ILIKE '%{a}%'" for a in aliases])
         where_clauses.append(f"({alias_conds})")
 
-
+    if is_difficult == "difficult_only":
+        where_clauses.append("p.is_difficult = true")
 
     if has_notes == "with_notes":
         where_clauses.append("p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) > 2")
@@ -617,6 +641,7 @@ async def get_users(
             p.energia_social, p.momento_vital, p.intereses, p.valores,
             p.city, p.occupation, p.education, p.religion, p.love_language,
             p.bio_notes, p.lifestyle, p.responsable, p.estatura, p.age, p.plan_tier, p.search_preferences,
+            COALESCE(p.is_difficult, false) AS is_difficult, p.difficult_notes,
             COALESCE(hm_count.cnt, 0) AS total_matches
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
@@ -660,8 +685,11 @@ async def get_users(
             "estatura": r.estatura,
             "age": r.age,
             "plan_tier": r.plan_tier,
+            "is_difficult": r.is_difficult,
+            "difficult_notes": r.difficult_notes,
             "total_matches": r.total_matches or 0,
             "profile": {
+
 
                 "city": r.city or "Bogotá",
                 "age": r.age or 28,
