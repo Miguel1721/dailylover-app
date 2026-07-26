@@ -65,15 +65,21 @@ export default function MatchmakerDashboard() {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ users: [], total: 0 })),
 
-      // 4. Fetch reminders
+      // 4. Fetch real agenda interviews count
+      fetch(`${API}/api/v1/admin/psychologist/agenda?psychologist_name=${encodeURIComponent(filterKey)}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).then(r => r.json()).catch(() => ({ total_interviews: 0 })),
+
+      // 5. Fetch reminders
       fetch(`${API}/api/v1/admin/reminders?matchmaker=${encodeURIComponent(filterKey)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ reminders: [] }))
-    ]).then(([pendRes, trblRes, userRes, remRes]) => {
+    ]).then(([pendRes, trblRes, userRes, agdRes, remRes]) => {
       const pendingsList = pendRes.matches || []
       const pendingsTotal = pendRes.total || 0
       const troubleTotal = trblRes.total || 0
       const assignedTotal = userRes.total || 0
+      const interviewsTotal = agdRes.total_interviews || 0
 
       setPendingMatches(pendingsList)
       setAssignedClients(userRes.users || [])
@@ -81,7 +87,7 @@ export default function MatchmakerDashboard() {
       setStats({
         total_assigned: assignedTotal,
         pending_matches: pendingsTotal,
-        active_events: 4,
+        active_events: interviewsTotal,
         trouble_cases: troubleTotal
       })
       setLoading(false)
