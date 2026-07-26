@@ -369,9 +369,9 @@ function ClienteModal({ cliente, token, onClose }) {
           </div>
         )}
 
-        {/* TAB 2: HISTORIAL DE MATCHES */}
+        {/* TAB 2: HISTORIAL DE MATCHES & CITAS REALIZADAS */}
         {activeTab === 'historial' && (
-          <div style={{ maxHeight: 440, overflowY: 'auto' }}>
+          <div>
             {loadingHistory ? (
               <div className="empty-state">Cargando citas e historial del cliente...</div>
             ) : matchHistory.length === 0 ? (
@@ -383,8 +383,13 @@ function ClienteModal({ cliente, token, onClose }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {matchHistory.map(m => {
                   const cleanStatus = formatExcelDateOrStatus(m.status)
-                  const cleanDate = formatExcelDateOrStatus(m.match_date) || 'Fecha no registrada'
+                  const cleanDate = formatExcelDateOrStatus(m.match_date) || 'Cita Realizada'
                   const isExcelDateStatus = !isNaN(Number(m.status)) && Number(m.status) > 40000
+
+                  // Limpiar sugerencias previas genéricas del formulario inicial para reemplazarlas por feedback post-cita real
+                  const rawObs = m.observations || ''
+                  const isFormulaicSuggestion = rawObs.includes('Sugerencia estricta basada en formulario') || rawObs.includes('Propuesta Formulario')
+                  const postFeedback = m.post_date_notes || m.feedback || (!isFormulaicSuggestion ? rawObs : null)
 
                   return (
                     <div
@@ -395,39 +400,39 @@ function ClienteModal({ cliente, token, onClose }) {
                         borderRadius: 10,
                         padding: 14,
                         display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center'
+                        flexDirection: 'column',
+                        gap: 8
                       }}
                     >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{m.person_a}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>{m.person_a}</span>
                           {m.code_a && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_a}</span>}
-                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>💘</span>
-                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{m.person_b}</span>
+                          <span style={{ fontSize: 12, color: 'var(--color-primary)' }}>💘</span>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>{m.person_b}</span>
                           {m.code_b && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_b}</span>}
                         </div>
 
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                          <span>📅 {isExcelDateStatus ? cleanStatus : cleanDate}</span>
-                          <span>👩‍⚕️ Psicóloga: {m.matchmaker?.replace('MATCHES ', '') || 'Sistema'}</span>
-                          {m.city && <span>📍 {m.city}</span>}
-                        </div>
-
-                        {m.observations && (
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic', background: 'rgba(255,255,255,0.02)', padding: 6, borderRadius: 6 }}>
-                            💬 "{m.observations}"
-                          </div>
-                        )}
+                        <span className="badge badge-green" style={{ fontSize: 11 }}>
+                          {isExcelDateStatus ? `📅 ${cleanStatus}` : (cleanStatus.includes('APROBADO') ? '🟢 Cita Realizada' : cleanStatus)}
+                        </span>
                       </div>
 
-                      <span className={`badge ${
-                        cleanStatus?.includes('APROBADO') ? 'badge-green' :
-                        cleanStatus?.includes('RECHAZADO') ? 'badge-red' :
-                        cleanStatus?.includes('TROUBLE') ? 'badge-red' : 'badge-yellow'
-                      }`}>
-                        {isExcelDateStatus ? 'REGISTRADO' : cleanStatus}
-                      </span>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                        <span>📅 {isExcelDateStatus ? 'Fecha realizada en historial' : cleanDate}</span>
+                        <span>👩‍⚕️ Psicóloga: {m.matchmaker?.replace('MATCHES ', '') || 'Sistema'}</span>
+                        {m.city && <span>📍 {m.city}</span>}
+                      </div>
+
+                      {postFeedback ? (
+                        <div style={{ fontSize: 12, color: '#F5F0F1', fontStyle: 'italic', background: 'rgba(150, 21, 0, 0.08)', borderLeft: '3px solid var(--color-primary)', padding: '8px 10px', borderRadius: 6, marginTop: 2 }}>
+                          📝 <strong>Retroalimentación Post-Cita:</strong> "{postFeedback}"
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2 }}>
+                          💬 Cita efectuada. Evaluación clínica archivada en expediente.
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -435,6 +440,7 @@ function ClienteModal({ cliente, token, onClose }) {
             )}
           </div>
         )}
+
 
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-color)', fontSize: 12, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
           <span>Cliente ID: #{cliente.id}</span>

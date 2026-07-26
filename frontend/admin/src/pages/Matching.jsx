@@ -1163,25 +1163,47 @@ function CandidateModal({ candidateName, token, onClose }) {
               <div className="empty-state">No se registraron citas anteriores para {candidateName}.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {matchHistory.map(m => (
-                  <div key={m.id} style={{ background: 'var(--bg-base)', padding: 12, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>{m.person_a}</span>
-                        {m.code_a && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_a}</span>}
-                        <span>💘</span>
-                        <span>{m.person_b}</span>
-                        {m.code_b && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_b}</span>}
+                {matchHistory.map(m => {
+                  const rawObs = m.observations || ''
+                  const isFormulaicSuggestion = rawObs.includes('Sugerencia estricta basada en formulario') || rawObs.includes('Propuesta Formulario')
+                  const postFeedback = m.post_date_notes || m.feedback || (!isFormulaicSuggestion ? rawObs : null)
+                  const cleanStatus = formatExcelDate(m.status)
+                  const cleanDate = formatExcelDate(m.match_date) || 'Cita Realizada'
+
+                  return (
+                    <div key={m.id} style={{ background: 'var(--bg-base)', padding: 14, borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span>{m.person_a}</span>
+                          {m.code_a && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_a}</span>}
+                          <span style={{ color: 'var(--color-primary)' }}>💘</span>
+                          <span>{m.person_b}</span>
+                          {m.code_b && <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#a855f7', fontWeight: 700, background: 'rgba(168,85,247,0.1)', padding: '1px 5px', borderRadius: 6 }}>{m.code_b}</span>}
+                        </div>
+                        <span className="badge badge-green" style={{ fontSize: 11 }}>🟢 Cita Efectuada</span>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                        📅 {formatExcelDate(m.match_date)} • 👩‍⚕️ Psicóloga: {m.matchmaker || 'SILVI'}
+
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                        <span>📅 {cleanDate}</span>
+                        <span>👩‍⚕️ Psicóloga: {m.matchmaker?.replace('MATCHES ', '') || 'Sistema'}</span>
+                        {m.city && <span>📍 {m.city}</span>}
                       </div>
+
+                      {postFeedback ? (
+                        <div style={{ fontSize: 12, color: '#F5F0F1', fontStyle: 'italic', background: 'rgba(150, 21, 0, 0.08)', borderLeft: '3px solid var(--color-primary)', padding: '8px 10px', borderRadius: 6, marginTop: 2 }}>
+                          📝 <strong>Retroalimentación Post-Cita:</strong> "{postFeedback}"
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2 }}>
+                          💬 Cita efectuada. Evaluación clínica archivada en expediente.
+                        </div>
+                      )}
                     </div>
-                    <span className="badge badge-yellow" style={{ fontSize: 11 }}>{m.status || 'PENDIENTE'}</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
+
           </div>
         )}
       </div>
