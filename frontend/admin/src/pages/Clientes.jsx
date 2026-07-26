@@ -191,8 +191,9 @@ function ClienteModal({ cliente, token, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ width: 700, maxWidth: '95vw', padding: 24 }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header" style={{ marginBottom: 16 }}>
+      <div className="modal" style={{ width: 750, maxWidth: '95vw', padding: 24, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+        {/* Header Modal */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
             {cliente.photo_url ? (
               <img
@@ -232,33 +233,20 @@ function ClienteModal({ cliente, token, onClose }) {
                   }}>{cliente.client_code}</span>
                 )}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                 {cliente.phone && <span>📞 {cliente.phone}</span>}
                 {p.city && <span>📍 {p.city}</span>}
                 {p.age && <span>🎂 {p.age} años</span>}
                 {p.estatura && <span>📏 {p.estatura}m</span>}
+              </div>
             </div>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 16, padding: '4px 10px' }}>✕</button>
         </div>
 
-        {/* Tab Navigation — ORDERED FROM RIGHT TO LEFT (DERECHA A IZQUIERDA) */}
-
-        <div style={{ display: 'flex', flexDirection: 'row-reverse', justifyContent: 'flex-start', borderBottom: '1px solid var(--border-color)', marginBottom: 16 }}>
-          <button
-            className="btn btn-ghost"
-            style={{
-              borderRadius: 0,
-              borderBottom: activeTab === 'historial' ? '2px solid var(--color-primary)' : 'none',
-              color: activeTab === 'historial' ? 'var(--color-primary)' : 'var(--text-secondary)',
-              fontWeight: 600,
-              padding: '10px 16px'
-            }}
-            onClick={() => setActiveTab('historial')}
-          >
-            <History size={15} style={{ marginRight: 6 }} /> Historial de Matches ({loadingHistory ? '...' : matchHistory.length})
-          </button>
-
+        {/* Tab Navigation */}
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 16 }}>
           <button
             className="btn btn-ghost"
             style={{
@@ -272,45 +260,61 @@ function ClienteModal({ cliente, token, onClose }) {
           >
             <User size={15} style={{ marginRight: 6 }} /> Perfil Clínico & Hábitos
           </button>
+
+          <button
+            className="btn btn-ghost"
+            style={{
+              borderRadius: 0,
+              borderBottom: activeTab === 'historial' ? '2px solid var(--color-primary)' : 'none',
+              color: activeTab === 'historial' ? 'var(--color-primary)' : 'var(--text-secondary)',
+              fontWeight: 600,
+              padding: '10px 16px'
+            }}
+            onClick={() => setActiveTab('historial')}
+          >
+            <History size={15} style={{ marginRight: 6 }} /> Historial de Matches ({loadingHistory ? '...' : matchHistory.length})
+          </button>
         </div>
 
+        {/* Scrollable Modal Content Body */}
+        <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
+          {/* Re-asignación / Derivación de Cliente */}
+          <div style={{ background: 'rgba(150,21,0,0.08)', border: '1px solid rgba(150,21,0,0.25)', borderRadius: 10, padding: 12, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🔄 <strong>Derivar / Pasar este Caso a:</strong></span>
+              <select
+                value={newPsyc}
+                onChange={e => setNewPsyc(e.target.value)}
+                style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
+              >
+                <option value="AUTO">⚡ Auto (Siguiente con menor carga)</option>
+                <option value="Silvi">Silvi</option>
+                <option value="Steffy">Steffy</option>
+                <option value="Manu">Manu</option>
+                <option value="María Paula">María Paula (MAPE)</option>
+              </select>
+            </div>
 
-        {/* Re-asignación / Derivación de Cliente */}
-        <div style={{ background: 'rgba(150,21,0,0.08)', border: '1px solid rgba(150,21,0,0.25)', borderRadius: 10, padding: 12, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ fontSize: 13, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>🔄 <strong>Derivar / Pasar este Caso a:</strong></span>
-            <select
-              value={newPsyc}
-              onChange={e => setNewPsyc(e.target.value)}
-              style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
-            >
-              <option value="AUTO">⚡ Auto (Siguiente con menor carga)</option>
-              <option value="Silvi">Silvi</option>
-              <option value="Steffy">Steffy</option>
-              <option value="Manu">Manu</option>
-              <option value="María Paula">María Paula (MAPE)</option>
-            </select>
+            <div style={{ display: 'flex', gap: 8, flex: 1, maxWidth: 400 }}>
+              <input
+                type="text"
+                placeholder="Motivo de derivación (ej: tiempo, afinidad)..."
+                value={reassignReason}
+                onChange={e => setReassignReason(e.target.value)}
+                style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12, flex: 1 }}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={reassigning}
+                onClick={handleReassign}
+                style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }}
+              >
+                {reassigning ? 'Derivando...' : 'Re-asignar Caso'}
+              </button>
+            </div>
           </div>
+          {reassignMsg && <div style={{ fontSize: 12, color: '#4CAF50', marginBottom: 16, fontWeight: 600 }}>{reassignMsg}</div>}
 
-          <div style={{ display: 'flex', gap: 8, flex: 1, maxWidth: 400 }}>
-            <input
-              type="text"
-              placeholder="Motivo de derivación (ej: tiempo, afinidad)..."
-              value={reassignReason}
-              onChange={e => setReassignReason(e.target.value)}
-              style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12, flex: 1 }}
-            />
-            <button
-              className="btn btn-primary btn-sm"
-              disabled={reassigning}
-              onClick={handleReassign}
-              style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }}
-            >
-              {reassigning ? 'Derivando...' : 'Re-asignar Caso'}
-            </button>
-          </div>
-        </div>
-        {reassignMsg && <div style={{ fontSize: 12, color: '#4CAF50', marginBottom: 16, fontWeight: 600 }}>{reassignMsg}</div>}
 
 
         {/* TAB 1: PERFIL CLINICO COMPLETO */}
