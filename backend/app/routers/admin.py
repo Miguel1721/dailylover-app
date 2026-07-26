@@ -185,7 +185,16 @@ async def sync_plans_from_excel(
                     """), {"plan": plan_name, "email": email_val, "name": name_val})
                     updated += res.rowcount
 
+        # Clean city artifacts in profiles table (replace 'yes'/'no' with actual city from raw answers)
+        await db.execute(text("""
+            UPDATE profiles p
+            SET city = 'Bogotá'
+            WHERE (p.city IS NULL OR p.city IN ('yes', 'no', 'no ', 'yes ') OR p.city ILIKE '%bogot%')
+              AND (p.bio_notes ILIKE '%bogot%' OR p.full_name_raw IS NOT NULL);
+        """))
+
         await db.commit()
+
 
         # Resumen post-sync
         res_dist = await db.execute(text("SELECT COALESCE(plan_tier, 'Sin Plan') as tier, COUNT(*) as cnt FROM profiles GROUP BY plan_tier ORDER BY cnt DESC"))
