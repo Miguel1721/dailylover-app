@@ -1250,13 +1250,13 @@ function MiniPhotoCarousel({ name, photo }) {
   const next = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i + 1) % total) }
 
   return (
-    <div style={{ position: 'relative', height: 180, borderRadius: 10, overflow: 'hidden', background: '#25191C', marginBottom: 12 }}>
+    <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#25191C', marginBottom: 12, aspectRatio: '4/3' }}>
       <img
         key={currentSrc}
         src={currentSrc}
         alt={name}
         onError={() => setImgError(true)}
-        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '50% 15%', display: 'block' }}
       />
       {/* Badge */}
       <div style={{ position: 'absolute', top: 6, right: 6, background: isReal ? 'rgba(76,175,80,0.25)' : 'rgba(255,193,7,0.2)', border: `1px solid ${isReal ? 'rgba(76,175,80,0.5)' : 'rgba(255,193,7,0.4)'}`, padding: '2px 7px', borderRadius: 8, fontSize: 9, color: isReal ? '#4CAF50' : '#FFC107', fontWeight: 700 }}>
@@ -1298,13 +1298,13 @@ function PersonCard({ label, name, photo, city, code, note }) {
 
   return (
     <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 16, overflow: 'hidden', padding: 16 }}>
-      <div style={{ height: 300, borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14 }}>
+      <div style={{ borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14, aspectRatio: '3/4' }}>
         <img
           key={currentSrc}
           src={currentSrc}
           alt={name}
           onError={() => setImgError(true)}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', transition: 'opacity 0.2s ease' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '50% 15%', display: 'block', transition: 'opacity 0.2s ease' }}
         />
 
         {/* Label */}
