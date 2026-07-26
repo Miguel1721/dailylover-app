@@ -54,9 +54,10 @@ export default function MatchmakerDashboard() {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ matches: [], total: 0 })),
 
-      fetch(`${API}/api/v1/admin/users?limit=6`, {
+      fetch(`${API}/api/v1/admin/users?responsable=${encodeURIComponent(filterKey)}&limit=6`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ users: [], total: 0 })),
+
 
       fetch(`${API}/api/v1/admin/reminders?matchmaker=${filterKey}`, {
         headers: { 'Authorization': `Bearer ${token}` }
