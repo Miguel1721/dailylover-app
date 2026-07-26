@@ -2045,6 +2045,16 @@ async def toggle_reminder(
 
 # ─── GESTIÓN DE DISPONIBILIDAD HORARIA POR PSICÓLOGA ───
 
+def clean_psychologist_name(name_raw: str) -> str:
+    if not name_raw: return "SILVI"
+    p = name_raw.strip().upper()
+    if "SILVI" in p or "SILVIA" in p: return "SILVI"
+    if "STEFF" in p or "STEPH" in p: return "STEFFY"
+    if "MANU" in p: return "MANU"
+    if "PAULA" in p or "MAPE" in p: return "MAPE"
+    if "ALEJA" in p: return "ALEJA"
+    return p
+
 @router.get("/psychologist/availability")
 async def get_psychologist_availability(
     psychologist_name: Optional[str] = Query(None),
@@ -2052,12 +2062,7 @@ async def get_psychologist_availability(
     user: dict = Depends(require_permission("clientes", "view"))
 ):
     """Obtiene la configuración de disponibilidad horaria por día de la semana para la psicóloga."""
-    psyc = (psychologist_name or user.get("name", "SILVI")).strip().upper()
-    if "SILVI" in psyc: psyc_clean = "SILVI"
-    elif "MANU" in psyc: psyc_clean = "MANU"
-    elif "MAPE" in psyc: psyc_clean = "MAPE D"
-    elif "ALEJA" in psyc: psyc_clean = "ALEJA"
-    else: psyc_clean = psyc
+    psyc_clean = clean_psychologist_name(psychologist_name or user.get("name", "SILVI"))
 
     res = await db.execute(text("""
         SELECT id, psychologist_name, day_of_week, start_time, end_time, slot_duration_minutes, is_active
@@ -2100,15 +2105,8 @@ async def save_psychologist_availability(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("clientes", "view"))
 ):
-
     """Guarda o actualiza la franja horaria y estado (activo/inactivo) de un día para la psicóloga."""
-    psyc_raw = payload.get("psychologist_name") or user.get("name", "SILVI")
-    psyc = psyc_raw.strip().upper()
-    if "SILVI" in psyc: psyc_clean = "SILVI"
-    elif "MANU" in psyc: psyc_clean = "MANU"
-    elif "MAPE" in psyc: psyc_clean = "MAPE D"
-    elif "ALEJA" in psyc: psyc_clean = "ALEJA"
-    else: psyc_clean = psyc
+    psyc_clean = clean_psychologist_name(payload.get("psychologist_name") or user.get("name", "SILVI"))
 
     dow = int(payload.get("day_of_week", 1))
     is_active = bool(payload.get("is_active", True))
@@ -2139,5 +2137,6 @@ async def save_psychologist_availability(
     await db.commit()
 
     return {"ok": True, "message": f"Disponibilidad del día {dow} guardada con éxito."}
+
 
 

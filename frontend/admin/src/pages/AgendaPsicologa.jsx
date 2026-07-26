@@ -60,6 +60,18 @@ export default function AgendaPsicologa() {
 
   const handleSaveDayAvailability = (dayData) => {
     setSavingDay(dayData.day_of_week)
+
+    setAvailabilityList(prev => {
+      const idx = prev.findIndex(a => a.day_of_week === dayData.day_of_week)
+      if (idx >= 0) {
+        const updated = [...prev]
+        updated[idx] = { ...updated[idx], ...dayData }
+        return updated
+      } else {
+        return [...prev, dayData]
+      }
+    })
+
     fetch(`${API}/api/v1/admin/psychologist/availability`, {
       method: 'POST',
       headers: {
@@ -77,9 +89,10 @@ export default function AgendaPsicologa() {
     })
       .then(r => r.json())
       .then(() => fetchAvailability())
-      .catch(() => {})
+      .catch(() => fetchAvailability())
       .finally(() => setSavingDay(null))
   }
+
 
   return (
     <div>
