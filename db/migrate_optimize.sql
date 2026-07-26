@@ -207,11 +207,28 @@ FROM users u
 WHERE hm.user_id_a IS NULL
   AND unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(u.name)));
 
-UPDATE historical_matches hm
-SET user_id_b = u.id
-FROM users u
-WHERE hm.user_id_b IS NULL
-  AND unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(u.name)));
+-- 19. ★ Evaluación Post-Cita Obligatoria & Control de Retroalimentación
+ALTER TABLE historical_matches ADD COLUMN IF NOT EXISTS feedback_completed_a BOOLEAN DEFAULT FALSE;
+ALTER TABLE historical_matches ADD COLUMN IF NOT EXISTS feedback_completed_b BOOLEAN DEFAULT FALSE;
+ALTER TABLE historical_matches ADD COLUMN IF NOT EXISTS feedback_email_sent_at TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS match_evaluations (
+    id SERIAL PRIMARY KEY,
+    match_id INTEGER NOT NULL REFERENCES historical_matches(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    evaluator_name VARCHAR(255),
+    venue_rating INTEGER CHECK (venue_rating BETWEEN 1 AND 5),
+    punctuality_rating INTEGER CHECK (punctuality_rating BETWEEN 1 AND 5),
+    chemistry_rating INTEGER CHECK (chemistry_rating BETWEEN 1 AND 5),
+    would_repeat BOOLEAN DEFAULT FALSE,
+    feedback_comments TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT uq_match_user_eval UNIQUE (match_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_eval_match_id ON match_evaluations(match_id);
+CREATE INDEX IF NOT EXISTS idx_eval_user_id ON match_evaluations(user_id);
+
 
 
 

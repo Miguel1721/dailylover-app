@@ -627,12 +627,40 @@ async def analyze_user_matchmaking_viability(
     user_city = (usr.city or "Bogotá").strip()
     user_age = usr.age or 30
 
+    # 3. VERIFICACIÓN DE EVALUACIÓN POST-CITA OBLIGATORIA
+    pending_feedback_res = await db.execute(text("""
+        SELECT COUNT(*) FROM historical_matches hm
+        WHERE (
+            ((hm.user_id_a = :uid OR unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(:uname)))) AND hm.feedback_completed_a IS FALSE)
+            OR
+            ((hm.user_id_b = :uid OR unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:uname)))) AND hm.feedback_completed_b IS FALSE)
+        )
+        AND (hm.status ILIKE '%APROBADO%' OR hm.status ILIKE '%REALIZADA%' OR hm.status ILIKE '%HECHO%' OR hm.status ILIKE '%CONFIRMADO%')
+    """), {"uid": user_id, "uname": user_name})
+    pending_feedback_count = pending_feedback_res.scalar() or 0
+
+    if pending_feedback_count > 0:
+        return {
+            "viability": {
+                "status": "BLOCKED",
+                "badge": "⛔ BLOQUEADO: EVALUACIÓN POST-CITA PENDIENTE",
+                "title": f"⛔ {user_name} tiene {pending_feedback_count} evaluación(es) post-cita pendiente(s) por responder.",
+                "reasons": [
+                    "Requisito obligatorio: El cliente debe responder la encuesta enviada por correo electrónico evaluando la cita, el lugar y la persona.",
+                    "Su perfil permanecerá bloqueado y no recibirá nuevas propuestas de matchmaking hasta enviar su retroalimentación."
+                ],
+                "recommended_action": f"Re-enviar encuesta por correo electrónico a {user_name} para desbloquear su perfil."
+            },
+            "candidate_pool": {"city": user_city, "count": 0}
+        }
+
     # 4. Consultar pool de candidatos compatibles
     pool_query = """
         SELECT COUNT(*) FROM users u
         JOIN profiles p ON p.user_id = u.id
         WHERE u.id != :uid
     """
+
     params = {"uid": user_id, "city": f"%{user_city}%"}
 
     if target_gender == "femenino":
@@ -1679,6 +1707,58 @@ async def update_match_status(
     """), {"status": new_status, "id": match_id})
     await db.commit()
     return {"message": "Estado actualizado correctamente", "id": match_id, "status": new_status}
+
+
+@router.post("/historical-matches/{match_id}/send-feedback-email")
+async def send_match_feedback_email(
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("matching", "manage"))
+):
+    """Envía por correo electrónico la solicitud de evaluación post-cita obligatoria a los participantes del encuentro."""
+    from app.services.email_service import send_email_html, build_feedback_email_html
+
+    match_res = await db.execute(text("""
+        SELECT hm.id, hm.person_a, hm.person_b, hm.user_id_a, hm.user_id_b,
+               ua.email AS email_a, ub.email AS email_b
+        FROM historical_matches hm
+        LEFT JOIN users ua ON ua.id = hm.user_id_a OR unaccent(lower(trim(ua.name))) = unaccent(lower(trim(hm.person_a)))
+        LEFT JOIN users ub ON ub.id = hm.user_id_b OR unaccent(lower(trim(ub.name))) = unaccent(lower(trim(hm.person_b)))
+        WHERE hm.id = :mid
+    """), {"mid": match_id})
+    m = match_res.fetchone()
+    if not m:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    sent_emails = []
+
+    # Enviar a Persona A
+    email_a = m.email_a or f"cliente_{m.user_id_a or 100}@dailylover.app"
+    uid_a = m.user_id_a or 1
+    html_a = build_feedback_email_html(m.person_a or "Cliente A", m.person_b or "Cliente B", m.id, uid_a)
+    if send_email_html(email_a, f"🌹 Evaluación Obligatoria de Cita — {m.person_b}", html_a):
+        sent_emails.append(email_a)
+
+    # Enviar a Persona B
+    email_b = m.email_b or f"cliente_{m.user_id_b or 101}@dailylover.app"
+    uid_b = m.user_id_b or 2
+    html_b = build_feedback_email_html(m.person_b or "Cliente B", m.person_a or "Cliente A", m.id, uid_b)
+    if send_email_html(email_b, f"🌹 Evaluación Obligatoria de Cita — {m.person_a}", html_b):
+        sent_emails.append(email_b)
+
+    await db.execute(text("""
+        UPDATE historical_matches
+        SET feedback_email_sent_at = NOW()
+        WHERE id = :mid
+    """), {"mid": match_id})
+    await db.commit()
+
+    return {
+        "ok": True,
+        "sent_to": sent_emails,
+        "message": f"Solicitud de evaluación post-cita enviada por correo electrónico a {len(sent_emails)} participante(s)."
+    }
+
 
 
 # ─── REMINDERS & PRIORITY TASKS ───────────────────────────────────────────────

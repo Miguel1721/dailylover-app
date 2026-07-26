@@ -369,3 +369,100 @@ async def book_interview(
         }
     }
 
+
+# ─── EVALUACIÓN POST-CITA OBLIGATORIA ───
+
+class PostMatchFeedbackSubmit(BaseModel):
+    match_id: int
+    user_id: int
+    venue_rating: int = 5
+    punctuality_rating: int = 5
+    chemistry_rating: int = 5
+    would_repeat: bool = True
+    feedback_comments: str = None
+
+@router.get("/feedback-form")
+async def get_feedback_form_data(match_id: int, user_id: int, db: AsyncSession = Depends(get_db)):
+    """Obtiene los detalles del encuentro para cargar el formulario de evaluación post-cita."""
+    match_res = await db.execute(text("""
+        SELECT id, person_a, person_b, match_date, venue, matchmaker, status, user_id_a, user_id_b,
+               feedback_completed_a, feedback_completed_b
+        FROM historical_matches WHERE id = :mid
+    """), {"mid": match_id})
+    m = match_res.fetchone()
+    if not m:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid"), {"uid": user_id})
+    u = user_res.fetchone()
+    if not u:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    evaluator_name = u.name.strip()
+    partner_name = m.person_b if (m.person_a and m.person_a.strip().lower() == evaluator_name.lower()) else m.person_a
+
+    is_user_a = (m.user_id_a == user_id) or (m.person_a and m.person_a.strip().lower() == evaluator_name.lower())
+    already_completed = m.feedback_completed_a if is_user_a else m.feedback_completed_b
+
+    return {
+        "match_id": m.id,
+        "evaluator_name": evaluator_name,
+        "partner_name": partner_name,
+        "match_date": str(m.match_date or 'Reciente'),
+        "venue": m.venue or "Lugar del Encuentro",
+        "matchmaker": m.matchmaker or "Daily Lover",
+        "already_completed": bool(already_completed)
+    }
+
+
+@router.post("/submit-match-feedback")
+async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession = Depends(get_db)):
+    """Guarda la evaluación post-cita y desactiva el bloqueo de matchmaking para el cliente."""
+    match_res = await db.execute(text("""
+        SELECT id, person_a, person_b, user_id_a, user_id_b FROM historical_matches WHERE id = :mid
+    """), {"mid": req.match_id})
+    m = match_res.fetchone()
+    if not m:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid"), {"uid": req.user_id})
+    u = user_res.fetchone()
+    evaluator_name = u.name if u else "Cliente"
+
+    # 1. Guardar evaluación en match_evaluations
+    await db.execute(text("""
+        INSERT INTO match_evaluations (match_id, user_id, evaluator_name, venue_rating, punctuality_rating, chemistry_rating, would_repeat, feedback_comments)
+        VALUES (:mid, :uid, :ename, :vr, :pr, :cr, :wr, :comments)
+        ON CONFLICT (match_id, user_id) DO UPDATE SET
+            venue_rating = EXCLUDED.venue_rating,
+            punctuality_rating = EXCLUDED.punctuality_rating,
+            chemistry_rating = EXCLUDED.chemistry_rating,
+            would_repeat = EXCLUDED.would_repeat,
+            feedback_comments = EXCLUDED.feedback_comments,
+            created_at = NOW()
+    """), {
+        "mid": req.match_id,
+        "uid": req.user_id,
+        "ename": evaluator_name,
+        "vr": req.venue_rating,
+        "pr": req.punctuality_rating,
+        "cr": req.chemistry_rating,
+        "wr": req.would_repeat,
+        "comments": req.feedback_comments or "Evaluación post-cita enviada."
+    })
+
+    # 2. Actualizar estado de feedback en historical_matches
+    is_user_a = (m.user_id_a == req.user_id) or (m.person_a and m.person_a.strip().lower() == evaluator_name.lower())
+    if is_user_a:
+        await db.execute(text("UPDATE historical_matches SET feedback_completed_a = TRUE WHERE id = :mid"), {"mid": req.match_id})
+    else:
+        await db.execute(text("UPDATE historical_matches SET feedback_completed_b = TRUE WHERE id = :mid"), {"mid": req.match_id})
+
+    await db.commit()
+
+    return {
+        "ok": True,
+        "message": "¡Muchas gracias! Tu evaluación ha sido registrada. Tu perfil ha sido desbloqueado para continuar en nuevos procesos de matchmaking."
+    }
+
+

@@ -429,10 +429,26 @@ function ClienteModal({ cliente, token, onClose }) {
                           📝 <strong>Retroalimentación Post-Cita:</strong> "{postFeedback}"
                         </div>
                       ) : (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2 }}>
-                          💬 Cita efectuada. Evaluación clínica archivada en expediente.
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', marginTop: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                          <span>💬 Cita efectuada. Evaluación clínica archivada en expediente.</span>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{ fontSize: 11, borderColor: 'rgba(150,21,0,0.4)', color: 'var(--text-primary)', padding: '3px 8px' }}
+                            onClick={() => {
+                              fetch(`${API}/api/v1/admin/historical-matches/${m.id}/send-feedback-email`, {
+                                method: 'POST',
+                                headers: { 'Authorization': `Bearer ${token}` }
+                              })
+                                .then(r => r.json())
+                                .then(d => alert(d.message || 'Encuesta enviada por correo electrónico'))
+                                .catch(() => alert('Error enviando la encuesta por correo'))
+                            }}
+                          >
+                            ✉️ Re-enviar Encuesta por Email
+                          </button>
                         </div>
                       )}
+
                     </div>
                   )
                 })}

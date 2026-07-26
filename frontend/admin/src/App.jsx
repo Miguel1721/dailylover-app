@@ -29,6 +29,8 @@ import Proveedores from './pages/Proveedores'
 
 import MatchmakerDashboard from './pages/MatchmakerDashboard'
 import AgendaPsicologa from './pages/AgendaPsicologa'
+import EvaluacionCita from './pages/EvaluacionCita'
+
 
 
 
@@ -381,6 +383,7 @@ function AppContent() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/evaluacion-cita" element={<EvaluacionCita />} />
       <Route
         path="/*"
         element={
