@@ -1812,8 +1812,9 @@ async def get_psychologist_availability(
 async def save_psychologist_availability(
     payload: dict,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_permission("clientes", "edit"))
+    user: dict = Depends(require_permission("clientes", "view"))
 ):
+
     """Guarda o actualiza la franja horaria y estado (activo/inactivo) de un día para la psicóloga."""
     psyc_raw = payload.get("psychologist_name") or user.get("name", "SILVI")
     psyc = psyc_raw.strip().upper()
