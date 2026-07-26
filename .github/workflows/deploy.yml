@@ -77,9 +77,10 @@ jobs:
             docker compose restart api
 
             echo "=== Verificando salud ==="
-            sleep 5
-            curl -sf http://localhost:8000/api/health && echo "✅ API saludable" || echo "⚠️ API no responde, revisar logs"
+            sleep 10
+            curl -sf http://localhost:8000/api/health && echo "✅ API saludable" || (echo "⚠️ API no responde, imprimiendo logs de uvicorn:" && docker compose logs --tail=50 api)
           EOF
+
 
       - name: ✅ Deploy completado
         run: |
