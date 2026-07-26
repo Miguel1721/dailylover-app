@@ -185,28 +185,99 @@ async def sync_plans_from_excel(
                     """), {"plan": plan_name, "email": email_val, "name": name_val})
                     updated += res.rowcount
 
-        # Clean city artifacts in profiles table (replace 'yes'/'no' with actual city from raw answers)
+        # ─── ENRICH CITY AND RESPONSABLE FROM MATCHES TABS ─────────────────
+        matches_sheets = [s for s in wb.sheetnames if 'MATCHES' in s and s not in ('MISSING MATCHES', 'TROUBLE MATCHES')]
+        cities_updated = 0
+        resp_updated = 0
+
+        for sname in matches_sheets:
+            ws_m = wb[sname]
+            try:
+                row1 = [str(c).upper() if c else "" for c in next(ws_m.iter_rows(min_row=1, max_row=1, values_only=True))]
+            except StopIteration:
+                continue
+
+            city_idx = -1
+            pa_idx = -1
+            pb_idx = -1
+            for idx, h in enumerate(row1):
+                if 'CITY' in h or 'CIUDAD' in h: city_idx = idx
+                if 'PERSON A' in h: pa_idx = idx
+                if 'PERSON B' in h: pb_idx = idx
+
+            psych_name = sname.replace('MATCHES', '').strip()
+
+            for row in ws_m.iter_rows(min_row=2, values_only=True):
+                if not row: continue
+                city_val = str(row[city_idx]).strip() if city_idx >= 0 and city_idx < len(row) and row[city_idx] else ""
+                pa_val = str(row[pa_idx]).strip() if pa_idx >= 0 and pa_idx < len(row) and row[pa_idx] else ""
+                pb_val = str(row[pb_idx]).strip() if pb_idx >= 0 and pb_idx < len(row) and row[pb_idx] else ""
+
+                normalized_city = ""
+                if city_val and city_val.lower() not in ('none', 'null', 'city', 'ciudad', '1 o 2'):
+                    c_clean = city_val.lower()
+                    if 'bog' in c_clean or 'bgta' in c_clean: normalized_city = 'Bogotá'
+                    elif 'med' in c_clean or 'mde' in c_clean: normalized_city = 'Medellín'
+                    elif 'cali' in c_clean: normalized_city = 'Cali'
+                    elif 'barranq' in c_clean: normalized_city = 'Barranquilla'
+                    else: normalized_city = city_val.title()
+
+                for p_person in (pa_val, pb_val):
+                    if not p_person or len(p_person) < 3 or p_person.lower() in ('person a', 'person b', 'none', 'null'):
+                        continue
+
+                    # Update city if found
+                    if normalized_city:
+                        r_city = await db.execute(text("""
+                            UPDATE profiles p
+                            SET city = :city
+                            FROM users u
+                            WHERE p.user_id = u.id
+                              AND (p.city IS NULL OR p.city IN ('yes', 'no', 'no ', 'yes ') OR p.city = '')
+                              AND unaccent(lower(trim(u.name))) = unaccent(lower(trim(:person)))
+                        """), {"city": normalized_city, "person": p_person})
+                        cities_updated += r_city.rowcount
+
+                    # Update responsable from tab name
+                    if psych_name:
+                        r_resp = await db.execute(text("""
+                            UPDATE profiles p
+                            SET responsable = :psych
+                            FROM users u
+                            WHERE p.user_id = u.id
+                              AND (p.responsable IS NULL OR trim(p.responsable) = '')
+                              AND unaccent(lower(trim(u.name))) = unaccent(lower(trim(:person)))
+                        """), {"psych": psych_name, "person": p_person})
+                        resp_updated += r_resp.rowcount
+
+        # General cleanup of remaining legacy yes/no city flags
         await db.execute(text("""
-            UPDATE profiles p
+            UPDATE profiles
             SET city = 'Bogotá'
-            WHERE (p.city IS NULL OR p.city IN ('yes', 'no', 'no ', 'yes ') OR p.city ILIKE '%bogot%')
-              AND (p.bio_notes ILIKE '%bogot%' OR p.full_name_raw IS NOT NULL);
+            WHERE (city IS NULL OR city IN ('yes', 'no', 'no ', 'yes ', ''))
+              AND bio_notes ILIKE '%bogot%';
         """))
 
         await db.commit()
-
 
         # Resumen post-sync
         res_dist = await db.execute(text("SELECT COALESCE(plan_tier, 'Sin Plan') as tier, COUNT(*) as cnt FROM profiles GROUP BY plan_tier ORDER BY cnt DESC"))
         distribucion = {r.tier: r.cnt for r in res_dist.fetchall()}
 
+        res_cities = await db.execute(text("SELECT COALESCE(city, 'Sin Ciudad') as city_name, COUNT(*) as cnt FROM profiles GROUP BY city ORDER BY cnt DESC LIMIT 10"))
+        dist_ciudades = {r.city_name: r.cnt for r in res_cities.fetchall()}
+
         return {
             "status": "success",
             "registros_actualizados": updated,
-            "distribucion_actual": distribucion
+            "ciudades_enriquecidas": cities_updated,
+            "psicologas_enriquecidas": resp_updated,
+            "distribucion_actual": distribucion,
+            "distribucion_ciudades": dist_ciudades
         }
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
 
 
 # ─── STATS ────────────────────────────────────────────────────────────────────
