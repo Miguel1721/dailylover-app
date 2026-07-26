@@ -2366,12 +2366,13 @@ async def get_reminders(
 @router.delete("/reminders/clear")
 async def clear_all_reminders(
     db: AsyncSession = Depends(get_db),
-    admin_user: dict = Depends(get_current_admin)
+    user: dict = Depends(require_permission("dashboard", "view"))
 ):
     """Limpia todos los recordatorios semilla."""
     await db.execute(text("TRUNCATE TABLE reminders RESTART IDENTITY"))
     await db.commit()
     return {"message": "Recordatorios limpiados con éxito"}
+
 
 
 @router.post("/reminders")
