@@ -321,17 +321,21 @@ export default function Matching() {
 
           <select
             className="mapping-select"
-            style={{ padding: '8px 14px', fontSize: 13, minWidth: 160 }}
+            style={{ padding: '8px 14px', fontSize: 13, minWidth: 200 }}
             value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
           >
             <option value="all">Todos los Estados</option>
-            <option value="PENDIENTE">⏳ Pendientes de Revisión</option>
-            <option value="APROBADO">✅ Aprobados</option>
+            <option value="PENDIENTE">⏳ Pendientes de Cita</option>
+            <option value="REVISAR">🔍 Por Revisar (Silvi / Equipo)</option>
+            <option value="SIN_GENTE">⚠️ Sin Gente / Faltan Candidatos</option>
+            <option value="WAITLIST">⏳ En Lista de Espera (Waitlist)</option>
+            <option value="TROUBLE">🚨 Casos Complejos / Trouble</option>
+            <option value="APROBADO">✅ Aprobados / Exitosos</option>
+            <option value="REFUND_CANCELADO">💳 Refund / Cancelados</option>
             <option value="RECHAZADO">❌ Rechazados</option>
-            <option value="TROUBLE">⚠️ Match Fallido (Trouble)</option>
-            <option value="POSTPONED">⏸ Postergado</option>
           </select>
+
         </div>
 
         {/* Banner de Diagnóstico Algorítmico del Formulario Inicial al buscar un cliente */}

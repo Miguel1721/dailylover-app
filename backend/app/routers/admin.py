@@ -1828,16 +1828,25 @@ async def get_historical_matches(
     if status_filter and status_filter != "all":
         sf = status_filter.upper()
         if sf in ["PENDIENTE", "PENDING"]:
-            where_clauses.append("(status IS NULL OR status = '' OR status ILIKE '%PENDIENTE%' OR status ~ '^[0-9.]+$' OR status ILIKE '%julio%' OR status ILIKE '%junio%' OR status ILIKE '%mayo%') AND NOT (status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%' OR status ILIKE '%NO HAY GENTE%')")
+            where_clauses.append("(status IS NULL OR status = '' OR status ILIKE '%PENDIENTE%' OR status ~ '^[0-9.]+$' OR status ILIKE '%julio%' OR status ILIKE '%junio%' OR status ILIKE '%mayo%') AND NOT (status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%' OR status ILIKE '%NO HAY GENTE%' OR status ILIKE '%WAITLIST%' OR status ILIKE '%REFUND%')")
         elif sf in ["APROBADO", "ACCEPTED"]:
             where_clauses.append("(status ILIKE '%APROBADO%' OR status ILIKE '%HECHO%' OR status ILIKE '%ACCEPTED%')")
         elif sf in ["RECHAZADO", "REJECTED"]:
-            where_clauses.append("(status ILIKE '%RECHAZADO%' OR status ILIKE '%NOT APPROVED%' OR status ILIKE '%NO MATCH%' OR status ILIKE '%DESCALIFICADO%' OR status ILIKE '%REFUND%' OR status ILIKE '%CANCELADO%')")
+            where_clauses.append("(status ILIKE '%RECHAZADO%' OR status ILIKE '%NOT APPROVED%' OR status ILIKE '%NO MATCH%' OR status ILIKE '%DESCALIFICADO%')")
+        elif sf == "REVISAR":
+            where_clauses.append("status ILIKE '%REVISAR%'")
+        elif sf == "SIN_GENTE":
+            where_clauses.append("(status ILIKE '%NO HAY GENTE%' OR status ILIKE '%OTRO MATCH%')")
+        elif sf == "WAITLIST":
+            where_clauses.append("(status ILIKE '%WAITLIST%' OR status ILIKE '%ESPERA%')")
+        elif sf == "REFUND_CANCELADO":
+            where_clauses.append("(status ILIKE '%REFUND%' OR status ILIKE '%CANCELADO%')")
         elif sf in ["TROUBLE", "FALLIDO"]:
-            where_clauses.append("(status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%' OR status ILIKE '%NO HAY GENTE%' OR status ILIKE '%WAITLIST%')")
+            where_clauses.append("(status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%' OR status ILIKE '%NO HAY GENTE%' OR status ILIKE '%WAITLIST%' OR status ILIKE '%REFUND%' OR status ILIKE '%CANCELADO%')")
         else:
             where_clauses.append("status ILIKE :status_filter")
             params["status_filter"] = f"%{status_filter}%"
+
 
 
 
