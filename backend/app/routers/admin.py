@@ -148,8 +148,9 @@ async def sync_plans_from_excel(
 
     try:
         content = await file.read()
-        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
         if "Clients plans" not in wb.sheetnames:
+
             return {"status": "error", "message": "Pestaña 'Clients plans' no existe en el Excel cargado"}
 
         # Ensure is_difficult and difficult_notes columns exist in profiles
