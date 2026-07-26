@@ -744,8 +744,17 @@ export default function Clientes() {
     fetch(`${API}/api/v1/admin/users?${params}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 401) {
+          localStorage.removeItem('dl_token')
+          localStorage.removeItem('dl_user')
+          window.location.href = '/login'
+          return null
+        }
+        return r.json()
+      })
       .then(d => {
+        if (!d) return
         setUsers(d.users || [])
         setTotal(d.total || 0)
       })
@@ -755,6 +764,7 @@ export default function Clientes() {
       })
       .finally(() => setLoading(false))
   }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, difficultFilter, token])
+
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
