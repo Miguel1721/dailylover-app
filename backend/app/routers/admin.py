@@ -1482,32 +1482,25 @@ async def get_historical_matches(
             where_clauses.append("status ILIKE :status_filter")
             params["status_filter"] = f"%{status_filter}%"
 
-    # Filtros prioritarios por ID numérico o código DL único
+    # Filtros prioritarios por ID numérico o código DL único (ESTRICTO SIN MEZCLA DE NOMBRES HOMÓNIMOS)
     if user_id:
         u_row = (await db.execute(text("SELECT name, client_code FROM users WHERE id = :uid"), {"uid": user_id})).fetchone()
         if u_row:
             u_name_clean = (u_row.name or "").strip()
-            first_name = u_name_clean.split(' ')[0] if u_name_clean else ""
-            
             where_clauses.append("""(
                 hm.user_id_a = :uid OR hm.user_id_b = :uid OR
-                unaccent(lower(trim(hm.person_a))) ILIKE unaccent(lower(:u_name_like)) OR
-                unaccent(lower(trim(hm.person_b))) ILIKE unaccent(lower(:u_name_like)) OR
-                (length(:first_name) > 3 AND (
-                    unaccent(lower(trim(hm.person_a))) ILIKE unaccent(lower(:fname_like)) OR
-                    unaccent(lower(trim(hm.person_b))) ILIKE unaccent(lower(:fname_like))
-                )) OR
+                unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(:u_name))) OR
+                unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:u_name))) OR
                 ua_id.client_code = :u_code OR ub_id.client_code = :u_code OR
                 ua_name.client_code = :u_code OR ub_name.client_code = :u_code
             )""")
             params["uid"] = user_id
-            params["u_name_like"] = f"%{u_name_clean}%"
-            params["first_name"] = first_name
-            params["fname_like"] = f"%{first_name}%"
+            params["u_name"] = u_name_clean
             params["u_code"] = u_row.client_code or f"DL-{user_id:04d}"
         else:
             where_clauses.append("(hm.user_id_a = :uid OR hm.user_id_b = :uid)")
             params["uid"] = user_id
+
 
     elif client_code:
         cc_clean = client_code.strip().upper()

@@ -130,11 +130,15 @@ function ClienteModal({ cliente, token, onClose }) {
     }
   }, [cliente, token])
 
-  // 2. Cargar historial de citas unificado por nombre de cliente (igual a Matching.jsx)
+  // 2. Cargar historial de citas estrictamente por user_id, client_code o nombre exacto (evita mezclar homónimos)
   useEffect(() => {
-    if (cliente?.name) {
+    if (cliente) {
       setLoadingHistory(true)
-      fetch(`${API}/api/v1/admin/historical-matches?search=${encodeURIComponent(cliente.name.trim())}&limit=100`, {
+      const queryParam = cliente.id
+        ? `user_id=${cliente.id}`
+        : (cliente.client_code ? `client_code=${encodeURIComponent(cliente.client_code)}` : `exact_name=${encodeURIComponent(cliente.name?.trim() || '')}`)
+
+      fetch(`${API}/api/v1/admin/historical-matches?${queryParam}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(r => r.json())
@@ -145,6 +149,7 @@ function ClienteModal({ cliente, token, onClose }) {
         .finally(() => setLoadingHistory(false))
     }
   }, [cliente, token])
+
 
   const targetClient = fullProfile || cliente
   const p = targetClient.profile || {}

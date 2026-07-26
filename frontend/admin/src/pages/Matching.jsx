@@ -947,12 +947,9 @@ function CandidateModal({ candidateName, token, onClose }) {
   useEffect(() => {
     if (candidateName) {
       setLoadingHistory(true)
-      let queryParam = `search=${encodeURIComponent(candidateName.trim())}`
-      if (profileData?.id) {
-        queryParam = `user_id=${profileData.id}`
-      } else if (profileData?.client_code) {
-        queryParam = `client_code=${encodeURIComponent(profileData.client_code)}`
-      }
+      const queryParam = profileData?.id
+        ? `user_id=${profileData.id}`
+        : (profileData?.client_code ? `client_code=${encodeURIComponent(profileData.client_code)}` : `exact_name=${encodeURIComponent(candidateName.trim())}`)
 
       fetch(`${API}/api/v1/admin/historical-matches?${queryParam}&limit=50`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -963,6 +960,7 @@ function CandidateModal({ candidateName, token, onClose }) {
         .finally(() => setLoadingHistory(false))
     }
   }, [candidateName, profileData, token])
+
 
 
 
