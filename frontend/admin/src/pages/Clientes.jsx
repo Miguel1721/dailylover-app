@@ -779,7 +779,7 @@ export default function Clientes() {
       </div>
 
       <div className="content-area">
-        {/* ── FILTROS (LÍNEA HORIZONTAL CONTINUA RESPONSIVE) ───────────────── */}
+        {/* ── FILTROS (COMPACTO Y ALINEADO HORIZONTALMENTE) ───────────────── */}
         <div style={{
           background: 'var(--bg-card)',
           borderRadius: 12,
@@ -789,17 +789,15 @@ export default function Clientes() {
           display: 'flex',
           gap: 8,
           alignItems: 'center',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          WebkitOverflowScrolling: 'touch'
+          flexWrap: 'wrap'
         }}>
           {/* Búsqueda */}
-          <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 180, flexShrink: 0 }}>
+          <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: 260 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               className="search-bar"
               style={{ paddingLeft: 32, width: '100%', height: 36, fontSize: 12 }}
-              placeholder="Buscar por nombre o tel..."
+              placeholder="Buscar cliente..."
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
             />
@@ -808,8 +806,7 @@ export default function Clientes() {
           {/* Filtro por Plan */}
           <select
             style={{
-              padding: '6px 10px', fontSize: 12, height: 36,
-              flexShrink: 0,
+              padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content',
               background: planFilter !== 'all' ? 'rgba(255,215,0,0.1)' : 'var(--bg-base)',
               border: planFilter !== 'all' ? '1px solid #FFD700' : '1px solid var(--border-color)',
               color: planFilter !== 'all' ? '#FFD700' : 'var(--text-primary)',
@@ -826,7 +823,7 @@ export default function Clientes() {
 
           {/* Psicóloga Responsable */}
           <select
-            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600 }}
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600 }}
             value={psychologistFilter}
             onChange={e => handlePsychologistChange(e.target.value)}
           >
@@ -837,7 +834,7 @@ export default function Clientes() {
 
           {/* Evaluación clínica */}
           <select
-            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
             value={notesFilter}
             onChange={e => { setNotesFilter(e.target.value); setPage(1) }}
           >
@@ -848,7 +845,7 @@ export default function Clientes() {
 
           {/* Ciudad */}
           <select
-            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
             value={cityFilter}
             onChange={e => { setCityFilter(e.target.value); setPage(1) }}
           >
@@ -859,7 +856,7 @@ export default function Clientes() {
 
           {/* Historial de matches */}
           <select
-            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
             value={matchesFilter}
             onChange={e => { setMatchesFilter(e.target.value); setPage(1) }}
           >
@@ -868,6 +865,8 @@ export default function Clientes() {
             <option value="without_matches">✨ Listos para 1ra Cita</option>
           </select>
         </div>
+
+
 
 
         {loading ? (

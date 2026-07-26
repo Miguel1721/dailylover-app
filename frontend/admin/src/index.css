@@ -542,8 +542,8 @@ textarea {
   color: var(--text-primary);
   border-radius: 8px;
   padding: 10px 14px;
-  width: 100%;
   font-family: var(--font-family);
+
   font-size: 14px;
   transition: border-color 0.2s;
 }
