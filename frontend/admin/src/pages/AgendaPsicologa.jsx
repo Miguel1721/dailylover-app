@@ -143,7 +143,19 @@ export default function AgendaPsicologa() {
   const [loading, setLoading]         = useState(true)
   const [activeTab, setActiveTab]     = useState('entrevistas')
   const [availMap, setAvailMap]       = useState({})   // { [day_of_week]: data }
-  const [availLoaded, setAvailLoaded] = useState(false)
+// Inside AgendaPsicologa component
+  const [assignedCityFilter, setAssignedCityFilter] = useState('all')
+  const [assignedPlanFilter, setAssignedPlanFilter] = useState('all')
+
+  const filteredAssignedClients = (agenda?.assigned_clients || []).filter(c => {
+    if (assignedCityFilter !== 'all' && !(c.city || '').toLowerCase().includes(assignedCityFilter.toLowerCase())) return false
+    if (assignedPlanFilter !== 'all') {
+      if (assignedPlanFilter === 'sin_plan' && c.plan_tier && c.plan_tier !== 'Sin Plan') return false
+      if (assignedPlanFilter !== 'sin_plan' && !(c.plan_tier || '').toLowerCase().includes(assignedPlanFilter.toLowerCase())) return false
+    }
+    return true
+  })
+
 
   const psychologistName = user?.name ? user.name.split(' ')[0].toUpperCase() : 'SILVI'
 
@@ -271,20 +283,69 @@ export default function AgendaPsicologa() {
 
         ) : activeTab === 'clientes' ? (
           <div className="card">
-            <div className="card-title">Clientes Bajo Tu Acompañamiento Clínico</div>
-            {agenda?.assigned_clients?.length === 0 ? (
-              <div className="empty-state">No hay clientes asignados actualmente.</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+              <div className="card-title" style={{ marginBottom: 0 }}>
+                Clientes Bajo Tu Acompañamiento Clínico ({filteredAssignedClients.length})
+              </div>
+
+              {/* Filtros rápidos de Ciudad y Plan */}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                  style={{ padding: '6px 12px', fontSize: 12, height: 34, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+                  value={assignedCityFilter}
+                  onChange={e => setAssignedCityFilter(e.target.value)}
+                >
+                  <option value="all">📍 Todas las Ciudades</option>
+                  <option value="Bogotá">📍 Bogotá</option>
+                  <option value="Medellín">📍 Medellín</option>
+                  <option value="Cali">📍 Cali</option>
+                </select>
+
+                <select
+                  style={{ padding: '6px 12px', fontSize: 12, height: 34, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+                  value={assignedPlanFilter}
+                  onChange={e => setAssignedPlanFilter(e.target.value)}
+                >
+                  <option value="all">💳 Todos los Planes</option>
+                  <option value="195">👑 VIP 195k</option>
+                  <option value="150">💎 Premium 150k</option>
+                  <option value="98">⭐ Estándar Plus 98k</option>
+                  <option value="65">🔵 Estándar 65k</option>
+                  <option value="40">🟢 Básico 40k</option>
+                  <option value="sin_plan">⚠️ Sin Plan</option>
+                </select>
+              </div>
+            </div>
+
+            {filteredAssignedClients.length === 0 ? (
+              <div className="empty-state">No se encontraron clientes bajo los filtros seleccionados.</div>
             ) : (
               <div className="table-container">
                 <table>
-                  <thead><tr><th>Código DL</th><th>Nombre</th><th>Ciudad</th><th>Edad</th><th>WhatsApp</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Código DL</th>
+                      <th>Nombre</th>
+                      <th>Plan / Membresía</th>
+                      <th>Ciudad</th>
+                      <th>Edad</th>
+                      <th>Inscripción</th>
+                      <th>WhatsApp</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {agenda.assigned_clients.map(c => (
+                    {filteredAssignedClients.map(c => (
                       <tr key={c.id}>
                         <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#a855f7' }}>{c.client_code}</td>
                         <td style={{ fontWeight: 700 }}>{c.name}</td>
+                        <td>
+                          <span className="badge" style={{ fontSize: 11, background: 'rgba(168,85,247,0.15)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)' }}>
+                            💳 {c.plan_tier || 'Sin Plan'}
+                          </span>
+                        </td>
                         <td>📍 {c.city}</td>
                         <td>🎂 {c.age ? `${c.age} años` : '—'}</td>
+                        <td>📅 {c.created_at || '—'}</td>
                         <td>
                           <a href={`https://wa.me/${(c.phone || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', fontWeight: 600, fontSize: 12 }}>
                             📱 {c.phone}
@@ -297,6 +358,7 @@ export default function AgendaPsicologa() {
               </div>
             )}
           </div>
+
 
         ) : (
           /* ── DISPONIBILIDAD ── */

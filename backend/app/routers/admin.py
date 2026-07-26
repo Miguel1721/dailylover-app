@@ -1243,7 +1243,7 @@ async def get_psychologist_agenda(
 
     # 2. Clientes asignados a esta psicóloga
     clients_res = await db.execute(text("""
-        SELECT u.id, u.name, u.phone, u.client_code, p.city, p.age, p.motivacion, u.created_at
+        SELECT u.id, u.name, u.phone, u.client_code, p.city, p.age, p.motivacion, p.plan_tier, u.created_at
         FROM users u
         JOIN profiles p ON p.user_id = u.id
         WHERE UPPER(COALESCE(p.responsable, '')) ILIKE :psyc
@@ -1256,8 +1256,11 @@ async def get_psychologist_agenda(
         "phone": r.phone,
         "city": r.city or "Bogotá",
         "age": r.age,
+        "plan_tier": r.plan_tier or "Sin Plan",
+        "created_at": r.created_at.strftime("%d/%m/%Y") if hasattr(r.created_at, 'strftime') else (str(r.created_at)[:10] if r.created_at else "—"),
         "motivacion": r.motivacion
     } for r in clients_res.fetchall()]
+
 
     return {
         "psychologist": psyc_clean,
