@@ -77,15 +77,19 @@ function VividStatusBadge({ status }) {
     border = 'rgba(239, 68, 68, 0.4)'
     icon = <XCircle size={13} />
     text = s.includes('REFUND') ? '🔴 REFUND' : (s.includes('CANCELADO') ? '🔴 CANCELADO' : '🔴 RECHAZADO')
-  } else if (s.includes('TROUBLE') || s.includes('REVISAR') || s.includes('NO HAY GENTE') || s.includes('WAITLIST')) {
+  } else if (s.includes('TROUBLE') || s.includes('REVISAR') || s.includes('NO HAY GENTE') || s.includes('WAITLIST') || s.includes('ESPERA') || s.includes('OTRO MATCH')) {
     bg = 'rgba(249, 115, 22, 0.15)'
     color = '#F97316'
     border = 'rgba(249, 115, 22, 0.4)'
     icon = <AlertTriangle size={13} />
-    text = s.includes('NO HAY') ? '⚠️ SIN GENTE' : (s.includes('REVISAR') ? '⚠️ REVISAR' : '⚠️ TROUBLE')
+    if (s.includes('NO HAY') || s.includes('OTRO MATCH')) text = '⚠️ SIN GENTE'
+    else if (s.includes('REVISAR')) text = '⚠️ REVISAR'
+    else if (s.includes('WAITLIST') || s.includes('ESPERA')) text = '⏳ WAITLIST'
+    else text = '⚠️ TROUBLE'
   } else {
     text = '⏳ PENDIENTE'
   }
+
 
 
   return (
