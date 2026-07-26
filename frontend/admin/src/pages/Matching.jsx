@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { Heart, Filter, CheckCircle, XCircle, Clock, AlertTriangle, Sparkles, User, ShieldCheck, MapPin, ChevronRight, MessageSquare, ThumbsUp, ThumbsDown, Coffee, Camera, CheckSquare, Layers, FileText, Star, Sliders, Search } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -1237,7 +1237,7 @@ function getPlaceholders(name = '', idx = 0) {
 }
 
 function PersonCard({ label, name, photo, city, code, note, fallbackIdx }) {
-  const [imgError, setImgError] = React.useState(false)
+  const [imgError, setImgError] = useState(false)
   const displayPhoto = (!photo || imgError) ? getPlaceholders(name, fallbackIdx) : photo
   const initials = name ? name.trim().split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase() : '?'
   const hasRealPhoto = photo && !imgError
