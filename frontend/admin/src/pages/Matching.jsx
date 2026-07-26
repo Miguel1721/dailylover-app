@@ -201,12 +201,16 @@ function getAIAnalysis(match) {
 
 export default function Matching() {
   const { user, token } = useAuth()
+  const searchParams = new URLSearchParams(window.location.search)
+  const initialStatus = searchParams.get('status_filter') || 'all'
+  const initialMatchmaker = searchParams.get('matchmaker') || 'all'
+
   const [matches, setMatches] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
-  const [matchmaker, setMatchmaker] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [matchmaker, setMatchmaker] = useState(initialMatchmaker)
+  const [statusFilter, setStatusFilter] = useState(initialStatus)
   const [loading, setLoading] = useState(true)
   const [selectedMatch, setSelectedMatch] = useState(null)
   const [lookbookMatch, setLookbookMatch] = useState(null)
@@ -219,20 +223,8 @@ export default function Matching() {
   const [targetUserDiagnostic, setTargetUserDiagnostic] = useState(null)
 
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const urlStatus = searchParams.get('status_filter')
-    const urlMatchmaker = searchParams.get('matchmaker')
-    if (urlStatus) {
-      setStatusFilter(urlStatus)
-    }
-    if (urlMatchmaker) {
-      setMatchmaker(urlMatchmaker)
-    }
-  }, [])
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    if (searchParams.get('matchmaker')) return // Don't override if specified in URL
+    const sp = new URLSearchParams(window.location.search)
+    if (sp.get('matchmaker')) return // Don't override if specified in URL
 
     if (user?.role === 'Matchmaker' && user?.name) {
       const matchName = user.name.split(' ')[0].toUpperCase()
@@ -242,6 +234,7 @@ export default function Matching() {
       }
     }
   }, [user])
+
 
 
   const fetchMatches = useCallback(() => {
