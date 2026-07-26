@@ -227,8 +227,20 @@ async def sync_plans_from_excel(
                 # Extract VIP if written in Col 4
                 is_vip = 'vip' in col4_text.lower() if col4_text else False
 
-                if extracted_age or extracted_city or is_vip:
+                # Extract Col 2 Date
+                col2_date = row[2] if len(row) > 2 else None
+                extracted_date = None
+                if col2_date:
+                    if hasattr(col2_date, 'strftime'):
+                        extracted_date = col2_date
+                    else:
+                        try:
+                            extracted_date = datetime.strptime(str(col2_date)[:10], "%Y-%m-%d")
+                        except: pass
+
+                if extracted_age or extracted_city or is_vip or extracted_date:
                     updates = []
+                    u_updates = []
                     params = {"person": p_name}
                     if extracted_age:
                         updates.append("age = :age")
@@ -250,6 +262,14 @@ async def sync_plans_from_excel(
                         """
                         r_up = await db.execute(text(sql_up), params)
                         if extracted_age: ages_updated += r_up.rowcount
+
+                    if extracted_date:
+                        await db.execute(text("""
+                            UPDATE users
+                            SET created_at = :cdate
+                            WHERE unaccent(lower(trim(name))) = unaccent(lower(trim(:person)))
+                        """), {"cdate": extracted_date, "person": p_name})
+
 
         # ─── ENRICH CITY AND RESPONSABLE FROM MATCHES TABS ─────────────────
 
