@@ -2331,12 +2331,8 @@ async def get_reminders(
             notes TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         )
-    """))
-    await db.commit()
-
-        await db.commit()
-
     query = "SELECT * FROM reminders WHERE 1=1"
+
     params = {}
     if matchmaker:
         query += " AND (UPPER(matchmaker) = :mm OR matchmaker IS NULL)"
