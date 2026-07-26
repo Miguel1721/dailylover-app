@@ -232,7 +232,7 @@ export default function AgendaPsicologa() {
                           <span className="badge badge-blue">{(c.motivacion || 'conexion_profunda').replace('_', ' ')}</span>
                         </td>
                         <td>
-                          <a href={`https://wa.me/${''.join(filter(str.isdigit, c.phone || ''))}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', fontWeight: 600, fontSize: 12 }}>
+                          <a href={`https://wa.me/${(c.phone || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', fontWeight: 600, fontSize: 12 }}>
                             📱 {c.phone}
                           </a>
                         </td>
@@ -273,7 +273,3 @@ export default function AgendaPsicologa() {
   )
 }
 
-function filter(fn, str) {
-  if (!str) return []
-  return Array.from(str).filter(fn)
-}
