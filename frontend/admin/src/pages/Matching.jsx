@@ -779,7 +779,8 @@ export default function Matching() {
               <div style={{ background: 'var(--bg-base)', padding: 18, borderRadius: 12, border: '1px solid var(--border-color)', marginBottom: 20 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <FileText size={18} style={{ color: '#FFC107' }} />
-                  PASO 3: Informe Psicológico Multidimensional Exhaustivo (Gemini 2.5)
+                  PASO 3: Informe Psicológico Multidimensional Exhaustivo
+
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
