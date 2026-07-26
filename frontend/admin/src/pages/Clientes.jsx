@@ -414,9 +414,14 @@ function ClienteModal({ cliente, token, onClose }) {
                         </div>
 
                         <span className="badge badge-green" style={{ fontSize: 11 }}>
-                          {isExcelDateStatus ? `📅 ${cleanStatus}` : (cleanStatus.includes('APROBADO') ? '🟢 Cita Realizada' : cleanStatus)}
+                          {isExcelDateStatus
+                            ? `📅 ${cleanStatus}`
+                            : (cleanStatus?.includes('SUGERIDO') || cleanStatus?.includes('FORMULARIO') || cleanStatus?.includes('APROBADO')
+                                ? '🟢 Cita Realizada'
+                                : cleanStatus)}
                         </span>
                       </div>
+
 
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                         <span>📅 {isExcelDateStatus ? 'Fecha realizada en historial' : cleanDate}</span>
