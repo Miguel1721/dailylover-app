@@ -233,7 +233,6 @@ async def sync_plans_from_excel(
                             SET city = :city
                             FROM users u
                             WHERE p.user_id = u.id
-                              AND (p.city IS NULL OR p.city IN ('yes', 'no', 'no ', 'yes ') OR p.city = '')
                               AND unaccent(lower(trim(u.name))) = unaccent(lower(trim(:person)))
                         """), {"city": normalized_city, "person": p_person})
                         cities_updated += r_city.rowcount
@@ -245,10 +244,10 @@ async def sync_plans_from_excel(
                             SET responsable = :psych
                             FROM users u
                             WHERE p.user_id = u.id
-                              AND (p.responsable IS NULL OR trim(p.responsable) = '')
                               AND unaccent(lower(trim(u.name))) = unaccent(lower(trim(:person)))
                         """), {"psych": psych_name, "person": p_person})
                         resp_updated += r_resp.rowcount
+
 
         # General cleanup of remaining legacy yes/no city flags
         await db.execute(text("""
