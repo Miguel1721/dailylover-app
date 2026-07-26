@@ -118,19 +118,19 @@ export default function MatchmakerDashboard() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 28 }}>🌹</span>
-            <h1 style={{ margin: 0 }}>¡Hola, {psychologistName}!</h1>
+            <h1 style={{ margin: 0, wordBreak: 'break-word' }}>¡Hola, {psychologistName}!</h1>
           </div>
           <p className="page-subtitle">Panel de Control Clínico & Tareas de Matchmaking asignadas</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', maxWidth: '100%' }}>
           <button 
             className="btn btn-ghost"
-            style={{ display: 'flex', alignItems: 'center', gap: 8, borderColor: 'var(--color-primary)', color: 'var(--color-primary)' }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, borderColor: 'var(--color-primary)', color: 'var(--color-primary)', whiteSpace: 'nowrap' }}
             onClick={() => setShowModal(true)}
           >
             <Plus size={16} />
@@ -139,7 +139,7 @@ export default function MatchmakerDashboard() {
 
           <button 
             className="btn btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, whiteSpace: 'nowrap' }}
             onClick={() => navigate('/matching')}
           >
             <Heart size={16} />
@@ -147,6 +147,7 @@ export default function MatchmakerDashboard() {
           </button>
         </div>
       </div>
+
 
       <div className="content-area">
         {/* KPI Cards */}
