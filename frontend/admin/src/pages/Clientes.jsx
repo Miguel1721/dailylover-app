@@ -26,14 +26,15 @@ const PSYCHOLOGISTS = [
 
 // Planes de membresía (según pestaña "Clients plans" del Excel + sin asignación)
 const PLANS = [
-  { id: 'all',       label: 'Todos los Planes',      icon: '📋', color: null },
-  { id: 'sin_plan',  label: '⚠️ Sin Plan Asignado',   icon: '⚠️', color: '#888' },
-  { id: '195',       label: '👑 VIP 195k',            icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)' },
-  { id: '150',       label: '💎 Premium 150k',        icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
-  { id: '98',        label: '⭐ Estándar Plus 98k',   icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)' },
-  { id: '65',        label: '🔵 Estándar 65k',        icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)' },
-  { id: '40',        label: '🟢 Básico 40k',          icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
+  { id: 'all',       label: 'Todos los Planes',           icon: '📋', color: null },
+  { id: 'sin_plan',  label: '⚠️ Sin Plan Asignado',        icon: '⚠️', color: '#888' },
+  { id: '195',       label: '👑 VIP 195k (26)',           icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)' },
+  { id: '150',       label: '💎 Premium 150k (104)',      icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  { id: '98',        label: '⭐ Estándar Plus 98k (26)',  icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)' },
+  { id: '65',        label: '🔵 Estándar 65k (355)',      icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)' },
+  { id: '40',        label: '🟢 Básico 40k (246)',        icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
 ]
+
 
 
 function getPlanStyle(planTier) {
