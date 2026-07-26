@@ -449,8 +449,15 @@ async def get_users(
         where_clauses.append("(p.bio_notes IS NULL OR length(trim(p.bio_notes)) <= 2)")
 
     if city and city != "all":
-        where_clauses.append("(unaccent(COALESCE(p.city, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(p.bio_notes, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(CAST(p.search_preferences AS text), '')) ILIKE unaccent(:city))")
-        params["city"] = f"%{city}%"
+        city_clean = city.strip()
+        if "bogot" in city_clean.lower():
+            where_clauses.append("(p.city ILIKE '%bogot%' OR p.city ILIKE '%bogot%' OR unaccent(COALESCE(p.city, '')) ILIKE '%bogot%' OR p.bio_notes ILIKE '%bogot%')")
+        elif "medell" in city_clean.lower():
+            where_clauses.append("(p.city ILIKE '%medell%' OR unaccent(COALESCE(p.city, '')) ILIKE '%medell%' OR p.bio_notes ILIKE '%medell%')")
+        else:
+            where_clauses.append("(unaccent(COALESCE(p.city, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(p.bio_notes, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(CAST(p.search_preferences AS text), '')) ILIKE unaccent(:city))")
+            params["city"] = f"%{city_clean}%"
+
 
     if plan_tier and plan_tier != "all":
         if plan_tier == "sin_plan":
