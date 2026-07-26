@@ -200,12 +200,19 @@ CREATE TABLE IF NOT EXISTS interview_appointments (
 CREATE INDEX IF NOT EXISTS idx_psyc_avail ON psychologist_availability(psychologist_name, day_of_week);
 CREATE INDEX IF NOT EXISTS idx_interview_app ON interview_appointments(appointment_date, psychologist_name);
 
--- Semillas iniciales de disponibilidad de Lunes a Viernes de 9:00 AM a 5:00 PM para psicólogas principales
-INSERT INTO psychologist_availability (psychologist_name, day_of_week, start_time, end_time)
-SELECT p, d, '09:00:00'::TIME, '17:00:00'::TIME
-FROM (VALUES ('SILVI'), ('MANU'), ('MAPE D'), ('ALEJA')) AS ps(p)
-CROSS JOIN (VALUES (1), (2), (3), (4), (5)) AS days(d)
-ON CONFLICT DO NOTHING;
+-- 18. ★ Enlace automático masivo de user_id_a y user_id_b en historical_matches
+UPDATE historical_matches hm
+SET user_id_a = u.id
+FROM users u
+WHERE hm.user_id_a IS NULL
+  AND unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(u.name)));
+
+UPDATE historical_matches hm
+SET user_id_b = u.id
+FROM users u
+WHERE hm.user_id_b IS NULL
+  AND unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(u.name)));
+
 
 
 

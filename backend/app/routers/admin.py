@@ -1451,8 +1451,21 @@ async def get_historical_matches(
 
     # Filtros prioritarios por ID numérico o código DL único
     if user_id:
-        where_clauses.append("(hm.user_id_a = :uid OR hm.user_id_b = :uid)")
-        params["uid"] = user_id
+        u_row = (await db.execute(text("SELECT name, client_code FROM users WHERE id = :uid"), {"uid": user_id})).fetchone()
+        if u_row:
+            where_clauses.append("""(
+                hm.user_id_a = :uid OR hm.user_id_b = :uid OR
+                unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(:u_name))) OR
+                unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:u_name))) OR
+                ua_id.client_code = :u_code OR ub_id.client_code = :u_code OR
+                ua_name.client_code = :u_code OR ub_name.client_code = :u_code
+            )""")
+            params["uid"] = user_id
+            params["u_name"] = u_row.name or ""
+            params["u_code"] = u_row.client_code or f"DL-{user_id:04d}"
+        else:
+            where_clauses.append("(hm.user_id_a = :uid OR hm.user_id_b = :uid)")
+            params["uid"] = user_id
     elif client_code:
         cc_clean = client_code.strip().upper()
         where_clauses.append("""(
@@ -1460,6 +1473,7 @@ async def get_historical_matches(
             ua_name.client_code = :cc OR ub_name.client_code = :cc
         )""")
         params["cc"] = cc_clean
+
     elif exact_name:
         where_clauses.append("(unaccent(lower(trim(person_a))) = unaccent(lower(trim(:exact_name))) OR unaccent(lower(trim(person_b))) = unaccent(lower(trim(:exact_name))))")
         params["exact_name"] = exact_name
