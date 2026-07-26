@@ -1352,13 +1352,10 @@ function MiniPhotoCarousel({ name, photo }) {
 
 
 function PersonCard({ label, name, photo, city, code, note }) {
-  // Pool de fotos: real primero, luego todas las del género
   const n = name ? name.toLowerCase() : ''
   const femNames = ['maria','ana','silvi','steffy','manu','paula','andrea','carolina','natalia','valentina','laura','daniela','camila','alejandra','isabella','sofia','sara','juliana']
   const isFem = femNames.some(f => n.includes(f))
   const fallbackPool = isFem ? PLACEHOLDER_WOMEN : PLACEHOLDER_MEN
-
-  // Si tiene foto real, va primero; luego el resto de placeholders
   const photoPool = photo ? [photo, ...fallbackPool] : fallbackPool
 
   const [idx, setIdx] = useState(0)
@@ -1372,8 +1369,8 @@ function PersonCard({ label, name, photo, city, code, note }) {
   const next = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i + 1) % total) }
 
   return (
-    <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 16, overflow: 'hidden', padding: 16 }}>
-      <div style={{ borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14, aspectRatio: '3/4' }}>
+    <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 12, overflow: 'hidden', padding: 10, minWidth: 0 }}>
+      <div style={{ borderRadius: 10, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 10, aspectRatio: '3/4' }}>
         <img
           key={currentSrc}
           src={currentSrc}
@@ -1383,40 +1380,32 @@ function PersonCard({ label, name, photo, city, code, note }) {
         />
 
         {/* Label */}
-        <div style={{ position: 'absolute', bottom: 10, left: 10, background: 'rgba(0,0,0,0.75)', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'white' }}>
+        <div style={{ position: 'absolute', bottom: 6, left: 6, background: 'rgba(0,0,0,0.75)', padding: '3px 7px', borderRadius: 6, fontSize: 10, fontWeight: 700, color: 'white' }}>
           {label}
         </div>
 
         {/* Badge foto real / ejemplo */}
-        <div style={{ position: 'absolute', top: 10, right: 10, background: isRealPhoto ? 'rgba(76,175,80,0.25)' : 'rgba(255,193,7,0.2)', border: `1px solid ${isRealPhoto ? 'rgba(76,175,80,0.5)' : 'rgba(255,193,7,0.4)'}`, padding: '3px 8px', borderRadius: 8, fontSize: 10, color: isRealPhoto ? '#4CAF50' : '#FFC107', fontWeight: 700 }}>
-          {isRealPhoto ? '✅ Foto real' : `📷 Ejemplo ${idx + 1}/${total}`}
+        <div style={{ position: 'absolute', top: 6, right: 6, background: isRealPhoto ? 'rgba(76,175,80,0.25)' : 'rgba(255,193,7,0.2)', border: `1px solid ${isRealPhoto ? 'rgba(76,175,80,0.5)' : 'rgba(255,193,7,0.4)'}`, padding: '2px 5px', borderRadius: 6, fontSize: 9, color: isRealPhoto ? '#4CAF50' : '#FFC107', fontWeight: 700 }}>
+          {isRealPhoto ? '✅ Real' : `📷 ${idx + 1}/${total}`}
         </div>
 
-        {/* Flechas navegación */}
-        <button onClick={prev} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: 16, backdropFilter: 'blur(4px)', transition: 'background 0.2s' }}
-          onMouseEnter={e => e.currentTarget.style.background='rgba(150,21,0,0.7)'}
-          onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.6)'}>
-          ◀
-        </button>
-        <button onClick={next} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: 16, backdropFilter: 'blur(4px)', transition: 'background 0.2s' }}
-          onMouseEnter={e => e.currentTarget.style.background='rgba(150,21,0,0.7)'}
-          onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.6)'}>
-          ▶
-        </button>
+        {/* Flechas navegación — compactas en móvil */}
+        <button onClick={prev} style={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: 12, backdropFilter: 'blur(4px)' }}>◀</button>
+        <button onClick={next} style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: 12, backdropFilter: 'blur(4px)' }}>▶</button>
 
         {/* Dots */}
-        <div style={{ position: 'absolute', bottom: 10, right: 10, display: 'flex', gap: 4 }}>
+        <div style={{ position: 'absolute', bottom: 6, right: 6, display: 'flex', gap: 3 }}>
           {photoPool.map((_, i) => (
-          <div key={i} onClick={e => { e.stopPropagation(); setImgError(false); setIdx(i) }} style={{ width: i === idx ? 16 : 6, height: 6, borderRadius: 3, background: i === idx ? '#FF5A36' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s' }} />
+            <div key={i} onClick={e => { e.stopPropagation(); setImgError(false); setIdx(i) }} style={{ width: i === idx ? 12 : 5, height: 5, borderRadius: 3, background: i === idx ? '#FF5A36' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s' }} />
           ))}
         </div>
       </div>
 
-      <h3 style={{ fontSize: 17, fontWeight: 800, color: 'white', marginBottom: 4 }}>{name}</h3>
-      {code && <div style={{ fontSize: 11, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginBottom: 4 }}>{code}</div>}
-      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>📍 {city || 'Sin ciudad'}</div>
+      <h3 style={{ fontSize: 13, fontWeight: 800, color: 'white', marginBottom: 3, wordBreak: 'break-word', lineHeight: 1.3 }}>{name}</h3>
+      {code && <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginBottom: 3, wordBreak: 'break-all' }}>{code}</div>}
+      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>📍 {city || 'Sin ciudad'}</div>
       {note && (
-        <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.1)', padding: 8, borderRadius: 8, marginTop: 10 }}>
+        <div style={{ fontSize: 10, color: '#FFC107', background: 'rgba(255,193,7,0.1)', padding: 6, borderRadius: 6, marginTop: 8 }}>
           ⚠️ {note}
         </div>
       )}
@@ -1470,9 +1459,18 @@ function LookbookModal({ match, onClose }) {
         </div>
 
         {/* ── LAYOUT PRINCIPAL: foto A | evaluación central | foto B ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px 1fr', gap: 20, alignItems: 'start', marginBottom: 20 }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'clamp(120px, 30%, 1fr) clamp(200px, 260px, 260px) clamp(120px, 30%, 1fr)',
+          gap: 16,
+          alignItems: 'start',
+          marginBottom: 20,
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}>
 
           {/* PERSONA A */}
+
           <PersonCard label="PERSONA A" name={nameA} photo={match.photo_a} city={match.city_a} code={match.code_a} note={personA.note} />
 
           {/* PANEL CENTRAL DE COMPATIBILIDAD */}
