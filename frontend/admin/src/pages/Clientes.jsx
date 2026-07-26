@@ -99,21 +99,36 @@ function OceanBar({ label, value }) {
 
 function ClienteModal({ cliente, token, onClose }) {
   if (!cliente) return null
-  const p = cliente.profile || {}
-  const ocean = p.ocean || {}
   const [activeTab, setActiveTab] = useState('perfil')
+  const [fullProfile, setFullProfile] = useState(cliente)
   const [matchHistory, setMatchHistory] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+  const [loadingProfile, setLoadingProfile] = useState(false)
 
+  // 1. Cargar perfil clínico completo unificado (igual a Matching.jsx)
   useEffect(() => {
-    if (cliente) {
-      setLoadingHistory(true)
-      const cleanName = (cliente.name || '').trim().toLowerCase()
-      const queryParam = cliente.id
-        ? `user_id=${cliente.id}`
-        : (cliente.client_code ? `client_code=${encodeURIComponent(cliente.client_code)}` : `exact_name=${encodeURIComponent(cliente.name?.trim() || '')}`)
+    if (cliente?.name) {
+      setLoadingProfile(true)
+      fetch(`${API}/api/v1/admin/users?search=${encodeURIComponent(cliente.name.trim())}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(r => r.json())
+        .then(d => {
+          const found = (d.users || []).find(u => u.id === cliente.id) || (d.users || [])[0]
+          if (found) {
+            setFullProfile(found)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingProfile(false))
+    }
+  }, [cliente, token])
 
-      fetch(`${API}/api/v1/admin/historical-matches?${queryParam}&limit=100`, {
+  // 2. Cargar historial de citas unificado por nombre de cliente (igual a Matching.jsx)
+  useEffect(() => {
+    if (cliente?.name) {
+      setLoadingHistory(true)
+      fetch(`${API}/api/v1/admin/historical-matches?search=${encodeURIComponent(cliente.name.trim())}&limit=100`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(r => r.json())
@@ -125,10 +140,14 @@ function ClienteModal({ cliente, token, onClose }) {
     }
   }, [cliente, token])
 
+  const targetClient = fullProfile || cliente
+  const p = targetClient.profile || {}
+  const ocean = p.ocean || {}
 
-  const avatarBg = getAvatarGradient(cliente.id)
+  const avatarBg = getAvatarGradient(targetClient.id || cliente.id)
   const lifestyleBadges = renderCleanBadges(p.lifestyle)
   const prefsBadges = renderCleanBadges(p.search_preferences)
+
 
   return (
     <div className="modal-overlay" onClick={onClose}>
