@@ -1209,14 +1209,83 @@ function CandidateModal({ candidateName, token, onClose }) {
   )
 }
 
+// ─── Fotos placeholder curadas por género ─────────────────────────────────────
+const PLACEHOLDER_WOMEN = [
+  'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80',
+]
+const PLACEHOLDER_MEN = [
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1500048993953-d23a436266cf?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1552058544-f2b08422138a?w=500&auto=format&fit=crop&q=80',
+]
+const PLACEHOLDER_NEUTRAL = [
+  'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1529665253569-6d01c0eaf7b6?w=500&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=500&auto=format&fit=crop&q=80',
+]
+
+function getPlaceholders(name = '', idx = 0) {
+  const n = name.toLowerCase()
+  const femNames = ['maria','ana','silvi','steffy','manu','paula','andrea','carolina','natalia','valentina','laura','daniela','camila','alejandra','isabella','sofia','sara','juliana']
+  const isFem = femNames.some(f => n.includes(f))
+  const pool = isFem ? PLACEHOLDER_WOMEN : PLACEHOLDER_MEN
+  return pool[idx % pool.length]
+}
+
+function PersonCard({ label, name, photo, city, code, note, fallbackIdx }) {
+  const [imgError, setImgError] = React.useState(false)
+  const displayPhoto = (!photo || imgError) ? getPlaceholders(name, fallbackIdx) : photo
+  const initials = name ? name.trim().split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase() : '?'
+  const hasRealPhoto = photo && !imgError
+
+  return (
+    <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 16, overflow: 'hidden', padding: 16 }}>
+      <div style={{ height: 300, borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14 }}>
+        <img
+          src={displayPhoto}
+          alt={name}
+          onError={() => setImgError(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+        />
+        <div style={{ position: 'absolute', bottom: 10, left: 10, background: 'rgba(0,0,0,0.75)', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'white' }}>
+          {label}
+        </div>
+        {!hasRealPhoto && (
+          <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(255,193,7,0.2)', border: '1px solid rgba(255,193,7,0.4)', padding: '3px 8px', borderRadius: 8, fontSize: 10, color: '#FFC107', fontWeight: 700 }}>
+            📷 Sin foto real
+          </div>
+        )}
+        {hasRealPhoto && (
+          <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(76,175,80,0.2)', border: '1px solid rgba(76,175,80,0.4)', padding: '3px 8px', borderRadius: 8, fontSize: 10, color: '#4CAF50', fontWeight: 700 }}>
+            ✅ Foto real
+          </div>
+        )}
+      </div>
+
+      <h3 style={{ fontSize: 17, fontWeight: 800, color: 'white', marginBottom: 4 }}>{name}</h3>
+      {code && <div style={{ fontSize: 11, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginBottom: 4 }}>{code}</div>}
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>📍 {city || 'Sin ciudad'}</div>
+      {note && (
+        <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.1)', padding: 8, borderRadius: 8, marginTop: 10 }}>
+          ⚠️ {note}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LookbookModal({ match, onClose }) {
   if (!match) return null
   const personA = cleanPersonName(match.person_a)
   const personB = cleanPersonName(match.person_b)
   const ai = getAIAnalysis(match)
 
-  const photoA = `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=80`
-  const photoB = `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&auto=format&fit=crop&q=80`
+  const nameA = match.name_a || personA.cleanName
+  const nameB = match.name_b || personB.cleanName
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 2000, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
@@ -1235,73 +1304,56 @@ function LookbookModal({ match, onClose }) {
         </div>
 
         {/* Side by side visual cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 20, alignItems: 'center', marginBottom: 24 }}>
-          {/* Persona A Card */}
-          <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 16, overflow: 'hidden', padding: 16 }}>
-            <div style={{ height: 280, borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14 }}>
-              <img 
-                src={photoA} 
-                alt={personA.cleanName}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              <div style={{ position: 'absolute', bottom: 10, left: 10, background: 'rgba(0,0,0,0.75)', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'white' }}>
-                PERSONA A
-              </div>
-            </div>
-
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>{personA.cleanName}</h3>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>📍 {match.city || 'Bogotá'}</div>
-            {personA.note && (
-              <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.1)', padding: 8, borderRadius: 8, marginTop: 10 }}>
-                ⚠️ {personA.note}
-              </div>
-            )}
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 20, alignItems: 'start', marginBottom: 24 }}>
+          <PersonCard
+            label="PERSONA A"
+            name={nameA}
+            photo={match.photo_a}
+            city={match.city_a}
+            code={match.code_a}
+            note={personA.note}
+            fallbackIdx={0}
+          />
 
           {/* Heart Sinergy Badge */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #961500 0%, #FF5A36 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 25px rgba(255, 90, 54, 0.4)'
-            }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingTop: 120 }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, #961500 0%, #FF5A36 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 25px rgba(255,90,54,0.4)' }}>
               <Heart size={30} fill="white" color="white" />
             </div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-coral)' }}>
               {ai.globalScore}%
             </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Afinidad Estética
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>
+              Afinidad<br/>Estética
             </div>
           </div>
 
-          {/* Persona B Card */}
-          <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 16, overflow: 'hidden', padding: 16 }}>
-            <div style={{ height: 280, borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14 }}>
-              <img 
-                src={photoB} 
-                alt={personB.cleanName}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              <div style={{ position: 'absolute', bottom: 10, left: 10, background: 'rgba(0,0,0,0.75)', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'white' }}>
-                PERSONA B
-              </div>
-            </div>
-
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: 'white' }}>{personB.cleanName}</h3>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>📍 {match.city || 'Bogotá'}</div>
-            {personB.note && (
-              <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.1)', padding: 8, borderRadius: 8, marginTop: 10 }}>
-                ⚠️ {personB.note}
-              </div>
-            )}
-          </div>
+          <PersonCard
+            label="PERSONA B"
+            name={nameB}
+            photo={match.photo_b}
+            city={match.city_b}
+            code={match.code_b}
+            note={personB.note}
+            fallbackIdx={1}
+          />
         </div>
+
+        {/* Galería extra de fotos placeholder si alguno no tiene foto real */}
+        {(!match.photo_a || !match.photo_b) && (
+          <div style={{ marginBottom: 20, background: 'rgba(255,193,7,0.05)', border: '1px solid rgba(255,193,7,0.15)', borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 12, color: '#FFC107', fontWeight: 700, marginBottom: 12 }}>
+              📷 Galería de referencia visual — Las fotos reales se mostrarán cuando los clientes las suban desde la app
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              {[...PLACEHOLDER_WOMEN.slice(0,2), ...PLACEHOLDER_MEN.slice(0,2)].map((url, i) => (
+                <div key={i} style={{ borderRadius: 10, overflow: 'hidden', height: 100 }}>
+                  <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', opacity: 0.7 }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Clinical notes & status */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
@@ -1328,3 +1380,4 @@ function LookbookModal({ match, onClose }) {
     </div>
   )
 }
+

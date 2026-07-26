@@ -1583,9 +1583,13 @@ async def get_historical_matches(
     query_from = """
         FROM historical_matches hm
         LEFT JOIN users ua_id ON hm.user_id_a IS NOT NULL AND ua_id.id = hm.user_id_a
+        LEFT JOIN profiles pa_id ON hm.user_id_a IS NOT NULL AND pa_id.user_id = hm.user_id_a
         LEFT JOIN users ua_name ON hm.user_id_a IS NULL AND unaccent(lower(trim(ua_name.name))) = unaccent(lower(trim(hm.person_a)))
+        LEFT JOIN profiles pa_name ON ua_name.id IS NOT NULL AND pa_name.user_id = ua_name.id
         LEFT JOIN users ub_id ON hm.user_id_b IS NOT NULL AND ub_id.id = hm.user_id_b
+        LEFT JOIN profiles pb_id ON hm.user_id_b IS NOT NULL AND pb_id.user_id = hm.user_id_b
         LEFT JOIN users ub_name ON hm.user_id_b IS NULL AND unaccent(lower(trim(ub_name.name))) = unaccent(lower(trim(hm.person_b)))
+        LEFT JOIN profiles pb_name ON ub_name.id IS NOT NULL AND pb_name.user_id = ub_name.id
     """
 
     total_res = await db.execute(text(f"SELECT COUNT(DISTINCT hm.id) {query_from} WHERE {where_str}"), params)
@@ -1597,7 +1601,13 @@ async def get_historical_matches(
             hm.match_date, hm.city, hm.status, hm.observations,
             hm.user_id_a, hm.user_id_b,
             COALESCE(ua_id.client_code, ua_name.client_code) AS code_a,
-            COALESCE(ub_id.client_code, ub_name.client_code) AS code_b
+            COALESCE(ub_id.client_code, ub_name.client_code) AS code_b,
+            COALESCE(ua_id.name, ua_name.name, hm.person_a) AS name_a,
+            COALESCE(ub_id.name, ub_name.name, hm.person_b) AS name_b,
+            COALESCE(pa_id.photo_url, pa_name.photo_url) AS photo_a,
+            COALESCE(pb_id.photo_url, pb_name.photo_url) AS photo_b,
+            COALESCE(pa_id.city, pa_name.city, hm.city) AS city_a,
+            COALESCE(pb_id.city, pb_name.city, hm.city) AS city_b
         {query_from}
         WHERE {where_str}
         ORDER BY hm.id DESC
@@ -1613,6 +1623,12 @@ async def get_historical_matches(
         "user_id_b": r.user_id_b,
         "code_a": r.code_a or None,
         "code_b": r.code_b or None,
+        "name_a": r.name_a or r.person_a,
+        "name_b": r.name_b or r.person_b,
+        "photo_a": r.photo_a or None,
+        "photo_b": r.photo_b or None,
+        "city_a": r.city_a or r.city,
+        "city_b": r.city_b or r.city,
         "matchmaker": r.matchmaker,
         "match_date": clean_excel_date_str(r.match_date) or "Por agendar",
         "city": r.city,
