@@ -548,6 +548,13 @@ textarea {
   transition: border-color 0.2s;
 }
 
+option {
+  background-color: #1A1214 !important;
+  color: #F5F0F1 !important;
+  padding: 10px;
+}
+
+
 input::placeholder,
 textarea::placeholder {
   color: var(--text-muted);

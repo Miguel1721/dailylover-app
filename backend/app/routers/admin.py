@@ -490,16 +490,21 @@ async def get_users(
             p.energia_social, p.momento_vital, p.intereses, p.valores,
             p.city, p.occupation, p.education, p.religion, p.love_language,
             p.bio_notes, p.lifestyle, p.responsable, p.estatura, p.age, p.plan_tier, p.search_preferences,
-            (
-                SELECT COUNT(*) FROM historical_matches hm 
-                WHERE (hm.user_id_a = u.id OR hm.user_id_b = u.id OR unaccent(lower(hm.person_a)) = unaccent(lower(u.name)) OR unaccent(lower(hm.person_b)) = unaccent(lower(u.name)))
-            ) AS total_matches
+            COALESCE(hm_count.cnt, 0) AS total_matches
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
+        LEFT JOIN (
+            SELECT uid, COUNT(*) as cnt FROM (
+                SELECT user_id_a AS uid FROM historical_matches WHERE user_id_a IS NOT NULL
+                UNION ALL
+                SELECT user_id_b AS uid FROM historical_matches WHERE user_id_b IS NOT NULL
+            ) sub GROUP BY uid
+        ) hm_count ON hm_count.uid = u.id
         WHERE {where_str}
         ORDER BY u.id DESC
         LIMIT :limit OFFSET :offset
     """), params)).fetchall()
+
 
     users_list = []
     for r in rows:
