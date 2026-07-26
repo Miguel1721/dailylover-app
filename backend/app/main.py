@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from app.config import get_settings, Settings
-from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client
+from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks
 import structlog
 import os
 
@@ -94,6 +94,7 @@ app.include_router(user_accounts.router)
 app.include_router(incidents.router)
 app.include_router(vendors.router)
 app.include_router(reports.router)
+app.include_router(webhooks.router)
 
 # ─── STATIC FILES (Admin Panel & App Preview) ─────────────────────────────────
 
