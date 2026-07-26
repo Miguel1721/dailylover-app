@@ -71,21 +71,22 @@ function VividStatusBadge({ status }) {
     border = 'rgba(16, 185, 129, 0.4)'
     icon = <CheckCircle size={13} />
     text = '🟢 APROBADO'
-  } else if (s.includes('RECHAZADO') || s.includes('REJECTED') || s.includes('NOT APPROVED') || s.includes('REFUND')) {
+  } else if (s.includes('RECHAZADO') || s.includes('REJECTED') || s.includes('NOT APPROVED') || s.includes('REFUND') || s.includes('CANCELADO')) {
     bg = 'rgba(239, 68, 68, 0.15)'
     color = '#EF4444'
     border = 'rgba(239, 68, 68, 0.4)'
     icon = <XCircle size={13} />
-    text = '🔴 RECHAZADO'
-  } else if (s.includes('TROUBLE') || s.includes('REVISAR') || s.includes('NO HAY GENTE')) {
+    text = s.includes('REFUND') ? '🔴 REFUND' : (s.includes('CANCELADO') ? '🔴 CANCELADO' : '🔴 RECHAZADO')
+  } else if (s.includes('TROUBLE') || s.includes('REVISAR') || s.includes('NO HAY GENTE') || s.includes('WAITLIST')) {
     bg = 'rgba(249, 115, 22, 0.15)'
     color = '#F97316'
     border = 'rgba(249, 115, 22, 0.4)'
     icon = <AlertTriangle size={13} />
-    text = s.includes('NO HAY') ? '⚠️ SIN GENTE' : '⚠️ TROUBLE'
+    text = s.includes('NO HAY') ? '⚠️ SIN GENTE' : (s.includes('REVISAR') ? '⚠️ REVISAR' : '⚠️ TROUBLE')
   } else {
     text = '⏳ PENDIENTE'
   }
+
 
   return (
     <span style={{
