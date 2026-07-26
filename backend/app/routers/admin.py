@@ -381,8 +381,12 @@ async def get_users(
         params["city"] = f"%{city}%"
 
     if plan_tier and plan_tier != "all":
-        where_clauses.append("UPPER(COALESCE(p.plan_tier, '')) LIKE UPPER(:plan_tier)")
-        params["plan_tier"] = f"%{plan_tier}%"
+        if plan_tier == "sin_plan":
+            where_clauses.append("(p.plan_tier IS NULL OR trim(p.plan_tier) = '')")
+        else:
+            where_clauses.append("UPPER(COALESCE(p.plan_tier, '')) LIKE UPPER(:plan_tier)")
+            params["plan_tier"] = f"%{plan_tier}%"
+
 
     if has_matches == "with_matches":
         where_clauses.append("""unaccent(lower(u.name)) IN (

@@ -24,15 +24,17 @@ const PSYCHOLOGISTS = [
   { id: 'Mape', label: '👩‍⚕️ Mape / María Paula (376)' }
 ]
 
-// Planes de membresía (según pestaña "Clients plans" del Excel)
+// Planes de membresía (según pestaña "Clients plans" del Excel + sin asignación)
 const PLANS = [
   { id: 'all',       label: 'Todos los Planes',      icon: '📋', color: null },
+  { id: 'sin_plan',  label: '⚠️ Sin Plan Asignado',   icon: '⚠️', color: '#888' },
   { id: '195',       label: '👑 VIP 195k',            icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)' },
   { id: '150',       label: '💎 Premium 150k',        icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
   { id: '98',        label: '⭐ Estándar Plus 98k',   icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)' },
   { id: '65',        label: '🔵 Estándar 65k',        icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)' },
   { id: '40',        label: '🟢 Básico 40k',          icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
 ]
+
 
 function getPlanStyle(planTier) {
   if (!planTier) return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: 'Sin plan', maxCitas: 1 }
@@ -299,7 +301,22 @@ function ClienteModal({ cliente, token, onClose }) {
           >
             <History size={15} style={{ marginRight: 6 }} /> Historial de Matches ({loadingHistory ? '...' : matchHistory.length})
           </button>
+
+          <button
+            className="btn btn-ghost"
+            style={{
+              borderRadius: 0,
+              borderBottom: activeTab === 'plan' ? '2px solid #FFD700' : 'none',
+              color: activeTab === 'plan' ? '#FFD700' : 'var(--text-secondary)',
+              fontWeight: 700,
+              padding: '10px 16px'
+            }}
+            onClick={() => setActiveTab('plan')}
+          >
+            💳 Plan & Membresía
+          </button>
         </div>
+
 
         {/* Scrollable Modal Content Body */}
         <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
@@ -363,42 +380,10 @@ function ClienteModal({ cliente, token, onClose }) {
               </div>
 
               <div>
-                {(() => {
-                  const tier = p.plan_tier || targetClient.plan_tier
-                  const ps = getPlanStyle(tier)
-                  const used = targetClient.total_matches || 0
-                  const max = ps.maxCitas
-                  const pct = Math.min(100, Math.round((used / max) * 100))
-                  const isCompleted = used >= max
-                  return (
-                    <>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>💳 PLAN & CONSUMO DE CITAS:</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, padding: '3px 8px', borderRadius: 8, background: ps.bg, color: ps.color, border: `1px solid ${ps.color}55` }}>
-                          {ps.icon} {tier || 'Sin plan'}
-                        </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: isCompleted ? '#FFC107' : 'var(--text-primary)' }}>
-                          {used} / {max} Citas ({pct}%)
-                        </span>
-                      </div>
-                      <div style={{ width: '100%', height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, marginTop: 6, overflow: 'hidden' }}>
-                        <div style={{ width: `${pct}%`, height: '100%', background: isCompleted ? 'linear-gradient(90deg, #FFC107, #FF9800)' : `linear-gradient(90deg, ${ps.color}, ${ps.color}dd)`, borderRadius: 3, transition: 'width 0.3s' }} />
-                      </div>
-                      {isCompleted && (
-                        <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3, fontWeight: 700 }}>
-                          ⚠️ Plan completado ({used}/{max} citas realizadas)
-                        </div>
-                      )}
-                    </>
-                  )
-                })()}
-              </div>
-
-
-              <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>📍 CIUDAD DE RESIDENCIA:</div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.city || targetClient.city || 'Bogotá'}</div>
               </div>
+
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎂 EDAD / GRUPO ETARIO:</div>
@@ -593,6 +578,109 @@ function ClienteModal({ cliente, token, onClose }) {
           </div>
         )}
 
+        {/* TAB 3: PLAN, MEMBRESÍA & LÍMITES */}
+        {activeTab === 'plan' && (
+          <div>
+
+            {(() => {
+              const tier = p.plan_tier || targetClient.plan_tier
+              const ps = getPlanStyle(tier)
+              const used = targetClient.total_matches || 0
+              const max = ps.maxCitas
+              const remaining = Math.max(0, max - used)
+              const pct = Math.min(100, Math.round((used / max) * 100))
+              const isCompleted = used >= max
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                  {/* Header Card del Plan */}
+                  <div style={{
+                    background: `linear-gradient(135deg, ${ps.bg}, rgba(18,13,15,0.9))`,
+                    border: `1px solid ${ps.color}55`,
+                    borderRadius: 14,
+                    padding: 20,
+                    boxShadow: `0 4px 20px ${ps.color}15`
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                          Plan Contratado Activo
+                        </div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: ps.color, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span>{ps.icon}</span>
+                          <span>{tier || 'Sin Plan Asignado'}</span>
+                        </div>
+                      </div>
+                      <span className="badge" style={{ background: isCompleted ? 'rgba(255,193,7,0.2)' : 'rgba(76,175,80,0.2)', color: isCompleted ? '#FFC107' : '#4CAF50', border: `1px solid ${isCompleted ? '#FFC10755' : '#4CAF5055'}`, padding: '6px 12px', fontSize: 12, fontWeight: 800 }}>
+                        {isCompleted ? '⚠️ CUOTA CUMPLIDA' : '🟢 ACTIVO'}
+                      </span>
+                    </div>
+
+                    {/* Barra de Consumo de Citas */}
+                    <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 10, padding: 14, border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Consumo de Citas Incluidas:</span>
+                        <span style={{ color: isCompleted ? '#FFC107' : ps.color, fontSize: 14 }}>
+                          {used} de {max} Citas Realizadas ({pct}%)
+                        </span>
+                      </div>
+
+                      <div style={{ height: 10, borderRadius: 5, background: 'rgba(255,255,255,0.1)', overflow: 'hidden', marginBottom: 8 }}>
+                        <div style={{ width: `${pct}%`, height: '100%', borderRadius: 5, background: isCompleted ? 'linear-gradient(90deg, #FFC107, #FF9800)' : `linear-gradient(90deg, #961500, ${ps.color})`, transition: 'width 0.4s ease' }} />
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
+                        <span>Realizadas: <strong>{used}</strong></span>
+                        <span>Disponibles: <strong style={{ color: remaining === 0 ? '#FFC107' : '#4CAF50' }}>{remaining}</strong></span>
+                        <span>Cuota Total: <strong>{max} citas</strong></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Especificaciones y Detalles del Plan */}
+                  <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 14, padding: 18 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>📊</span> Especificaciones del Servicio ({tier || 'Básico'})
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>🎯 Citas Garantizadas</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>{max} Citas Incluidas</div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>👩‍⚕️ Acompañamiento Clínico</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>Psicóloga Dedicada</div>
+                      </div>
+
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 10, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>💳 Método de Pago</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: '#4CAF50', marginTop: 2 }}>Stripe Automatic</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Estado de Renovación / Alerta para la Psicóloga */}
+                  <div style={{ background: isCompleted ? 'rgba(255,193,7,0.08)' : 'rgba(76,175,80,0.08)', border: `1px solid ${isCompleted ? '#FFC10744' : '#4CAF5044'}`, borderRadius: 12, padding: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: isCompleted ? '#FFC107' : '#4CAF50', marginBottom: 4 }}>
+                      {isCompleted ? '⚠️ Atención Psicóloga (Silvi / Mape / Team):' : '✅ Estado del Cliente:'}
+                    </div>
+                    <p style={{ fontSize: 12, color: 'var(--text-primary)', margin: 0, lineHeight: '1.5em' }}>
+                      {isCompleted
+                        ? `El cliente ha utilizado la totalidad de sus ${max} citas contratadas. Al procesar el pago de renovación en Stripe, el sistema resetea automáticamente esta cuota y notifica a su psicóloga.`
+                        : `El cliente tiene ${remaining} cita(s) pendiente(s) por programar dentro de su plan activo. El sistema descontará automáticamente cada cita una vez agendada.`
+                      }
+                    </p>
+                  </div>
+
+                </div>
+              )
+            })()}
+          </div>
+        )}
+
 
 
 
@@ -691,89 +779,96 @@ export default function Clientes() {
       </div>
 
       <div className="content-area">
-        {/* ── FILTROS ─────────────────────────────────────────────────── */}
-        <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border-color)', padding: '12px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-          {/* Fila 1: Búsqueda + Filtro de Plan */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <div style={{ position: 'relative', flex: '1 1 280px', minWidth: 200 }}>
-              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                className="search-bar"
-                style={{ paddingLeft: 36, width: '100%', height: 38, fontSize: 13 }}
-                placeholder="Buscar cliente por nombre o teléfono..."
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1) }}
-              />
-            </div>
-
-            {/* Plan filter — siempre visible, borde dorado si activo */}
-            <select
-              style={{
-                padding: '8px 12px', fontSize: 13, height: 38,
-                minWidth: 170, flexShrink: 0,
-                background: planFilter !== 'all' ? 'rgba(255,215,0,0.08)' : 'var(--bg-base)',
-                border: planFilter !== 'all' ? '2px solid #FFD700' : '1px solid var(--border-color)',
-                color: planFilter !== 'all' ? '#FFD700' : 'var(--text-primary)',
-                borderRadius: 8, fontWeight: planFilter !== 'all' ? 800 : 500,
-                cursor: 'pointer'
-              }}
-              value={planFilter}
-              onChange={e => { setPlanFilter(e.target.value); setPage(1) }}
-            >
-              {PLANS.map(pl => (
-                <option key={pl.id} value={pl.id}>{pl.label}</option>
-              ))}
-            </select>
+        {/* ── FILTROS (LÍNEA HORIZONTAL CONTINUA RESPONSIVE) ───────────────── */}
+        <div style={{
+          background: 'var(--bg-card)',
+          borderRadius: 12,
+          border: '1px solid var(--border-color)',
+          padding: '10px 14px',
+          marginBottom: 20,
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch'
+        }}>
+          {/* Búsqueda */}
+          <div style={{ position: 'relative', flex: '1 1 240px', minWidth: 180, flexShrink: 0 }}>
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input
+              className="search-bar"
+              style={{ paddingLeft: 32, width: '100%', height: 36, fontSize: 12 }}
+              placeholder="Buscar por nombre o tel..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+            />
           </div>
 
-          {/* Fila 2: Filtros secundarios */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Psicóloga Responsable */}
-            <select
-              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 170, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600 }}
-              value={psychologistFilter}
-              onChange={e => handlePsychologistChange(e.target.value)}
-            >
-              {PSYCHOLOGISTS.map(p => (
-                <option key={p.id} value={p.id}>{p.label}</option>
-              ))}
-            </select>
+          {/* Filtro por Plan */}
+          <select
+            style={{
+              padding: '6px 10px', fontSize: 12, height: 36,
+              flexShrink: 0,
+              background: planFilter !== 'all' ? 'rgba(255,215,0,0.1)' : 'var(--bg-base)',
+              border: planFilter !== 'all' ? '1px solid #FFD700' : '1px solid var(--border-color)',
+              color: planFilter !== 'all' ? '#FFD700' : 'var(--text-primary)',
+              borderRadius: 8, fontWeight: planFilter !== 'all' ? 700 : 500,
+              cursor: 'pointer'
+            }}
+            value={planFilter}
+            onChange={e => { setPlanFilter(e.target.value); setPage(1) }}
+          >
+            {PLANS.map(pl => (
+              <option key={pl.id} value={pl.id}>{pl.label}</option>
+            ))}
+          </select>
 
-            {/* Evaluación clínica */}
-            <select
-              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 160, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
-              value={notesFilter}
-              onChange={e => { setNotesFilter(e.target.value); setPage(1) }}
-            >
-              <option value="all">Todas las Evaluaciones</option>
-              <option value="with_notes">🧠 Con Bio Clínica</option>
-              <option value="without_notes">📋 En Lista de Espera</option>
-            </select>
+          {/* Psicóloga Responsable */}
+          <select
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600 }}
+            value={psychologistFilter}
+            onChange={e => handlePsychologistChange(e.target.value)}
+          >
+            {PSYCHOLOGISTS.map(p => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
+          </select>
 
-            {/* Ciudad */}
-            <select
-              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 130, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
-              value={cityFilter}
-              onChange={e => { setCityFilter(e.target.value); setPage(1) }}
-            >
-              <option value="all">Todas las Ciudades</option>
-              <option value="Bogotá">📍 Bogotá</option>
-              <option value="Medellín">📍 Medellín</option>
-            </select>
+          {/* Evaluación clínica */}
+          <select
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            value={notesFilter}
+            onChange={e => { setNotesFilter(e.target.value); setPage(1) }}
+          >
+            <option value="all">Todas las Evaluaciones</option>
+            <option value="with_notes">🧠 Con Bio Clínica</option>
+            <option value="without_notes">📋 En Lista de Espera</option>
+          </select>
 
-            {/* Historial de matches */}
-            <select
-              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 150, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
-              value={matchesFilter}
-              onChange={e => { setMatchesFilter(e.target.value); setPage(1) }}
-            >
-              <option value="all">Todos Historiales</option>
-              <option value="with_matches">💘 Con Citas Previas</option>
-              <option value="without_matches">✨ Listos para 1ra Cita</option>
-            </select>
-          </div>
+          {/* Ciudad */}
+          <select
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            value={cityFilter}
+            onChange={e => { setCityFilter(e.target.value); setPage(1) }}
+          >
+            <option value="all">Todas las Ciudades</option>
+            <option value="Bogotá">📍 Bogotá</option>
+            <option value="Medellín">📍 Medellín</option>
+          </select>
+
+          {/* Historial de matches */}
+          <select
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, flexShrink: 0, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
+            value={matchesFilter}
+            onChange={e => { setMatchesFilter(e.target.value); setPage(1) }}
+          >
+            <option value="all">Todos Historiales</option>
+            <option value="with_matches">💘 Con Citas Previas</option>
+            <option value="without_matches">✨ Listos para 1ra Cita</option>
+          </select>
         </div>
+
 
         {loading ? (
           <div className="card"><div className="empty-state">Cargando expedientes clínicos con filtros SQL...</div></div>
