@@ -674,103 +674,69 @@ export default function Clientes() {
       </div>
 
       <div className="content-area">
-        {/* Multidimensional Filters Control Bar — SINGLE HORIZONTAL LINE FROM RIGHT TO LEFT (DERECHA A IZQUIERDA) */}
-        <div style={{
-          display: 'flex',
-          gap: 10,
-          marginBottom: 20,
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'var(--bg-card)',
-          padding: '12px 16px',
-          borderRadius: 12,
-          border: '1px solid var(--border-color)',
-          flexWrap: 'nowrap',
-          overflowX: 'auto'
-        }}>
-          
-          {/* Left side: Search input */}
-          <div style={{ position: 'relative', flex: '1 1 280px', minWidth: 220 }}>
-            <Search
-              size={15}
-              style={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--text-muted)'
-              }}
-            />
-            <input
-              className="search-bar"
-              style={{ paddingLeft: 36, width: '100%', height: 38, fontSize: 13 }}
-              placeholder="Buscar cliente por nombre o teléfono..."
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-            />
-          </div>
+        {/* ── FILTROS ─────────────────────────────────────────────────── */}
+        <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border-color)', padding: '12px 16px', marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-          {/* Right side: 4 Filter Dropdowns arranged from RIGHT TO LEFT */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0, flexDirection: 'row-reverse' }}>
-            
-            {/* Filter 1 (Far Right): Psicóloga Responsable */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <select
-                style={{
-                  padding: '8px 12px',
-                  fontSize: 13,
-                  width: 'auto',
-                  minWidth: 170,
-                  height: 38,
-                  background: 'var(--bg-base)',
-                  border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)',
-                  borderRadius: 8,
-                  fontWeight: 600
-                }}
-                value={psychologistFilter}
-                onChange={e => handlePsychologistChange(e.target.value)}
-              >
-                {PSYCHOLOGISTS.map(p => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
+          {/* Fila 1: Búsqueda + Filtro de Plan */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: '1 1 280px', minWidth: 200 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                className="search-bar"
+                style={{ paddingLeft: 36, width: '100%', height: 38, fontSize: 13 }}
+                placeholder="Buscar cliente por nombre o teléfono..."
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+              />
             </div>
 
-            {/* Filter 2: Clinical Bio Notes */}
+            {/* Plan filter — siempre visible, borde dorado si activo */}
             <select
               style={{
-                padding: '8px 12px',
-                fontSize: 13,
-                width: 'auto',
-                minWidth: 160,
-                height: 38,
-                background: 'var(--bg-base)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)',
-                borderRadius: 8
+                padding: '8px 12px', fontSize: 13, height: 38,
+                minWidth: 170, flexShrink: 0,
+                background: planFilter !== 'all' ? 'rgba(255,215,0,0.08)' : 'var(--bg-base)',
+                border: planFilter !== 'all' ? '2px solid #FFD700' : '1px solid var(--border-color)',
+                color: planFilter !== 'all' ? '#FFD700' : 'var(--text-primary)',
+                borderRadius: 8, fontWeight: planFilter !== 'all' ? 800 : 500,
+                cursor: 'pointer'
               }}
+              value={planFilter}
+              onChange={e => { setPlanFilter(e.target.value); setPage(1) }}
+            >
+              {PLANS.map(pl => (
+                <option key={pl.id} value={pl.id}>{pl.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Fila 2: Filtros secundarios */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Psicóloga Responsable */}
+            <select
+              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 170, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600 }}
+              value={psychologistFilter}
+              onChange={e => handlePsychologistChange(e.target.value)}
+            >
+              {PSYCHOLOGISTS.map(p => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+
+            {/* Evaluación clínica */}
+            <select
+              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 160, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
               value={notesFilter}
               onChange={e => { setNotesFilter(e.target.value); setPage(1) }}
             >
               <option value="all">Todas las Evaluaciones</option>
-              <option value="with_notes">🧠 Con Bio Clínica (134)</option>
+              <option value="with_notes">🧠 Con Bio Clínica</option>
               <option value="without_notes">📋 En Lista de Espera</option>
             </select>
 
-            {/* Filter 3: City */}
+            {/* Ciudad */}
             <select
-              style={{
-                padding: '8px 12px',
-                fontSize: 13,
-                width: 'auto',
-                minWidth: 130,
-                height: 38,
-                background: 'var(--bg-base)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)',
-                borderRadius: 8
-              }}
+              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 130, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
               value={cityFilter}
               onChange={e => { setCityFilter(e.target.value); setPage(1) }}
             >
@@ -779,47 +745,15 @@ export default function Clientes() {
               <option value="Medellín">📍 Medellín</option>
             </select>
 
-            {/* Filter 4: History of Matches */}
+            {/* Historial de matches */}
             <select
-              style={{
-                padding: '8px 12px',
-                fontSize: 13,
-                width: 'auto',
-                minWidth: 140,
-                height: 38,
-                background: 'var(--bg-base)',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-primary)',
-                borderRadius: 8
-              }}
+              style={{ padding: '8px 12px', fontSize: 13, height: 36, minWidth: 150, background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8 }}
               value={matchesFilter}
               onChange={e => { setMatchesFilter(e.target.value); setPage(1) }}
             >
               <option value="all">Todos Historiales</option>
               <option value="with_matches">💘 Con Citas Previas</option>
               <option value="without_matches">✨ Listos para 1ra Cita</option>
-            </select>
-
-            {/* Filter 5: Plan / Membresía */}
-            <select
-              style={{
-                padding: '8px 12px',
-                fontSize: 13,
-                width: 'auto',
-                minWidth: 155,
-                height: 38,
-                background: 'var(--bg-base)',
-                border: planFilter !== 'all' ? '1px solid #FFD700' : '1px solid var(--border-color)',
-                color: planFilter !== 'all' ? '#FFD700' : 'var(--text-primary)',
-                borderRadius: 8,
-                fontWeight: planFilter !== 'all' ? 700 : 400
-              }}
-              value={planFilter}
-              onChange={e => { setPlanFilter(e.target.value); setPage(1) }}
-            >
-              {PLANS.map(pl => (
-                <option key={pl.id} value={pl.id}>{pl.label}</option>
-              ))}
             </select>
           </div>
         </div>
