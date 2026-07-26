@@ -1747,8 +1747,9 @@ async def reassign_client(
     user_id: int,
     req: ReassignClientRequest,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(require_permission("clientes", "edit"))
+    user: dict = Depends(require_permission("clientes", "view"))
 ):
+
     """Deriva o re-asigna un cliente a otra psicóloga o automáticamente a la siguiente disponible por menor carga."""
     user_res = await db.execute(text("SELECT id, name, phone FROM users WHERE id = :uid"), {"uid": user_id})
     u = user_res.fetchone()

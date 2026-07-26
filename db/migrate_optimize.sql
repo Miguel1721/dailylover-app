@@ -243,6 +243,16 @@ FROM (
 ) sub
 WHERE p.user_id = sub.uid AND (p.responsable IS NULL OR p.responsable = '' OR p.responsable = 'Sin Asignar');
 
+-- 21. ★ Permisos de Edición y Derivación de Clientes para Psicólogas / Matchmakers
+INSERT INTO role_permissions (role_id, module, action)
+SELECT r.id, m.module, a.action
+FROM roles r
+CROSS JOIN (VALUES ('clientes'), ('matching')) AS m(module)
+CROSS JOIN (VALUES ('view'), ('edit'), ('create')) AS a(action)
+WHERE unaccent(lower(r.name)) ILIKE '%matchmaker%' OR unaccent(lower(r.name)) ILIKE '%psicolog%'
+ON CONFLICT DO NOTHING;
+
+
 
 
 
