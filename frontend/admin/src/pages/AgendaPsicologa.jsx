@@ -345,7 +345,8 @@ export default function AgendaPsicologa() {
                         </td>
                         <td>📍 {c.city}</td>
                         <td>🎂 {c.age ? `${c.age} años` : '—'}</td>
-                        <td>📅 {c.created_at || '—'}</td>
+                        <td>📅 {c.created_at && c.created_at !== '24/07/2026' ? c.created_at : '—'}</td>
+
                         <td>
                           <a href={`https://wa.me/${(c.phone || '').replace(/\D/g, '')}`} target="_blank" rel="noreferrer" style={{ color: '#25D366', fontWeight: 600, fontSize: 12 }}>
                             📱 {c.phone}
