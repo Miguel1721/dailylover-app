@@ -1482,30 +1482,38 @@ async def get_historical_matches(
             where_clauses.append("status ILIKE :status_filter")
             params["status_filter"] = f"%{status_filter}%"
 
-    # Filtros prioritarios por ID numérico o código DL único (ESTRICTO Y PRECISO CON PATRÓN DUAL DE NOMBRE)
+    # 0. Auto-vinculación masiva instantánea si hay registros en historial sin user_id vinculado
+    await db.execute(text("""
+        UPDATE historical_matches hm
+        SET user_id_a = u.id
+        FROM users u
+        WHERE hm.user_id_a IS NULL
+          AND unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(u.name)));
+
+        UPDATE historical_matches hm
+        SET user_id_b = u.id
+        FROM users u
+        WHERE hm.user_id_b IS NULL
+          AND unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(u.name)));
+    """))
+
+    # Filtros prioritarios por ID numérico o código DL único (ESTRICTO Y SIN MEZCLAR PERSONAS CON NOMBRES PARCIALES SIMILARES)
     if user_id:
         u_row = (await db.execute(text("SELECT id, name, client_code FROM users WHERE id = :uid"), {"uid": user_id})).fetchone()
         if u_row:
             u_name_clean = (u_row.name or "").strip()
-            parts = [p for p in u_name_clean.split() if len(p) > 2]
-            if len(parts) >= 2:
-                distinct_pattern = f"%{parts[0]}%{parts[1]}%"
-            else:
-                distinct_pattern = f"%{u_name_clean}%"
+            u_code = u_row.client_code or f"DL-{user_id:04d}"
 
             where_clauses.append("""(
                 hm.user_id_a = :uid OR hm.user_id_b = :uid OR
                 ua_id.client_code = :u_code OR ub_id.client_code = :u_code OR
                 ua_name.client_code = :u_code OR ub_name.client_code = :u_code OR
                 unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(:u_name))) OR
-                unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:u_name))) OR
-                unaccent(lower(trim(hm.person_a))) ILIKE unaccent(lower(:distinct_pattern)) OR
-                unaccent(lower(trim(hm.person_b))) ILIKE unaccent(lower(:distinct_pattern))
+                unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:u_name)))
             )""")
             params["uid"] = user_id
             params["u_name"] = u_name_clean
-            params["u_code"] = u_row.client_code or f"DL-{user_id:04d}"
-            params["distinct_pattern"] = distinct_pattern
+            params["u_code"] = u_code
         else:
             where_clauses.append("(hm.user_id_a = :uid OR hm.user_id_b = :uid)")
             params["uid"] = user_id
@@ -1513,46 +1521,27 @@ async def get_historical_matches(
     elif client_code:
         cc_clean = client_code.strip().upper()
         u_row = (await db.execute(text("SELECT id, name FROM users WHERE upper(client_code) = :cc"), {"cc": cc_clean})).fetchone()
-        distinct_pattern = f"%{cc_clean}%"
-        u_name = ""
-        if u_row:
-            u_name = (u_row.name or "").strip()
-            parts = [p for p in u_name.split() if len(p) > 2]
-            if len(parts) >= 2:
-                distinct_pattern = f"%{parts[0]}%{parts[1]}%"
-            elif u_name:
-                distinct_pattern = f"%{u_name}%"
+        u_name = (u_row.name or "").strip() if u_row else ""
 
         where_clauses.append("""(
             ua_id.client_code = :cc OR ub_id.client_code = :cc OR 
             ua_name.client_code = :cc OR ub_name.client_code = :cc OR
             (length(:u_name) > 2 AND (
                 unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(:u_name))) OR
-                unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:u_name))) OR
-                unaccent(lower(trim(hm.person_a))) ILIKE unaccent(lower(:distinct_pattern)) OR
-                unaccent(lower(trim(hm.person_b))) ILIKE unaccent(lower(:distinct_pattern))
+                unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(:u_name)))
             ))
         )""")
         params["cc"] = cc_clean
         params["u_name"] = u_name
-        params["distinct_pattern"] = distinct_pattern
 
     elif exact_name:
         en_clean = exact_name.strip()
-        parts = [p for p in en_clean.split() if len(p) > 2]
-        if len(parts) >= 2:
-            distinct_pattern = f"%{parts[0]}%{parts[1]}%"
-        else:
-            distinct_pattern = f"%{en_clean}%"
-
         where_clauses.append("""(
             unaccent(lower(trim(person_a))) = unaccent(lower(trim(:exact_name))) OR
-            unaccent(lower(trim(person_b))) = unaccent(lower(trim(:exact_name))) OR
-            unaccent(lower(trim(person_a))) ILIKE unaccent(lower(:distinct_pattern)) OR
-            unaccent(lower(trim(person_b))) ILIKE unaccent(lower(:distinct_pattern))
+            unaccent(lower(trim(person_b))) = unaccent(lower(trim(:exact_name)))
         )""")
         params["exact_name"] = en_clean
-        params["distinct_pattern"] = distinct_pattern
+
 
     elif search:
         s_clean = search.strip()
