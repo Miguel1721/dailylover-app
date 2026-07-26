@@ -123,22 +123,32 @@ const MEDELLIN_VENUES = [
 function cleanPersonName(nameStr) {
   if (!nameStr) return { cleanName: 'Sin nombre', note: null }
   const str = String(nameStr).trim()
-  
-  // If the cell contains notes or sentences in Excel (e.g. "Tiene 3 en waitlist...", "Creo que stef le sacó un match...")
-  const noteKeywords = ['waitlist', 'espera', 'confirme', 'vuelva', 'creo que', 'sacó', 'salió', 'double date', 'rarito', 'canceló', 'descalificado', 'enfermo', 'vuelve', 'escribirle', 'no volvió']
   const lower = str.toLowerCase()
-  const hasNoteKeywords = noteKeywords.some(k => lower.includes(k))
   
-  if (hasNoteKeywords || str.length > 28) {
-    // Check if there is a name at the beginning before a note/sentence
-    const firstWord = str.split(' ')[0]
-    return {
-      cleanName: firstWord.length > 2 ? firstWord : str.substring(0, 18) + '...',
-      note: str
+  const noteKeywords = ['waitlist', 'espera', 'confirme', 'vuelva', 'creo', 'sacó', 'salió', 'double date', 'rarito', 'canceló', 'descalificado', 'enfermo', 'vuelve', 'escribirle', 'no volvió', 'le falta', 'ya tiene', 'pago', 'refund', 'trouble']
+  const hasNote = noteKeywords.some(k => lower.includes(k))
+  
+  if (hasNote || str.length > 28) {
+    // Extract full candidate name before phrases like "waitlist con...", "tiene 3 en...", "está en...", "le fue muy bien...", "ya salió con..."
+    let clean = str
+      .replace(/\s+(waitlist|tiene|está|esta|creo|rarito|le fue|ya salió|ya tiene|le falta|pago|refund|trouble|canceló|descalificado|enfermo|vuelve|escribirle|no volvió|1date|2date|2nd date|vip).*/i, '')
+      .replace(/\.(.*)/, '')
+      .strip ? str.strip() : str.trim()
+    
+    // Clean up trailing punctuation or VIP tags
+    clean = clean.replace(/[\.,;-]+$/, '').trim()
+    
+    // Check if clean extracted string is a valid name (> 2 chars)
+    if (clean.length > 2 && !noteKeywords.some(k => clean.toLowerCase().includes(k))) {
+      return { cleanName: clean, note: str }
     }
+    
+    return { cleanName: 'Por Asignar (Ver Nota)', note: str }
   }
-  return { cleanName: str, note: null }
+  
+  return { cleanName: str.replace(/[\.,;-]+$/, '').trim(), note: null }
 }
+
 
 
 function getAIAnalysis(match) {
