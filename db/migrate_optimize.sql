@@ -229,6 +229,21 @@ CREATE TABLE IF NOT EXISTS match_evaluations (
 CREATE INDEX IF NOT EXISTS idx_eval_match_id ON match_evaluations(match_id);
 CREATE INDEX IF NOT EXISTS idx_eval_user_id ON match_evaluations(user_id);
 
+-- 20. ★ Normalización de Asignaciones de Psicólogas según Excel e Historial
+UPDATE profiles p
+SET responsable = sub.matchmaker
+FROM (
+    SELECT hm.user_id_a AS uid, hm.matchmaker
+    FROM historical_matches hm
+    WHERE hm.user_id_a IS NOT NULL AND hm.matchmaker IS NOT NULL AND length(trim(hm.matchmaker)) > 2
+    UNION
+    SELECT hm.user_id_b AS uid, hm.matchmaker
+    FROM historical_matches hm
+    WHERE hm.user_id_b IS NOT NULL AND hm.matchmaker IS NOT NULL AND length(trim(hm.matchmaker)) > 2
+) sub
+WHERE p.user_id = sub.uid AND (p.responsable IS NULL OR p.responsable = '' OR p.responsable = 'Sin Asignar');
+
+
 
 
 
