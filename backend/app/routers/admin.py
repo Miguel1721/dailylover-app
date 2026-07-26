@@ -1570,25 +1570,30 @@ async def get_historical_matches(
 
     where_str = " AND ".join(where_clauses)
 
-    total_res = await db.execute(text(f"SELECT COUNT(*) FROM historical_matches WHERE {where_str}"), params)
-    total = total_res.scalar() or 0
-
-    rows_res = await db.execute(text(f"""
-        SELECT
-            hm.id, hm.person_a, hm.person_b, hm.matchmaker,
-            hm.match_date, hm.city, hm.status, hm.observations,
-            hm.user_id_a, hm.user_id_b,
-            COALESCE(ua_id.client_code, ua_name.client_code) AS code_a,
-            COALESCE(ub_id.client_code, ub_name.client_code) AS code_b
+    query_from = """
         FROM historical_matches hm
         LEFT JOIN users ua_id ON hm.user_id_a IS NOT NULL AND ua_id.id = hm.user_id_a
         LEFT JOIN users ua_name ON hm.user_id_a IS NULL AND unaccent(lower(trim(ua_name.name))) = unaccent(lower(trim(hm.person_a)))
         LEFT JOIN users ub_id ON hm.user_id_b IS NOT NULL AND ub_id.id = hm.user_id_b
         LEFT JOIN users ub_name ON hm.user_id_b IS NULL AND unaccent(lower(trim(ub_name.name))) = unaccent(lower(trim(hm.person_b)))
+    """
+
+    total_res = await db.execute(text(f"SELECT COUNT(DISTINCT hm.id) {query_from} WHERE {where_str}"), params)
+    total = total_res.scalar() or 0
+
+    rows_res = await db.execute(text(f"""
+        SELECT DISTINCT
+            hm.id, hm.person_a, hm.person_b, hm.matchmaker,
+            hm.match_date, hm.city, hm.status, hm.observations,
+            hm.user_id_a, hm.user_id_b,
+            COALESCE(ua_id.client_code, ua_name.client_code) AS code_a,
+            COALESCE(ub_id.client_code, ub_name.client_code) AS code_b
+        {query_from}
         WHERE {where_str}
         ORDER BY hm.id DESC
         LIMIT :limit OFFSET :offset
     """), params)
+
 
     matches = [{
         "id": r.id,
