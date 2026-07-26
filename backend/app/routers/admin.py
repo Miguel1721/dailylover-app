@@ -270,6 +270,9 @@ async def sync_plans_from_excel(
                             WHERE unaccent(lower(trim(name))) = unaccent(lower(trim(:person)))
                         """), {"cdate": extracted_date, "person": p_name})
 
+            await db.commit()
+
+
 
         # ─── ENRICH CITY AND RESPONSABLE FROM MATCHES TABS ─────────────────
 
