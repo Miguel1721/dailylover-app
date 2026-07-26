@@ -50,31 +50,39 @@ export default function MatchmakerDashboard() {
   const fetchDashboardData = () => {
     setLoading(true)
     Promise.all([
-      fetch(`${API}/api/v1/admin/historical-matches?matchmaker=${filterKey}&limit=10`, {
+      // 1. Fetch real pending matches count & list
+      fetch(`${API}/api/v1/admin/historical-matches?matchmaker=${encodeURIComponent(filterKey)}&status_filter=PENDIENTE&limit=6`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ matches: [], total: 0 })),
 
+      // 2. Fetch real trouble matches count
+      fetch(`${API}/api/v1/admin/historical-matches?matchmaker=${encodeURIComponent(filterKey)}&status_filter=TROUBLE&limit=1`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }).then(r => r.json()).catch(() => ({ matches: [], total: 0 })),
+
+      // 3. Fetch real assigned clients count & list
       fetch(`${API}/api/v1/admin/users?responsable=${encodeURIComponent(filterKey)}&limit=6`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ users: [], total: 0 })),
 
-
-      fetch(`${API}/api/v1/admin/reminders?matchmaker=${filterKey}`, {
+      // 4. Fetch reminders
+      fetch(`${API}/api/v1/admin/reminders?matchmaker=${encodeURIComponent(filterKey)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       }).then(r => r.json()).catch(() => ({ reminders: [] }))
-    ]).then(([m, u, r]) => {
-      const allMatches = m.matches || []
-      const pendings = allMatches.filter(x => x.status?.includes('PENDIENTE') || x.status === 'pending')
-      const troubles = allMatches.filter(x => x.status?.includes('TROUBLE') || x.status === 'RECHAZADO')
+    ]).then(([pendRes, trblRes, userRes, remRes]) => {
+      const pendingsList = pendRes.matches || []
+      const pendingsTotal = pendRes.total || 0
+      const troubleTotal = trblRes.total || 0
+      const assignedTotal = userRes.total || 0
 
-      setPendingMatches(pendings.length > 0 ? pendings : allMatches.slice(0, 4))
-      setAssignedClients(u.users || [])
-      setReminders(r.reminders || [])
+      setPendingMatches(pendingsList)
+      setAssignedClients(userRes.users || [])
+      setReminders(remRes.reminders || [])
       setStats({
-        total_assigned: u.total || 25,
-        pending_matches: pendings.length || 3,
+        total_assigned: assignedTotal,
+        pending_matches: pendingsTotal,
         active_events: 4,
-        trouble_cases: troubles.length || 1
+        trouble_cases: troubleTotal
       })
       setLoading(false)
     })
@@ -83,6 +91,7 @@ export default function MatchmakerDashboard() {
   useEffect(() => {
     fetchDashboardData()
   }, [filterKey, token])
+
 
   const handleToggleReminder = (id) => {
     fetch(`${API}/api/v1/admin/reminders/${id}/toggle`, {
