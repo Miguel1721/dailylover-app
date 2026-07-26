@@ -1250,7 +1250,7 @@ function MiniPhotoCarousel({ name, photo }) {
   const next = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i + 1) % total) }
 
   return (
-    <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#25191C', marginBottom: 12, aspectRatio: '4/3' }}>
+    <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', background: '#25191C', marginBottom: 12, aspectRatio: '3/4' }}>
       <img
         key={currentSrc}
         src={currentSrc}
