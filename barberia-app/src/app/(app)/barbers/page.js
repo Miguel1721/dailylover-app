@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Users, Plus, Edit2, Power, Phone, Scissors, DollarSign, CalendarDays, Sparkles } from 'lucide-react'
+import { Users, Plus, Edit2, Power, Phone, Scissors, DollarSign, CalendarDays, Sparkles, Copy, Check, Sun, Sunset, Moon, Zap, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const fmt = (n) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n)
@@ -15,8 +15,9 @@ const DAYS = [
   { key: 'Sun', label: 'Dom' },
 ]
 
-const ALL_SLOTS = Array.from({ length: 22 }, (_, i) => {
-  const hour = Math.floor(i / 2) + 8
+// Generar slots desde las 06:00 AM hasta las 23:00 (11:00 PM)
+const ALL_SLOTS = Array.from({ length: 35 }, (_, i) => {
+  const hour = Math.floor(i / 2) + 6
   const min = i % 2 === 0 ? '00' : '30'
   return `${hour.toString().padStart(2, '0')}:${min}`
 })
@@ -65,7 +66,7 @@ export default function BarbersPage() {
       </div>
 
       {/* Stats bar */}
-      <div className="card flex gap-8 items-center">
+      <div className="card flex gap-8 items-center overflow-x-auto">
         <div className="text-center">
           <div className="text-2xl font-bold text-white">{barbers.length}</div>
           <div className="text-xs text-dark-500 uppercase tracking-wide">Total</div>
@@ -144,13 +145,19 @@ export default function BarbersPage() {
 
                 {/* Schedule preview */}
                 <div className="mb-4">
-                  <div className="text-xs text-dark-500 mb-1.5 uppercase tracking-wide">Horario</div>
+                  <div className="flex items-center justify-between text-xs text-dark-500 mb-1.5 uppercase tracking-wide">
+                    <span>Horario Configurado</span>
+                    <span className="text-[10px] text-gold-400 font-semibold">{schedDays.length} días activos</span>
+                  </div>
                   <div className="flex gap-1">
-                    {DAYS.map(d => (
-                      <div key={d.key} className={`flex-1 text-center py-1 rounded text-xs font-medium ${schedDays.includes(d.key) ? (isWomen ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'gold-chip') : 'bg-dark-700 text-dark-600'}`}>
-                        {d.label}
-                      </div>
-                    ))}
+                    {DAYS.map(d => {
+                      const count = (barber.schedule || {})[d.key]?.length || 0
+                      return (
+                        <div key={d.key} title={count > 0 ? `${count} turnos disponibles` : 'Cerrado'} className={`flex-1 text-center py-1 rounded text-xs font-medium ${count > 0 ? (isWomen ? 'bg-purple-950 text-purple-300 border border-purple-800' : 'gold-chip') : 'bg-dark-700 text-dark-600'}`}>
+                          {d.label}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 
@@ -177,7 +184,7 @@ export default function BarbersPage() {
                     onClick={() => { setEditBarber(barber); setShowModal(true) }}
                     className="btn-secondary btn-sm flex-1"
                   >
-                    <Edit2 size={12} /> Editar
+                    <Edit2 size={12} /> Editar Horario / Perfil
                   </button>
                   <button
                     id={`btn-toggle-${barber.id}`}
@@ -225,7 +232,7 @@ function BarberModal({ barber, onClose, onSave }) {
   const toggleDay = (day) => {
     setForm(f => {
       const sched = { ...f.schedule }
-      if (sched[day]) { delete sched[day] } else { sched[day] = ['09:00','09:30','10:00','10:30','11:00','14:00','14:30','15:00','15:30','16:00'] }
+      if (sched[day]) { delete sched[day] } else { sched[day] = ALL_SLOTS.slice(4, 26) } // Default 08:00 - 19:00
       return { ...f, schedule: sched }
     })
   }
@@ -238,6 +245,41 @@ function BarberModal({ barber, onClose, onSave }) {
       else { sched[day] = [...slots, slot].sort() }
       return { ...f, schedule: sched }
     })
+  }
+
+  // Preajustes rápidos de turno
+  const applyPreset = (day, type) => {
+    let slots = []
+    if (type === 'morning') slots = ALL_SLOTS.filter(s => s >= '07:00' && s <= '13:00')
+    else if (type === 'afternoon') slots = ALL_SLOTS.filter(s => s >= '13:00' && s <= '19:00')
+    else if (type === 'night') slots = ALL_SLOTS.filter(s => s >= '19:00' && s <= '23:00')
+    else if (type === 'full') slots = ALL_SLOTS.filter(s => s >= '08:00' && s <= '20:00')
+    else if (type === 'extended') slots = ALL_SLOTS.filter(s => s >= '06:00' && s <= '23:00')
+    else if (type === 'all') slots = [...ALL_SLOTS]
+    else if (type === 'clear') slots = []
+
+    setForm(f => ({
+      ...f,
+      schedule: {
+        ...f.schedule,
+        [day]: slots,
+      }
+    }))
+  }
+
+  // Copiar el horario del día actual a todos los días de la semana
+  const copyScheduleToAllDays = () => {
+    const currentSlots = form.schedule[scheduleTab] || []
+    if (currentSlots.length === 0) {
+      toast.error('Configura primero los horarios en este día antes de copiar')
+      return
+    }
+    const newSched = {}
+    DAYS.forEach(d => {
+      newSched[d.key] = [...currentSlots]
+    })
+    setForm(f => ({ ...f, schedule: newSched }))
+    toast.success(`Horario copiado exitosamente a los 7 días de la semana`)
   }
 
   const handleSubmit = async (e) => {
@@ -253,15 +295,17 @@ function BarberModal({ barber, onClose, onSave }) {
     else { const d = await res.json(); toast.error(d.error || 'Error') }
   }
 
+  const currentDaySlots = form.schedule[scheduleTab] || []
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="modal max-w-3xl max-h-[92vh] overflow-y-auto">
         <div className="modal-header sticky top-0 bg-dark-800 z-10">
-          <h3 className="section-title">{barber ? 'Editar Profesional' : 'Nuevo Profesional'}</h3>
+          <h3 className="section-title">{barber ? 'Editar Profesional y Horarios' : 'Nuevo Profesional'}</h3>
           <button onClick={onClose} className="btn-ghost p-2">✕</button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div className="modal-body space-y-4">
+          <div className="modal-body space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="input-label">Nombre completo *</label>
@@ -269,7 +313,7 @@ function BarberModal({ barber, onClose, onSave }) {
               </div>
               <div>
                 <label className="input-label">Especialidad *</label>
-                <input className="input" value={form.specialty} onChange={e => setForm(f => ({...f, specialty: e.target.value}))} required placeholder="Ej: Estilista / Cortes y Keratina" />
+                <input className="input" value={form.specialty} onChange={e => setForm(f => ({...f, specialty: e.target.value}))} required placeholder="Ej: Barbería & Diseños / Estilista" />
               </div>
             </div>
 
@@ -283,54 +327,132 @@ function BarberModal({ barber, onClose, onSave }) {
                 </select>
               </div>
               <div>
-                <label className="input-label">Teléfono</label>
+                <label className="input-label">Teléfono WhatsApp</label>
                 <input className="input" value={form.phone} onChange={e => setForm(f => ({...f, phone: e.target.value}))} placeholder="3001234567" />
               </div>
             </div>
 
-            {/* Schedule builder */}
-            <div>
-              <label className="input-label">Horario de trabajo</label>
-              {/* Day tabs */}
-              <div className="flex gap-1 mb-3 flex-wrap">
-                {DAYS.map(d => (
-                  <button key={d.key} type="button"
-                          onClick={() => { setScheduleTab(d.key); if (!form.schedule[d.key]) toggleDay(d.key) }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${form.schedule[d.key] ? scheduleTab === d.key ? 'bg-gold-600 border-gold-500 text-black' : 'bg-gold-900/40 border-gold-800/50 text-gold-400' : 'border-dark-600 text-dark-500 hover:border-dark-500'}`}>
-                    {d.label}
-                    {form.schedule[d.key] && <span className="ml-1 text-xs">({form.schedule[d.key].length})</span>}
-                  </button>
-                ))}
+            {/* Configuración de horario ampliado */}
+            <div className="p-4 rounded-2xl bg-dark-900 border border-dark-700 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dark-700 pb-3">
+                <div>
+                  <h4 className="font-bold text-white text-base flex items-center gap-2">
+                    <CalendarDays className="text-gold-400" size={18} />
+                    Configuración de Horario Personalizado (06:00 AM - 11:00 PM)
+                  </h4>
+                  <p className="text-xs text-dark-400">Selecciona o amplía el rango de atención según la disponibilidad del profesional.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={copyScheduleToAllDays}
+                  className="btn-secondary btn-sm text-xs gap-1.5 self-start sm:self-auto bg-dark-700 hover:bg-dark-600 text-gold-300 border-gold-800/40"
+                  title="Copiar este horario a toda la semana"
+                >
+                  <Copy size={13} /> Copiar horario a toda la semana
+                </button>
               </div>
 
-              {/* Slots for selected day */}
+              {/* Pestañas de días */}
+              <div className="flex gap-1.5 flex-wrap">
+                {DAYS.map(d => {
+                  const count = form.schedule[d.key]?.length || 0
+                  const isSelected = scheduleTab === d.key
+                  return (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => {
+                        setScheduleTab(d.key)
+                        if (!form.schedule[d.key]) toggleDay(d.key)
+                      }}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-gradient-gold text-black border-gold-400 shadow-md font-extrabold'
+                          : count > 0
+                            ? 'bg-dark-800 text-gold-400 border-gold-800/50'
+                            : 'bg-dark-950 text-dark-500 border-dark-800 hover:border-dark-700'
+                      }`}
+                    >
+                      <span>{d.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${isSelected ? 'bg-black/20 text-black' : count > 0 ? 'bg-gold-500/20 text-gold-300' : 'bg-dark-700 text-dark-500'}`}>
+                        {count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Panel de control de turnos para el día seleccionado */}
               {form.schedule[scheduleTab] !== undefined ? (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-dark-400">{DAYS.find(d => d.key === scheduleTab)?.label} — selecciona los slots disponibles</span>
-                    <button type="button" onClick={() => toggleDay(scheduleTab)} className="btn-danger btn-sm text-xs">Quitar día</button>
+                <div className="space-y-3 pt-2">
+                  {/* Botones de selección rápida (Presets) */}
+                  <div className="flex items-center gap-1.5 flex-wrap bg-dark-950 p-2.5 rounded-xl border border-dark-800">
+                    <span className="text-[11px] font-bold uppercase text-dark-400 mr-1">Turnos Rápidos:</span>
+                    <button type="button" onClick={() => applyPreset(scheduleTab, 'morning')} className="btn-ghost btn-sm text-[11px] py-1 px-2.5 bg-dark-800 text-yellow-300 hover:bg-dark-700 rounded-lg flex items-center gap-1">
+                      <Sun size={12} /> Mañana (07-13)
+                    </button>
+                    <button type="button" onClick={() => applyPreset(scheduleTab, 'afternoon')} className="btn-ghost btn-sm text-[11px] py-1 px-2.5 bg-dark-800 text-orange-300 hover:bg-dark-700 rounded-lg flex items-center gap-1">
+                      <Sunset size={12} /> Tarde (13-19)
+                    </button>
+                    <button type="button" onClick={() => applyPreset(scheduleTab, 'night')} className="btn-ghost btn-sm text-[11px] py-1 px-2.5 bg-dark-800 text-purple-300 hover:bg-dark-700 rounded-lg flex items-center gap-1">
+                      <Moon size={12} /> Noche (19-23)
+                    </button>
+                    <button type="button" onClick={() => applyPreset(scheduleTab, 'full')} className="btn-ghost btn-sm text-[11px] py-1 px-2.5 bg-dark-800 text-emerald-300 hover:bg-dark-700 rounded-lg flex items-center gap-1">
+                      <Zap size={12} /> Día Completo (08-20)
+                    </button>
+                    <button type="button" onClick={() => applyPreset(scheduleTab, 'extended')} className="btn-ghost btn-sm text-[11px] py-1 px-2.5 bg-gold-950 text-gold-300 border border-gold-800/50 hover:bg-gold-900 rounded-lg flex items-center gap-1">
+                      🌟 Ampliado (06-23)
+                    </button>
+                    <button type="button" onClick={() => applyPreset(scheduleTab, 'clear')} className="btn-ghost btn-sm text-[11px] py-1 px-2.5 text-red-400 hover:bg-red-950/40 rounded-lg flex items-center gap-1 ml-auto">
+                      <Trash2 size={12} /> Vaciar Días
+                    </button>
                   </div>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                    {ALL_SLOTS.map(slot => (
-                      <button key={slot} type="button"
-                              onClick={() => toggleSlot(scheduleTab, slot)}
-                              className={form.schedule[scheduleTab]?.includes(slot) ? 'slot-selected' : 'slot-available'}>
-                        {slot}
-                      </button>
-                    ))}
+
+                  {/* Grilla interactiva de turnos de 06:00 a 23:00 */}
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-7 gap-1.5 pt-1">
+                    {ALL_SLOTS.map(slot => {
+                      const isSelected = currentDaySlots.includes(slot)
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => toggleSlot(scheduleTab, slot)}
+                          className={`py-1.5 px-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                            isSelected
+                              ? 'bg-gold-500 border-gold-400 text-black font-extrabold shadow-sm'
+                              : 'bg-dark-950 text-dark-400 border-dark-800 hover:border-dark-600 hover:text-white'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-dark-400 pt-2">
+                    <span>
+                      {DAYS.find(d => d.key === scheduleTab)?.label}: <strong className="text-white">{currentDaySlots.length} horas/slots habilitados</strong>
+                    </span>
+                    <button type="button" onClick={() => toggleDay(scheduleTab)} className="text-red-400 hover:underline">
+                      Desactivar este día
+                    </button>
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-4 border border-dashed border-dark-600 rounded-lg">
-                  <p className="text-dark-500 text-sm">Selecciona un día para configurar sus horarios</p>
+                <div className="text-center py-6 border border-dashed border-dark-700 rounded-xl bg-dark-950">
+                  <p className="text-dark-400 text-xs mb-2">Este día figura como no laboral.</p>
+                  <button type="button" onClick={() => toggleDay(scheduleTab)} className="btn-primary btn-sm text-xs">
+                    Activar {DAYS.find(d => d.key === scheduleTab)?.label}
+                  </button>
                 </div>
               )}
             </div>
           </div>
+
           <div className="modal-footer sticky bottom-0 bg-dark-800 z-10">
             <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
             <button type="submit" disabled={loading} className="btn-primary">
-              {loading ? 'Guardando...' : barber ? 'Actualizar' : 'Crear Profesional'}
+              {loading ? 'Guardando...' : barber ? 'Guardar Cambios' : 'Crear Profesional'}
             </button>
           </div>
         </form>

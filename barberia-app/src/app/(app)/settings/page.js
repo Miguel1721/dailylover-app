@@ -2,8 +2,9 @@
 import { useState, useEffect } from 'react'
 import {
   Settings, Save, Building2, DollarSign, Clock, Scissors,
-  Package, Phone, MapPin, Mail, Image, AlertCircle, CheckCircle2
+  Package, Phone, MapPin, Mail, Image, AlertCircle, CheckCircle2, ArrowRight
 } from 'lucide-react'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 
 const DAYS = [
@@ -64,7 +65,6 @@ export default function SettingsPage() {
       setSettings(updated)
       setDirty(false)
       toast.success('Configuración guardada exitosamente')
-      // Refrescar la página para que el sidebar actualice el nombre
       setTimeout(() => window.location.reload(), 800)
     } else {
       const d = await res.json()
@@ -352,21 +352,20 @@ export default function SettingsPage() {
       {/* ── TAB: Horarios ── */}
       {tab === 'schedule' && (
         <div className="max-w-2xl space-y-6">
-          <div className="card space-y-4">
-            <h2 className="section-title">Horario general del negocio</h2>
+          <div className="card space-y-5">
+            <h2 className="section-title">Configuración Global de Citas & Horarios</h2>
             <p className="text-dark-400 text-sm">
-              Este es el horario de atención del negocio como referencia. El horario real de cada barbero
-              se configura individualmente desde el módulo de <strong className="text-white">Barberos</strong>.
+              Como administrador, puedes definir el intervalo de cada turno (ej. 30 minutos) y configurar horarios personalizados de atención <strong className="text-white">desde las 06:00 AM hasta las 11:00 PM</strong> para cada barbero o estilista.
             </p>
 
             <div>
               <label className="input-label flex items-center gap-2">
                 <Clock size={14} />
-                Duración de cada slot de cita (minutos)
+                Duración base de cada slot de cita (intervalo)
               </label>
               <select
                 id="select-slot-duration"
-                className="select w-36"
+                className="select w-44"
                 value={form.appointmentSlotMin}
                 onChange={e => update('appointmentSlotMin', Number(e.target.value))}
               >
@@ -376,36 +375,25 @@ export default function SettingsPage() {
                 <option value={45}>45 minutos</option>
                 <option value={60}>60 minutos</option>
               </select>
-              <p className="text-xs text-dark-500 mt-1">
-                Actualmente: slots de <strong className="text-white">{form.appointmentSlotMin} min</strong> — 
-                a las 8am: 08:00, 08:{form.appointmentSlotMin === 30 ? '30' : form.appointmentSlotMin === 15 ? '15, 08:30, 08:45' : form.appointmentSlotMin}...
+              <p className="text-xs text-dark-500 mt-1.5">
+                Configurado actualmente a: <strong className="text-gold-400">{form.appointmentSlotMin} min</strong> por turno.
               </p>
             </div>
 
             <div className="divider" />
 
-            <h3 className="font-semibold text-white">Días de atención (referencia)</h3>
-            <div className="space-y-2">
-              {DAYS.map(d => {
-                const hours = (form.businessHours || {})[d.key]
-                const isOpen = Array.isArray(hours) && hours.length > 0
-                return (
-                  <div key={d.key} className={`flex items-center justify-between p-3 rounded-lg border ${isOpen ? 'border-dark-600 bg-dark-700/30' : 'border-dark-700/50 opacity-50'}`}>
-                    <span className="text-sm text-white w-24">{d.label}</span>
-                    {isOpen ? (
-                      <span className="text-xs text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 size={12} /> Abierto · {hours[0]} – {hours[hours.length - 1]}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-dark-600">Cerrado</span>
-                    )}
-                  </div>
-                )
-              })}
+            <div className="p-4 rounded-xl bg-dark-700/40 border border-dark-600 space-y-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <Clock className="text-gold-400" size={16} />
+                ¿Cómo ampliar o cambiar los horarios de cada barbero?
+              </h3>
+              <p className="text-xs text-dark-400 leading-relaxed">
+                Cada barbero o estilista posee su propio horario flexible. Puedes activar turnos desde las <strong className="text-white">06:00 AM</strong> en la mañana hasta las <strong className="text-white">11:00 PM</strong> en la noche, seleccionar turnos rápidos (Mañana, Tarde, Noche, Día Completo, Ampliado) y copiar el horario a toda la semana con un solo clic.
+              </p>
+              <Link href="/barbers" className="btn-primary btn-sm inline-flex items-center gap-2 mt-1">
+                Ir a Módulo de Barberos & Horarios <ArrowRight size={14} />
+              </Link>
             </div>
-            <p className="text-xs text-dark-500">
-              Para cambiar los slots de horario de los barberos, ve a <strong className="text-gold-400">Barberos → Editar → Horario</strong>
-            </p>
           </div>
         </div>
       )}

@@ -10,14 +10,15 @@ export async function middleware(req) {
     return NextResponse.redirect(new URL('/superadmin', req.url))
   }
 
-  // Rutas públicas (portal de reservas cliente, login, apis públicas, health, auth)
+  // Rutas públicas (portal de reservas cliente, login, apis públicas, health, auth, archivos estáticos/imágenes)
   const isPublic =
     pathname === '/' ||
     pathname.startsWith('/b/') ||
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/health') ||
-    pathname.startsWith('/api/public')
+    pathname.startsWith('/api/public') ||
+    /\.(.*)$/.test(pathname)
 
   if (isPublic) {
     return NextResponse.next()
@@ -39,5 +40,5 @@ export async function middleware(req) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|public).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)'],
 }
