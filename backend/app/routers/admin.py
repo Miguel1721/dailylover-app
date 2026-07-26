@@ -1482,20 +1482,26 @@ async def get_historical_matches(
             where_clauses.append("status ILIKE :status_filter")
             params["status_filter"] = f"%{status_filter}%"
 
-    # 0. Auto-vinculación masiva instantánea si hay registros en historial sin user_id vinculado
-    await db.execute(text("""
-        UPDATE historical_matches hm
-        SET user_id_a = u.id
-        FROM users u
-        WHERE hm.user_id_a IS NULL
-          AND unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(u.name)));
+    # 0. Auto-vinculación masiva limpia sin múltiples sentencias en un solo execute
+    try:
+        await db.execute(text("""
+            UPDATE historical_matches hm
+            SET user_id_a = u.id
+            FROM users u
+            WHERE hm.user_id_a IS NULL
+              AND unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(u.name)))
+        """))
+        await db.execute(text("""
+            UPDATE historical_matches hm
+            SET user_id_b = u.id
+            FROM users u
+            WHERE hm.user_id_b IS NULL
+              AND unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(u.name)))
+        """))
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"Non-fatal auto-link notice: {str(e)}")
 
-        UPDATE historical_matches hm
-        SET user_id_b = u.id
-        FROM users u
-        WHERE hm.user_id_b IS NULL
-          AND unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(u.name)));
-    """))
 
     # Filtros prioritarios por ID numérico o código DL único (ESTRICTO Y SIN MEZCLAR PERSONAS CON NOMBRES PARCIALES SIMILARES)
     if user_id:
