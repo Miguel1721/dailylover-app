@@ -200,7 +200,8 @@ function ClienteModal({ cliente, token, onClose }) {
             }}
             onClick={() => setActiveTab('historial')}
           >
-            <History size={15} style={{ marginRight: 6 }} /> Historial de Matches ({matchHistory.length || '...'})
+            <History size={15} style={{ marginRight: 6 }} /> Historial de Matches ({loadingHistory ? '...' : matchHistory.length})
+
           </button>
 
           <button
