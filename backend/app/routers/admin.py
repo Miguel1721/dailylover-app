@@ -129,30 +129,31 @@ async def get_data_health(
     }
 
 
+from fastapi import APIRouter, Depends, Query, HTTPException, UploadFile, File
+
 # ─── PLAN SYNC FROM EXCEL ───────────────────────────────────────────────────
 
 @router.post("/sync-plans")
 async def sync_plans_from_excel(
+    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("importar", "use"))
 ):
     """
     Sincroniza automáticamente plan_tier en profiles asociando por correo y nombre
-    a partir de los registros de la pestaña 'Clients plans' del Excel.
+    a partir del archivo Excel cargado (pestaña 'Clients plans').
     """
-    import os
     import openpyxl
-
-    file_path = r"C:\Users\jeloz\Downloads\Daily Lover MATCHMAKING.xlsx"
-    if not os.path.exists(file_path):
-        return {"status": "error", "message": f"Archivo Excel no encontrado en {file_path}"}
+    import io
 
     try:
-        wb = openpyxl.load_workbook(file_path, read_only=True)
+        content = await file.read()
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True)
         if "Clients plans" not in wb.sheetnames:
-            return {"status": "error", "message": "Pestaña 'Clients plans' no existe en el Excel"}
+            return {"status": "error", "message": "Pestaña 'Clients plans' no existe en el Excel cargado"}
 
         ws = wb["Clients plans"]
+
 
         plans_config = [
             ("VIP 195k", 0, 1),
