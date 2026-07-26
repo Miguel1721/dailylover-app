@@ -249,6 +249,46 @@ async def sync_plans_from_excel(
                         resp_updated += r_resp.rowcount
 
 
+        # ─── ENRICH SEARCH PREFERENCES FROM PREFERENCES SHEET ──────────────
+        pref_updated = 0
+        if "PREFERENCES" in wb.sheetnames:
+            ws_p = wb["PREFERENCES"]
+            for r in ws_p.iter_rows(min_row=2, values_only=True):
+                if not r or not r[0]: continue
+                try:
+                    pid = int(float(str(r[0])))
+                except:
+                    continue
+
+                intent = str(r[1] or '').strip() if len(r) > 1 else ''
+                pref_gender = str(r[2] or '').strip() if len(r) > 2 else ''
+                age_min = str(r[3] or '').strip() if len(r) > 3 else ''
+                age_max = str(r[4] or '').strip() if len(r) > 4 else ''
+                values = str(r[6] or '').strip() if len(r) > 6 else ''
+                notes = str(r[13] or '').strip() if len(r) > 13 else ''
+                red_flags = str(r[14] or '').strip() if len(r) > 14 else ''
+                green_flags = str(r[15] or '').strip() if len(r) > 15 else ''
+
+                pref_dict = {}
+                if intent: pref_dict["intent"] = intent
+                if pref_gender: pref_dict["pref_gender"] = pref_gender
+                if age_min or age_max: pref_dict["preferred_age_range"] = f"{age_min}-{age_max}"
+                if values: pref_dict["must_have_values"] = values
+                if notes: pref_dict["looks_notes"] = notes
+                if red_flags: pref_dict["red_flags"] = red_flags
+                if green_flags: pref_dict["green_flags"] = green_flags
+
+                if pref_dict:
+                    import json
+                    pref_json = json.dumps(pref_dict)
+                    r_pref = await db.execute(text("""
+                        UPDATE profiles
+                        SET search_preferences = CAST(:pref AS jsonb)
+                        WHERE user_id = :uid
+                          AND (search_preferences IS NULL OR search_preferences = '{}'::jsonb)
+                    """), {"pref": pref_json, "uid": pid})
+                    pref_updated += r_pref.rowcount
+
         # General cleanup of remaining legacy yes/no city flags
         await db.execute(text("""
             UPDATE profiles
@@ -258,6 +298,7 @@ async def sync_plans_from_excel(
         """))
 
         await db.commit()
+
 
         # Resumen post-sync
         res_dist = await db.execute(text("SELECT COALESCE(plan_tier, 'Sin Plan') as tier, COUNT(*) as cnt FROM profiles GROUP BY plan_tier ORDER BY cnt DESC"))
