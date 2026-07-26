@@ -231,8 +231,9 @@ async def sync_plans_from_excel(
                     updates = []
                     params = {"person": p_name}
                     if extracted_age:
-                        updates.append("age = COALESCE(p.age, :age)")
+                        updates.append("age = :age")
                         params["age"] = extracted_age
+
                     if extracted_city:
                         updates.append("city = :city")
                         params["city"] = extracted_city
