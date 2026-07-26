@@ -152,7 +152,13 @@ async def sync_plans_from_excel(
         if "Clients plans" not in wb.sheetnames:
             return {"status": "error", "message": "Pestaña 'Clients plans' no existe en el Excel cargado"}
 
+        # Ensure is_difficult and difficult_notes columns exist in profiles
+        await db.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_difficult BOOLEAN DEFAULT false;"))
+        await db.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS difficult_notes TEXT;"))
+        await db.commit()
+
         ws = wb["Clients plans"]
+
 
 
         plans_config = [
