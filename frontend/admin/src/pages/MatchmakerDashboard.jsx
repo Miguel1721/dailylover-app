@@ -247,11 +247,12 @@ export default function MatchmakerDashboard() {
 
           {loading ? (
             <div className="empty-state">Cargando recordatorios prioritarios...</div>
-          ) : reminders.length === 0 ? (
+          ) : reminders.filter(r => !r.completed).length === 0 ? (
             <div className="empty-state">No tienes pendientes agendados. ¡Todo al día!</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
-              {reminders.map(r => {
+              {reminders.filter(r => !r.completed).map(r => {
+
                 const badge = PRIORITY_BADGES[r.priority] || PRIORITY_BADGES.ALTA
                 return (
                   <div 

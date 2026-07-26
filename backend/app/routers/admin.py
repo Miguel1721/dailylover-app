@@ -2334,17 +2334,6 @@ async def get_reminders(
     """))
     await db.commit()
 
-    # Seed initial realistic reminders if table is empty
-    count = (await db.execute(text("SELECT COUNT(*) FROM reminders"))).scalar()
-    if count == 0:
-        await db.execute(text("""
-            INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, completed, notes)
-            VALUES 
-            ('Llamar para feedback post-cita', 'Juan Diego Puerta', '+573101234567', 'URGENTE', 'SILVI', 'Hoy, 5:00 PM', false, 'Verificar impresión de la cita en el restaurante'),
-            ('Aprobar propuesta de match con María Camila', 'María Camila Rodríguez', '+573159876543', 'ALTA', 'SILVI', 'Hoy, 6:30 PM', false, 'Revisar fotos de lookbook lado a lado'),
-            ('Confirmar asistencia a evento del sábado', 'Carlos Eduardo Silva', '+573005551234', 'MEDIA', 'STEFFY', 'Mañana, 10:00 AM', false, 'Enviar código QR y lugar de encuentro'),
-            ('Solicitar actualización de foto de perfil', 'Valentina Ruiz', '+573204449988', 'BAJA', 'MANU', '28 Jul', false, 'Foto actual no cumple calidad mínima de lookbook')
-        """))
         await db.commit()
 
     query = "SELECT * FROM reminders WHERE 1=1"
@@ -2372,6 +2361,17 @@ async def get_reminders(
             "whatsapp_link": f"https://wa.me/{''.join(filter(str.isdigit, r.client_phone or ''))}" if r.client_phone else None
         } for r in rows]
     }
+
+
+@router.delete("/reminders/clear")
+async def clear_all_reminders(
+    db: AsyncSession = Depends(get_db),
+    admin_user: dict = Depends(get_current_admin)
+):
+    """Limpia todos los recordatorios semilla."""
+    await db.execute(text("TRUNCATE TABLE reminders RESTART IDENTITY"))
+    await db.commit()
+    return {"message": "Recordatorios limpiados con éxito"}
 
 
 @router.post("/reminders")
