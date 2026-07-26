@@ -191,7 +191,67 @@ async def sync_plans_from_excel(
                     """), {"plan": plan_name, "email": email_val, "name": name_val})
                     updated += res.rowcount
 
+        # ─── PARSE AGE, CITY & PLAN FROM PROFILES COL 4 (CIUDAD FREEFORM) ─
+        import re
+        ages_updated = 0
+        if "PROFILES" in wb.sheetnames:
+            ws_prof = wb["PROFILES"]
+            for row in ws_prof.iter_rows(min_row=2, values_only=True):
+                if not row or not row[1]: continue
+                p_name = str(row[1]).strip()
+                col4_text = str(row[4] or "").strip()
+                col8_age = row[8] if len(row) > 8 else None
+
+                # Extract age number if present in col4 or col8
+                extracted_age = None
+                if col8_age:
+                    try: extracted_age = int(float(str(col8_age)))
+                    except: pass
+                
+                if not extracted_age and col4_text:
+                    # Match patterns like "27", "29", "49 años", "34 años"
+                    age_match = re.search(r'\b(1[89]|[2-8][0-9])\b', col4_text)
+                    if age_match:
+                        extracted_age = int(age_match.group(1))
+
+                # Extract city
+                extracted_city = None
+                if col4_text:
+                    c_low = col4_text.lower()
+                    if 'bog' in c_low or 'bgta' in c_low: extracted_city = 'Bogotá'
+                    elif 'med' in c_low or 'mde' in c_low: extracted_city = 'Medellín'
+                    elif 'cali' in c_low: extracted_city = 'Cali'
+                    elif 'barranq' in c_low or 'bqui' in c_low: extracted_city = 'Barranquilla'
+                    elif 'buca' in c_low: extracted_city = 'Bucaramanga'
+
+                # Extract VIP if written in Col 4
+                is_vip = 'vip' in col4_text.lower() if col4_text else False
+
+                if extracted_age or extracted_city or is_vip:
+                    updates = []
+                    params = {"person": p_name}
+                    if extracted_age:
+                        updates.append("age = COALESCE(p.age, :age)")
+                        params["age"] = extracted_age
+                    if extracted_city:
+                        updates.append("city = :city")
+                        params["city"] = extracted_city
+                    if is_vip:
+                        updates.append("plan_tier = 'VIP 195k'")
+
+                    if updates:
+                        sql_up = f"""
+                            UPDATE profiles p
+                            SET {", ".join(updates)}
+                            FROM users u
+                            WHERE p.user_id = u.id
+                              AND unaccent(lower(trim(u.name))) = unaccent(lower(trim(:person)))
+                        """
+                        r_up = await db.execute(text(sql_up), params)
+                        if extracted_age: ages_updated += r_up.rowcount
+
         # ─── ENRICH CITY AND RESPONSABLE FROM MATCHES TABS ─────────────────
+
         matches_sheets = [s for s in wb.sheetnames if 'MATCHES' in s and s not in ('MISSING MATCHES', 'TROUBLE MATCHES')]
         cities_updated = 0
         resp_updated = 0
