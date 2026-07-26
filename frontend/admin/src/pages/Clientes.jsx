@@ -13,27 +13,28 @@ const MOTIVACION_BADGES = {
 
 const PSYCHOLOGISTS = [
   { id: 'all', label: 'Todas las Psicólogas' },
-  { id: 'Ana', label: '👩‍⚕️ Ana (207)' },
-  { id: 'Silvana', label: '👩‍⚕️ Silvi / Silvana (51)' },
-  { id: 'Manu', label: '👩‍⚕️ Manu (227)' },
-  { id: 'Aleja', label: '👩‍⚕️ Aleja (151)' },
-  { id: 'Jenn', label: '👩‍⚕️ Jenn (176)' },
-  { id: 'Sofi', label: '👩‍⚕️ Sofi (85)' },
-  { id: 'Steff', label: '👩‍⚕️ Steff (233)' },
-  { id: 'Lau', label: '👩‍⚕️ Lau (264)' },
-  { id: 'Mape', label: '👩‍⚕️ Mape / María Paula (376)' }
+  { id: 'Ana', label: '👩‍⚕️ Ana' },
+  { id: 'Silvana', label: '👩‍⚕️ Silvi / Silvana' },
+  { id: 'Manu', label: '👩‍⚕️ Manu' },
+  { id: 'Aleja', label: '👩‍⚕️ Aleja' },
+  { id: 'Jenn', label: '👩‍⚕️ Jenn' },
+  { id: 'Sofi', label: '👩‍⚕️ Sofi' },
+  { id: 'Steff', label: '👩‍⚕️ Steff' },
+  { id: 'Lau', label: '👩‍⚕️ Lau' },
+  { id: 'Mape', label: '👩‍⚕️ Mape / María Paula' }
 ]
 
-// Planes de membresía (según pestaña "Clients plans" del Excel + sin asignación)
+// Planes de membresía
 const PLANS = [
-  { id: 'all',       label: 'Todos los Planes',           icon: '📋', color: null },
-  { id: 'sin_plan',  label: '⚠️ Sin Plan Asignado',        icon: '⚠️', color: '#888' },
-  { id: '195',       label: '👑 VIP 195k (26)',           icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)' },
-  { id: '150',       label: '💎 Premium 150k (104)',      icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
-  { id: '98',        label: '⭐ Estándar Plus 98k (26)',  icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)' },
-  { id: '65',        label: '🔵 Estándar 65k (355)',      icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)' },
-  { id: '40',        label: '🟢 Básico 40k (246)',        icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
+  { id: 'all',       label: 'Todos los Planes',      icon: '📋', color: null },
+  { id: 'sin_plan',  label: '⚠️ Sin Plan Asignado',   icon: '⚠️', color: '#888' },
+  { id: '195',       label: '👑 VIP 195k',            icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)' },
+  { id: '150',       label: '💎 Premium 150k',        icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  { id: '98',        label: '⭐ Estándar Plus 98k',   icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)' },
+  { id: '65',        label: '🔵 Estándar 65k',        icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)' },
+  { id: '40',        label: '🟢 Básico 40k',          icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
 ]
+
 
 
 
@@ -761,12 +762,9 @@ export default function Clientes() {
 
   const handlePsychologistChange = (val) => {
     setPsychologistFilter(val)
-    // Auto-reset secondary filters so picking a psychologist ALWAYS shows her full client list immediately!
-    setNotesFilter('all')
-    setCityFilter('all')
-    setMatchesFilter('all')
     setPage(1)
   }
+
 
   const totalPages = Math.ceil(total / limit)
 
