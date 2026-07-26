@@ -542,10 +542,11 @@ function ClienteModal({ cliente, token, onClose }) {
 
 
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                        <span>📅 {isExcelDateStatus ? 'Fecha realizada en historial' : cleanDate}</span>
+                        <span>📅 {cleanDate !== 'Por agendar' ? cleanDate : (isExcelDateStatus ? cleanStatus : 'Fecha efectuada en historial')}</span>
                         <span>👩‍⚕️ Psicóloga: {m.matchmaker?.replace('MATCHES ', '') || 'Sistema'}</span>
                         {m.city && <span>📍 {m.city}</span>}
                       </div>
+
 
                       {postFeedback ? (
                         <div style={{ fontSize: 12, color: '#F5F0F1', fontStyle: 'italic', background: 'rgba(150, 21, 0, 0.08)', borderLeft: '3px solid var(--color-primary)', padding: '8px 10px', borderRadius: 6, marginTop: 2 }}>
