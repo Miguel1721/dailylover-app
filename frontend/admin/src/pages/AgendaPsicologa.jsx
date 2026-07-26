@@ -143,6 +143,8 @@ export default function AgendaPsicologa() {
   const [loading, setLoading]         = useState(true)
   const [activeTab, setActiveTab]     = useState('entrevistas')
   const [availMap, setAvailMap]       = useState({})   // { [day_of_week]: data }
+  const [availLoaded, setAvailLoaded] = useState(false)
+
 // Inside AgendaPsicologa component
   const [assignedCityFilter, setAssignedCityFilter] = useState('all')
   const [assignedPlanFilter, setAssignedPlanFilter] = useState('all')
