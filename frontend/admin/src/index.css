@@ -1297,5 +1297,65 @@ body.light-mode {
   gap: 20px;
 }
 
+/* ============================================================
+   RESPONSIVE MOBILE TABS & MODALS POLISH
+   ============================================================ */
+.tabs-header-container {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  display: flex;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  /* Modals full width on mobile */
+  .modal {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    padding: 16px !important;
+    max-height: 92vh !important;
+    overflow-y: auto !important;
+  }
+  
+  /* Tables horizontal scroll touch */
+  .table-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Buttons flex wrap in headers */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+  
+  .page-header > div {
+    width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Force responsive tabs to wrap or scroll cleanly on mobile */
+  div[style*="borderBottom"] {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
 
 

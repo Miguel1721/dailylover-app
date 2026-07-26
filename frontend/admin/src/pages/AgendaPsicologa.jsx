@@ -141,7 +141,8 @@ export default function AgendaPsicologa() {
         </div>
 
         {/* TABS */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 20, gap: 16 }}>
+        <div className="tabs-header-container" style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 20, gap: 16 }}>
+
           <button
             className="btn btn-ghost"
             style={{
