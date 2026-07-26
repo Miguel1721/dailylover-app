@@ -129,7 +129,78 @@ async def get_data_health(
     }
 
 
+# ─── PLAN SYNC FROM EXCEL ───────────────────────────────────────────────────
+
+@router.post("/sync-plans")
+async def sync_plans_from_excel(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("importar", "use"))
+):
+    """
+    Sincroniza automáticamente plan_tier en profiles asociando por correo y nombre
+    a partir de los registros de la pestaña 'Clients plans' del Excel.
+    """
+    import os
+    import openpyxl
+
+    file_path = r"C:\Users\jeloz\Downloads\Daily Lover MATCHMAKING.xlsx"
+    if not os.path.exists(file_path):
+        return {"status": "error", "message": f"Archivo Excel no encontrado en {file_path}"}
+
+    try:
+        wb = openpyxl.load_workbook(file_path, read_only=True)
+        if "Clients plans" not in wb.sheetnames:
+            return {"status": "error", "message": "Pestaña 'Clients plans' no existe en el Excel"}
+
+        ws = wb["Clients plans"]
+
+        plans_config = [
+            ("VIP 195k", 0, 1),
+            ("Premium 150k", 2, 3),
+            ("Estándar Plus 98k", 4, 5),
+            ("Estándar 65k (2 citas)", 6, 7),
+            ("Estándar 65k (1 cita)", 8, 9),
+            ("Básico 40k", 10, 11)
+        ]
+
+        updated = 0
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row:
+                continue
+            for plan_name, name_idx, email_idx in plans_config:
+                name_val = str(row[name_idx]).strip() if name_idx < len(row) and row[name_idx] else ""
+                email_val = str(row[email_idx]).strip() if email_idx < len(row) and row[email_idx] else ""
+                
+                if name_val or email_val:
+                    res = await db.execute(text("""
+                        UPDATE profiles p
+                        SET plan_tier = :plan
+                        FROM users u
+                        WHERE p.user_id = u.id
+                          AND (
+                            (:email != '' AND lower(trim(COALESCE(u.email,''))) = lower(trim(:email)))
+                            OR (:name != '' AND unaccent(lower(trim(COALESCE(u.name,'')))) = unaccent(lower(trim(:name))))
+                          )
+                    """), {"plan": plan_name, "email": email_val, "name": name_val})
+                    updated += res.rowcount
+
+        await db.commit()
+
+        # Resumen post-sync
+        res_dist = await db.execute(text("SELECT COALESCE(plan_tier, 'Sin Plan') as tier, COUNT(*) as cnt FROM profiles GROUP BY plan_tier ORDER BY cnt DESC"))
+        distribucion = {r.tier: r.cnt for r in res_dist.fetchall()}
+
+        return {
+            "status": "success",
+            "registros_actualizados": updated,
+            "distribucion_actual": distribucion
+        }
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+
 # ─── STATS ────────────────────────────────────────────────────────────────────
+
 
 @router.get("/stats")
 async def get_stats(
