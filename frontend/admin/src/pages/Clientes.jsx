@@ -219,8 +219,8 @@ function ClienteModal({ cliente, token, onClose }) {
             )}
 
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 700, fontSize: 20, color: 'var(--text-primary)' }}>{cliente.name || 'Sin nombre'}</span>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                {cliente.name}
                 {cliente.client_code && (
                   <span style={{
                     background: 'linear-gradient(135deg, #6c3ff5, #a855f7)',
@@ -228,25 +228,22 @@ function ClienteModal({ cliente, token, onClose }) {
                     fontSize: 11,
                     fontWeight: 700,
                     padding: '2px 8px',
-                    borderRadius: 20,
-                    letterSpacing: 1,
-                    fontFamily: 'monospace'
+                    borderRadius: 12
                   }}>{cliente.client_code}</span>
                 )}
               </div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 13, display: 'flex', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={13} /> {cliente.phone}</span>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                {cliente.phone && <span>📞 {cliente.phone}</span>}
                 {p.city && <span>📍 {p.city}</span>}
                 {p.age && <span>🎂 {p.age} años</span>}
                 {p.estatura && <span>📏 {p.estatura}m</span>}
-                {cliente.id_number && <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>🪪 CC: {cliente.id_number}</span>}
-              </div>
             </div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
 
         {/* Tab Navigation — ORDERED FROM RIGHT TO LEFT (DERECHA A IZQUIERDA) */}
+
         <div style={{ display: 'flex', flexDirection: 'row-reverse', justifyContent: 'flex-start', borderBottom: '1px solid var(--border-color)', marginBottom: 16 }}>
           <button
             className="btn btn-ghost"
@@ -276,6 +273,7 @@ function ClienteModal({ cliente, token, onClose }) {
             <User size={15} style={{ marginRight: 6 }} /> Perfil Clínico & Hábitos
           </button>
         </div>
+
 
         {/* Re-asignación / Derivación de Cliente */}
         <div style={{ background: 'rgba(150,21,0,0.08)', border: '1px solid rgba(150,21,0,0.25)', borderRadius: 10, padding: 12, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
@@ -534,14 +532,23 @@ function ClienteModal({ cliente, token, onClose }) {
         )}
 
 
+
+
         <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-color)', fontSize: 12, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
           <span>Cliente ID: #{cliente.id}</span>
           <span>Registrado: {new Date(cliente.created_at).toLocaleDateString('es-CO')}</span>
         </div>
       </div>
     </div>
+    </div>
   )
 }
+
+
+
+
+
+
 
 export default function Clientes() {
   const { user, token } = useAuth()
@@ -896,9 +903,22 @@ export default function Clientes() {
                       </span>
                       {u.id_number && <span style={{ color: 'var(--text-muted)' }}>🪪 {u.id_number}</span>}
                     </div>
-                    <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
-                      Expediente Clínico &amp; Fit →
-                    </span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11, borderColor: 'rgba(150,21,0,0.3)', color: 'var(--color-primary)', padding: '2px 8px' }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelected(u)
+                        }}
+                      >
+                        🔄 Derivar Caso
+                      </button>
+                      <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
+                        Expediente Clínico &amp; Fit →
+                      </span>
+                    </div>
+
                   </div>
                 </div>
               )
