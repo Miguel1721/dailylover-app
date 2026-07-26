@@ -122,15 +122,24 @@ const MEDELLIN_VENUES = [
 
 function cleanPersonName(nameStr) {
   if (!nameStr) return { cleanName: 'Sin nombre', note: null }
-  const str = nameStr.trim()
-  const lower = str.toLowerCase ? str.toLowerCase() : str
+  const str = String(nameStr).trim()
   
-  const isNote = ['el no volvió', 'canceló', 'no contesto', 'esta en waitlist', 'descalificado', 'enfermo', 'vuelve', 'escribirle'].some(k => lower.includes(k))
-  if (isNote && str.length > 25) {
-    return { cleanName: str.substring(0, 22) + '...', note: str }
+  // If the cell contains notes or sentences in Excel (e.g. "Tiene 3 en waitlist...", "Creo que stef le sacó un match...")
+  const noteKeywords = ['waitlist', 'espera', 'confirme', 'vuelva', 'creo que', 'sacó', 'salió', 'double date', 'rarito', 'canceló', 'descalificado', 'enfermo', 'vuelve', 'escribirle', 'no volvió']
+  const lower = str.toLowerCase()
+  const hasNoteKeywords = noteKeywords.some(k => lower.includes(k))
+  
+  if (hasNoteKeywords || str.length > 28) {
+    // Check if there is a name at the beginning before a note/sentence
+    const firstWord = str.split(' ')[0]
+    return {
+      cleanName: firstWord.length > 2 ? firstWord : str.substring(0, 18) + '...',
+      note: str
+    }
   }
   return { cleanName: str, note: null }
 }
+
 
 function getAIAnalysis(match) {
   const seed = (match.id * 17) % 100
@@ -490,11 +499,15 @@ export default function Matching() {
                             <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
                           )}
                           <div style={{ fontSize: 10, color: '#2196F3', marginTop: 3 }}>🔍 Ver Expediente B</div>
-                          {personB.note && (
-                            <div style={{ fontSize: 10, color: '#FFC107', marginTop: 2 }}>📌 {personB.note}</div>
-                          )}
                         </div>
                       </div>
+
+                      {(personA.note || personB.note) && (
+                        <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.2)', padding: '6px 10px', borderRadius: 8, marginBottom: 12, fontStyle: 'italic' }}>
+                          📌 <strong>Nota Clínica del Excel:</strong> "{personA.note || personB.note}"
+                        </div>
+                      )}
+
 
                     {/* AI Venue Suggestion Card */}
                     <div style={{
@@ -600,8 +613,9 @@ export default function Matching() {
               <div>
                 <div style={{ fontWeight: 700, fontSize: 19, display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Sparkles size={20} style={{ color: '#FFC107' }} />
-                  Informe Completo de Match (Gemini 2.5 + Evaluación Psicología)
+                  Informe Completo de Match (Evaluación de Compatibilidad & Psicología)
                 </div>
+
                 <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
                   Match #{selectedMatch.id} • Psicóloga Responsable: {selectedMatch.matchmaker || 'Silvi'}
                 </div>

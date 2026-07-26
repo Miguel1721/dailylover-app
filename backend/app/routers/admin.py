@@ -1828,16 +1828,17 @@ async def get_historical_matches(
     if status_filter and status_filter != "all":
         sf = status_filter.upper()
         if sf in ["PENDIENTE", "PENDING"]:
-            where_clauses.append("(status IS NULL OR status = '' OR status ILIKE '%PENDIENTE%' OR status ILIKE '%REVISAR%' OR status ~ '^[0-9.]+$' OR status ILIKE '%julio%' OR status ILIKE '%junio%' OR status ILIKE '%mayo%')")
+            where_clauses.append("(status IS NULL OR status = '' OR status ILIKE '%PENDIENTE%' OR status ~ '^[0-9.]+$' OR status ILIKE '%julio%' OR status ILIKE '%junio%' OR status ILIKE '%mayo%') AND NOT (status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%')")
         elif sf in ["APROBADO", "ACCEPTED"]:
             where_clauses.append("(status ILIKE '%APROBADO%' OR status ILIKE '%HECHO%' OR status ILIKE '%ACCEPTED%')")
         elif sf in ["RECHAZADO", "REJECTED"]:
             where_clauses.append("(status ILIKE '%RECHAZADO%' OR status ILIKE '%NOT APPROVED%' OR status ILIKE '%NO MATCH%' OR status ILIKE '%DESCALIFICADO%' OR status ILIKE '%REFUND%')")
         elif sf in ["TROUBLE", "FALLIDO"]:
-            where_clauses.append("(status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%' OR status ILIKE '%NO HAY GENTE%')")
+            where_clauses.append("(status ILIKE '%TROUBLE%' OR status ILIKE '%NO HAY GENTE%')")
         else:
             where_clauses.append("status ILIKE :status_filter")
             params["status_filter"] = f"%{status_filter}%"
+
 
     # 0. Auto-vinculación masiva limpia sin múltiples sentencias en un solo execute
     try:
