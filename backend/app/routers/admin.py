@@ -585,7 +585,8 @@ async def get_users(
         where_clauses.append(f"({alias_conds})")
 
     if is_difficult == "difficult_only":
-        where_clauses.append("p.is_difficult = true")
+        where_clauses.append("COALESCE(p.is_difficult, false) = true")
+
 
     if has_notes == "with_notes":
         where_clauses.append("p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) > 2")
