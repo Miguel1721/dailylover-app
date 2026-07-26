@@ -1236,34 +1236,65 @@ function getPlaceholders(name = '', idx = 0) {
   return pool[idx % pool.length]
 }
 
-function PersonCard({ label, name, photo, city, code, note, fallbackIdx }) {
+function PersonCard({ label, name, photo, city, code, note }) {
+  // Pool de fotos: real primero, luego todas las del género
+  const n = name ? name.toLowerCase() : ''
+  const femNames = ['maria','ana','silvi','steffy','manu','paula','andrea','carolina','natalia','valentina','laura','daniela','camila','alejandra','isabella','sofia','sara','juliana']
+  const isFem = femNames.some(f => n.includes(f))
+  const fallbackPool = isFem ? PLACEHOLDER_WOMEN : PLACEHOLDER_MEN
+
+  // Si tiene foto real, va primero; luego el resto de placeholders
+  const photoPool = photo ? [photo, ...fallbackPool] : fallbackPool
+
+  const [idx, setIdx] = useState(0)
   const [imgError, setImgError] = useState(false)
-  const displayPhoto = (!photo || imgError) ? getPlaceholders(name, fallbackIdx) : photo
-  const initials = name ? name.trim().split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase() : '?'
-  const hasRealPhoto = photo && !imgError
+
+  const currentSrc = imgError ? fallbackPool[idx % fallbackPool.length] : photoPool[idx % photoPool.length]
+  const isRealPhoto = idx === 0 && photo && !imgError
+  const total = photoPool.length
+
+  const prev = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i - 1 + total) % total) }
+  const next = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i + 1) % total) }
 
   return (
     <div style={{ background: '#1A1214', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 16, overflow: 'hidden', padding: 16 }}>
       <div style={{ height: 300, borderRadius: 12, overflow: 'hidden', background: '#25191C', position: 'relative', marginBottom: 14 }}>
         <img
-          src={displayPhoto}
+          key={currentSrc}
+          src={currentSrc}
           alt={name}
           onError={() => setImgError(true)}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', transition: 'opacity 0.2s ease' }}
         />
+
+        {/* Label */}
         <div style={{ position: 'absolute', bottom: 10, left: 10, background: 'rgba(0,0,0,0.75)', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'white' }}>
           {label}
         </div>
-        {!hasRealPhoto && (
-          <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(255,193,7,0.2)', border: '1px solid rgba(255,193,7,0.4)', padding: '3px 8px', borderRadius: 8, fontSize: 10, color: '#FFC107', fontWeight: 700 }}>
-            📷 Sin foto real
-          </div>
-        )}
-        {hasRealPhoto && (
-          <div style={{ position: 'absolute', top: 10, right: 10, background: 'rgba(76,175,80,0.2)', border: '1px solid rgba(76,175,80,0.4)', padding: '3px 8px', borderRadius: 8, fontSize: 10, color: '#4CAF50', fontWeight: 700 }}>
-            ✅ Foto real
-          </div>
-        )}
+
+        {/* Badge foto real / ejemplo */}
+        <div style={{ position: 'absolute', top: 10, right: 10, background: isRealPhoto ? 'rgba(76,175,80,0.25)' : 'rgba(255,193,7,0.2)', border: `1px solid ${isRealPhoto ? 'rgba(76,175,80,0.5)' : 'rgba(255,193,7,0.4)'}`, padding: '3px 8px', borderRadius: 8, fontSize: 10, color: isRealPhoto ? '#4CAF50' : '#FFC107', fontWeight: 700 }}>
+          {isRealPhoto ? '✅ Foto real' : `📷 Ejemplo ${idx + 1}/${total}`}
+        </div>
+
+        {/* Flechas navegación */}
+        <button onClick={prev} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: 16, backdropFilter: 'blur(4px)', transition: 'background 0.2s' }}
+          onMouseEnter={e => e.currentTarget.style.background='rgba(150,21,0,0.7)'}
+          onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.6)'}>
+          ◀
+        </button>
+        <button onClick={next} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '50%', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'white', fontSize: 16, backdropFilter: 'blur(4px)', transition: 'background 0.2s' }}
+          onMouseEnter={e => e.currentTarget.style.background='rgba(150,21,0,0.7)'}
+          onMouseLeave={e => e.currentTarget.style.background='rgba(0,0,0,0.6)'}>
+          ▶
+        </button>
+
+        {/* Dots */}
+        <div style={{ position: 'absolute', bottom: 10, right: 10, display: 'flex', gap: 4 }}>
+          {photoPool.map((_, i) => (
+            <div key={i} onClick={e => { e.stopPropagation(); setImgError(false); setIdx(i) }} style={{ width: i === idx ? 16 : 6, height: 6, borderRadius: 3, background: i === idx ? '#FF5A36' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s' }} />
+          ))}
+        </div>
       </div>
 
       <h3 style={{ fontSize: 17, fontWeight: 800, color: 'white', marginBottom: 4 }}>{name}</h3>
@@ -1312,7 +1343,6 @@ function LookbookModal({ match, onClose }) {
             city={match.city_a}
             code={match.code_a}
             note={personA.note}
-            fallbackIdx={0}
           />
 
           {/* Heart Sinergy Badge */}
@@ -1335,25 +1365,8 @@ function LookbookModal({ match, onClose }) {
             city={match.city_b}
             code={match.code_b}
             note={personB.note}
-            fallbackIdx={1}
           />
         </div>
-
-        {/* Galería extra de fotos placeholder si alguno no tiene foto real */}
-        {(!match.photo_a || !match.photo_b) && (
-          <div style={{ marginBottom: 20, background: 'rgba(255,193,7,0.05)', border: '1px solid rgba(255,193,7,0.15)', borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 12, color: '#FFC107', fontWeight: 700, marginBottom: 12 }}>
-              📷 Galería de referencia visual — Las fotos reales se mostrarán cuando los clientes las suban desde la app
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-              {[...PLACEHOLDER_WOMEN.slice(0,2), ...PLACEHOLDER_MEN.slice(0,2)].map((url, i) => (
-                <div key={i} style={{ borderRadius: 10, overflow: 'hidden', height: 100 }}>
-                  <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', opacity: 0.7 }} />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Clinical notes & status */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 16 }}>
