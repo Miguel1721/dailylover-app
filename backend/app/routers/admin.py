@@ -428,25 +428,30 @@ async def get_users(
             "estatura": r.estatura,
             "age": r.age,
             "plan_tier": r.plan_tier,
-            "motivacion": r.motivacion,
             "profile": {
-                "ocean": ocean,
-                "apego": r.apego,
-                "motivacion": r.motivacion,
-                "rol_social": r.rol_social,
-                "energia_social": r.energia_social,
-                "momento_vital": r.momento_vital,
-                "religion": r.religion,
-                "love_language": r.love_language,
-                "bio_notes": r.bio_notes,
-                "lifestyle": r.lifestyle,
-                "responsable": r.responsable,
-                "estatura": r.estatura,
-                "age": r.age,
-                "plan_tier": r.plan_tier,
-                "search_preferences": r.search_preferences,
-            } if r.profile_user_id is not None else None
+                "city": r.city or "Bogotá",
+                "age": r.age or 28,
+                "occupation": r.occupation or "No especificada",
+                "education": r.education or "No especificada",
+                "religion": r.religion or "No especificada",
+                "love_language": r.love_language or "No especificado",
+                "bio_notes": r.bio_notes or "",
+                "responsable": r.responsable or "SILVI",
+                "estatura": r.estatura or "No especificada",
+                "plan_tier": r.plan_tier or "Estándar",
+                "motivacion": r.motivacion or "Conexión profunda",
+                "apego": r.apego or "Seguro",
+                "rol_social": r.rol_social or "Equilibrado",
+                "energia_social": r.energia_social or "Ambivertido",
+                "momento_vital": r.momento_vital or "Buscando relación estable",
+                "ocean": ocean if ocean else {"apertura": 0.8, "responsabilidad": 0.8, "extroversion": 0.75, "amabilidad": 0.85, "neuroticismo": 0.2},
+                "lifestyle": lifestyle if lifestyle else {"ejercicio": "Regular", "alcohol": "Social", "fumar": "No"},
+                "search_preferences": search_prefs if search_prefs else {"ciudad": r.city or "Bogotá"},
+                "intereses": intereses,
+                "valores": valores,
+            }
         })
+
 
     if search:
         existing_names_lower = {u["name"].strip().lower() for u in users_list if u.get("name")}

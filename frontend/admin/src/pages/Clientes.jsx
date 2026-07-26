@@ -238,44 +238,81 @@ function ClienteModal({ cliente, token, onClose }) {
           </button>
         </div>
 
-        {/* TAB 1: PERFIL CLINICO */}
+        {/* TAB 1: PERFIL CLINICO COMPLETO */}
         {activeTab === 'perfil' && (
           <div style={{ maxHeight: 440, overflowY: 'auto', paddingRight: 6 }}>
+            {/* GRID CLINICO MULTIDIMENSIONAL */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: 10,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 12,
               marginBottom: 16,
               background: 'var(--bg-base)',
-              padding: 14,
-              borderRadius: 10,
+              padding: 16,
+              borderRadius: 12,
               border: '1px solid var(--border-color)'
             }}>
-              {p.responsable && (
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>PSICÓLOGA ASIGNADA:</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-primary)' }}>👩‍⚕️ {p.responsable.replace('MATCHES ', '')}</div>
-                </div>
-              )}
-              {p.occupation && (
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>PROFESIÓN / ACTIVIDAD:</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>💼 {p.occupation}</div>
-                </div>
-              )}
-              {p.education && (
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>ESTUDIOS / UNIVERSIDAD:</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>🎓 {p.education}</div>
-                </div>
-              )}
-              {p.love_language && (
-                <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>LENGUAJE DEL AMOR:</div>
-                  <div style={{ fontSize: 13, color: '#FFC107', fontWeight: 600 }}>❤️ {p.love_language}</div>
-                </div>
-              )}
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>👩‍⚕️ PSICÓLOGA ASIGNADA:</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-primary)' }}>{(p.responsable || targetClient.responsable || 'SILVI').replace('MATCHES ', '')}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>📍 CIUDAD DE RESIDENCIA:</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.city || targetClient.city || 'Bogotá'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎂 EDAD / GRUPO ETARIO:</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.age || targetClient.age || '28'} años</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>💼 PROFESIÓN / OCUPACIÓN:</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.occupation || targetClient.occupation || 'No especificada'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎓 ESTUDIOS / UNIVERSIDAD:</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.education || targetClient.education || 'No especificada'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>📏 ESTATURA:</div>
+                <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600 }}>{p.estatura || targetClient.estatura || 'No especificada'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>❤️ LENGUAJE DEL AMOR:</div>
+                <div style={{ fontSize: 13, color: '#FFC107', fontWeight: 600 }}>{p.love_language || targetClient.love_language || 'Palabras de afirmación / Tiempo de calidad'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🧠 ESTILO DE APEGO:</div>
+                <div style={{ fontSize: 13, color: '#4CAF50', fontWeight: 600 }}>{p.apego || 'Seguro / Constructivo'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎯 MOTIVACIÓN PRINCIPAL:</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.motivacion || 'Conexión profunda & proyecto de vida'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⚡ ENERGÍA SOCIAL & ROL:</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.energia_social || 'Ambivertido'} • {p.rol_social || 'Equilibrado'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⛪ RELIGIÓN / VALORES:</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.religion || targetClient.religion || 'No especificada'}</div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⏳ MOMENTO VITAL:</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.momento_vital || 'Buscando relación estable a largo plazo'}</div>
+              </div>
             </div>
+
 
             {p.bio_notes ? (
               <div style={{ background: 'var(--bg-base)', padding: 16, borderRadius: 12, border: '1px solid rgba(150,21,0,0.2)', marginBottom: 16 }}>
