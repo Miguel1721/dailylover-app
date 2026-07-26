@@ -30,6 +30,9 @@ import Proveedores from './pages/Proveedores'
 import MatchmakerDashboard from './pages/MatchmakerDashboard'
 import AgendaPsicologa from './pages/AgendaPsicologa'
 import EvaluacionCita from './pages/EvaluacionCita'
+import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
+import { Award } from 'lucide-react'
+
 
 
 
@@ -213,6 +216,7 @@ function Sidebar({ isOpen, onClose }) {
   const coreItems = [
     { to: '/', icon: Heart, label: 'Panel Clínico (Psicólogas)', module: 'dashboard', action: 'view', end: true },
     ...(isAdmin ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
+    ...(isAdmin ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
     { to: '/agenda', icon: Calendar, label: 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' },
     { to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' },
     { to: '/eventos', icon: Calendar, label: 'Eventos', module: 'eventos', action: 'view' },
@@ -220,6 +224,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' },
     { to: '/matching', icon: Heart, label: 'Matching', module: 'matching', action: 'view' },
   ]
+
 
 
   const personalItems = [
@@ -451,7 +456,9 @@ function AppContent() {
                     />
                     <Route path="/general" element={<ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute>} />
                     <Route path="/clinico" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
+                    <Route path="/auditoria-psicologas" element={<ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute>} />
                     <Route path="/clientes" element={<ProtectedRoute module="clientes" action="view"><Clientes /></ProtectedRoute>} />
+
                     <Route path="/agenda" element={<ProtectedRoute module="clientes" action="view"><AgendaPsicologa /></ProtectedRoute>} />
                     <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />

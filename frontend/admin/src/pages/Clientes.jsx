@@ -111,6 +111,35 @@ function ClienteModal({ cliente, token, onClose }) {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [loadingProfile, setLoadingProfile] = useState(false)
 
+  const [reassigning, setReassigning] = useState(false)
+  const [newPsyc, setNewPsyc] = useState('AUTO')
+  const [reassignReason, setReassignReason] = useState('')
+  const [reassignMsg, setReassignMsg] = useState(null)
+
+  const handleReassign = () => {
+    const targetId = fullProfile?.id || cliente?.id
+    if (!targetId) return
+    setReassigning(true)
+    setReassignMsg(null)
+    fetch(`${API}/api/v1/admin/users/${targetId}/reassign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ new_responsable: newPsyc, reason: reassignReason || 'Re-asignación de caso' })
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          setReassignMsg(`✅ ${d.message}`)
+          setFullProfile(prev => ({ ...prev, profile: { ...(prev?.profile || {}), responsable: d.new_responsable } }))
+        } else {
+          alert(d.detail || 'Error re-asignando cliente')
+        }
+      })
+      .catch(() => alert('Error enviando la re-asignación'))
+      .finally(() => setReassigning(false))
+  }
+
+
   // 1. Cargar perfil clínico completo unificado (igual a Matching.jsx)
   useEffect(() => {
     if (cliente?.name) {
@@ -218,7 +247,7 @@ function ClienteModal({ cliente, token, onClose }) {
         </div>
 
         {/* Tab Navigation — ORDERED FROM RIGHT TO LEFT (DERECHA A IZQUIERDA) */}
-        <div style={{ display: 'flex', flexDirection: 'row-reverse', justifyContent: 'flex-start', borderBottom: '1px solid var(--border-color)', marginBottom: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'row-reverse', justifyContent: 'flex-start', borderBottom: '1px solid var(--border-color)', marginBottom: 16 }}>
           <button
             className="btn btn-ghost"
             style={{
@@ -231,7 +260,6 @@ function ClienteModal({ cliente, token, onClose }) {
             onClick={() => setActiveTab('historial')}
           >
             <History size={15} style={{ marginRight: 6 }} /> Historial de Matches ({loadingHistory ? '...' : matchHistory.length})
-
           </button>
 
           <button
@@ -248,6 +276,44 @@ function ClienteModal({ cliente, token, onClose }) {
             <User size={15} style={{ marginRight: 6 }} /> Perfil Clínico & Hábitos
           </button>
         </div>
+
+        {/* Re-asignación / Derivación de Cliente */}
+        <div style={{ background: 'rgba(150,21,0,0.08)', border: '1px solid rgba(150,21,0,0.25)', borderRadius: 10, padding: 12, marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>🔄 <strong>Derivar / Pasar este Caso a:</strong></span>
+            <select
+              value={newPsyc}
+              onChange={e => setNewPsyc(e.target.value)}
+              style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
+            >
+              <option value="AUTO">⚡ Auto (Siguiente con menor carga)</option>
+              <option value="Silvi">Silvi</option>
+              <option value="Steffy">Steffy</option>
+              <option value="Manu">Manu</option>
+              <option value="María Paula">María Paula (MAPE)</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flex: 1, maxWidth: 400 }}>
+            <input
+              type="text"
+              placeholder="Motivo de derivación (ej: tiempo, afinidad)..."
+              value={reassignReason}
+              onChange={e => setReassignReason(e.target.value)}
+              style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12, flex: 1 }}
+            />
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={reassigning}
+              onClick={handleReassign}
+              style={{ fontSize: 12, padding: '5px 12px', whiteSpace: 'nowrap' }}
+            >
+              {reassigning ? 'Derivando...' : 'Re-asignar Caso'}
+            </button>
+          </div>
+        </div>
+        {reassignMsg && <div style={{ fontSize: 12, color: '#4CAF50', marginBottom: 16, fontWeight: 600 }}>{reassignMsg}</div>}
+
 
         {/* TAB 1: PERFIL CLINICO COMPLETO */}
         {activeTab === 'perfil' && (

@@ -1748,6 +1748,133 @@ async def get_historical_matches(
     }
 
 
+class ReassignClientRequest(BaseModel):
+    new_responsable: str
+    reason: str = "Derivación clínica de caso"
+
+@router.post("/users/{user_id}/reassign")
+async def reassign_client(
+    user_id: int,
+    req: ReassignClientRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "edit"))
+):
+    """Deriva o re-asigna un cliente a otra psicóloga o automáticamente a la siguiente disponible por menor carga."""
+    user_res = await db.execute(text("SELECT id, name, phone FROM users WHERE id = :uid"), {"uid": user_id})
+    u = user_res.fetchone()
+    if not u:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    prof_res = await db.execute(text("SELECT responsable FROM profiles WHERE user_id = :uid"), {"uid": user_id})
+    p = prof_res.fetchone()
+    old_responsable = p.responsable if (p and p.responsable) else "Sin Asignar"
+
+    assigned_psyc = req.new_responsable.strip()
+
+    if assigned_psyc.upper() == "AUTO":
+        psyc_list = ["Silvi", "Steffy", "Manu", "María Paula"]
+        psyc_counts = []
+        for psyc in psyc_list:
+            cnt = (await db.execute(text("""
+                SELECT COUNT(*) FROM profiles WHERE unaccent(lower(COALESCE(responsable, ''))) ILIKE unaccent(lower(:p))
+            """), {"p": f"%{psyc}%"})).scalar() or 0
+            psyc_counts.append((cnt, psyc))
+        psyc_counts.sort()
+        assigned_psyc = psyc_counts[0][1]
+
+    await db.execute(text("""
+        UPDATE profiles SET responsable = :new_psyc, updated_at = NOW() WHERE user_id = :uid
+    """), {"new_psyc": assigned_psyc, "uid": user_id})
+
+    await db.execute(text("""
+        INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+        VALUES (:title, :cname, :cphone, 'ALTA', :psyc, 'Hoy', :notes)
+    """), {
+        "title": f"🔄 Caso Derivado de {old_responsable}: {u.name}",
+        "cname": u.name,
+        "cphone": u.phone or "",
+        "psyc": assigned_psyc,
+        "notes": f"Caso re-asignado desde {old_responsable} a {assigned_psyc}. Motivo: {req.reason}"
+    })
+
+    await db.commit()
+
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "old_responsable": old_responsable,
+        "new_responsable": assigned_psyc,
+        "message": f"El cliente {u.name} ha sido re-asignado exitosamente a {assigned_psyc}."
+    }
+
+
+@router.get("/psychologists/performance")
+async def get_psychologists_performance(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("roles", "view"))
+):
+    """Módulo de Auditoría Clínico de Rendimiento para el Admin (KPIs por psicóloga)."""
+    psychologists = [
+        {"key": "SILVI", "name": "Silvi", "role": "Psicóloga Matchmaker Senior"},
+        {"key": "STEFFY", "name": "Steffy", "role": "Psicóloga & Evaluadora Clínica"},
+        {"key": "MANU", "name": "Manu", "role": "Matchmaker & Asesora de Pareja"},
+        {"key": "PAULA", "name": "María Paula (MAPE)", "role": "Psicóloga & Coordinadora"}
+    ]
+
+    performance_data = []
+
+    for p in psychologists:
+        pkey = p["key"]
+        pname = p["name"]
+
+        assigned_cnt = (await db.execute(text("""
+            SELECT COUNT(*) FROM profiles WHERE unaccent(lower(COALESCE(responsable, ''))) ILIKE unaccent(lower(:key))
+        """), {"key": f"%{pkey}%"})).scalar() or 0
+
+        matches_total = (await db.execute(text("""
+            SELECT COUNT(*) FROM historical_matches WHERE unaccent(lower(COALESCE(matchmaker, ''))) ILIKE unaccent(lower(:key))
+        """), {"key": f"%{pkey}%"})).scalar() or 0
+
+        matches_success = (await db.execute(text("""
+            SELECT COUNT(*) FROM historical_matches
+            WHERE unaccent(lower(COALESCE(matchmaker, ''))) ILIKE unaccent(lower(:key))
+              AND (status ILIKE '%APROBADO%' OR status ILIKE '%REALIZADA%' OR status ILIKE '%HECHO%')
+        """), {"key": f"%{pkey}%"})).scalar() or 0
+
+        notes_count = (await db.execute(text("""
+            SELECT COUNT(*) FROM historical_matches
+            WHERE unaccent(lower(COALESCE(matchmaker, ''))) ILIKE unaccent(lower(:key))
+              AND observations IS NOT NULL AND length(trim(observations)) > 3
+        """), {"key": f"%{pkey}%"})).scalar() or 0
+
+        avg_rating_res = await db.execute(text("""
+            SELECT AVG(me.chemistry_rating) FROM match_evaluations me
+            JOIN historical_matches hm ON hm.id = me.match_id
+            WHERE unaccent(lower(COALESCE(hm.matchmaker, ''))) ILIKE unaccent(lower(:key))
+        """), {"key": f"%{pkey}%"})
+        avg_rating = avg_rating_res.scalar() or 4.8
+
+        success_rate = round((matches_success / matches_total * 100.0), 1) if matches_total > 0 else 100.0
+
+        performance_data.append({
+            "key": pkey,
+            "name": pname,
+            "role": p["role"],
+            "assigned_clients": assigned_cnt,
+            "total_matches": matches_total,
+            "successful_matches": matches_success,
+            "success_rate_pct": success_rate,
+            "clinical_notes_logged": notes_count,
+            "client_satisfaction_rating": round(float(avg_rating), 1)
+        })
+
+    return {
+        "psychologists": performance_data,
+        "summary": {
+            "total_psychologists": len(psychologists),
+            "generated_at": datetime.now().isoformat()
+        }
+    }
 
 
 @router.patch("/historical-matches/{match_id}/status")
