@@ -340,6 +340,7 @@ async def get_users(
     has_notes: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     has_matches: Optional[str] = Query(None),
+    plan_tier: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("clientes", "view"))
 ):
@@ -378,6 +379,10 @@ async def get_users(
     if city and city != "all":
         where_clauses.append("(unaccent(COALESCE(p.city, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(p.bio_notes, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(CAST(p.search_preferences AS text), '')) ILIKE unaccent(:city))")
         params["city"] = f"%{city}%"
+
+    if plan_tier and plan_tier != "all":
+        where_clauses.append("UPPER(COALESCE(p.plan_tier, '')) LIKE UPPER(:plan_tier)")
+        params["plan_tier"] = f"%{plan_tier}%"
 
     if has_matches == "with_matches":
         where_clauses.append("""unaccent(lower(u.name)) IN (

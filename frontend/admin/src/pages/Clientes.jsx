@@ -24,6 +24,30 @@ const PSYCHOLOGISTS = [
   { id: 'Mape', label: '👩‍⚕️ Mape / María Paula (376)' }
 ]
 
+// Planes de membresía (según pestaña "Clients plans" del Excel)
+const PLANS = [
+  { id: 'all',       label: 'Todos los Planes',      icon: '📋', color: null },
+  { id: '195',       label: '👑 VIP 195k',            icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)' },
+  { id: '150',       label: '💎 Premium 150k',        icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
+  { id: '98',        label: '⭐ Estándar Plus 98k',   icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)' },
+  { id: '65',        label: '🔵 Estándar 65k',        icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)' },
+  { id: '40',        label: '🟢 Básico 40k',          icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)' },
+]
+
+function getPlanStyle(planTier) {
+  if (!planTier) return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: 'Sin plan' }
+  const t = String(planTier).trim()
+  if (t.includes('195')) return { icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)', label: t }
+  if (t.includes('150')) return { icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)', label: t }
+  if (t.includes('98'))  return { icon: '⭐', color: '#FF5A36', bg: 'rgba(255,90,54,0.15)',  label: t }
+  if (t.includes('65'))  return { icon: '🔵', color: '#2196F3', bg: 'rgba(33,150,243,0.15)', label: t }
+  if (t.includes('40'))  return { icon: '🟢', color: '#4CAF50', bg: 'rgba(76,175,80,0.15)',  label: t }
+  if (t.toLowerCase().includes('vip')) return { icon: '👑', color: '#FFD700', bg: 'rgba(255,215,0,0.15)', label: t }
+  if (t.toLowerCase().includes('premium')) return { icon: '💎', color: '#a855f7', bg: 'rgba(168,85,247,0.15)', label: t }
+  return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: t }
+}
+
+
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #961500 0%, #d32f2f 100%)',
   'linear-gradient(135deg, #1976d2 0%, #0288d1 100%)',
@@ -338,6 +362,23 @@ function ClienteModal({ cliente, token, onClose }) {
               </div>
 
               <div>
+                {(() => {
+                  const tier = p.plan_tier || targetClient.plan_tier
+                  const ps = getPlanStyle(tier)
+                  return (
+                    <>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>💳 PLAN / MEMBRESÍA:</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, padding: '3px 10px', borderRadius: 8, background: ps.bg, color: ps.color, border: `1px solid ${ps.color}55` }}>
+                          {ps.icon} {tier || 'Sin plan asignado'}
+                        </span>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+
+              <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>📍 CIUDAD DE RESIDENCIA:</div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.city || targetClient.city || 'Bogotá'}</div>
               </div>
@@ -564,6 +605,7 @@ export default function Clientes() {
   const [notesFilter, setNotesFilter] = useState('all')
   const [cityFilter, setCityFilter] = useState('all')
   const [matchesFilter, setMatchesFilter] = useState('all')
+  const [planFilter, setPlanFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const limit = 20
@@ -590,7 +632,8 @@ export default function Clientes() {
       ...(psychologistFilter !== 'all' && { responsable: psychologistFilter }),
       ...(notesFilter !== 'all' && { has_notes: notesFilter }),
       ...(cityFilter !== 'all' && { city: cityFilter }),
-      ...(matchesFilter !== 'all' && { has_matches: matchesFilter })
+      ...(matchesFilter !== 'all' && { has_matches: matchesFilter }),
+      ...(planFilter !== 'all' && { plan_tier: planFilter })
     })
 
     fetch(`${API}/api/v1/admin/users?${params}`, {
@@ -606,7 +649,7 @@ export default function Clientes() {
         setTotal(0)
       })
       .finally(() => setLoading(false))
-  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, token])
+  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, token])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
@@ -756,6 +799,28 @@ export default function Clientes() {
               <option value="with_matches">💘 Con Citas Previas</option>
               <option value="without_matches">✨ Listos para 1ra Cita</option>
             </select>
+
+            {/* Filter 5: Plan / Membresía */}
+            <select
+              style={{
+                padding: '8px 12px',
+                fontSize: 13,
+                width: 'auto',
+                minWidth: 155,
+                height: 38,
+                background: 'var(--bg-base)',
+                border: planFilter !== 'all' ? '1px solid #FFD700' : '1px solid var(--border-color)',
+                color: planFilter !== 'all' ? '#FFD700' : 'var(--text-primary)',
+                borderRadius: 8,
+                fontWeight: planFilter !== 'all' ? 700 : 400
+              }}
+              value={planFilter}
+              onChange={e => { setPlanFilter(e.target.value); setPage(1) }}
+            >
+              {PLANS.map(pl => (
+                <option key={pl.id} value={pl.id}>{pl.label}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -870,6 +935,15 @@ export default function Clientes() {
                           👩‍⚕️ {p.responsable.replace('MATCHES ', '')}
                         </span>
                       )}
+                      {(() => {
+                        const plan = getPlanStyle(p.plan_tier || u.plan_tier)
+                        if (!p.plan_tier && !u.plan_tier) return null
+                        return (
+                          <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: plan.bg, color: plan.color, border: `1px solid ${plan.color}44` }}>
+                            {plan.icon} {plan.label}
+                          </span>
+                        )
+                      })()}
                     </div>
 
                     {/* Bio Clinical Snippet */}
