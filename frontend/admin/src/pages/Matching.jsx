@@ -1332,7 +1332,7 @@ function PersonCard({ label, name, photo, city, code, note }) {
         {/* Dots */}
         <div style={{ position: 'absolute', bottom: 10, right: 10, display: 'flex', gap: 4 }}>
           {photoPool.map((_, i) => (
-            <div key={i} onClick={e => { e.stopPropagation(); setImgError(false); setIdx(i) }} style={{ width: i === idx ? 16 : 6, height: 6, borderRadius: 3, background: i === idx ? '#FF5A36' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s' }} />
+          <div key={i} onClick={e => { e.stopPropagation(); setImgError(false); setIdx(i) }} style={{ width: i === idx ? 16 : 6, height: 6, borderRadius: 3, background: i === idx ? '#FF5A36' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s' }} />
           ))}
         </div>
       </div>
@@ -1349,18 +1349,38 @@ function PersonCard({ label, name, photo, city, code, note }) {
   )
 }
 
+// ─── Dimensiones de compatibilidad estética de la PAREJA ─────────────────────
+const COMPAT_ATTRS = [
+  { key: 'armonia_facial',  label: 'Armonía Facial',          icon: '👤', desc: '¿Sus rasgos se complementan visualmente?' },
+  { key: 'nivel_fisico',    label: 'Nivel Físico Similar',    icon: '⚖️', desc: '¿Están en el mismo rango de atractivo físico?' },
+  { key: 'estilo_pareja',   label: 'Compatibilidad de Estilo',icon: '👗', desc: '¿Su presentación personal es compatible?' },
+  { key: 'quimica_visual',  label: 'Química Visual',           icon: '✨', desc: '¿Generarían buena impresión juntos?' },
+  { key: 'energia_fisica',  label: 'Energía & Presencia',     icon: '💫', desc: '¿Su energía corporal se complementa?' },
+]
+const DEFAULT_COMPAT = { armonia_facial: 7, nivel_fisico: 7, estilo_pareja: 7, quimica_visual: 7, energia_fisica: 7 }
+
+
 function LookbookModal({ match, onClose }) {
   if (!match) return null
   const personA = cleanPersonName(match.person_a)
   const personB = cleanPersonName(match.person_b)
-  const ai = getAIAnalysis(match)
 
   const nameA = match.name_a || personA.cleanName
   const nameB = match.name_b || personB.cleanName
 
+  const [compat, setCompat] = useState({ ...DEFAULT_COMPAT })
+  const updateCompat = (key, val) => setCompat(s => ({ ...s, [key]: val }))
+
+  // Score = promedio ponderado de los 5 sliders * 10
+  const scores = Object.values(compat)
+  const afinidad = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length * 10)
+  const heartColor = afinidad >= 80 ? '#4CAF50' : afinidad >= 60 ? '#FF5A36' : '#F44336'
+
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 2000, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: '90%', maxWidth: 1050, maxHeight: '90vh', overflowY: 'auto', background: '#120D0F', border: '1px solid rgba(150,21,0,0.3)', borderRadius: 20, padding: 28 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: '92%', maxWidth: 1100, maxHeight: '92vh', overflowY: 'auto', background: '#120D0F', border: '1px solid rgba(150,21,0,0.3)', borderRadius: 20, padding: 28 }}>
+
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 14 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1368,44 +1388,90 @@ function LookbookModal({ match, onClose }) {
               <h2 style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>Lookbook Visual — Estética & Armonía de Pareja</h2>
             </div>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Comparador lado a lado para evaluación clínica y estética de la psicóloga ({match.matchmaker || 'Silvi'})
+              La psicóloga evalúa la compatibilidad estética del <strong>par completo</strong>, viendo ambas fotos en contexto ({match.matchmaker || 'Silvi'})
             </p>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 18 }}>✕</button>
         </div>
 
-        {/* Side by side visual cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 20, alignItems: 'start', marginBottom: 24 }}>
-          <PersonCard
-            label="PERSONA A"
-            name={nameA}
-            photo={match.photo_a}
-            city={match.city_a}
-            code={match.code_a}
-            note={personA.note}
-          />
+        {/* ── LAYOUT PRINCIPAL: foto A | evaluación central | foto B ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px 1fr', gap: 20, alignItems: 'start', marginBottom: 20 }}>
 
-          {/* Heart Sinergy Badge */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, paddingTop: 120 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, #961500 0%, #FF5A36 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 25px rgba(255,90,54,0.4)' }}>
-              <Heart size={30} fill="white" color="white" />
+          {/* PERSONA A */}
+          <PersonCard label="PERSONA A" name={nameA} photo={match.photo_a} city={match.city_a} code={match.code_a} note={personA.note} />
+
+          {/* PANEL CENTRAL DE COMPATIBILIDAD */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+
+            {/* Heart score dinámico */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '16px 0' }}>
+              <div style={{ width: 72, height: 72, borderRadius: '50%', background: `linear-gradient(135deg, #961500, ${heartColor})`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 28px ${heartColor}66`, transition: 'all 0.35s ease' }}>
+                <Heart size={32} fill="white" color="white" />
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 900, color: heartColor, transition: 'color 0.35s', lineHeight: 1 }}>
+                {afinidad}%
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>
+                Afinidad<br/>Estética
+              </div>
             </div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--color-coral)' }}>
-              {ai.globalScore}%
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center' }}>
-              Afinidad<br/>Estética
+
+            {/* Sliders de compatibilidad del par */}
+            <div style={{ width: '100%', background: '#181113', border: '1px solid rgba(150,21,0,0.2)', borderRadius: 12, padding: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'center', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                📊 Evaluar compatibilidad
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {COMPAT_ATTRS.map(attr => {
+                  const v = compat[attr.key]
+                  const col = v >= 8 ? '#4CAF50' : v >= 6 ? '#FFC107' : '#F44336'
+                  const label = v >= 8 ? 'Alta' : v >= 6 ? 'Media' : 'Baja'
+                  return (
+                    <div key={attr.key}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {attr.icon} {attr.label}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: col, background: `${col}22`, padding: '1px 7px', borderRadius: 6 }}>
+                          {v}/10 · {label}
+                        </span>
+                      </div>
+                      {/* Barra visual con input range encima */}
+                      <div style={{ position: 'relative', height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.07)' }}>
+                        <div style={{ position: 'absolute', inset: 0, borderRadius: 4, width: `${(v / 10) * 100}%`, background: `linear-gradient(90deg, ${col}88, ${col})`, transition: 'width 0.2s ease' }} />
+                        <input
+                          type="range" min="1" max="10" value={v}
+                          onChange={e => updateCompat(attr.key, Number(e.target.value))}
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                        />
+                      </div>
+                      <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)', marginTop: 2, fontStyle: 'italic' }}>
+                        {attr.desc}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Barra total */}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Compatibilidad Total</span>
+                  <span style={{ fontWeight: 900, color: heartColor }}>❤️ {afinidad}%</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', borderRadius: 3, width: `${afinidad}%`, background: `linear-gradient(90deg, #961500, ${heartColor})`, transition: 'width 0.35s ease' }} />
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', marginTop: 6 }}>
+                  {afinidad >= 80 ? '✅ Excelente compatibilidad estética' : afinidad >= 60 ? '⚠️ Compatibilidad moderada' : '❌ Baja compatibilidad estética'}
+                </div>
+              </div>
             </div>
           </div>
 
-          <PersonCard
-            label="PERSONA B"
-            name={nameB}
-            photo={match.photo_b}
-            city={match.city_b}
-            code={match.code_b}
-            note={personB.note}
-          />
+          {/* PERSONA B */}
+          <PersonCard label="PERSONA B" name={nameB} photo={match.photo_b} city={match.city_b} code={match.code_b} note={personB.note} />
         </div>
 
         {/* Clinical notes & status */}
@@ -1418,7 +1484,6 @@ function LookbookModal({ match, onClose }) {
               "{match.observations || 'Sin observaciones registradas.'}"
             </p>
           </div>
-
           <div style={{ background: '#181113', padding: 16, borderRadius: 12, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Estado Actual del Match</div>
             <VividStatusBadge status={match.status} />
@@ -1433,4 +1498,3 @@ function LookbookModal({ match, onClose }) {
     </div>
   )
 }
-
