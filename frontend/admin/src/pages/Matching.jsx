@@ -661,15 +661,12 @@ export default function Matching() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 10 }}>
-                  {/* Candidate A Beauty Slider */}
+                  {/* Candidate A */}
                   <div style={{ background: 'var(--bg-card)', padding: 16, borderRadius: 10, border: '1px solid var(--border-color)' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, textAlign: 'center' }}>
                       Fotos de {cleanPersonName(selectedMatch.person_a).cleanName}
                     </div>
-                    <div style={{ width: 90, height: 90, borderRadius: 12, background: 'rgba(255,255,255,0.05)', margin: '0 auto 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border-color)', color: 'var(--text-muted)' }}>
-                      <Camera size={24} />
-                      <span style={{ fontSize: 10, marginTop: 4 }}>SpeedMatch</span>
-                    </div>
+                    <MiniPhotoCarousel name={selectedMatch.name_a || cleanPersonName(selectedMatch.person_a).cleanName} photo={selectedMatch.photo_a} />
 
                     {/* Interactive Range Slider A */}
                     <div>
@@ -695,15 +692,12 @@ export default function Matching() {
                     </div>
                   </div>
 
-                  {/* Candidate B Beauty Slider */}
+                  {/* Candidate B */}
                   <div style={{ background: 'var(--bg-card)', padding: 16, borderRadius: 10, border: '1px solid var(--border-color)' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8, textAlign: 'center' }}>
                       Fotos de {cleanPersonName(selectedMatch.person_b).cleanName}
                     </div>
-                    <div style={{ width: 90, height: 90, borderRadius: 12, background: 'rgba(255,255,255,0.05)', margin: '0 auto 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed var(--border-color)', color: 'var(--text-muted)' }}>
-                      <Camera size={24} />
-                      <span style={{ fontSize: 10, marginTop: 4 }}>SpeedMatch</span>
-                    </div>
+                    <MiniPhotoCarousel name={selectedMatch.name_b || cleanPersonName(selectedMatch.person_b).cleanName} photo={selectedMatch.photo_b} />
 
                     {/* Interactive Range Slider B */}
                     <div>
@@ -730,6 +724,7 @@ export default function Matching() {
                   </div>
                 </div>
               </div>
+
 
               {/* PASO 2: DETALLADO COMPLETO DE FILTROS NÚCLEO */}
               <div style={{ background: 'var(--bg-base)', padding: 18, borderRadius: 12, border: '1px solid var(--border-color)', marginBottom: 20 }}>
@@ -1235,6 +1230,51 @@ function getPlaceholders(name = '', idx = 0) {
   const pool = isFem ? PLACEHOLDER_WOMEN : PLACEHOLDER_MEN
   return pool[idx % pool.length]
 }
+
+// Versión compacta del carrusel para el modal de informe (PASO 1)
+function MiniPhotoCarousel({ name, photo }) {
+  const n = name ? name.toLowerCase() : ''
+  const femNames = ['maria','ana','silvi','steffy','manu','paula','andrea','carolina','natalia','valentina','laura','daniela','camila','alejandra','isabella','sofia','sara','juliana']
+  const isFem = femNames.some(f => n.includes(f))
+  const fallbackPool = isFem ? PLACEHOLDER_WOMEN : PLACEHOLDER_MEN
+  const photoPool = photo ? [photo, ...fallbackPool] : fallbackPool
+
+  const [idx, setIdx] = useState(0)
+  const [imgError, setImgError] = useState(false)
+
+  const currentSrc = imgError ? fallbackPool[idx % fallbackPool.length] : photoPool[idx % photoPool.length]
+  const isReal = idx === 0 && photo && !imgError
+  const total = photoPool.length
+
+  const prev = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i - 1 + total) % total) }
+  const next = (e) => { e.stopPropagation(); setImgError(false); setIdx(i => (i + 1) % total) }
+
+  return (
+    <div style={{ position: 'relative', height: 180, borderRadius: 10, overflow: 'hidden', background: '#25191C', marginBottom: 12 }}>
+      <img
+        key={currentSrc}
+        src={currentSrc}
+        alt={name}
+        onError={() => setImgError(true)}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+      />
+      {/* Badge */}
+      <div style={{ position: 'absolute', top: 6, right: 6, background: isReal ? 'rgba(76,175,80,0.25)' : 'rgba(255,193,7,0.2)', border: `1px solid ${isReal ? 'rgba(76,175,80,0.5)' : 'rgba(255,193,7,0.4)'}`, padding: '2px 7px', borderRadius: 8, fontSize: 9, color: isReal ? '#4CAF50' : '#FFC107', fontWeight: 700 }}>
+        {isReal ? '✅ Foto real' : `📷 ${idx + 1}/${total}`}
+      </div>
+      {/* Flechas */}
+      <button onClick={prev} style={{ position: 'absolute', left: 5, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.55)', border: 'none', borderRadius: '50%', width: 26, height: 26, cursor: 'pointer', color: 'white', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>◀</button>
+      <button onClick={next} style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', background: 'rgba(0,0,0,0.55)', border: 'none', borderRadius: '50%', width: 26, height: 26, cursor: 'pointer', color: 'white', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>▶</button>
+      {/* Dots */}
+      <div style={{ position: 'absolute', bottom: 6, right: 6, display: 'flex', gap: 3 }}>
+        {photoPool.map((_, i) => (
+          <div key={i} onClick={e => { e.stopPropagation(); setImgError(false); setIdx(i) }} style={{ width: i === idx ? 12 : 5, height: 5, borderRadius: 3, background: i === idx ? '#FF5A36' : 'rgba(255,255,255,0.4)', cursor: 'pointer', transition: 'all 0.2s' }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 
 function PersonCard({ label, name, photo, city, code, note }) {
   // Pool de fotos: real primero, luego todas las del género
