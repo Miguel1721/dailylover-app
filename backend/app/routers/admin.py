@@ -443,10 +443,10 @@ async def get_users(
                 "apego": r.apego or "Seguro",
                 "rol_social": r.rol_social or "Equilibrado",
                 "energia_social": r.energia_social or "Ambivertido",
-                "momento_vital": r.momento_vital or "Buscando relación estable",
-                "ocean": ocean if ocean else {"apertura": 0.8, "responsabilidad": 0.8, "extroversion": 0.75, "amabilidad": 0.85, "neuroticismo": 0.2},
-                "lifestyle": lifestyle if lifestyle else {"ejercicio": "Regular", "alcohol": "Social", "fumar": "No"},
-                "search_preferences": search_prefs if search_prefs else {"ciudad": r.city or "Bogotá"},
+                "ocean": ocean if (ocean and isinstance(ocean, dict) and len(ocean) > 0) else None,
+                "lifestyle": lifestyle if lifestyle else None,
+                "search_preferences": search_prefs if search_prefs else None,
+
                 "intereses": intereses,
                 "valores": valores,
             }

@@ -64,7 +64,12 @@ function renderCleanBadges(data) {
 
   if (typeof obj !== 'object') return <span className="badge badge-gray">{String(obj)}</span>
 
-  const entries = Object.entries(obj).filter(([_, v]) => v !== null && v !== undefined && String(v).trim() !== '')
+  const entries = Object.entries(obj).filter(([k, v]) => {
+    if (v === null || v === undefined || String(v).trim() === '') return false
+    const keyUpper = k.toUpperCase()
+    if (keyUpper.includes('ACCEPTED') || keyUpper.includes('TERMS') || keyUpper.includes('DATE') || keyUpper.includes('TOKEN')) return false
+    return true
+  })
   if (entries.length === 0) return null
 
   return (
@@ -81,6 +86,7 @@ function renderCleanBadges(data) {
     </div>
   )
 }
+
 
 function OceanBar({ label, value }) {
   const pct = Math.round((value || 0) * 100)
@@ -240,7 +246,8 @@ function ClienteModal({ cliente, token, onClose }) {
 
         {/* TAB 1: PERFIL CLINICO COMPLETO */}
         {activeTab === 'perfil' && (
-          <div style={{ maxHeight: 440, overflowY: 'auto', paddingRight: 6 }}>
+          <div>
+
             {/* GRID CLINICO MULTIDIMENSIONAL */}
             <div style={{
               display: 'grid',
