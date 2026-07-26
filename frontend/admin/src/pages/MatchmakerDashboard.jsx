@@ -153,40 +153,60 @@ export default function MatchmakerDashboard() {
       <div className="content-area">
         {/* KPI Cards */}
         <div className="stats-grid">
-          <div className="stat-card" style={{ borderLeft: '4px solid #FFC107' }}>
+          <div 
+            className="stat-card" 
+            style={{ borderLeft: '4px solid #FFC107', cursor: 'pointer', transition: 'all 0.2s' }}
+            onClick={() => navigate('/matching?status_filter=PENDIENTE')}
+            title="Ver sólo matches pendientes por revisar"
+          >
             <div className="stat-icon" style={{ background: 'rgba(255, 193, 7, 0.15)', color: '#FFC107' }}>
               <Clock size={20} />
             </div>
             <div className="stat-number">{loading ? '...' : stats.pending_matches}</div>
             <div className="stat-label">Matches Esperando Tu Visto Bueno</div>
-            <div className="stat-trend" style={{ color: '#FFC107' }}>Requiere revisión clínica</div>
+            <div className="stat-trend" style={{ color: '#FFC107' }}>Requiere revisión clínica ➔</div>
           </div>
 
-          <div className="stat-card" style={{ borderLeft: '4px solid #2196F3' }}>
+          <div 
+            className="stat-card" 
+            style={{ borderLeft: '4px solid #2196F3', cursor: 'pointer', transition: 'all 0.2s' }}
+            onClick={() => navigate('/clientes')}
+            title="Ver clientes asignados a tu cargo"
+          >
             <div className="stat-icon" style={{ background: 'rgba(33, 150, 243, 0.15)', color: '#2196F3' }}>
               <Users size={20} />
             </div>
             <div className="stat-number">{loading ? '...' : stats.total_assigned}</div>
             <div className="stat-label">Clientes Asignados a Tu Cargo</div>
-            <div className="stat-trend" style={{ color: '#2196F3' }}>En seguimiento activo</div>
+            <div className="stat-trend" style={{ color: '#2196F3' }}>En seguimiento activo ➔</div>
           </div>
 
-          <div className="stat-card" style={{ borderLeft: '4px solid #4CAF50' }}>
+          <div 
+            className="stat-card" 
+            style={{ borderLeft: '4px solid #4CAF50', cursor: 'pointer', transition: 'all 0.2s' }}
+            onClick={() => navigate('/agenda')}
+            title="Ver agenda de citas y entrevistas"
+          >
             <div className="stat-icon" style={{ background: 'rgba(76, 175, 80, 0.15)', color: '#4CAF50' }}>
               <Calendar size={20} />
             </div>
             <div className="stat-number">{loading ? '...' : stats.active_events}</div>
             <div className="stat-label">Citas Agendadas Esta Semana</div>
-            <div className="stat-trend" style={{ color: '#4CAF50' }}>Restaurantes & Cafés</div>
+            <div className="stat-trend" style={{ color: '#4CAF50' }}>Restaurantes & Cafés ➔</div>
           </div>
 
-          <div className="stat-card" style={{ borderLeft: '4px solid #ff4d4d' }}>
+          <div 
+            className="stat-card" 
+            style={{ borderLeft: '4px solid #ff4d4d', cursor: 'pointer', transition: 'all 0.2s' }}
+            onClick={() => navigate('/matching?status_filter=TROUBLE')}
+            title="Ver casos especiales / trouble"
+          >
             <div className="stat-icon" style={{ background: 'rgba(255, 77, 77, 0.15)', color: '#ff4d4d' }}>
               <AlertTriangle size={20} />
             </div>
             <div className="stat-number">{loading ? '...' : stats.trouble_cases}</div>
             <div className="stat-label">Casos Especiales / Trouble</div>
-            <div className="stat-trend" style={{ color: '#ff4d4d' }}>Requiere intervención</div>
+            <div className="stat-trend" style={{ color: '#ff4d4d' }}>Requiere intervención ➔</div>
           </div>
         </div>
 
@@ -330,7 +350,7 @@ export default function MatchmakerDashboard() {
                       transition: 'transform 0.2s',
                       cursor: 'pointer'
                     }}
-                    onClick={() => navigate('/matching')}
+                    onClick={() => navigate(`/matching?match_id=${m.id}`)}
                   >
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -347,7 +367,7 @@ export default function MatchmakerDashboard() {
 
                     <button 
                       className="btn btn-primary btn-sm"
-                      onClick={(e) => { e.stopPropagation(); navigate('/matching') }}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/matching?match_id=${m.id}`) }}
                     >
                       Revisar Informe IA
                     </button>

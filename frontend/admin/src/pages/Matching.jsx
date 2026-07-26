@@ -219,6 +219,14 @@ export default function Matching() {
   const [targetUserDiagnostic, setTargetUserDiagnostic] = useState(null)
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const urlStatus = searchParams.get('status_filter')
+    if (urlStatus) {
+      setStatusFilter(urlStatus)
+    }
+  }, [])
+
+  useEffect(() => {
     if (user?.role === 'Matchmaker' && user?.name) {
       const matchName = user.name.split(' ')[0].toUpperCase()
       const found = PSYCHOLOGISTS.find(p => p.id.includes(matchName))
@@ -230,6 +238,9 @@ export default function Matching() {
 
   const fetchMatches = useCallback(() => {
     setLoading(true)
+    const searchParams = new URLSearchParams(window.location.search)
+    const urlMatchId = searchParams.get('match_id')
+
     const params = new URLSearchParams({
       page,
       limit: 15,
@@ -243,9 +254,29 @@ export default function Matching() {
     })
       .then(r => r.json())
       .then(d => {
-        setMatches(d.matches || [])
+        const fetchedMatches = d.matches || []
+        setMatches(fetchedMatches)
         setTotal(d.total || 0)
         setTargetUserDiagnostic(d.target_user_diagnostic || null)
+
+        // Auto-open modal if match_id was passed in URL query params
+        if (urlMatchId) {
+          const target = fetchedMatches.find(m => String(m.id) === String(urlMatchId))
+          if (target) {
+            setSelectedMatch(target)
+          } else {
+            // Fetch target match directly if not in current page
+            fetch(`${API}/api/v1/admin/historical-matches?search=${urlMatchId}&limit=1`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            })
+              .then(r => r.json())
+              .then(res => {
+                if (res.matches && res.matches[0]) {
+                  setSelectedMatch(res.matches[0])
+                }
+              }).catch(() => {})
+          }
+        }
       })
       .catch(() => {
         setMatches([])
@@ -254,6 +285,7 @@ export default function Matching() {
       })
       .finally(() => setLoading(false))
   }, [token, page, search, matchmaker, statusFilter])
+
 
 
   useEffect(() => {
