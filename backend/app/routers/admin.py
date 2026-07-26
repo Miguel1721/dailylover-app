@@ -1756,3 +1756,101 @@ async def toggle_reminder(
     await db.commit()
     return {"message": "Estado de recordatorio actualizado"}
 
+
+# ─── GESTIÓN DE DISPONIBILIDAD HORARIA POR PSICÓLOGA ───
+
+@router.get("/psychologist/availability")
+async def get_psychologist_availability(
+    psychologist_name: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "view"))
+):
+    """Obtiene la configuración de disponibilidad horaria por día de la semana para la psicóloga."""
+    psyc = (psychologist_name or user.get("name", "SILVI")).strip().upper()
+    if "SILVI" in psyc: psyc_clean = "SILVI"
+    elif "MANU" in psyc: psyc_clean = "MANU"
+    elif "MAPE" in psyc: psyc_clean = "MAPE D"
+    elif "ALEJA" in psyc: psyc_clean = "ALEJA"
+    else: psyc_clean = psyc
+
+    res = await db.execute(text("""
+        SELECT id, psychologist_name, day_of_week, start_time, end_time, slot_duration_minutes, is_active
+        FROM psychologist_availability
+        WHERE UPPER(psychologist_name) = :psyc
+        ORDER BY day_of_week ASC
+    """), {"psyc": psyc_clean})
+    rows = res.fetchall()
+
+    avail_map = {r.day_of_week: {
+        "id": r.id,
+        "day_of_week": r.day_of_week,
+        "start_time": str(r.start_time)[:5],
+        "end_time": str(r.end_time)[:5],
+        "slot_duration_minutes": r.slot_duration_minutes or 45,
+        "is_active": r.is_active
+    } for r in rows}
+
+    full_availability = []
+    for dow in range(7):
+        if dow in avail_map:
+            full_availability.append(avail_map[dow])
+        else:
+            is_def_active = 1 <= dow <= 5
+            full_availability.append({
+                "id": None,
+                "day_of_week": dow,
+                "start_time": "09:00",
+                "end_time": "17:00",
+                "slot_duration_minutes": 45,
+                "is_active": is_def_active
+            })
+
+    return {"psychologist": psyc_clean, "availability": full_availability}
+
+
+@router.post("/psychologist/availability")
+async def save_psychologist_availability(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "edit"))
+):
+    """Guarda o actualiza la franja horaria y estado (activo/inactivo) de un día para la psicóloga."""
+    psyc_raw = payload.get("psychologist_name") or user.get("name", "SILVI")
+    psyc = psyc_raw.strip().upper()
+    if "SILVI" in psyc: psyc_clean = "SILVI"
+    elif "MANU" in psyc: psyc_clean = "MANU"
+    elif "MAPE" in psyc: psyc_clean = "MAPE D"
+    elif "ALEJA" in psyc: psyc_clean = "ALEJA"
+    else: psyc_clean = psyc
+
+    dow = int(payload.get("day_of_week", 1))
+    is_active = bool(payload.get("is_active", True))
+    start_str = payload.get("start_time", "09:00")
+    end_str = payload.get("end_time", "17:00")
+    duration = int(payload.get("slot_duration_minutes", 45))
+
+    t_start = datetime.strptime(start_str, "%H:%M").time()
+    t_end = datetime.strptime(end_str, "%H:%M").time()
+
+    exist = (await db.execute(text("""
+        SELECT id FROM psychologist_availability
+        WHERE UPPER(psychologist_name) = :psyc AND day_of_week = :dow
+    """), {"psyc": psyc_clean, "dow": dow})).fetchone()
+
+    if exist:
+        await db.execute(text("""
+            UPDATE psychologist_availability
+            SET start_time = :s, end_time = :e, slot_duration_minutes = :dur, is_active = :act
+            WHERE id = :id
+        """), {"s": t_start, "e": t_end, "dur": duration, "act": is_active, "id": exist.id})
+    else:
+        await db.execute(text("""
+            INSERT INTO psychologist_availability (psychologist_name, day_of_week, start_time, end_time, slot_duration_minutes, is_active)
+            VALUES (:psyc, :dow, :s, :e, :dur, :act)
+        """), {"psyc": psyc_clean, "dow": dow, "s": t_start, "e": t_end, "dur": duration, "act": is_active})
+
+    await db.commit()
+
+    return {"ok": True, "message": f"Disponibilidad del día {dow} guardada con éxito."}
+
+

@@ -38,6 +38,49 @@ export default function AgendaPsicologa() {
   }, [fetchAgenda])
 
 
+  const [availabilityList, setAvailabilityList] = useState([])
+  const [savingDay, setSavingDay] = useState(null)
+
+  const fetchAvailability = useCallback(() => {
+    fetch(`${API}/api/v1/admin/psychologist/availability?psychologist_name=${encodeURIComponent(psychologistName)}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.availability) {
+          setAvailabilityList(d.availability)
+        }
+      })
+      .catch(() => {})
+  }, [psychologistName, token])
+
+  useEffect(() => {
+    fetchAvailability()
+  }, [fetchAvailability])
+
+  const handleSaveDayAvailability = (dayData) => {
+    setSavingDay(dayData.day_of_week)
+    fetch(`${API}/api/v1/admin/psychologist/availability`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        psychologist_name: psychologistName,
+        day_of_week: dayData.day_of_week,
+        start_time: dayData.start_time,
+        end_time: dayData.end_time,
+        is_active: dayData.is_active,
+        slot_duration_minutes: 45
+      })
+    })
+      .then(r => r.json())
+      .then(() => fetchAvailability())
+      .catch(() => {})
+      .finally(() => setSavingDay(null))
+  }
+
   return (
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
@@ -245,26 +288,95 @@ export default function AgendaPsicologa() {
           </div>
         ) : (
           <div className="card">
-            <div className="card-title">Configuración de Horarios de Disponibilidad (Lunes a Viernes)</div>
+            <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>⚙️ Horarios de Disponibilidad Semanal</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Configura tus horas de trabajo o inactiva días de descanso</span>
+            </div>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>
-              Define los días y franjas horarias en las que te encuentras disponible para realizar entrevistas iniciales. Los clientes verán la suma consolidada de cupos disponibles de forma neutra y anónima.
+              Define los días y franjas horarias en las que te encuentras disponible para realizar entrevistas. Los clientes verán la suma consolidada de cupos de forma neutra.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-              {[1, 2, 3, 4, 5].map(dow => (
-                <div key={dow} style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 12, padding: 16 }}>
-                  <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--color-primary)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>{DAYS_ES[dow]}</span>
-                    <span className="badge badge-green" style={{ fontSize: 10 }}>Disponible</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+              {[1, 2, 3, 4, 5, 6, 0].map(dow => {
+                const dayItem = availabilityList.find(a => a.day_of_week === dow) || {
+                  day_of_week: dow,
+                  start_time: '09:00',
+                  end_time: '17:00',
+                  is_active: dow >= 1 && dow <= 5
+                }
+
+                return (
+                  <div key={dow} style={{
+                    background: 'var(--bg-base)',
+                    border: dayItem.is_active ? '1px solid var(--border-color)' : '1px dashed rgba(255,255,255,0.1)',
+                    borderRadius: 12,
+                    padding: 18,
+                    opacity: dayItem.is_active ? 1 : 0.6
+                  }}>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: dayItem.is_active ? 'var(--color-primary)' : 'var(--text-muted)', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{DAYS_ES[dow]}</span>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{
+                          fontSize: 11,
+                          padding: '3px 10px',
+                          borderRadius: 20,
+                          background: dayItem.is_active ? 'rgba(76, 175, 80, 0.15)' : 'rgba(244, 67, 54, 0.15)',
+                          color: dayItem.is_active ? '#4CAF50' : '#F44336',
+                          borderColor: dayItem.is_active ? 'rgba(76, 175, 80, 0.3)' : 'rgba(244, 67, 54, 0.3)',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => handleSaveDayAvailability({ ...dayItem, is_active: !dayItem.is_active })}
+                      >
+                        {dayItem.is_active ? '🟢 Laboral (Disponible)' : '🔴 No Laboral (Inactivo)'}
+                      </button>
+                    </div>
+
+                    {dayItem.is_active ? (
+                      <div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                          <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Hora Inicio</label>
+                            <select
+                              className="form-control"
+                              style={{ fontSize: 12, padding: '6px 8px' }}
+                              value={dayItem.start_time}
+                              onChange={(e) => handleSaveDayAvailability({ ...dayItem, start_time: e.target.value })}
+                            >
+                              {['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00'].map(h => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Hora Fin</label>
+                            <select
+                              className="form-control"
+                              style={{ fontSize: 12, padding: '6px 8px' }}
+                              value={dayItem.end_time}
+                              onChange={(e) => handleSaveDayAvailability({ ...dayItem, end_time: e.target.value })}
+                            >
+                              {['12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'].map(h => (
+                                <option key={h} value={h}>{h}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+                          <span>Franja: {dayItem.start_time} — {dayItem.end_time}</span>
+                          {savingDay === dow && <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>Guardando...</span>}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', padding: '12px 0' }}>
+                        Día marcado como no laboral. No se ofrecerán citas a clientes este día.
+                      </div>
+                    )}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 12 }}>
-                    ⏰ <strong>Franja:</strong> 09:00 AM — 05:00 PM
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Slots de 45 min • Asignación equitativa por IA
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
@@ -272,4 +384,5 @@ export default function AgendaPsicologa() {
     </div>
   )
 }
+
 
