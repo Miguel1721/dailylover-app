@@ -101,13 +101,8 @@ export default function AgendaPsicologa() {
           </h1>
           <p className="page-subtitle">Gestión de entrevistas agendadas, disponibilidad horaria y clientes asignados</p>
         </div>
-
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button className="btn btn-primary" onClick={() => setActiveTab('disponibilidad')} style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <Clock size={16} /> Configurar Mis Horarios
-          </button>
-        </div>
       </div>
+
 
       <div className="content-area">
         {/* KPI CARDS */}
