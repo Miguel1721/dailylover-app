@@ -14,6 +14,13 @@ const DEFAULT_AGENDA = {
   assigned_clients: []
 }
 
+const DEFAULT_WEEK_DAYS = [1, 2, 3, 4, 5, 6, 0].map(dow => ({
+  day_of_week: dow,
+  start_time: '09:00',
+  end_time: '17:00',
+  is_active: dow >= 1 && dow <= 5
+}))
+
 export default function AgendaPsicologa() {
   const { user, token } = useAuth()
   const [agenda, setAgenda] = useState(DEFAULT_AGENDA)
@@ -38,7 +45,7 @@ export default function AgendaPsicologa() {
   }, [fetchAgenda])
 
 
-  const [availabilityList, setAvailabilityList] = useState([])
+  const [availabilityList, setAvailabilityList] = useState(DEFAULT_WEEK_DAYS)
   const [savingDay, setSavingDay] = useState(null)
 
   const fetchAvailability = useCallback(() => {
@@ -47,8 +54,12 @@ export default function AgendaPsicologa() {
     })
       .then(r => r.json())
       .then(d => {
-        if (d && d.availability) {
-          setAvailabilityList(d.availability)
+        if (d && Array.isArray(d.availability) && d.availability.length > 0) {
+          const mapServer = {}
+          d.availability.forEach(item => {
+            mapServer[item.day_of_week] = item
+          })
+          setAvailabilityList(prev => prev.map(day => mapServer[day.day_of_week] ? mapServer[day.day_of_week] : day))
         }
       })
       .catch(() => {})
@@ -61,16 +72,7 @@ export default function AgendaPsicologa() {
   const handleSaveDayAvailability = (dayData) => {
     setSavingDay(dayData.day_of_week)
 
-    setAvailabilityList(prev => {
-      const idx = prev.findIndex(a => a.day_of_week === dayData.day_of_week)
-      if (idx >= 0) {
-        const updated = [...prev]
-        updated[idx] = { ...updated[idx], ...dayData }
-        return updated
-      } else {
-        return [...prev, dayData]
-      }
-    })
+    setAvailabilityList(prev => prev.map(item => item.day_of_week === dayData.day_of_week ? { ...item, ...dayData } : item))
 
     fetch(`${API}/api/v1/admin/psychologist/availability`, {
       method: 'POST',
@@ -87,11 +89,10 @@ export default function AgendaPsicologa() {
         slot_duration_minutes: 45
       })
     })
-      .then(r => r.json())
-      .then(() => fetchAvailability())
-      .catch(() => fetchAvailability())
+      .catch(() => {})
       .finally(() => setSavingDay(null))
   }
+
 
 
   return (
