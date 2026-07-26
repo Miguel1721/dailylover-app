@@ -231,17 +231,27 @@ export default function AgendaPsicologa() {
         </div>
 
         {/* TABS */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 20, gap: 8 }}>
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border-color)',
+          marginBottom: 20,
+          gap: 4,
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        }}>
           {[
             { key: 'entrevistas',    label: `🗓️ Entrevistas (${agenda?.interviews?.length || 0})` },
             { key: 'clientes',       label: `👥 Clientes Asignados (${agenda?.assigned_clients?.length || 0})` },
             { key: 'disponibilidad', label: '⚙️ Disponibilidad Semanal' },
           ].map(tab => (
-            <button key={tab.key} className="btn btn-ghost" onClick={() => setActiveTab(tab.key)} style={{ borderRadius: 0, borderBottom: activeTab === tab.key ? '2px solid var(--color-primary)' : 'none', color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--text-secondary)', fontWeight: 700, padding: '10px 16px', fontSize: 13 }}>
+            <button key={tab.key} className="btn btn-ghost" onClick={() => setActiveTab(tab.key)} style={{ borderRadius: 0, borderBottom: activeTab === tab.key ? '2px solid var(--color-primary)' : 'none', color: activeTab === tab.key ? 'var(--color-primary)' : 'var(--text-secondary)', fontWeight: 700, padding: '10px 16px', fontSize: 13, flexShrink: 0, whiteSpace: 'nowrap' }}>
               {tab.label}
             </button>
           ))}
         </div>
+
 
         {/* ── ENTREVISTAS ── */}
         {loading ? (
