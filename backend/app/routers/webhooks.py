@@ -99,3 +99,17 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}
 
     return {"status": "ignored", "event_type": event_type}
+
+
+@router.post("/smartmatchapp")
+async def smartmatchapp_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint automático para recibir sincronización en tiempo real desde SmartMatchApp.
+    """
+    try:
+        payload = await request.json()
+        logger.info(f"SmartMatchApp Webhook recibido: {payload.get('event', 'update')}")
+        return {"status": "success", "message": "Event received successfully"}
+    except Exception as e:
+        logger.error(f"Error procesando webhook de SmartMatchApp: {e}")
+        return {"status": "ok", "detail": str(e)}
