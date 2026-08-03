@@ -103,29 +103,23 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
 SMARTMATCHAPP_WEBHOOK_SECRET = "a4d62e9709116e81d6489bf75b8117ded8cb406e10fddeedac109d3beec3e809"
 
-@router.post("/smartmatchapp")
-@router.post("/smartmatchapp/")
-@router.get("/smartmatchapp")
-@router.get("/smartmatchapp/")
+@router.api_route("/smartmatchapp", methods=["GET", "POST"])
+@router.api_route("/smartmatchapp/", methods=["GET", "POST"])
 async def smartmatchapp_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Endpoint automático para recibir sincronización en tiempo real desde SmartMatchApp.
     Responde al apretón de manos (handshake/challenge) de verificación.
     """
-    # Manejo de verificación GET (query params)
+    # 1. Verificar si viene query param 'challenge' o 'token' en la petición de SmartMatchApp
     params = dict(request.query_params)
-    challenge = params.get("challenge") or params.get("hub.challenge") or params.get("token") or params.get("secret")
-    if challenge:
-        from fastapi.responses import PlainTextResponse
-        return PlainTextResponse(challenge)
+    for key in ["challenge", "hub.challenge", "token", "secret", "verify"]:
+        if key in params and params[key]:
+            from fastapi.responses import PlainTextResponse
+            return PlainTextResponse(str(params[key]))
 
     if request.method == "GET":
-        return {
-            "status": "active",
-            "verified": True,
-            "secret": SMARTMATCHAPP_WEBHOOK_SECRET,
-            "service": "SmartMatchApp Webhook"
-        }
+        return PlainTextResponse("a4d62e9709116e81d6489bf75b8117ded8cb406e10fddeedac109d3beec3e809")
+
     
     try:
         body_bytes = await request.body()
