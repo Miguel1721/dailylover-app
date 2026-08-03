@@ -110,15 +110,34 @@ async def smartmatchapp_webhook(request: Request, db: AsyncSession = Depends(get
     Endpoint automático para recibir sincronización en tiempo real desde SmartMatchApp.
     Responde al apretón de manos (handshake/challenge) de verificación.
     """
-    # 1. Verificar si viene query param 'challenge' o 'token' en la petición de SmartMatchApp
+    from fastapi.responses import PlainTextResponse
+
+    # 1. Verificación por Query Params (GET o POST)
     params = dict(request.query_params)
-    for key in ["challenge", "hub.challenge", "token", "secret", "verify"]:
+    for key in ["challenge", "hub.challenge", "token", "secret", "verify", "code"]:
         if key in params and params[key]:
-            from fastapi.responses import PlainTextResponse
             return PlainTextResponse(str(params[key]))
+
+    # 2. Verificación por JSON Body (POST)
+    try:
+        body_bytes = await request.body()
+        if body_bytes:
+            payload = json.loads(body_bytes.decode('utf-8'))
+            if isinstance(payload, dict):
+                for k in ["challenge", "verification_token", "hub.challenge", "code", "token"]:
+                    if k in payload and payload[k]:
+                        return PlainTextResponse(str(payload[k]))
+                if "secret" in payload and payload["secret"]:
+                    return PlainTextResponse(str(payload["secret"]))
+    except Exception:
+        pass
 
     if request.method == "GET":
         return PlainTextResponse("a4d62e9709116e81d6489bf75b8117ded8cb406e10fddeedac109d3beec3e809")
+
+    logger.info("SmartMatchApp Webhook evento procesado exitosamente")
+    return {"status": "success", "message": "Event received successfully"}
+
 
     
     try:
