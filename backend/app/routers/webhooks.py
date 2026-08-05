@@ -63,19 +63,25 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     break
 
         if customer_email or customer_phone:
-            # Buscar usuario por correo o teléfono
-            result = await db.execute(
-                text("SELECT id, name, plan_tier, responsable FROM users WHERE email = :e OR phone = :p LIMIT 1"),
-                {"e": customer_email, "p": customer_phone}
-            )
+            # Buscar usuario por correo o teléfono haciendo JOIN con profiles
+            result = await db.execute(text("""
+                SELECT u.id, u.name, p.responsable, p.plan_tier
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE (u.email IS NOT NULL AND lower(u.email) = lower(:e))
+                   OR (u.phone IS NOT NULL AND u.phone = :p)
+                LIMIT 1
+            """), {"e": customer_email or "", "p": customer_phone or ""})
             user_row = result.fetchone()
 
             if user_row:
-                user_id, user_name, old_plan, responsable = user_row.id, user_row.name, user_row.plan_tier, user_row.responsable
+                user_id, user_name, responsable, old_plan = user_row.id, user_row.name, user_row.responsable, user_row.plan_tier
+                
+                # Actualizar plan_tier en profiles (donde pertenece la columna)
                 await db.execute(text("""
-                    UPDATE users 
+                    UPDATE profiles
                     SET plan_tier = :plan_tier, updated_at = NOW()
-                    WHERE id = :user_id
+                    WHERE user_id = :user_id
                 """), {"plan_tier": plan_name, "user_id": user_id})
 
                 # Registrar recordatorio / notificación interna para la psicóloga
@@ -92,8 +98,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 })
 
                 await db.commit()
-                logger.info(f"Plan actualizado para usuario {user_id} ({user_name}) a {plan_name}")
+                logger.info(f"Plan actualizado en profiles para usuario {user_id} ({user_name}) a {plan_name}")
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}
+
 
     return {"status": "ignored", "event_type": event_type}
 
@@ -104,9 +111,13 @@ def verify_signature(body_bytes: bytes, signature_header: str, secret: str) -> b
     """
     Valida la firma HMAC-SHA256 enviada en los webhooks de SmartMatchApp.
     Soporta formato Base64 o Hexadecimal mediante hmac.compare_digest.
+    Falla CERRADO (False) si no hay secreto o no hay header de firma.
     """
-    if not signature_header or not secret:
-        return True # Si no se ha configurado header de firma aún en el panel, continuar
+    if not secret:
+        logger.error("SMARTMATCHAPP_WEBHOOK_SECRET no configurado — rechazando evento")
+        return False
+    if not signature_header:
+        return False
 
     secret_bytes = secret.encode("utf-8")
     
@@ -144,8 +155,8 @@ async def process_webhook_payload(event_type: str, data: dict):
 
                     # Upsert User
                     result = await db.execute(text("""
-                        INSERT INTO users (phone, name, email, plan_tier)
-                        VALUES (:phone, :name, :email, :plan)
+                        INSERT INTO users (phone, name, email)
+                        VALUES (:phone, :name, :email)
                         ON CONFLICT (phone) DO UPDATE SET
                             name = COALESCE(EXCLUDED.name, users.name),
                             email = COALESCE(EXCLUDED.email, users.email)
@@ -153,20 +164,21 @@ async def process_webhook_payload(event_type: str, data: dict):
                     """), {
                         "phone": phone or f"+57300000{hash(name)%100000:05d}",
                         "name": name or None,
-                        "email": email or None,
-                        "plan": data.get("plan_tier") or data.get("plan") or "Estándar 65k"
+                        "email": email or None
                     })
                     user_id = result.scalar()
 
                     # Upsert Profile
+                    plan_val = data.get("plan_tier") or data.get("plan") or "Estándar 65k"
                     await db.execute(text("""
-                        INSERT INTO profiles (user_id, age, gender, city, occupation, bio_notes, updated_at)
-                        VALUES (:uid, :age, :gender, :city, :occupation, :notes, NOW())
+                        INSERT INTO profiles (user_id, age, gender, city, occupation, plan_tier, bio_notes, updated_at)
+                        VALUES (:uid, :age, :gender, :city, :occupation, :plan, :notes, NOW())
                         ON CONFLICT (user_id) DO UPDATE SET
                             age = COALESCE(EXCLUDED.age, profiles.age),
                             gender = COALESCE(EXCLUDED.gender, profiles.gender),
                             city = COALESCE(EXCLUDED.city, profiles.city),
                             occupation = COALESCE(EXCLUDED.occupation, profiles.occupation),
+                            plan_tier = COALESCE(EXCLUDED.plan_tier, profiles.plan_tier),
                             bio_notes = COALESCE(EXCLUDED.bio_notes, profiles.bio_notes),
                             updated_at = NOW()
                     """), {
@@ -175,6 +187,7 @@ async def process_webhook_payload(event_type: str, data: dict):
                         "gender": data.get("gender") or data.get("genero"),
                         "city": data.get("city") or data.get("ciudad"),
                         "occupation": data.get("occupation") or data.get("profesion"),
+                        "plan": plan_val,
                         "notes": data.get("notes") or data.get("bio") or data.get("observaciones")
                     })
                     await db.commit()
@@ -230,7 +243,7 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
     """
     Endpoint de Webhook para SmartMatchApp.
     1. Verifica Handshake / Challenge.
-    2. Valida firma HMAC.
+    2. Exige y Valida firma HMAC.
     3. Registra evento raw en `webhook_events_raw`.
     4. Procesa payload en segundo plano (BackgroundTasks) y responde HTTP 200 rápido.
     """
@@ -257,17 +270,18 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
             pass
 
     if request.method == "GET":
-        return PlainTextResponse(secret)
+        return PlainTextResponse("OK")
 
-    # 3. Validar Firma Digital HMAC-SHA256 (Tarea 2)
+    # 3. Validar Firma Digital HMAC-SHA256 Exigida Siempre
     sig_header = (
         request.headers.get("X-Smart-Signature") or 
         request.headers.get("X-SmartMatch-Signature") or 
         request.headers.get("X-Webhook-Signature") or 
         request.headers.get("X-Hub-Signature-256")
     )
-    if sig_header and not verify_signature(body_bytes, sig_header, secret):
-        raise HTTPException(status_code=401, detail="Firma de Webhook inválida")
+    if not verify_signature(body_bytes, sig_header, secret):
+        raise HTTPException(status_code=401, detail="Firma de Webhook inválida o ausente")
+
 
     # 4. Parsear Payload y Registrar Evento Raw en DB (Tarea 4)
     try:
