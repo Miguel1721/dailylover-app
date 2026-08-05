@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Script de Importación Histórica desde Archivos de Exportación de SmartMatchApp (Refactored & Mapeo Dinámico).
-Procesa archivos descargados (Clients, Matches, Timeline, Survey Answers, Clients Notes, Finances, Contracts, Intros).
-Soporta archivos .csv, .xlsx y .xls.
+Script de Importación Histórica desde Archivos de Exportación de SmartMatchApp (Fase 2 - Perfeccionado).
+- Resuelve IDs crudos de Persona A y Persona B a sus nombres reales o emails completos.
+- Reporta la diferencia transparente entre filas brutas en Excel y entidades únicas sin duplicados.
 """
 
 import os
@@ -84,22 +84,16 @@ def load_rows(file_path: str) -> List[Dict[str, str]]:
     """Carga un CSV o XLSX en una lista de diccionarios de Python."""
     try:
         if file_path.lower().endswith((".xlsx", ".xls")):
-            try:
-                import pandas as pd
-                df = pd.read_excel(file_path, dtype=str).fillna("")
-                return df.to_dict(orient="records")
-            except ImportError:
-                logger.warning("Pandas no disponible, usando fallback openpyxl...")
-                import openpyxl
-                wb = openpyxl.load_workbook(file_path, read_only=True)
-                sheet = wb.active
-                rows_iter = sheet.iter_rows(values_only=True)
-                raw_headers = list(next(rows_iter))
-                results = []
-                for r in rows_iter:
-                    row_dict = {str(raw_headers[i] or ""): str(r[i] or "").strip() for i in range(len(r))}
-                    results.append(row_dict)
-                return results
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, read_only=True)
+            sheet = wb.active
+            rows_iter = sheet.iter_rows(values_only=True)
+            raw_headers = list(next(rows_iter))
+            results = []
+            for r in rows_iter:
+                row_dict = {str(raw_headers[i] or ""): str(r[i] or "").strip() if r[i] is not None else "" for i in range(min(len(raw_headers), len(r)))}
+                results.append(row_dict)
+            return results
         else:
             with open(file_path, mode="r", encoding="utf-8-sig", errors="ignore") as f:
                 reader = csv.DictReader(f)
@@ -107,6 +101,34 @@ def load_rows(file_path: str) -> List[Dict[str, str]]:
     except Exception as e:
         logger.error(f"Error cargando archivo {file_path}: {e}")
         return []
+
+def build_id_to_name_catalog(client_rows: List[Dict[str, str]]) -> Dict[str, str]:
+    """Construye un catálogo de resolución de SmartMatch Client ID -> Nombre Completo Real."""
+    id_to_name = {}
+    if not client_rows:
+        return id_to_name
+
+    header_index = build_header_index(client_rows)
+    for r in client_rows:
+        cid = find_field(header_index, r, "id", "client id")
+        first = find_field(header_index, r, "nombre", "first name")
+        last = find_field(header_index, r, "apellido", "last name")
+        full_name = f"{first} {last}".strip()
+        if cid and full_name:
+            id_to_name[str(cid).strip()] = full_name
+    return id_to_name
+
+def resolve_person(header_index: Dict[str, str], row: Dict[str, str], id_to_name: Dict[str, str], *field_candidates: str) -> str:
+    """Resuelve el identificador de una persona buscando prioritariamente en sus columnas específicas."""
+    val = find_field(header_index, row, *field_candidates)
+    if val:
+        if val in id_to_name:
+            return id_to_name[val]
+        return val
+
+    return ""
+
+
 
 async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
     """Importa clientes con mapeo dinámico de campos."""
@@ -124,7 +146,6 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
 
             phone = find_field(header_index, row, "teléfono", "telefono", "phone", "mobile")
             email = find_field(header_index, row, "email", "correo")
-            # Usar 'barrio city' como ciudad principal de residencia según inspección real de clients.xlsx
             city = find_field(header_index, row, "barrio city", "city", "ciudad")
             age = find_field(header_index, row, "edad", "age")
             gender = find_field(header_index, row, "género", "genero", "gender")
@@ -142,7 +163,6 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
                 phone = f"+57300000{idx:05d}"
 
             if dry_run:
-                # Validar extracción real de datos
                 if not name and not email:
                     errors += 1
                     continue
@@ -187,8 +207,8 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
 
     return inserted, updated, errors
 
-async def process_matches(rows: List[Dict[str, str]], dry_run: bool, db):
-    """Importa parejas e historial de matches / intros."""
+async def process_matches(rows: List[Dict[str, str]], id_to_name: Dict[str, str], dry_run: bool, db):
+    """Importa parejas e historial de matches / intros con resolución de nombres reales."""
     if not rows:
         return 0, 0, 0
 
@@ -197,21 +217,21 @@ async def process_matches(rows: List[Dict[str, str]], dry_run: bool, db):
 
     for idx, row in enumerate(rows):
         try:
-            pA = find_field(header_index, row, "client email", "introducing client", "client 1", "person a", "client a")
-            if not pA:
-                pA = find_field(header_index, row, "client id", "client")
-
-            pB = find_field(header_index, row, "match email", "recipient", "client 2", "person b", "client b")
-            if not pB:
-                pB = find_field(header_index, row, "match", "nombre de tu match", "match id")
+            pA = resolve_person(header_index, row, id_to_name, "client email", "introducing client", "client 1", "person a", "client a", "client id")
+            pB = resolve_person(header_index, row, id_to_name, "match email", "match", "recipient", "client 2", "person b", "client b", "match id")
 
             matchmaker = find_field(header_index, row, "user", "matchmaker", "by", "psicóloga", "psicologa") or "SILVI"
             match_date = find_field(header_index, row, "date", "created", "sent date", "fecha") or "Por agendar"
             status = (find_field(header_index, row, "status", "client status", "match status", "estado") or "PENDIENTE").upper()
             notes = find_field(header_index, row, "notes", "feedback", "comment", "observations")
 
-            if not pA or not pB:
+            if not pA:
                 continue
+
+            if not pB:
+                pB = "Por asignar / borrador"
+
+
 
             if dry_run:
                 inserted += 1
@@ -229,7 +249,6 @@ async def process_matches(rows: List[Dict[str, str]], dry_run: bool, db):
             logger.warning(f"Error en match fila {idx}: {e}")
 
     return inserted, 0, errors
-
 
 async def process_notes_and_surveys(rows: List[Dict[str, str]], dry_run: bool, db, source_tag: str):
     """Importa notas de clientes y respuestas de encuestas en client_notes."""
@@ -286,17 +305,19 @@ async def main():
     if args.dry_run:
         logger.info("=== MODO SIMULACIÓN (DRY-RUN) ACTIVO — NO SE MODIFICARÁ LA BASE DE DATOS ===")
 
+    id_to_name_catalog = {}
+
     async with AsyncSessionLocal() as db:
         if "clients" in files:
-            rows = load_rows(files["clients"])
-            ins, up, err = await process_clients(rows, args.dry_run, db)
-            logger.info(f"👥 Clientes -> Validados con exito: {ins} | Errores de extracción: {err}")
+            client_rows = load_rows(files["clients"])
+            id_to_name_catalog = build_id_to_name_catalog(client_rows)
+            ins, up, err = await process_clients(client_rows, args.dry_run, db)
+            logger.info(f"👥 Clientes -> Filas brutas en Excel: {len(client_rows)} | Validadas con éxito: {ins} | Nombres únicos: {len(id_to_name_catalog)}")
             
-            # Mostrar muestra de 3 filas extraídas en dry-run
-            if rows:
-                h_idx = build_header_index(rows)
-                logger.info("--- Muestra de 3 Clientes Extraidos Dinámicamente ---")
-                for r in rows[:3]:
+            if client_rows:
+                h_idx = build_header_index(client_rows)
+                logger.info("--- Muestra de 3 Clientes Extraídos Dinámicamente ---")
+                for r in client_rows[:3]:
                     f = find_field(h_idx, r, "nombre")
                     l = find_field(h_idx, r, "apellido")
                     e = find_field(h_idx, r, "email")
@@ -306,30 +327,31 @@ async def main():
 
         if "matches" in files:
             rows = load_rows(files["matches"])
-            ins, up, err = await process_matches(rows, args.dry_run, db)
-            logger.info(f"❤️ Matches -> Validados con exito: {ins} | Errores: {err}")
+            ins, up, err = await process_matches(rows, id_to_name_catalog, args.dry_run, db)
+            logger.info(f"❤️ Matches -> Filas brutas en Excel: {len(rows)} | Validadas con éxito: {ins} | Errores: {err}")
             if rows:
                 h_idx = build_header_index(rows)
-                logger.info("--- Muestra de 3 Matches Extraidos Dinámicamente ---")
+                logger.info("--- Muestra de 3 Matches Resueltos a Nombre Real ---")
                 for r in rows[:3]:
-                    pA = find_field(h_idx, r, "client email", "person a")
-                    pB = find_field(h_idx, r, "match email", "match", "person b")
+                    pA = resolve_person(h_idx, r, id_to_name_catalog, "client email", "introducing client", "client 1", "person a", "client a", "client id")
+                    pB = resolve_person(h_idx, r, id_to_name_catalog, "match email", "match", "recipient", "client 2", "person b", "client b", "match id")
                     logger.info(f"   [MATCH] Persona A: '{pA}' <---> Persona B: '{pB}'")
+
 
         if "intros" in files:
             rows = load_rows(files["intros"])
-            ins, up, err = await process_matches(rows, args.dry_run, db)
-            logger.info(f"💌 Intros/Propuestas -> Validados con exito: {ins} | Errores: {err}")
+            ins, up, err = await process_matches(rows, id_to_name_catalog, args.dry_run, db)
+            logger.info(f"💌 Intros/Propuestas -> Filas brutas en Excel: {len(rows)} | Validadas con éxito: {ins} | Errores: {err}")
 
         if "notes" in files:
             rows = load_rows(files["notes"])
             ins, up, err = await process_notes_and_surveys(rows, args.dry_run, db, "smartmatch_notes_export")
-            logger.info(f"📝 Notas de Clientes -> Validadas con exito: {ins} | Errores: {err}")
+            logger.info(f"📝 Notas de Clientes -> Filas brutas en Excel: {len(rows)} | Validadas con éxito: {ins} | Errores: {err}")
 
         if "surveys" in files:
             rows = load_rows(files["surveys"])
             ins, up, err = await process_notes_and_surveys(rows, args.dry_run, db, "smartmatch_surveys_export")
-            logger.info(f"📋 Respuestas Encuestas -> Validadas con exito: {ins} | Errores: {err}")
+            logger.info(f"📋 Respuestas Encuestas -> Filas brutas en Excel: {len(rows)} | Validadas con éxito: {ins} | Errores: {err}")
 
         if not args.dry_run:
             await db.commit()
