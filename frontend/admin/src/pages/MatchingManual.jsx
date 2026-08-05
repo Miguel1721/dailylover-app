@@ -30,11 +30,20 @@ export default function MatchingManual() {
   // Cargar lista de clientes
   const fetchUsers = useCallback(() => {
     setLoadingUsers(true)
-    fetch(`${API}/api/v1/admin/users?limit=300`, {
+    fetch(`${API}/api/v1/admin/users?per_page=300`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 401) {
+          localStorage.removeItem('dl_token')
+          localStorage.removeItem('dl_user')
+          window.location.href = '/login'
+          return null
+        }
+        return r.json()
+      })
       .then(data => {
+        if (!data) return
         setUsers(data.users || [])
         setLoadingUsers(false)
       })
@@ -47,6 +56,7 @@ export default function MatchingManual() {
   useEffect(() => {
     fetchUsers()
   }, [fetchUsers])
+
 
   // Ejecutar evaluación de compatibilidad cuando ambas personas están seleccionadas
   const evaluateCompatibility = useCallback(() => {
@@ -136,20 +146,35 @@ export default function MatchingManual() {
       })
   }
 
+  // Helper para verificar género flexible
+  const matchGender = (userGender, filter) => {
+    if (filter === 'all') return true
+    if (!userGender) return true // Si no tiene género especificado, mostrarlo para no ocultarlo
+    const g = String(userGender).toUpperCase().trim()
+    if (filter === 'F') {
+      return g.startsWith('F') || g.includes('MUJER') || g.includes('FEMENIN')
+    }
+    if (filter === 'M') {
+      return g.startsWith('M') || g.includes('HOMBRE') || g.includes('MASCULIN')
+    }
+    return true
+  }
+
   // Filtrado de listas A y B
   const filteredUsersA = users.filter(u => {
     if (selectedB && u.id === selectedB.id) return false
     if (searchA && !u.name.toLowerCase().includes(searchA.toLowerCase()) && !(u.city || '').toLowerCase().includes(searchA.toLowerCase())) return false
-    if (genderAFilter !== 'all' && u.gender && u.gender.toUpperCase() !== genderAFilter) return false
+    if (!matchGender(u.gender, genderAFilter)) return false
     return true
   })
 
   const filteredUsersB = users.filter(u => {
     if (selectedA && u.id === selectedA.id) return false
     if (searchB && !u.name.toLowerCase().includes(searchB.toLowerCase()) && !(u.city || '').toLowerCase().includes(searchB.toLowerCase())) return false
-    if (genderBFilter !== 'all' && u.gender && u.gender.toUpperCase() !== genderBFilter) return false
+    if (!matchGender(u.gender, genderBFilter)) return false
     return true
   })
+
 
   return (
     <div style={{ paddingBottom: 40 }}>
