@@ -82,7 +82,25 @@ async def startup_seed():
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
             """))
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS client_images (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                    s3_key_main VARCHAR(500) NOT NULL,
+                    s3_key_thumb VARCHAR(500) NOT NULL,
+                    is_primary BOOLEAN DEFAULT FALSE,
+                    original_filename VARCHAR(300),
+                    width INTEGER,
+                    height INTEGER,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_client_images_user_id ON client_images(user_id);
+            """))
+            await db.execute(text("""
+                ALTER TABLE profiles ADD COLUMN IF NOT EXISTS photo_url VARCHAR(500);
+            """))
             await db.commit()
+
 
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")

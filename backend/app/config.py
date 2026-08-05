@@ -32,11 +32,13 @@ class Settings(BaseSettings):
 
 
     
-    # AWS S3 Backups (optional)
+    # AWS S3 / Oracle Object Storage
     aws_access_key_id: str = Field("", validation_alias="AWS_ACCESS_KEY_ID")
     aws_secret_access_key: str = Field("", validation_alias="AWS_SECRET_ACCESS_KEY")
     aws_s3_bucket: str = Field("", validation_alias="AWS_S3_BUCKET")
+    aws_endpoint_url: str = Field("", validation_alias="AWS_ENDPOINT_URL")
     aws_default_region: str = "us-east-1"
+
     
     class Config:
         env_file = ".env"
