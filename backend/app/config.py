@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     whatsapp_api_token: str = Field("", validation_alias="WHATSAPP_API_TOKEN")
     whatsapp_phone_number_id: str = Field("", validation_alias="WHATSAPP_PHONE_NUMBER_ID")
     whatsapp_webhook_verify_token: str = Field("daily_lover_verify_token_default", validation_alias="WHATSAPP_WEBHOOK_VERIFY_TOKEN")
-    smartmatchapp_webhook_secret: str = Field(..., validation_alias="SMARTMATCHAPP_WEBHOOK_SECRET")
+    smartmatchapp_webhook_secret: str = Field("change_me_in_env_smartmatch_secret", validation_alias="SMARTMATCHAPP_WEBHOOK_SECRET")
+
 
 
     
