@@ -203,19 +203,42 @@ async def process_webhook_payload(event_type: str, data: dict):
                 notes = data.get("notes") or data.get("observations") or data.get("notas")
 
                 if person_a and person_b:
+                    source_ref = f"webhook_match:{hashlib.md5(f'{person_a}|{person_b}|{match_date}'.encode()).hexdigest()[:16]}"
                     await db.execute(text("""
-                        INSERT INTO historical_matches (person_a, person_b, matchmaker, match_date, status, observations)
-                        VALUES (:pA, :pB, :mm, :mdate, :status, :obs)
+                        INSERT INTO historical_matches (person_a, person_b, matchmaker, match_date, status, observations, source_ref)
+                        VALUES (:pA, :pB, :mm, :mdate, :status, :obs, :sref)
+                        ON CONFLICT (source_ref) DO NOTHING
                     """), {
                         "pA": person_a,
                         "pB": person_b,
                         "mm": matchmaker,
                         "mdate": match_date,
                         "status": status,
-                        "obs": notes or "Sincronizado vía Webhook SmartMatchApp"
+                        "obs": notes or "Sincronizado vía Webhook SmartMatchApp",
+                        "sref": source_ref
                     })
                     await db.commit()
                     logger.info(f"Match procesado exitosamente vía Webhook: {person_a} x {person_b}")
+
+                    # Sincronización a Google Sheet real en tiempo real (Protegida contra fallos)
+                    try:
+                        from app.services.google_sheets import append_match_to_sheet
+                        append_match_to_sheet(matchmaker, {
+                            "PERSON A": person_a,
+                            "PERSON B": person_b,
+                            "FECHA": match_date,
+                            "STATUS": status,
+                            "OBSERVACIONES": notes,
+                            "CITY": data.get("city") or data.get("ciudad"),
+                            "PAIS": data.get("country") or data.get("pais"),
+                            "PLAN": data.get("plan") or data.get("plan_tier"),
+                            "PREF": data.get("pref") or data.get("preferencia"),
+                            "CRM": data.get("crm"),
+                            "ID": data.get("id") or data.get("match_id"),
+                        })
+                    except Exception as sheet_err:
+                        logger.error(f"Error al intentar sincronizar a Google Sheet ({matchmaker}): {sheet_err}")
+
 
             # 3. EVENTOS DE NOTAS Y SURVEYS (note.created, survey.completed)
             elif any(k in event_type.lower() for k in ["note", "survey", "encuesta", "comentario"]):
