@@ -205,13 +205,17 @@ async def main():
     parser = argparse.ArgumentParser(description="Pipeline de imágenes SmartMatchApp -> S3 / Oracle Object Storage")
     parser.add_argument("--dir", default=EXPORT_DIR, help="Carpeta que contiene las partes ZIP y los Excel")
     parser.add_argument("--dry-run", dest="dry_run", action="store_true", help="Proyecta la carga y optimización sin subir a S3 ni modificar la BD")
+    parser.add_argument("--limit", type=int, default=None, help="Procesa como máximo N imágenes (para pruebas reales chicas)")
     args = parser.parse_args()
 
     print("================================================================================")
     print("PIPELINE DE IMAGENES SMARTMATCHAPP (FASE 2 - VERIFICACION HONESTA DRY-RUN)")
     print(f"Carpeta Origen: {args.dir}")
     print(f"Modo de Ejecucion: {'DRY-RUN (Simulacion sin cambios)' if args.dry_run else 'PRODUCCION (Subida activa a S3 y Postgres)'}")
+    if args.limit:
+        print(f"Limite Activo: Maximo {args.limit} imagenes con cliente")
     print("================================================================================\n")
+
 
     settings = get_settings()
 
@@ -353,12 +357,21 @@ async def main():
                                 await db.commit()
 
                         uploaded_count += 1
+                        if args.limit and uploaded_count >= args.limit:
+                            break
 
                     except Exception as e:
                         print(f"Error procesando imagen {member.filename}: {e}")
 
+                if args.limit and uploaded_count >= args.limit:
+                    break
+
         except Exception as e:
             print(f"Error leyendo paquete ZIP {zfname}: {e}")
+
+        if args.limit and uploaded_count >= args.limit:
+            break
+
 
     # Reporte de cierre
     print("\n================================================================================")
