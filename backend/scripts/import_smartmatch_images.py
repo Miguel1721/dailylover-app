@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Script de Carga Masiva y Pipeline de Imágenes (Fase 2).
-- Recorre los paquetes ZIP (images_part_1 a images_part_12) en C:\\Users\\jeloz\\Downloads\\daily lover.
-- Resuelve el user_id del cliente buscando en la tabla `users` / `profiles` de la base de datos o en `clients.xlsx`.
+Script de Carga Masiva y Pipeline de Imágenes (Fase 2 - Corregido).
+- Garantiza la integridad referencial con Postgres (REFERENCES users(id)).
+- Si un cliente aún no existe en la base de datos `users`, lo crea/asegura dinámicamente con sus datos de `clients.xlsx`.
+- Recorre los paquetes ZIP de imágenes (images_part_1 a 12).
 - Realiza deduplicación global por hash MD5 en tiempo real.
-- Genera 2 versiones WebP con Pillow:
-  1. Versión Principal: máximo 1600px en el lado más largo, WebP calidad 80.
-  2. Miniatura (Thumb): máximo 400px en el lado más largo, WebP calidad 75.
-- Si NO es --dry-run: sube ambas versiones a Oracle Object Storage / S3 via boto3 e inserta registros en la tabla `client_images`.
-- Actualiza `profiles.photo_url` con la imagen primaria (is_primary = TRUE).
+- Genera 2 versiones WebP en memoria:
+  1. Principal: máximo 1600px en el lado más largo (WebP Q80).
+  2. Miniatura: máximo 400px en el lado más largo (WebP Q75).
+- Si NO es --dry-run: sube a S3 / Oracle Object Storage, inserta la fila en `client_images` y actualiza `profiles.photo_url`.
 """
 
 import os
@@ -19,7 +19,7 @@ import zipfile
 import hashlib
 import io
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import openpyxl
 from PIL import Image
 
@@ -32,7 +32,6 @@ os.environ.setdefault("SMARTMATCHAPP_WEBHOOK_SECRET", "dummy_local_secret")
 # Importar configuración y base de datos del proyecto
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.config import get_settings
-
 from app.database import AsyncSessionLocal
 from sqlalchemy import text
 
@@ -62,51 +61,112 @@ def get_s3_client():
 
     return boto3.client("s3", **kwargs)
 
-async def load_client_mappings(excel_folder: str) -> Dict[str, int]:
-    """Carga mapeo de Nombre Completo -> user_id leyendo la BD de Postgres con fallback a clients.xlsx."""
-    name_to_user_id = {}
-    
-    # 1. Intentar cargar desde la Base de Datos PostgreSQL
+async def get_db_user_map() -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]:
+    """Consulta los clientes reales existentes en Postgres (users/profiles)."""
+    name_map = {}
+    email_map = {}
+    phone_map = {}
     try:
         async with AsyncSessionLocal() as db:
-            result = await db.execute(text("SELECT id, name FROM users WHERE name IS NOT NULL"))
+            result = await db.execute(text("SELECT id, name, email, phone FROM users"))
             rows = result.fetchall()
-            for uid, name in rows:
+            for uid, name, email, phone in rows:
                 if name and name.strip():
-                    name_to_user_id[name.strip().lower()] = uid
-            print(f"Se cargaron {len(name_to_user_id)} clientes directamente de la base de datos Postgres.")
+                    name_map[name.strip().lower()] = uid
+                if email and email.strip():
+                    email_map[email.strip().lower()] = uid
+                if phone and phone.strip():
+                    clean_p = phone.strip().replace(" ", "").replace("-", "")
+                    phone_map[clean_p] = uid
+            print(f"Se cargaron {len(name_map)} clientes existentes directamente de la BD Postgres.")
     except Exception as e:
-        print(f"No se pudo consultar la BD Postgres local ({e}). Usando catalogo de clients.xlsx.")
+        print(f"No se pudo consultar la BD Postgres local ({e}). Se crearan clientes dinámicamente si aplica.")
+    return name_map, email_map, phone_map
 
-    # 2. Fallback / Enriquecimiento desde clients.xlsx
+def load_excel_client_catalog(excel_folder: str) -> Dict[str, Dict[str, str]]:
+    """Carga los datos de clientes desde clients.xlsx estructurados por nombre completo."""
+    catalog = {}
     clients_file = next((os.path.join(excel_folder, f) for f in os.listdir(excel_folder) if "clients." in f.lower() and f.endswith(".xlsx")), None)
-    if clients_file:
-        try:
-            wb = openpyxl.load_workbook(clients_file, read_only=True)
-            sheet = wb.active
-            rows_iter = sheet.iter_rows(values_only=True)
-            raw_headers = list(next(rows_iter))
-            headers = [str(c or "").strip().lower() for c in raw_headers]
+    if not clients_file:
+        return catalog
 
-            col_id = next((i for i, h in enumerate(headers) if "id" == h or "client id" in h), 0)
-            col_first = next((i for i, h in enumerate(headers) if "nombre" in h or "first name" in h), 9)
-            col_last = next((i for i, h in enumerate(headers) if "apellido" in h or "last name" in h), 10)
+    try:
+        wb = openpyxl.load_workbook(clients_file, read_only=True)
+        sheet = wb.active
+        rows_iter = sheet.iter_rows(values_only=True)
+        raw_headers = list(next(rows_iter))
+        headers = [str(c or "").strip().lower() for c in raw_headers]
 
-            for row in rows_iter:
-                cid = row[col_id]
-                first = str(row[col_first] or "").strip()
-                last = str(row[col_last] or "").strip()
-                full_name = f"{first} {last}".strip().lower()
+        col_id = next((i for i, h in enumerate(headers) if h in ["id", "client id"]), 0)
+        col_first = next((i for i, h in enumerate(headers) if "nombre" in h or "first name" in h), 9)
+        col_last = next((i for i, h in enumerate(headers) if "apellido" in h or "last name" in h), 10)
+        col_email = next((i for i, h in enumerate(headers) if "email" in h or "correo" in h), 18)
+        col_phone = next((i for i, h in enumerate(headers) if "teléfono" in h or "telefono" in h or "phone" in h), 20)
 
-                if full_name and full_name not in name_to_user_id:
-                    name_to_user_id[full_name] = cid
+        for row in rows_iter:
+            cid = row[col_id]
+            first = str(row[col_first] or "").strip()
+            last = str(row[col_last] or "").strip()
+            full_name = f"{first} {last}".strip().lower()
+            email = str(row[col_email] or "").strip().lower() if col_email < len(row) else ""
+            phone = str(row[col_phone] or "").strip().replace(" ", "").replace("-", "") if col_phone < len(row) else ""
 
-            print(f"Catalogo total mapeado (BD + XLSX): {len(name_to_user_id)} clientes.")
-        except Exception as e:
-            print(f"Error al leer clients.xlsx: {e}")
+            if full_name:
+                catalog[full_name] = {
+                    "smartmatch_id": cid,
+                    "first_name": first,
+                    "last_name": last,
+                    "full_name_raw": f"{first} {last}".strip(),
+                    "email": email,
+                    "phone": phone
+                }
+        print(f"Catalogo de clients.xlsx cargado: {len(catalog)} clientes.")
+    except Exception as e:
+        print(f"Error al leer clients.xlsx: {e}")
 
+    return catalog
 
-    return name_to_user_id
+async def ensure_user_in_postgres(client_info: Dict[str, str], db_name_map: Dict[str, int]) -> int:
+    """Garantiza que el cliente exista en users (Postgres) y retorna su id (INT PRIMARY KEY)."""
+    full_name_key = client_info["full_name_raw"].strip().lower()
+    
+    # 1. Si ya existe en memoria, retornar su ID de Postgres
+    if full_name_key in db_name_map:
+        return db_name_map[full_name_key]
+
+    phone = client_info.get("phone") or ""
+    if phone:
+        if not phone.startswith("+"):
+            phone = "+57" + phone.lstrip("0")
+    else:
+        phone = f"+5730000{abs(hash(full_name_key)) % 1000000:06d}"
+
+    email = client_info.get("email") or None
+    name = client_info.get("full_name_raw") or "Cliente SmartMatch"
+
+    async with AsyncSessionLocal() as db:
+        # INSERT en users
+        res = await db.execute(text("""
+            INSERT INTO users (phone, name, email)
+            VALUES (:phone, :name, :email)
+            ON CONFLICT (phone) DO UPDATE SET
+                name = COALESCE(EXCLUDED.name, users.name),
+                email = COALESCE(EXCLUDED.email, users.email)
+            RETURNING id
+        """), {"phone": phone, "name": name, "email": email})
+        uid = res.scalar()
+
+        # INSERT/UPDATE en profiles
+        await db.execute(text("""
+            INSERT INTO profiles (user_id, updated_at)
+            VALUES (:uid, NOW())
+            ON CONFLICT (user_id) DO NOTHING
+        """), {"uid": uid})
+
+        await db.commit()
+
+    db_name_map[full_name_key] = uid
+    return uid
 
 async def main():
     parser = argparse.ArgumentParser(description="Pipeline de imágenes SmartMatchApp -> S3 / Oracle Object Storage")
@@ -115,21 +175,23 @@ async def main():
     args = parser.parse_args()
 
     print("================================================================================")
-    print("PIPELINE DE IMAGENES SMARTMATCHAPP (FASE 2)")
+    print("PIPELINE DE IMAGENES SMARTMATCHAPP (FASE 2 - VERIFICACION DE REFERENCIAS)")
     print(f"Carpeta Origen: {args.dir}")
     print(f"Modo de Ejecucion: {'DRY-RUN (Simulacion sin cambios)' if args.dry_run else 'PRODUCCION (Subida activa a S3 y Postgres)'}")
     print("================================================================================\n")
-
 
     settings = get_settings()
 
     if not args.dry_run:
         if not settings.aws_s3_bucket or not settings.aws_access_key_id:
-            print("❌ Error: Se requieren las variables AWS_S3_BUCKET y AWS_ACCESS_KEY_ID en .env para ejecutar en modo producción.")
+            print("Error: Se requieren las variables AWS_S3_BUCKET y AWS_ACCESS_KEY_ID en .env para ejecutar en modo produccion.")
             return
 
-    # Cargar mapeo de clientes
-    client_map = await load_client_mappings(args.dir)
+    # 1. Cargar clientes existentes de la BD Postgres
+    db_name_map, db_email_map, db_phone_map = await get_db_user_map()
+
+    # 2. Cargar catálogo de clients.xlsx
+    excel_catalog = load_excel_client_catalog(args.dir)
 
     zip_files = sorted([f for f in os.listdir(args.dir) if f.endswith(".zip") and "images_part_" in f])
     
@@ -137,6 +199,7 @@ async def main():
     duplicates_skipped = 0
     uploaded_count = 0
     unmatched_count = 0
+    created_users_count = 0
 
     hashes_seen = set()
     unmatched_log = []
@@ -145,11 +208,9 @@ async def main():
 
     s3 = None if args.dry_run else get_s3_client()
 
-
     for zfname in zip_files:
         zfpath = os.path.join(args.dir, zfname)
         print(f"\nProcesando paquete {zfname}...")
-
 
         try:
             with zipfile.ZipFile(zfpath, 'r') as z:
@@ -166,26 +227,37 @@ async def main():
                     raw_len = len(img_bytes)
                     projected_raw_bytes += raw_len
 
-                    # 1. Deduplicación por hash MD5 en tiempo real
+                    # Deduplicación por hash MD5 en tiempo real
                     h = hashlib.md5(img_bytes).hexdigest()
                     if h in hashes_seen:
                         duplicates_skipped += 1
                         continue
                     hashes_seen.add(h)
 
-                    # 2. Resolver Cliente (user_id) por nombre de carpeta
+                    # Resolver Cliente por nombre de carpeta
                     parts = member.filename.split('/')
                     user_id = None
+                    folder_name = None
                     if len(parts) > 1:
                         folder_name = parts[0].strip().lower()
-                        user_id = client_map.get(folder_name)
+                        user_id = db_name_map.get(folder_name)
+
+                    # Si el cliente no existe aún en Postgres pero está en clients.xlsx
+                    if not user_id and folder_name and folder_name in excel_catalog:
+                        client_info = excel_catalog[folder_name]
+                        if not args.dry_run:
+                            user_id = await ensure_user_in_postgres(client_info, db_name_map)
+                            created_users_count += 1
+                        else:
+                            # En --dry-run simulamos asignación de un ID válido dummy > 0
+                            user_id = 99999  # ID simulado de Postgres válidamente resuelto
 
                     if not user_id:
                         unmatched_count += 1
                         unmatched_log.append(member.filename)
                         continue
 
-                    # 3. Compresión en memoria (Main 1600px Q80 + Thumb 400px Q75)
+                    # Compresión en memoria (Main 1600px Q80 + Thumb 400px Q75)
                     try:
                         im = Image.open(io.BytesIO(img_bytes))
                         orig_w, orig_h = im.size
@@ -202,7 +274,6 @@ async def main():
 
                         if not args.dry_run:
                             # Subida a Object Storage / S3
-
                             s3.put_object(
                                 Bucket=settings.aws_s3_bucket,
                                 Key=s3_key_main,
@@ -218,7 +289,6 @@ async def main():
 
                             # Inserción en Postgres
                             async with AsyncSessionLocal() as db:
-                                # Verificar si es la primera foto del cliente para marcarla como primaria
                                 res = await db.execute(text("SELECT COUNT(*) FROM client_images WHERE user_id = :uid"), {"uid": user_id})
                                 count = res.scalar()
                                 if count == 0:
@@ -238,7 +308,6 @@ async def main():
                                 })
 
                                 if is_primary:
-                                    # Actualizar photo_url en profiles
                                     photo_url = f"https://{settings.aws_s3_bucket}.s3.amazonaws.com/{s3_key_main}"
                                     if settings.aws_endpoint_url:
                                         photo_url = f"{settings.aws_endpoint_url.rstrip('/')}/{settings.aws_s3_bucket}/{s3_key_main}"
@@ -260,12 +329,12 @@ async def main():
 
     # Reporte de cierre
     print("\n================================================================================")
-    print("RESUMEN FINAL DEL PIPELINE DE IMAGENES (FASE 2)")
+    print("RESUMEN FINAL DEL PIPELINE DE IMAGENES (FASE 2 - VERIFICADO)")
     print("================================================================================")
     print(f"Total de imagenes escaneadas: {total_images_processed:,}")
     print(f"Duplicados omitidos por hash MD5: {duplicates_skipped:,}")
     print(f"Imagenes optimizadas y {'proyectadas' if args.dry_run else 'subidas con exito'}: {uploaded_count:,}")
-
+    print(f"Clientes creados/asegurados en Postgres: {created_users_count:,}")
     print(f"Imagenes sin cliente asociado: {unmatched_count:,}")
     print(f"Peso original (RAW): {projected_raw_bytes / (1024**3):.2f} GB")
     print(f"Peso optimizado final (Main + Thumb WebP): {projected_opt_bytes / (1024**3):.2f} GB")
@@ -276,7 +345,6 @@ async def main():
             json.dump(unmatched_log, f, indent=2, ensure_ascii=False)
         print(f"\nSe guardo el registro de las {len(unmatched_log)} imagenes no asociadas en:\n   {log_path}")
     print("================================================================================\n")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
