@@ -4,8 +4,9 @@ import { Search } from 'lucide-react'
 import {
   LayoutDashboard, Users, Calendar, Upload, Heart,
   Wallet, Percent, TrendingUp, TrendingDown, Landmark,
-  Shield, UserCheck, LogOut, Sun, Moon, Menu, X, Truck
+  Shield, UserCheck, LogOut, Sun, Moon, Menu, X, Truck, Sparkles
 } from 'lucide-react'
+
 import CopilotWidget from './components/CopilotWidget'
 
 import { AuthProvider, useAuth } from './context/AuthContext'
