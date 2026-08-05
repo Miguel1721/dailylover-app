@@ -1,0 +1,27 @@
+{
+  "summary": {
+    "total_raw_size_gb": 11.35,
+    "projected_compressed_size_gb": 0.68,
+    "compression_ratio_percent": 6.0,
+    "free_tier_limit_gb": 20.0,
+    "within_free_tier": true
+  },
+  "images": {
+    "total_count": 5745,
+    "matched_to_client": 5729,
+    "unmatched": 16,
+    "match_rate_percent": 99.7,
+    "formats": {
+      ".jpeg": 3909,
+      ".png": 700,
+      ".jpg": 1107,
+      ".webp": 29
+    }
+  },
+  "sample_resolutions": {
+    "count": 60,
+    "avg_width": 2023,
+    "avg_height": 1602,
+    "avg_orig_file_size_kb": 1640
+  }
+}
