@@ -22,10 +22,12 @@ class Settings(BaseSettings):
     demo_mode: bool = Field(False, validation_alias="DEMO_MODE")
     jwt_secret_key: str = Field("default_insecure_jwt_secret", validation_alias="JWT_SECRET_KEY")
     
-    # WhatsApp (optional for now)
+    # Webhooks
     whatsapp_api_token: str = Field("", validation_alias="WHATSAPP_API_TOKEN")
     whatsapp_phone_number_id: str = Field("", validation_alias="WHATSAPP_PHONE_NUMBER_ID")
     whatsapp_webhook_verify_token: str = Field("daily_lover_verify_token_default", validation_alias="WHATSAPP_WEBHOOK_VERIFY_TOKEN")
+    smartmatchapp_webhook_secret: str = Field("a4d62e9709116e81d6489bf75b8117ded8cb406e10fddeedac109d3beec3e809", validation_alias="SMARTMATCHAPP_WEBHOOK_SECRET")
+
     
     # AWS S3 Backups (optional)
     aws_access_key_id: str = Field("", validation_alias="AWS_ACCESS_KEY_ID")

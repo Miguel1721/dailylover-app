@@ -61,9 +61,29 @@ async def startup_seed():
                 VALUES ('mariapaula@dailylover.com', :pass, 'active', false, 1)
                 ON CONFLICT (email) DO UPDATE SET password_hash = :pass;
             """), {'pass': h_pass})
+            # Ensure tables webhook_events_raw and client_notes exist
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS webhook_events_raw (
+                    id SERIAL PRIMARY KEY,
+                    source VARCHAR(50) NOT NULL DEFAULT 'smartmatchapp',
+                    event_type VARCHAR(100),
+                    payload JSONB NOT NULL,
+                    processed BOOLEAN DEFAULT FALSE,
+                    error_log TEXT,
+                    received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+                CREATE TABLE IF NOT EXISTS client_notes (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+                    note TEXT NOT NULL,
+                    source VARCHAR(50) DEFAULT 'smartmatchapp',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+            """))
             await db.commit()
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")
+
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
