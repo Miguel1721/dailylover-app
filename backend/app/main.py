@@ -72,6 +72,8 @@ async def startup_seed():
                     error_log TEXT,
                     received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
+            """))
+            await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS client_notes (
                     id SERIAL PRIMARY KEY,
                     user_id INT REFERENCES users(id) ON DELETE CASCADE,
@@ -81,6 +83,7 @@ async def startup_seed():
                 );
             """))
             await db.commit()
+
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")
 
