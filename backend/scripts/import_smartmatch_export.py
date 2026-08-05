@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """
-Script de Importación Histórica desde Archivos de Exportación de SmartMatchApp.
+Script de Importación Histórica desde Archivos de Exportación de SmartMatchApp (Refactored & Mapeo Dinámico).
 Procesa archivos descargados (Clients, Matches, Timeline, Survey Answers, Clients Notes, Finances, Contracts, Intros).
 Soporta archivos .csv, .xlsx y .xls.
-
-Uso:
-  python backend/scripts/import_smartmatch_export.py --dir /ruta/a/archivos_export --dry-run
-  python backend/scripts/import_smartmatch_export.py --dir /ruta/a/archivos_export
 """
 
 import os
@@ -18,6 +14,12 @@ import logging
 import csv
 from typing import Dict, List, Any
 
+# Fallbacks locales para simulación si no se definieron variables en .env
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/dailylover")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("REDIS_PASSWORD", "redis_secret")
+os.environ.setdefault("SMARTMATCHAPP_WEBHOOK_SECRET", "dummy_local_secret")
+
 # Agregar directorio backend al PATH de Python
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -27,6 +29,22 @@ from sqlalchemy import text
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("import_smartmatch")
 
+def build_header_index(rows: List[Dict[str, str]]) -> Dict[str, str]:
+    """Dado un dict de fila, retorna mapeo {header_normalizado: header_real} para búsqueda insensible a mayúsculas/tildes."""
+    if not rows:
+        return {}
+    return {str(k).strip().lower(): k for k in rows[0].keys()}
+
+def find_field(header_index: Dict[str, str], row: Dict[str, str], *candidates: str) -> str:
+    """Busca la primera columna cuyo nombre contenga alguno de los candidatos y devuelve el valor."""
+    for cand in candidates:
+        cand_norm = cand.strip().lower()
+        for header_norm, header_real in header_index.items():
+            if cand_norm in header_norm:
+                val = str(row.get(header_real) or "").strip()
+                if val:
+                    return val
+    return ""
 
 def find_export_files(folder_path: str) -> Dict[str, str]:
     """Escanea la carpeta en busca de archivos CSV o XLSX por categoría."""
@@ -62,7 +80,6 @@ def find_export_files(folder_path: str) -> Dict[str, str]:
 
     return files
 
-
 def load_rows(file_path: str) -> List[Dict[str, str]]:
     """Carga un CSV o XLSX en una lista de diccionarios de Python."""
     try:
@@ -72,8 +89,17 @@ def load_rows(file_path: str) -> List[Dict[str, str]]:
                 df = pd.read_excel(file_path, dtype=str).fillna("")
                 return df.to_dict(orient="records")
             except ImportError:
-                logger.warning("Pandas/openpyxl no instalado; se recomienda para XLSX. Intentando fallback...")
-                return []
+                logger.warning("Pandas no disponible, usando fallback openpyxl...")
+                import openpyxl
+                wb = openpyxl.load_workbook(file_path, read_only=True)
+                sheet = wb.active
+                rows_iter = sheet.iter_rows(values_only=True)
+                raw_headers = list(next(rows_iter))
+                results = []
+                for r in rows_iter:
+                    row_dict = {str(raw_headers[i] or ""): str(r[i] or "").strip() for i in range(len(r))}
+                    results.append(row_dict)
+                return results
         else:
             with open(file_path, mode="r", encoding="utf-8-sig", errors="ignore") as f:
                 reader = csv.DictReader(f)
@@ -82,23 +108,28 @@ def load_rows(file_path: str) -> List[Dict[str, str]]:
         logger.error(f"Error cargando archivo {file_path}: {e}")
         return []
 
-
 async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
-    """Importa clientes y sus expedientes clínicos."""
+    """Importa clientes con mapeo dinámico de campos."""
     if not rows:
         return 0, 0, 0
 
+    header_index = build_header_index(rows)
     inserted, updated, errors = 0, 0, 0
+
     for idx, row in enumerate(rows):
         try:
-            name = str(row.get("Name") or row.get("Full Name") or row.get("Nombre") or "").strip()
-            phone = str(row.get("Phone") or row.get("Mobile") or row.get("Teléfono") or "").strip()
-            email = str(row.get("Email") or row.get("Correo") or "").strip()
-            city = str(row.get("City") or row.get("Ciudad") or "").strip()
-            age = str(row.get("Age") or row.get("Edad") or "").strip()
-            gender = str(row.get("Gender") or row.get("Género") or "").strip()
-            occupation = str(row.get("Occupation") or row.get("Profesión") or "").strip()
-            plan = str(row.get("Plan") or row.get("Plan Tier") or "").strip() or "Estándar 65k"
+            first = find_field(header_index, row, "nombre", "first name")
+            last = find_field(header_index, row, "apellido", "last name")
+            name = f"{first} {last}".strip()
+
+            phone = find_field(header_index, row, "teléfono", "telefono", "phone", "mobile")
+            email = find_field(header_index, row, "email", "correo")
+            # Usar 'barrio city' como ciudad principal de residencia según inspección real de clients.xlsx
+            city = find_field(header_index, row, "barrio city", "city", "ciudad")
+            age = find_field(header_index, row, "edad", "age")
+            gender = find_field(header_index, row, "género", "genero", "gender")
+            occupation = find_field(header_index, row, "ocupación", "ocupacion", "occupation")
+            plan = find_field(header_index, row, "membership status", "plan", "membership") or "Estándar 65k"
 
             if not name and not phone and not email:
                 continue
@@ -111,10 +142,14 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
                 phone = f"+57300000{idx:05d}"
 
             if dry_run:
+                # Validar extracción real de datos
+                if not name and not email:
+                    errors += 1
+                    continue
                 inserted += 1
                 continue
 
-            # Corregido Punto 5a: INSERT a users sin plan_tier
+            # INSERT a users
             res = await db.execute(text("""
                 INSERT INTO users (phone, name, email)
                 VALUES (:phone, :name, :email)
@@ -125,7 +160,7 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
             """), {"phone": phone, "name": name or None, "email": email or None})
             uid = res.scalar()
 
-            # Corregido Punto 5a: plan_tier se guarda en profiles
+            # INSERT a profiles
             await db.execute(text("""
                 INSERT INTO profiles (user_id, age, gender, city, occupation, plan_tier, updated_at)
                 VALUES (:uid, :age, :gender, :city, :occ, :plan, NOW())
@@ -152,21 +187,28 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
 
     return inserted, updated, errors
 
-
 async def process_matches(rows: List[Dict[str, str]], dry_run: bool, db):
     """Importa parejas e historial de matches / intros."""
     if not rows:
         return 0, 0, 0
 
+    header_index = build_header_index(rows)
     inserted, errors = 0, 0
+
     for idx, row in enumerate(rows):
         try:
-            pA = str(row.get("Person A") or row.get("Client A") or row.get("Persona A") or "").strip()
-            pB = str(row.get("Person B") or row.get("Client B") or row.get("Persona B") or "").strip()
-            matchmaker = str(row.get("Matchmaker") or row.get("Psicóloga") or "SILVI").strip()
-            match_date = str(row.get("Date") or row.get("Match Date") or row.get("Fecha") or "Por agendar").strip()
-            status = str(row.get("Status") or row.get("Estado") or "PENDIENTE").strip().upper()
-            notes = str(row.get("Notes") or row.get("Observations") or "").strip()
+            pA = find_field(header_index, row, "client email", "introducing client", "client 1", "person a", "client a")
+            if not pA:
+                pA = find_field(header_index, row, "client id", "client")
+
+            pB = find_field(header_index, row, "match email", "recipient", "client 2", "person b", "client b")
+            if not pB:
+                pB = find_field(header_index, row, "match", "nombre de tu match", "match id")
+
+            matchmaker = find_field(header_index, row, "user", "matchmaker", "by", "psicóloga", "psicologa") or "SILVI"
+            match_date = find_field(header_index, row, "date", "created", "sent date", "fecha") or "Por agendar"
+            status = (find_field(header_index, row, "status", "client status", "match status", "estado") or "PENDIENTE").upper()
+            notes = find_field(header_index, row, "notes", "feedback", "comment", "observations")
 
             if not pA or not pB:
                 continue
@@ -194,11 +236,13 @@ async def process_notes_and_surveys(rows: List[Dict[str, str]], dry_run: bool, d
     if not rows:
         return 0, 0, 0
 
+    header_index = build_header_index(rows)
     inserted, errors = 0, 0
+
     for idx, row in enumerate(rows):
         try:
-            user_name = str(row.get("Client Name") or row.get("Client") or row.get("Nombre") or "").strip()
-            note_text = str(row.get("Note") or row.get("Comment") or row.get("Answer") or row.get("Text") or "").strip()
+            user_name = find_field(header_index, row, "client email", "client name", "client", "nombre")
+            note_text = find_field(header_index, row, "note text", "note", "comment", "answer", "text")
 
             if not note_text:
                 continue
@@ -209,7 +253,10 @@ async def process_notes_and_surveys(rows: List[Dict[str, str]], dry_run: bool, d
 
             uid = None
             if user_name:
-                res = await db.execute(text("SELECT id FROM users WHERE LOWER(name) LIKE :n LIMIT 1"), {"n": f"%{user_name.lower()}%"})
+                res = await db.execute(text("SELECT id FROM users WHERE LOWER(email) = :n OR LOWER(name) LIKE :n_like LIMIT 1"), {
+                    "n": user_name.lower(),
+                    "n_like": f"%{user_name.lower()}%"
+                })
                 uid = res.scalar()
 
             await db.execute(text("""
@@ -222,7 +269,6 @@ async def process_notes_and_surveys(rows: List[Dict[str, str]], dry_run: bool, d
             logger.warning(f"Error en nota/survey fila {idx}: {e}")
 
     return inserted, 0, errors
-
 
 async def main():
     parser = argparse.ArgumentParser(description="Script de Importación Histórica desde Export Data de SmartMatchApp")
@@ -244,27 +290,46 @@ async def main():
         if "clients" in files:
             rows = load_rows(files["clients"])
             ins, up, err = await process_clients(rows, args.dry_run, db)
-            logger.info(f"👥 Clientes -> Por procesar: {ins} | Errores: {err}")
+            logger.info(f"👥 Clientes -> Validados con exito: {ins} | Errores de extracción: {err}")
+            
+            # Mostrar muestra de 3 filas extraídas en dry-run
+            if rows:
+                h_idx = build_header_index(rows)
+                logger.info("--- Muestra de 3 Clientes Extraidos Dinámicamente ---")
+                for r in rows[:3]:
+                    f = find_field(h_idx, r, "nombre")
+                    l = find_field(h_idx, r, "apellido")
+                    e = find_field(h_idx, r, "email")
+                    p = find_field(h_idx, r, "teléfono", "telefono", "phone")
+                    c = find_field(h_idx, r, "barrio city", "city")
+                    logger.info(f"   [CLIENTE] Nombre: '{f} {l}' | Email: '{e}' | Tel: '{p}' | Ciudad: '{c}'")
 
         if "matches" in files:
             rows = load_rows(files["matches"])
             ins, up, err = await process_matches(rows, args.dry_run, db)
-            logger.info(f"❤️ Matches -> Por procesar: {ins} | Errores: {err}")
+            logger.info(f"❤️ Matches -> Validados con exito: {ins} | Errores: {err}")
+            if rows:
+                h_idx = build_header_index(rows)
+                logger.info("--- Muestra de 3 Matches Extraidos Dinámicamente ---")
+                for r in rows[:3]:
+                    pA = find_field(h_idx, r, "client email", "person a")
+                    pB = find_field(h_idx, r, "match email", "match", "person b")
+                    logger.info(f"   [MATCH] Persona A: '{pA}' <---> Persona B: '{pB}'")
 
         if "intros" in files:
             rows = load_rows(files["intros"])
             ins, up, err = await process_matches(rows, args.dry_run, db)
-            logger.info(f"💌 Intros/Propuestas -> Por procesar: {ins} | Errores: {err}")
+            logger.info(f"💌 Intros/Propuestas -> Validados con exito: {ins} | Errores: {err}")
 
         if "notes" in files:
             rows = load_rows(files["notes"])
             ins, up, err = await process_notes_and_surveys(rows, args.dry_run, db, "smartmatch_notes_export")
-            logger.info(f"📝 Notas de Clientes -> Por procesar: {ins} | Errores: {err}")
+            logger.info(f"📝 Notas de Clientes -> Validadas con exito: {ins} | Errores: {err}")
 
         if "surveys" in files:
             rows = load_rows(files["surveys"])
             ins, up, err = await process_notes_and_surveys(rows, args.dry_run, db, "smartmatch_surveys_export")
-            logger.info(f"📋 Respuestas Encuestas -> Por procesar: {ins} | Errores: {err}")
+            logger.info(f"📋 Respuestas Encuestas -> Validadas con exito: {ins} | Errores: {err}")
 
         if not args.dry_run:
             await db.commit()
