@@ -11,7 +11,11 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-SHEET_ID = "1LRhB6eFG07LCo5QrPFKilt1Op7XMeO_RxU28MyO2BSY"
+DEFAULT_SHEET_ID = "1LRhB6eFG07LCo5QrPFKilt1Op7XMeO_RxU28MyO2BSY"
+
+def get_spreadsheet_id() -> str:
+    return os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID", DEFAULT_SHEET_ID)
+
 
 SHEET_COLUMN_MAP = {
     "JENN": {
@@ -88,9 +92,9 @@ def get_sheets_client():
         logger.error(f"Error inicializando cliente de Google Sheets API: {e}")
         return None
 
-def append_match_to_sheet(matchmaker_raw: str, match_data: Dict[str, Any]) -> bool:
+def append_match_to_sheet(matchmaker_raw: str, match_data: Dict[str, Any], spreadsheet_id: Optional[str] = None) -> bool:
     """
-    Escribe una fila de match en la pestaña de la psicóloga correspondiente en el Google Sheet real.
+    Escribe una fila de match en la pestaña de la psicóloga correspondiente en la Hoja de Cálculo.
     Garantiza que cualquier error no interrumpa el webhook de Postgres.
     """
     if not matchmaker_raw:
@@ -108,6 +112,7 @@ def append_match_to_sheet(matchmaker_raw: str, match_data: Dict[str, Any]) -> bo
         return False
 
     row = [str(match_data.get(col, "") or "") for col in config["cols"]]
+    sheet_id = spreadsheet_id or get_spreadsheet_id()
 
     try:
         client = get_sheets_client()
@@ -115,7 +120,7 @@ def append_match_to_sheet(matchmaker_raw: str, match_data: Dict[str, Any]) -> bo
             return False
 
         client.spreadsheets().values().append(
-            spreadsheetId=SHEET_ID,
+            spreadsheetId=sheet_id,
             range=f"{config['tab']}!A:A",
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
@@ -127,15 +132,16 @@ def append_match_to_sheet(matchmaker_raw: str, match_data: Dict[str, Any]) -> bo
         logger.error(f"Error escribiendo en Google Sheet ({canonical}): {e}")
         return False
 
-def prepare_matches_lau_header() -> bool:
+def prepare_matches_lau_header(spreadsheet_id: Optional[str] = None) -> bool:
     """Actualiza la fila 1 de MATCHES LAU a ['PERSON A', 'PERSON B', 'OBSERVACIONES']."""
+    sheet_id = spreadsheet_id or get_spreadsheet_id()
     try:
         client = get_sheets_client()
         if not client:
             return False
 
         client.spreadsheets().values().update(
-            spreadsheetId=SHEET_ID,
+            spreadsheetId=sheet_id,
             range="MATCHES LAU!A1:C1",
             valueInputOption="RAW",
             body={"values": [["PERSON A", "PERSON B", "OBSERVACIONES"]]}
@@ -145,3 +151,4 @@ def prepare_matches_lau_header() -> bool:
     except Exception as e:
         logger.error(f"Error actualizando encabezado de MATCHES LAU: {e}")
         return False
+
