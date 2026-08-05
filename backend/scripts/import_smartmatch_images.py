@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Script de Carga Masiva y Pipeline de Imágenes (Fase 2 - Corregido).
-- Garantiza la integridad referencial con Postgres (REFERENCES users(id)).
-- Si un cliente aún no existe en la base de datos `users`, lo crea/asegura dinámicamente con sus datos de `clients.xlsx`.
-- Recorre los paquetes ZIP de imágenes (images_part_1 a 12).
-- Realiza deduplicación global por hash MD5 en tiempo real.
+Script de Carga Masiva y Pipeline de Imágenes (Fase 2 - Refactored con Verificación Honesta en --dry-run).
+- Mide con exactitud cuántos clientes existen en Postgres y cuántos faltan por crear en --dry-run.
+- Genera números de teléfono sintéticos estables con hashlib.md5 (elimina aleatoriedad de hash()).
 - Genera 2 versiones WebP en memoria:
   1. Principal: máximo 1600px en el lado más largo (WebP Q80).
   2. Miniatura: máximo 400px en el lado más largo (WebP Q75).
-- Si NO es --dry-run: sube a S3 / Oracle Object Storage, inserta la fila en `client_images` y actualiza `profiles.photo_url`.
+- En corrida real (--no-dry-run): crea los clientes faltantes en users/profiles, sube a S3 / Oracle Object Storage e inserta en client_images.
 """
 
 import os
@@ -36,6 +34,12 @@ from app.database import AsyncSessionLocal
 from sqlalchemy import text
 
 EXPORT_DIR = r"C:\Users\jeloz\Downloads\daily lover"
+
+def stable_fake_phone(full_name_key: str) -> str:
+    """Genera un número de teléfono falso pero 100% estable y determinístico."""
+    digest = hashlib.md5(full_name_key.encode("utf-8")).hexdigest()
+    numeric = int(digest[:8], 16) % 1000000
+    return f"+5730000{numeric:06d}"
 
 def optimize_image(img_bytes: bytes, max_dim: int, quality: int) -> bytes:
     """Optimiza y redimensiona una imagen devolviendo bytes en formato WebP."""
@@ -80,7 +84,7 @@ async def get_db_user_map() -> Tuple[Dict[str, int], Dict[str, int], Dict[str, i
                     phone_map[clean_p] = uid
             print(f"Se cargaron {len(name_map)} clientes existentes directamente de la BD Postgres.")
     except Exception as e:
-        print(f"No se pudo consultar la BD Postgres local ({e}). Se crearan clientes dinámicamente si aplica.")
+        print(f"No se pudo consultar la BD Postgres local ({e}). Se asumiran 0 clientes en BD.")
     return name_map, email_map, phone_map
 
 def load_excel_client_catalog(excel_folder: str) -> Dict[str, Dict[str, str]]:
@@ -130,7 +134,6 @@ async def ensure_user_in_postgres(client_info: Dict[str, str], db_name_map: Dict
     """Garantiza que el cliente exista en users (Postgres) y retorna su id (INT PRIMARY KEY)."""
     full_name_key = client_info["full_name_raw"].strip().lower()
     
-    # 1. Si ya existe en memoria, retornar su ID de Postgres
     if full_name_key in db_name_map:
         return db_name_map[full_name_key]
 
@@ -139,13 +142,12 @@ async def ensure_user_in_postgres(client_info: Dict[str, str], db_name_map: Dict
         if not phone.startswith("+"):
             phone = "+57" + phone.lstrip("0")
     else:
-        phone = f"+5730000{abs(hash(full_name_key)) % 1000000:06d}"
+        phone = stable_fake_phone(full_name_key)
 
     email = client_info.get("email") or None
     name = client_info.get("full_name_raw") or "Cliente SmartMatch"
 
     async with AsyncSessionLocal() as db:
-        # INSERT en users
         res = await db.execute(text("""
             INSERT INTO users (phone, name, email)
             VALUES (:phone, :name, :email)
@@ -156,7 +158,6 @@ async def ensure_user_in_postgres(client_info: Dict[str, str], db_name_map: Dict
         """), {"phone": phone, "name": name, "email": email})
         uid = res.scalar()
 
-        # INSERT/UPDATE en profiles
         await db.execute(text("""
             INSERT INTO profiles (user_id, updated_at)
             VALUES (:uid, NOW())
@@ -168,6 +169,38 @@ async def ensure_user_in_postgres(client_info: Dict[str, str], db_name_map: Dict
     db_name_map[full_name_key] = uid
     return uid
 
+async def resolve_or_check_user(
+    client_info: Dict[str, str],
+    db_name_map: Dict[str, int],
+    db_email_map: Dict[str, int],
+    db_phone_map: Dict[str, int],
+    dry_run: bool
+) -> Tuple[Optional[int], bool]:
+    """
+    Devuelve (user_id, needs_creation).
+    - Si el cliente ya existe en Postgres (por nombre, email o teléfono), retorna su id real y False.
+    - Si no existe:
+        - dry_run=True  -> retorna (None, True) sin escribir nada en la BD.
+        - dry_run=False -> lo crea de verdad (ensure_user_in_postgres) y retorna (id_real, True).
+    """
+    full_name_key = client_info["full_name_raw"].strip().lower()
+
+    if full_name_key in db_name_map:
+        return db_name_map[full_name_key], False
+    if client_info.get("email") and client_info["email"] in db_email_map:
+        return db_email_map[client_info["email"]], False
+    if client_info.get("phone"):
+        clean_phone = client_info["phone"].replace(" ", "").replace("-", "")
+        if clean_phone in db_phone_map:
+            return db_phone_map[clean_phone], False
+
+    # No existe todavía en Postgres
+    if dry_run:
+        return None, True
+
+    uid = await ensure_user_in_postgres(client_info, db_name_map)
+    return uid, True
+
 async def main():
     parser = argparse.ArgumentParser(description="Pipeline de imágenes SmartMatchApp -> S3 / Oracle Object Storage")
     parser.add_argument("--dir", default=EXPORT_DIR, help="Carpeta que contiene las partes ZIP y los Excel")
@@ -175,7 +208,7 @@ async def main():
     args = parser.parse_args()
 
     print("================================================================================")
-    print("PIPELINE DE IMAGENES SMARTMATCHAPP (FASE 2 - VERIFICACION DE REFERENCIAS)")
+    print("PIPELINE DE IMAGENES SMARTMATCHAPP (FASE 2 - VERIFICACION HONESTA DRY-RUN)")
     print(f"Carpeta Origen: {args.dir}")
     print(f"Modo de Ejecucion: {'DRY-RUN (Simulacion sin cambios)' if args.dry_run else 'PRODUCCION (Subida activa a S3 y Postgres)'}")
     print("================================================================================\n")
@@ -200,6 +233,8 @@ async def main():
     uploaded_count = 0
     unmatched_count = 0
     created_users_count = 0
+    missing_users_set = set()
+    projected_missing_user_images = 0
 
     hashes_seen = set()
     unmatched_log = []
@@ -240,22 +275,25 @@ async def main():
                     folder_name = None
                     if len(parts) > 1:
                         folder_name = parts[0].strip().lower()
-                        user_id = db_name_map.get(folder_name)
 
-                    # Si el cliente no existe aún en Postgres pero está en clients.xlsx
-                    if not user_id and folder_name and folder_name in excel_catalog:
-                        client_info = excel_catalog[folder_name]
-                        if not args.dry_run:
-                            user_id = await ensure_user_in_postgres(client_info, db_name_map)
-                            created_users_count += 1
-                        else:
-                            # En --dry-run simulamos asignación de un ID válido dummy > 0
-                            user_id = 99999  # ID simulado de Postgres válidamente resuelto
-
-                    if not user_id:
+                    if not folder_name or folder_name not in excel_catalog:
                         unmatched_count += 1
                         unmatched_log.append(member.filename)
                         continue
+
+                    client_info = excel_catalog[folder_name]
+                    user_id, needs_creation = await resolve_or_check_user(
+                        client_info, db_name_map, db_email_map, db_phone_map, args.dry_run
+                    )
+
+                    if needs_creation:
+                        missing_users_set.add(folder_name)
+                        if not args.dry_run:
+                            created_users_count += 1
+
+                    if user_id is None:
+                        # En dry-run cuando el cliente no existe todavía en Postgres
+                        projected_missing_user_images += 1
 
                     # Compresión en memoria (Main 1600px Q80 + Thumb 400px Q75)
                     try:
@@ -267,13 +305,10 @@ async def main():
                         
                         projected_opt_bytes += (len(main_webp) + len(thumb_webp))
 
-                        s3_key_main = f"clients/{user_id}/main_{h[:10]}.webp"
-                        s3_key_thumb = f"clients/{user_id}/thumb_{h[:10]}.webp"
+                        if not args.dry_run and user_id:
+                            s3_key_main = f"clients/{user_id}/main_{h[:10]}.webp"
+                            s3_key_thumb = f"clients/{user_id}/thumb_{h[:10]}.webp"
 
-                        is_primary = False
-
-                        if not args.dry_run:
-                            # Subida a Object Storage / S3
                             s3.put_object(
                                 Bucket=settings.aws_s3_bucket,
                                 Key=s3_key_main,
@@ -287,12 +322,10 @@ async def main():
                                 ContentType="image/webp"
                             )
 
-                            # Inserción en Postgres
                             async with AsyncSessionLocal() as db:
                                 res = await db.execute(text("SELECT COUNT(*) FROM client_images WHERE user_id = :uid"), {"uid": user_id})
                                 count = res.scalar()
-                                if count == 0:
-                                    is_primary = True
+                                is_primary = (count == 0)
 
                                 await db.execute(text("""
                                     INSERT INTO client_images (user_id, s3_key_main, s3_key_thumb, is_primary, original_filename, width, height)
@@ -329,12 +362,17 @@ async def main():
 
     # Reporte de cierre
     print("\n================================================================================")
-    print("RESUMEN FINAL DEL PIPELINE DE IMAGENES (FASE 2 - VERIFICADO)")
+    print("RESUMEN FINAL DEL PIPELINE DE IMAGENES (FASE 2 - REPORTE DE INTEGRIDAD)")
     print("================================================================================")
     print(f"Total de imagenes escaneadas: {total_images_processed:,}")
     print(f"Duplicados omitidos por hash MD5: {duplicates_skipped:,}")
-    print(f"Imagenes optimizadas y {'proyectadas' if args.dry_run else 'subidas con exito'}: {uploaded_count:,}")
-    print(f"Clientes creados/asegurados en Postgres: {created_users_count:,}")
+    print(f"Imagenes optimizadas en memoria: {uploaded_count:,}")
+    print(f"Clientes que YA existen en Postgres: {len(db_name_map):,}")
+    print(f"Clientes que faltan por crear en Postgres: {len(missing_users_set):,}")
+    if args.dry_run:
+        print(f"Imagenes que pertenecen a clientes aun no creados en Postgres: {projected_missing_user_images:,}")
+    else:
+        print(f"Clientes creados de verdad en esta corrida: {created_users_count:,}")
     print(f"Imagenes sin cliente asociado: {unmatched_count:,}")
     print(f"Peso original (RAW): {projected_raw_bytes / (1024**3):.2f} GB")
     print(f"Peso optimizado final (Main + Thumb WebP): {projected_opt_bytes / (1024**3):.2f} GB")
