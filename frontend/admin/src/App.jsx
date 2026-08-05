@@ -31,7 +31,9 @@ import MatchmakerDashboard from './pages/MatchmakerDashboard'
 import AgendaPsicologa from './pages/AgendaPsicologa'
 import EvaluacionCita from './pages/EvaluacionCita'
 import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
-import { Award } from 'lucide-react'
+import MatchingManual from './pages/MatchingManual'
+import { Award, UserPlus } from 'lucide-react'
+
 
 
 
@@ -222,7 +224,8 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/eventos', icon: Calendar, label: 'Eventos', module: 'eventos', action: 'view' },
     ...(isAdmin ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
     { to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' },
-    { to: '/matching', icon: Heart, label: 'Matching', module: 'matching', action: 'view' },
+    { to: '/matching', icon: Sparkles, label: 'Matching IA (Revisión)', module: 'matching', action: 'view' },
+    { to: '/matching-manual', icon: UserPlus, label: 'Matching Manual (Psicóloga)', module: 'matching', action: 'view' },
   ]
 
 
@@ -463,6 +466,7 @@ function AppContent() {
                     <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />
                     <Route path="/matching" element={<ProtectedRoute module="matching" action="view"><Matching /></ProtectedRoute>} />
+                    <Route path="/matching-manual" element={<ProtectedRoute module="matching" action="view"><MatchingManual /></ProtectedRoute>} />
                     
                     {/* Personal */}
                     <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />
