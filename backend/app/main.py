@@ -141,6 +141,21 @@ app.include_router(webhooks.router)
 
 ADMIN_STATIC = os.path.join(os.path.dirname(__file__), "static", "admin")
 APP_PREVIEW_STATIC = os.path.join(os.path.dirname(__file__), "static", "app-preview")
+FAVICON_PATH = os.path.join(APP_PREVIEW_STATIC, "favicon.svg")
+
+@app.get("/login", include_in_schema=False)
+async def login_redirect():
+    """Redirect /login to /admin/login."""
+    return RedirectResponse(url="/admin/login")
+
+@app.get("/favicon.ico", include_in_schema=False)
+@app.get("/favicon.svg", include_in_schema=False)
+@app.get("/admin/favicon.svg", include_in_schema=False)
+async def serve_favicon():
+    """Serve favicon SVG or return 204 if missing."""
+    if os.path.isfile(FAVICON_PATH):
+        return FileResponse(FAVICON_PATH, media_type="image/svg+xml")
+    return Response(status_code=204)
 
 if os.path.isdir(ADMIN_STATIC):
     # Mount static assets (JS, CSS, etc.)
@@ -169,3 +184,4 @@ if os.path.isdir(APP_PREVIEW_STATIC):
         if os.path.isfile(index):
             return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
         return {"error": "App preview not built yet. Run npm run build in frontend/app-preview/"}
+
