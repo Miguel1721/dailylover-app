@@ -212,7 +212,7 @@ async def get_explore_feed(current_user: dict = Depends(get_current_user), db: A
         SELECT u.id, u.name, p.age, p.city, p.gender, p.motivacion
         FROM users u
         JOIN profiles p ON p.user_id = u.id
-        WHERE u.id != :uid
+        WHERE u.id != :uid AND u.merged_into_id IS NULL
         LIMIT 20
     """), {"uid": int(current_user.get("id"))})
     candidates = [dict(r._mapping) for r in users_res.fetchall()]

@@ -442,7 +442,7 @@ async def get_stats(
     user: dict = Depends(require_permission("dashboard", "view"))
 ):
     """Dashboard KPI summary."""
-    total_users = (await db.execute(text("SELECT COUNT(*) FROM users"))).scalar() or 0
+    total_users = (await db.execute(text("SELECT COUNT(*) FROM users WHERE merged_into_id IS NULL"))).scalar() or 0
 
     events_this_month = (await db.execute(text("""
         SELECT COUNT(*) FROM events
@@ -459,13 +459,13 @@ async def get_stats(
     ))).scalar()
     avg_satisfaction = float(avg_sat_row) if avg_sat_row else None
 
-    # Weekly growth: new users per week for last 8 weeks
+    # Weekly growth: new users per week for last 8 weeks (excluding merged users)
     weekly_rows = (await db.execute(text("""
         SELECT
             EXTRACT(WEEK FROM created_at) AS wk,
             COUNT(*) AS cnt
         FROM users
-        WHERE created_at >= NOW() - INTERVAL '8 weeks'
+        WHERE merged_into_id IS NULL AND created_at >= NOW() - INTERVAL '8 weeks'
         GROUP BY wk
         ORDER BY wk
     """))).fetchall()
@@ -653,7 +653,7 @@ async def get_users(
     """Paginated client list with rich backend SQL filters."""
     offset = (page - 1) * limit
 
-    where_clauses = ["1=1"]
+    where_clauses = ["u.merged_into_id IS NULL"]
     params: dict = {"limit": limit, "offset": offset}
 
     if search:
@@ -1107,6 +1107,38 @@ async def analyze_user_matchmaking_viability(
 
 
 
+@router.get("/merged-users")
+async def get_merged_users(
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("clientes", "view"))
+):
+    """List all merged duplicate users for audit purposes."""
+    rows = (await db.execute(text("""
+        SELECT 
+            u1.id AS secondary_id,
+            u1.name AS secondary_name,
+            u1.phone AS secondary_phone,
+            u1.merged_at,
+            u2.id AS primary_id,
+            u2.name AS primary_name,
+            u2.phone AS primary_phone
+        FROM users u1
+        JOIN users u2 ON u1.merged_into_id = u2.id
+        WHERE u1.merged_into_id IS NOT NULL
+        ORDER BY u1.merged_at DESC, u1.id DESC
+    """))).fetchall()
+
+    return [{
+        "secondary_id": r.secondary_id,
+        "secondary_name": r.secondary_name,
+        "secondary_phone": r.secondary_phone,
+        "merged_at": r.merged_at.isoformat() if r.merged_at else None,
+        "primary_id": r.primary_id,
+        "primary_name": r.primary_name,
+        "primary_phone": r.primary_phone
+    } for r in rows]
+
+
 @router.get("/users/check-duplicate")
 async def check_duplicate_user(
     id_number: Optional[str] = Query(None),
@@ -1480,7 +1512,8 @@ async def global_search(
         SELECT u.id, u.name, u.phone, p.motivacion
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
-        WHERE unaccent(u.name) ILIKE unaccent(:q) OR u.phone ILIKE :q
+        WHERE (unaccent(u.name) ILIKE unaccent(:q) OR u.phone ILIKE :q)
+          AND u.merged_into_id IS NULL
         LIMIT 10
     """), {"q": search_pat})
     clients = [{
