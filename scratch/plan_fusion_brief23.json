@@ -1,0 +1,682 @@
+[
+  {
+    "idx": 1,
+    "nivel": "ALTA",
+    "primary_id": 8538,
+    "secondary_id": 9133,
+    "regla": "REGLA-1 (tel??fono real colombiano en A)",
+    "nombre": "gustavo Moreno",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 2,
+    "nivel": "MEDIA",
+    "primary_id": 6548,
+    "secondary_id": 5285,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Andres Gomez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 3,
+    "nivel": "MEDIA",
+    "primary_id": 7665,
+    "secondary_id": 5299,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Andres almeida",
+    "matches_a_redirigir": 3,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 4,
+    "nivel": "MEDIA",
+    "primary_id": 5320,
+    "secondary_id": 6105,
+    "regla": "REGLA-2 (perfil m??s completo en A: 18 vs 11)",
+    "nombre": "Diego Lozano",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 5,
+    "nivel": "MEDIA",
+    "primary_id": 5374,
+    "secondary_id": 5508,
+    "regla": "REGLA-2 (perfil m??s completo en A: 17 vs 10)",
+    "nombre": "Victoria Piña",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 6,
+    "nivel": "MEDIA",
+    "primary_id": 5467,
+    "secondary_id": 5629,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Valentina Mora",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 7,
+    "nivel": "MEDIA",
+    "primary_id": 5489,
+    "secondary_id": 6250,
+    "regla": "REGLA-2 (perfil m??s completo en A: 14 vs 11)",
+    "nombre": "Andres Rojas",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 8,
+    "nivel": "MEDIA",
+    "primary_id": 7186,
+    "secondary_id": 5504,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Angelica Mendoza",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 9,
+    "nivel": "MEDIA",
+    "primary_id": 7717,
+    "secondary_id": 5567,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Jairo Martinez",
+    "matches_a_redirigir": 3,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 10,
+    "nivel": "MEDIA",
+    "primary_id": 7410,
+    "secondary_id": 5589,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Andres Villamil",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 11,
+    "nivel": "MEDIA",
+    "primary_id": 5594,
+    "secondary_id": 6151,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Natalia Niño",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 12,
+    "nivel": "MEDIA",
+    "primary_id": 7729,
+    "secondary_id": 5604,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Sara Prieto",
+    "matches_a_redirigir": 2,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 13,
+    "nivel": "MEDIA",
+    "primary_id": 5641,
+    "secondary_id": 5790,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Ignacio Salazar",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 14,
+    "nivel": "MEDIA",
+    "primary_id": 5664,
+    "secondary_id": 5911,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Felipe correa",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 15,
+    "nivel": "MEDIA",
+    "primary_id": 7246,
+    "secondary_id": 5664,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Felipe Correa",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 16,
+    "nivel": "MEDIA",
+    "primary_id": 5686,
+    "secondary_id": 5810,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Laura Sierra",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 17,
+    "nivel": "MEDIA",
+    "primary_id": 7459,
+    "secondary_id": 5709,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Milena Ruiz",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 18,
+    "nivel": "MEDIA",
+    "primary_id": 5733,
+    "secondary_id": 5734,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Laura Villareal",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 19,
+    "nivel": "MEDIA",
+    "primary_id": 5735,
+    "secondary_id": 6125,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Adriana Gómez",
+    "matches_a_redirigir": 1,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 20,
+    "nivel": "MEDIA",
+    "primary_id": 6408,
+    "secondary_id": 5755,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Laura Sofia Ramos",
+    "matches_a_redirigir": 2,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 21,
+    "nivel": "MEDIA",
+    "primary_id": 5771,
+    "secondary_id": 5840,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Daniel Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 22,
+    "nivel": "MEDIA",
+    "primary_id": 5771,
+    "secondary_id": 6295,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Daniel Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 23,
+    "nivel": "MEDIA",
+    "primary_id": 5783,
+    "secondary_id": 5809,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Santiago herrera",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 24,
+    "nivel": "MEDIA",
+    "primary_id": 6550,
+    "secondary_id": 5791,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Gordon Wells",
+    "matches_a_redirigir": 4,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 25,
+    "nivel": "MEDIA",
+    "primary_id": 6765,
+    "secondary_id": 5823,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Daniela Rodriguez Gonzalez",
+    "matches_a_redirigir": 7,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 26,
+    "nivel": "MEDIA",
+    "primary_id": 5835,
+    "secondary_id": 6141,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "David Diaz",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 27,
+    "nivel": "MEDIA",
+    "primary_id": 5836,
+    "secondary_id": 6366,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Alejandro castro",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 28,
+    "nivel": "MEDIA",
+    "primary_id": 7670,
+    "secondary_id": 5836,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Alejandro Castro",
+    "matches_a_redirigir": 8,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 29,
+    "nivel": "MEDIA",
+    "primary_id": 5840,
+    "secondary_id": 6295,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Daniel Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 30,
+    "nivel": "MEDIA",
+    "primary_id": 7201,
+    "secondary_id": 5846,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Julián cárdenas",
+    "matches_a_redirigir": 2,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 31,
+    "nivel": "MEDIA",
+    "primary_id": 7182,
+    "secondary_id": 5909,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Andres Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 32,
+    "nivel": "MEDIA",
+    "primary_id": 7246,
+    "secondary_id": 5911,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Felipe Correa",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 33,
+    "nivel": "MEDIA",
+    "primary_id": 6818,
+    "secondary_id": 5940,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Natalia Moreno",
+    "matches_a_redirigir": 7,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 34,
+    "nivel": "MEDIA",
+    "primary_id": 7017,
+    "secondary_id": 5962,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Diego Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 35,
+    "nivel": "MEDIA",
+    "primary_id": 7025,
+    "secondary_id": 5962,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Diego Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 36,
+    "nivel": "MEDIA",
+    "primary_id": 7181,
+    "secondary_id": 5965,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Natalia Vargas",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 37,
+    "nivel": "MEDIA",
+    "primary_id": 7308,
+    "secondary_id": 6060,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Ilona Martinez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 38,
+    "nivel": "MEDIA",
+    "primary_id": 6211,
+    "secondary_id": 6310,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Carolina Lopez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 39,
+    "nivel": "MEDIA",
+    "primary_id": 7042,
+    "secondary_id": 6260,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Pablo Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 40,
+    "nivel": "MEDIA",
+    "primary_id": 7547,
+    "secondary_id": 6279,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Silvia Galvis",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 41,
+    "nivel": "MEDIA",
+    "primary_id": 6434,
+    "secondary_id": 6289,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Javier Renteria Gonzalez",
+    "matches_a_redirigir": 4,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 42,
+    "nivel": "MEDIA",
+    "primary_id": 6399,
+    "secondary_id": 6290,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Alejandro Cabal",
+    "matches_a_redirigir": 10,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 43,
+    "nivel": "MEDIA",
+    "primary_id": 6309,
+    "secondary_id": 6318,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Esteban Muñoz",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 44,
+    "nivel": "MEDIA",
+    "primary_id": 6660,
+    "secondary_id": 6363,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Sofía Tovar",
+    "matches_a_redirigir": 2,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 45,
+    "nivel": "MEDIA",
+    "primary_id": 7670,
+    "secondary_id": 6366,
+    "regla": "REGLA-1 (tel??fono real colombiano en B)",
+    "nombre": "Alejandro Castro",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 46,
+    "nivel": "MEDIA",
+    "primary_id": 6393,
+    "secondary_id": 6580,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Ana Maria Fernandez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 47,
+    "nivel": "MEDIA",
+    "primary_id": 6412,
+    "secondary_id": 6623,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Natalia castillo",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 48,
+    "nivel": "MEDIA",
+    "primary_id": 6433,
+    "secondary_id": 6684,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Pilar Monroy",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 49,
+    "nivel": "MEDIA",
+    "primary_id": 6457,
+    "secondary_id": 6794,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Maria Fernanda Gómez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 50,
+    "nivel": "MEDIA",
+    "primary_id": 6473,
+    "secondary_id": 6966,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Nicolas Jiménez",
+    "matches_a_redirigir": 9,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 51,
+    "nivel": "MEDIA",
+    "primary_id": 6511,
+    "secondary_id": 6534,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Luis felipe Jiménez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 52,
+    "nivel": "MEDIA",
+    "primary_id": 6517,
+    "secondary_id": 7250,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Sandra Muñoz",
+    "matches_a_redirigir": 2,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 53,
+    "nivel": "MEDIA",
+    "primary_id": 6578,
+    "secondary_id": 7226,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Santiago Rodriguez",
+    "matches_a_redirigir": 3,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 54,
+    "nivel": "MEDIA",
+    "primary_id": 6591,
+    "secondary_id": 7305,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Valeria Ricaurte",
+    "matches_a_redirigir": 6,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 55,
+    "nivel": "MEDIA",
+    "primary_id": 6620,
+    "secondary_id": 7556,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Catalina cardona",
+    "matches_a_redirigir": 2,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 56,
+    "nivel": "MEDIA",
+    "primary_id": 6640,
+    "secondary_id": 7300,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Eduardo Ramirez Uribe",
+    "matches_a_redirigir": 6,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 57,
+    "nivel": "MEDIA",
+    "primary_id": 6687,
+    "secondary_id": 6788,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Catalina prada",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 58,
+    "nivel": "MEDIA",
+    "primary_id": 6725,
+    "secondary_id": 7422,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Luisa Garcia",
+    "matches_a_redirigir": 5,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 59,
+    "nivel": "MEDIA",
+    "primary_id": 6726,
+    "secondary_id": 7580,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Maria Jose Marin",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 60,
+    "nivel": "MEDIA",
+    "primary_id": 6849,
+    "secondary_id": 7562,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "David Mosquera",
+    "matches_a_redirigir": 6,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 61,
+    "nivel": "MEDIA",
+    "primary_id": 6899,
+    "secondary_id": 7702,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Sebastian Gomez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 62,
+    "nivel": "MEDIA",
+    "primary_id": 7016,
+    "secondary_id": 7024,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Andres Bustos",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 63,
+    "nivel": "MEDIA",
+    "primary_id": 7017,
+    "secondary_id": 7025,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Diego Rodriguez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 64,
+    "nivel": "MEDIA",
+    "primary_id": 7166,
+    "secondary_id": 7398,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "David Rico",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 65,
+    "nivel": "MEDIA",
+    "primary_id": 7167,
+    "secondary_id": 7397,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Jader Alvarino",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 66,
+    "nivel": "MEDIA",
+    "primary_id": 7341,
+    "secondary_id": 7751,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Maria Jose Martinez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 67,
+    "nivel": "MEDIA",
+    "primary_id": 7345,
+    "secondary_id": 7496,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Juan Carlos gomez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  },
+  {
+    "idx": 68,
+    "nivel": "MEDIA",
+    "primary_id": 7441,
+    "secondary_id": 7786,
+    "regla": "REGLA-3 (created_at m??s antiguo en A)",
+    "nombre": "Paola Gonzalez",
+    "matches_a_redirigir": 0,
+    "notas_a_redirigir": 0
+  }
+]
