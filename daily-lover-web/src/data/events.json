@@ -1,0 +1,152 @@
+[
+  {
+    "id": "polo-classics-2026",
+    "title": "Polo Classics 2026",
+    "subtitle": "Edición Especial",
+    "city": "colombia",
+    "cityName": "Bogotá",
+    "date": "Próxima Fecha",
+    "time": "Horario Confirmado en Entrada",
+    "location": "Club de Polo de Bogotá",
+    "price": "Entrada Oficial",
+    "image": "/images/event_polo.jpeg",
+    "badge": "TICKETMASTER",
+    "description": "Evento de Polo y encuentro social curado.",
+    "highlights": [
+      "Partido de Polo en vivo",
+      "Experiencia social Daily Lover",
+      "Venta oficial a través de Ticketmaster"
+    ],
+    "ctaLabel": "Comprar en Ticketmaster",
+    "ctaUrl": "https://www.ticketmaster.co/event/polo-classics-2026-10-off",
+    "status": "available"
+  },
+  {
+    "id": "dance-marathon-sinego",
+    "title": "Dance Marathon Presents: A Paso by Sinego",
+    "subtitle": "Encuentro Musical & Fiesta Social",
+    "city": "colombia",
+    "cityName": "Bogotá",
+    "date": "29 de Agosto, 2026",
+    "time": "8:00 PM",
+    "location": "Venue Bogotá",
+    "price": "Entrada Fourvenues",
+    "image": "/images/event_wine.jpeg",
+    "badge": "FOURVENUES",
+    "description": "Fiesta y encuentro social con show en vivo de Sinego.",
+    "highlights": [
+      "Show en vivo de Sinego",
+      "Venta de tickets vía Fourvenues Site",
+      "Comunidad Daily Lover"
+    ],
+    "ctaLabel": "Reservar en Fourvenues",
+    "ctaUrl": "https://site.fourvenues.com/es/dailylover/events/dance-marathon-presents-a-paso-by-sinego-29-08-2026-LYRY",
+    "status": "available"
+  },
+  {
+    "id": "dance-marathon-february",
+    "title": "Dance Marathon 14 Feb",
+    "subtitle": "Edición Especial Febrero",
+    "city": "colombia",
+    "cityName": "Bogotá",
+    "date": "14 de Febrero, 2026",
+    "time": "8:00 PM",
+    "location": "Venue Bogotá",
+    "price": "Entrada Fourvenues",
+    "image": "/images/event_wine.jpeg",
+    "badge": "FOURVENUES",
+    "description": "Encuentro social y baile en Bogotá.",
+    "highlights": [
+      "Entradas oficiales en Fourvenues Web",
+      "Integración social de solteros"
+    ],
+    "ctaLabel": "Reservar en Fourvenues (14 Feb)",
+    "ctaUrl": "https://web.fourvenues.com/es/maria-salinas1/events/dance-marathon-14-02-2026-A6QD",
+    "status": "available"
+  },
+  {
+    "id": "tardeo-bogotano-color-party",
+    "title": "El Tardeo Bogotano Color Party",
+    "subtitle": "Experiencia Tardeo",
+    "city": "colombia",
+    "cityName": "Bogotá",
+    "date": "21 de Marzo, 2026",
+    "time": "4:00 PM",
+    "location": "Bogotá",
+    "price": "Entrada Fourvenues",
+    "image": "/images/hero_colombia.png",
+    "badge": "FOURVENUES",
+    "description": "Tardeo social y fiesta de color en Bogotá.",
+    "highlights": [
+      "Tardeo social y música",
+      "Venta oficial vía Fourvenues Maria Paula Salinas"
+    ],
+    "ctaLabel": "Reservar en Fourvenues (Color Party)",
+    "ctaUrl": "https://web.fourvenues.com/es/maria-paula-salinas/events/el-tardeo-bogotano-color-party-21-03-2026-UZQA",
+    "status": "available"
+  },
+  {
+    "id": "blind-date-stripe-checkout-1",
+    "title": "Blind Date Match — Plan 1",
+    "subtitle": "Stripe Checkout Directo",
+    "city": "colombia",
+    "cityName": "Bogotá / Medellín",
+    "date": "Agenda Coordinada",
+    "time": "Horario Flexible",
+    "location": "Restaurante Aliado",
+    "price": "Pago Stripe",
+    "image": "/images/event_blind_date.jpeg",
+    "badge": "STRIPE",
+    "description": "Reserva de match directo vía checkout seguro de Stripe.",
+    "highlights": [
+      "Selección personalizada",
+      "Pago seguro vía Stripe (...bkA8EM0K)"
+    ],
+    "ctaLabel": "Pagar en Stripe (Link 1)",
+    "ctaUrl": "https://buy.stripe.com/3cI9ASbuM4Vd6vwbkA8EM0K",
+    "status": "available"
+  },
+  {
+    "id": "blind-date-stripe-checkout-2",
+    "title": "Blind Date Match — Plan 2",
+    "subtitle": "Stripe Checkout Directo",
+    "city": "colombia",
+    "cityName": "Bogotá / Medellín",
+    "date": "Agenda Coordinada",
+    "time": "Horario Flexible",
+    "location": "Restaurante Aliado",
+    "price": "Pago Stripe",
+    "image": "/images/event_blind_date.jpeg",
+    "badge": "STRIPE",
+    "description": "Reserva de match directo vía checkout seguro de Stripe.",
+    "highlights": [
+      "Selección personalizada",
+      "Pago seguro vía Stripe (...bkA8EM0I)"
+    ],
+    "ctaLabel": "Pagar en Stripe (Link 2)",
+    "ctaUrl": "https://buy.stripe.com/5kQeVcaqIdrJ1bcbkA8EM0I",
+    "status": "available"
+  },
+  {
+    "id": "blind-date-stripe-miami",
+    "title": "Blind Date Match Miami",
+    "subtitle": "Stripe Checkout Miami",
+    "city": "miami",
+    "cityName": "Miami, FL",
+    "date": "Flexible Schedule",
+    "time": "Personalized Time",
+    "location": "Miami Partner Venue",
+    "price": "USD Checkout",
+    "image": "/images/event_rooftop.jpeg",
+    "badge": "STRIPE MIAMI",
+    "description": "Direct Stripe checkout for Miami Blind Date experience.",
+    "highlights": [
+      "Personalized matchmaking",
+      "1:1 video call validation",
+      "Secure Stripe USD checkout (...00w5kCbuMevN1bcdsI8EM0N)"
+    ],
+    "ctaLabel": "Pay with Stripe (Miami USD)",
+    "ctaUrl": "https://buy.stripe.com/00w5kCbuMevN1bcdsI8EM0N",
+    "status": "available"
+  }
+]

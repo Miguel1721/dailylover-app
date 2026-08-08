@@ -54,5 +54,7 @@ Thumbs.db
 # ─── Barberia app (proyecto separado, ignorar su node_modules) ─────
 barberia-app/node_modules/
 barberia-app/.next/
+daily-lover-web/node_modules/
+daily-lover-web/.next/
 nightpulse/frontend/node_modules/
 nightpulse/frontend/dist/

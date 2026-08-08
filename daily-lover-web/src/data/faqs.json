@@ -1,0 +1,27 @@
+[
+  {
+    "id": "faq-1",
+    "question": "¿Cómo funciona la selección de asistentes a los eventos?",
+    "answer": "Cada persona que desea asistir llena un formulario inicial. Nuestro equipo revisa los perfiles para asegurar equilibrio de edades, intereses, valores y expectativas antes de confirmar la entrada."
+  },
+  {
+    "id": "faq-2",
+    "question": "¿Qué es la Experiencia Blind Date (Cita a Ciegas)?",
+    "answer": "Es un servicio presencial 1 a 1 donde coordinamos lugar, hora y reserva con una persona previamente seleccionada específicamente para ti tras una evaluación de compatibilidad."
+  },
+  {
+    "id": "faq-3",
+    "question": "¿Puedo ir solo/a a los eventos grupales?",
+    "answer": "¡Totalmente! La mayoría de los asistentes van solos. Nuestros eventos están diseñados con dinámicas moderadas para que romper el hielo sea natural y sin presiones."
+  },
+  {
+    "id": "faq-4",
+    "question": "¿En qué ciudades operan actualmente?",
+    "answer": "Operamos activamente en Colombia (Bogotá y Medellín), Miami (EE. UU.), Madrid (España) y Ciudad de México (CDMX)."
+  },
+  {
+    "id": "faq-5",
+    "question": "¿Mis datos personales son confidenciales?",
+    "answer": "Sí, el 100% de la información recopilada es manejada bajo estrictos protocolos de privacidad. Nunca compartimos tu número de teléfono o datos privados sin tu consentimiento explícito."
+  }
+]

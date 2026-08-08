@@ -1,0 +1,58 @@
+[
+  {
+    "id": "colombia",
+    "name": "Colombia",
+    "tagline": "Bogotá & Medellín",
+    "heroBadge": "BOGOTÁ Y MEDELLÍN",
+    "heroTitle": "Nosotras hacemos el match. Nos encargamos del plan. Tú solo llegas",
+    "heroSubtitle": "Eventos curados, catas de vino, toros de polo y citas a ciegas diseñadas para solteros que buscan relaciones reales.",
+    "heroImage": "/images/hero_colombia.png",
+    "ctaText": "Únete al Club",
+    "ctaUrl": "/blind-date",
+    "currency": "COP",
+    "whatsappNumber": "573000000000",
+    "whatsappMessage": "Hola! Quiero información sobre los eventos de Daily Lover en Colombia."
+  },
+  {
+    "id": "miami",
+    "name": "Miami",
+    "tagline": "Florida, EE. UU.",
+    "heroBadge": "MIAMI, FLORIDA",
+    "heroTitle": "The Most Exclusive Social Club for Singles in Miami",
+    "heroSubtitle": "Curated experiences, rooftop mixers, and blind dates for high-intent singles looking for authentic connections.",
+    "heroImage": "/images/event_rooftop.jpeg",
+    "ctaText": "Apply for Membership",
+    "ctaUrl": "https://tally.so/r/wQQ0zg",
+    "currency": "USD",
+    "whatsappNumber": "13050000000",
+    "whatsappMessage": "Hi! I'm interested in Daily Lover Miami events."
+  },
+  {
+    "id": "madrid",
+    "name": "Madrid",
+    "tagline": "España",
+    "heroBadge": "MADRID, ESPAÑA",
+    "heroTitle": "El club social de solteros en el corazón de Madrid",
+    "heroSubtitle": "Cenas exclusivas, catas maridaje y encuentros diseñados para profesionales que prefieren la química real sobre las pantallas.",
+    "heroImage": "/images/hero_madrid.jpeg",
+    "ctaText": "Reserva tu Experiencia",
+    "ctaUrl": "https://tally.so/r/wQQ0zg",
+    "currency": "EUR",
+    "whatsappNumber": "34600000000",
+    "whatsappMessage": "Hola! Quiero sumarme a la comunidad de Daily Lover Madrid."
+  },
+  {
+    "id": "cdmx",
+    "name": "CDMX",
+    "tagline": "Ciudad de México",
+    "heroBadge": "CIUDAD DE MÉXICO",
+    "heroTitle": "Citas a Ciegas y Experiencias Curadas en CDMX",
+    "heroSubtitle": "El espacio donde la química sucede cara a cara. Eventos sociales y match manual curado.",
+    "heroImage": "/images/event_cdmx.jpg",
+    "ctaText": "Aplica Hoy",
+    "ctaUrl": "https://tally.so/r/wQQ0zg",
+    "currency": "MXN",
+    "whatsappNumber": "525500000000",
+    "whatsappMessage": "Hola! Me interesa la experiencia Blind Date CDMX."
+  }
+]

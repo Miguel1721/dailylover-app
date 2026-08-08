@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  daily-lover-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: daily-lover-web
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=produccion_web_network"
+      - "traefik.http.routers.daily-lover-web.rule=Host(`prueba-daily.agentesia.cloud`)"
+      - "traefik.http.routers.daily-lover-web.priority=1"
+      - "traefik.http.routers.daily-lover-web.entrypoints=websecure"
+      - "traefik.http.routers.daily-lover-web.tls=true"
+      - "traefik.http.routers.daily-lover-web.tls.certresolver=myresolver"
+      - "traefik.http.services.daily-lover-web.loadbalancer.server.port=3000"
+    networks:
+      - produccion_web_network
+
+networks:
+  produccion_web_network:
+    external: true
+
