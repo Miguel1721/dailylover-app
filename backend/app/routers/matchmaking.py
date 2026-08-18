@@ -156,7 +156,7 @@ async def get_my_matches(
             m.city, m.pref, m.plan_tier, m.status, m.approved_by_maria, m.approved_at,
             m.observations, m.slot_number, m.created_at, m.updated_at,
             m.person_a_crm_id, m.person_b_crm_id,
-            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id,
+            uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id,
             p.city AS profile_city, p.orientation AS profile_orientation, 
             p.gender AS profile_gender, p.plan_tier AS profile_plan_tier
         FROM operational_matches m
@@ -201,37 +201,38 @@ async def get_my_matches(
 
     matches = []
     for r in rows:
-        is_approved = bool(r.approved_by_maria)
+        d = dict(r._mapping)
+        is_approved = bool(d.get("approved_by_maria"))
         
-        final_city = r.city or ""
-        final_pref = r.pref or "hetero"
-        final_plan = r.plan_tier or ""
+        final_city = d.get("city") or ""
+        final_pref = d.get("pref") or "hetero"
+        final_plan = d.get("plan_tier") or ""
 
         if not is_approved:
-            if r.profile_city:
-                final_city = normalize_city(r.profile_city)
-            if r.profile_orientation or r.profile_gender:
-                final_pref = normalize_pref(r.profile_orientation)
-            if r.profile_plan_tier:
-                final_plan = r.profile_plan_tier
+            if d.get("profile_city"):
+                final_city = normalize_city(d.get("profile_city"))
+            if d.get("profile_orientation") or d.get("profile_gender"):
+                final_pref = normalize_pref(d.get("profile_orientation"))
+            if d.get("profile_plan_tier"):
+                final_plan = d.get("profile_plan_tier")
 
         matches.append({
-            "id": r.id,
+            "id": d.get("id"),
             "city": normalize_city(final_city) or "Bogotá",
             "pref": normalize_pref(final_pref),
             "plan_tier": final_plan or "Estándar 65k (2 citas)",
-            "person_a": r.person_a,
-            "person_a_crm_id": r.person_a_crm_id or r.uA_crm_id or "",
-            "person_b": r.person_b or "",
-            "person_b_crm_id": r.person_b_crm_id or r.uB_crm_id or "",
-            "fecha": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
-            "status": r.status or "Listo para match",
+            "person_a": d.get("person_a"),
+            "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
+            "person_b": d.get("person_b") or "",
+            "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
+            "fecha": d.get("created_at").strftime("%Y-%m-%d %H:%M") if d.get("created_at") else "",
+            "status": d.get("status") or "Listo para match",
             "approved_by_maria": is_approved,
-            "approved_at": r.approved_at.isoformat() if r.approved_at else None,
-            "observations": r.observations or "",
-            "psychologist_name": r.psychologist_name,
-            "slot_number": r.slot_number or 1,
-            "status_color": STATUS_COLORS.get(r.status, "#FFF2CC"),
+            "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
+            "observations": d.get("observations") or "",
+            "psychologist_name": d.get("psychologist_name"),
+            "slot_number": d.get("slot_number") or 1,
+            "status_color": STATUS_COLORS.get(d.get("status"), "#FFF2CC"),
             "plan_color": PLAN_COLORS.get(final_plan, "#F3F3F3"),
             "pref_color": PREF_COLORS.get(final_pref, "#CFE2F3"),
             "is_locked": is_approved
@@ -450,7 +451,7 @@ async def get_approval_queue(
             m.id, m.psychologist_name, m.person_a, m.person_b, m.city, m.plan_tier, m.pref,
             m.created_at, m.updated_at, m.observations,
             m.person_a_crm_id, m.person_b_crm_id,
-            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id
+            uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id
         FROM operational_matches m
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
@@ -479,23 +480,23 @@ async def get_approval_queue(
     result = await db.execute(text(query), params)
     rows = result.fetchall()
 
-    queue = [
-        {
-            "id": r.id,
-            "psychologist_name": r.psychologist_name,
-            "person_a": r.person_a,
-            "person_a_crm_id": r.person_a_crm_id or r.uA_crm_id or "",
-            "person_b": r.person_b or "",
-            "person_b_crm_id": r.person_b_crm_id or r.uB_crm_id or "",
-            "city": normalize_city(r.city) or "Bogotá",
-            "plan_tier": r.plan_tier or "Estándar 65k",
-            "pref": normalize_pref(r.pref),
-            "fecha_hecho": r.updated_at.strftime("%Y-%m-%d %H:%M") if r.updated_at else "",
-            "observations": r.observations or "",
-            "plan_color": PLAN_COLORS.get(r.plan_tier, "#F3F3F3")
-        }
-        for r in rows
-    ]
+    queue = []
+    for r in rows:
+        d = dict(r._mapping)
+        queue.append({
+            "id": d.get("id"),
+            "psychologist_name": d.get("psychologist_name"),
+            "person_a": d.get("person_a"),
+            "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
+            "person_b": d.get("person_b") or "",
+            "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
+            "city": normalize_city(d.get("city")) or "Bogotá",
+            "plan_tier": d.get("plan_tier") or "Estándar 65k",
+            "pref": normalize_pref(d.get("pref")),
+            "fecha_hecho": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else "",
+            "observations": d.get("observations") or "",
+            "plan_color": PLAN_COLORS.get(d.get("plan_tier"), "#F3F3F3")
+        })
 
     return {"queue": queue, "total": len(queue)}
 
@@ -571,7 +572,7 @@ async def get_confirmations(
             m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.pref,
             m.person_a_crm_id, m.person_b_crm_id,
             uA.phone AS phone_a, uB.phone AS phone_b,
-            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id
+            uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id
         FROM match_confirmations c
         JOIN operational_matches m ON m.id = c.match_id
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
@@ -605,28 +606,28 @@ async def get_confirmations(
     result = await db.execute(text(query), params)
     rows = result.fetchall()
 
-    confirmations = [
-        {
-            "confirmation_id": r.confirmation_id,
-            "match_id": r.match_id,
-            "person_a": r.person_a,
-            "person_a_crm_id": r.person_a_crm_id or r.uA_crm_id or "",
-            "phone_a": r.phone_a or "+573000000000",
-            "person_a_confirmation": r.person_a_confirmation or "Pendiente",
-            "person_b": r.person_b or "",
-            "person_b_crm_id": r.person_b_crm_id or r.uB_crm_id or "",
-            "phone_b": r.phone_b or "+573000000000",
-            "person_b_confirmation": r.person_b_confirmation or "Pendiente",
-            "psychologist_name": r.psychologist_name,
-            "city": normalize_city(r.city) or "Bogotá",
-            "plan_tier": r.plan_tier or "Estándar 65k",
-            "pref": normalize_pref(r.pref),
-            "stage": r.stage,
-            "pause_reason": r.pause_reason or "",
-            "fecha_aprobado": r.date_approved.strftime("%Y-%m-%d %H:%M") if r.date_approved else ""
-        }
-        for r in rows
-    ]
+    confirmations = []
+    for r in rows:
+        d = dict(r._mapping)
+        confirmations.append({
+            "confirmation_id": d.get("confirmation_id"),
+            "match_id": d.get("match_id"),
+            "person_a": d.get("person_a"),
+            "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
+            "phone_a": d.get("phone_a") or "+573000000000",
+            "person_a_confirmation": d.get("person_a_confirmation") or "Pendiente",
+            "person_b": d.get("person_b") or "",
+            "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
+            "phone_b": d.get("phone_b") or "+573000000000",
+            "person_b_confirmation": d.get("person_b_confirmation") or "Pendiente",
+            "psychologist_name": d.get("psychologist_name"),
+            "city": normalize_city(d.get("city")) or "Bogotá",
+            "plan_tier": d.get("plan_tier") or "Estándar 65k",
+            "pref": normalize_pref(d.get("pref")),
+            "stage": d.get("stage"),
+            "pause_reason": d.get("pause_reason") or "",
+            "fecha_aprobado": d.get("date_approved").strftime("%Y-%m-%d %H:%M") if d.get("date_approved") else ""
+        })
 
     return {"confirmations": confirmations, "stage": stage, "total": len(confirmations)}
 
@@ -782,7 +783,7 @@ async def get_calendar_dates(
         SELECT 
             s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city,
             s.reservation_name, s.had_date, s.feedback, s.reschedule, s.created_at, s.updated_at,
-            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id
+            uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id
         FROM scheduled_dates s
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(s.person_a))
         LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(s.person_b))
@@ -821,13 +822,15 @@ async def get_calendar_dates(
 
     dates = []
     for r in rows:
-        dt_val = r.date_time or "Fecha por definir"
-        ven_val = r.venue or "Lugar por definir"
+        d = dict(r._mapping)
+        dt_val = d.get("date_time") or "Fecha por definir"
+        ven_val = d.get("venue") or "Lugar por definir"
+        res_name = d.get("reservation_name") or "María Paula Salinas"
         
         # Plantillas de WhatsApp con textos exactos del SSOT
         msg_confirmacion = (
             f"Para confirmarte tu date! 💛 Fecha y hora: {dt_val} en {ven_val}\n"
-            f"La reserva estará a nombre de {r.reservation_name}.\n"
+            f"La reserva estará a nombre de {res_name}.\n"
             f"El restaurante estará atento para ayudarte a ubicarte y acompañarte con cualquier detalle logístico o de seguridad.\n\n"
             f"Además, ese mismo día en la mañana te escribiremos para estar pendientes de ti y acompañarte *antes, durante y después de la cita*, para que solo tengas que disfrutar la experiencia.💌💌\n"
             f"Gracias por confiar en nosotras y por permitirnos ser parte de este momento💓"
@@ -840,24 +843,24 @@ async def get_calendar_dates(
 
         msg_hoy = (
             f"Para recordarte tu date de hoy! 💛 Fecha y hora: {dt_val} en {ven_val}\n"
-            f"La reserva estará a nombre de {r.reservation_name}!! Por favor avisanos cuando vayas en camino para estar pendiente de ti! "
+            f"La reserva estará a nombre de {res_name}!! Por favor avisanos cuando vayas en camino para estar pendiente de ti! "
             f"Recuerda que hay alguien que te esta esperando, y la puntualidas vale X2!! Disfrútalo muchísimo, es solo una cita!! "
             f"Avísanos cuando vayas en camino para estar pendiente de tiii!"
         )
 
         row_status_color = "#FFF2CC" # Amarillo pendiente
-        if r.had_date:
+        if d.get("had_date"):
             row_status_color = "#6AA84F" # Verde completada
-        elif r.reschedule:
+        elif d.get("reschedule"):
             row_status_color = "#F9CB9C" # Naranja reprogramar
 
         dates.append({
-            "id": r.id,
-            "match_id": r.match_id,
-            "person_a": r.person_a,
-            "person_a_crm_id": r.uA_crm_id or "",
-            "person_b": r.person_b,
-            "person_b_crm_id": r.uB_crm_id or "",
+            "id": d.get("id"),
+            "match_id": d.get("match_id"),
+            "person_a": d.get("person_a"),
+            "person_a_crm_id": d.get("ua_crm_id") or "",
+            "person_b": d.get("person_b"),
+            "person_b_crm_id": d.get("ub_crm_id") or "",
             "date_time": dt_val,
             "venue": ven_val,
             "city": normalize_city(r.city) or "Bogotá",
