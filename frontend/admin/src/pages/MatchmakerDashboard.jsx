@@ -156,10 +156,10 @@ export default function MatchmakerDashboard() {
           <button 
             className="btn btn-primary"
             style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, whiteSpace: 'nowrap' }}
-            onClick={() => navigate('/matching')}
+            onClick={() => navigate('/matchmaking/mis-matches')}
           >
             <Heart size={16} />
-            Ir a Revisión de Matches
+            Ir a Mis Matches (Flujo Operativo)
           </button>
         </div>
       </div>

@@ -33,7 +33,15 @@ import AgendaPsicologa from './pages/AgendaPsicologa'
 import EvaluacionCita from './pages/EvaluacionCita'
 import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
 import MatchingManual from './pages/MatchingManual'
-import { Award, UserPlus } from 'lucide-react'
+import CmsEventos from './pages/CmsEventos'
+import CmsCiudades from './pages/CmsCiudades'
+import CmsBlindDate from './pages/CmsBlindDate'
+import MisMatches from './pages/matchmaking/MisMatches'
+import ColaAprobacion from './pages/matchmaking/ColaAprobacion'
+import ServicioCliente from './pages/matchmaking/ServicioCliente'
+import CalendarioCitas from './pages/matchmaking/CalendarioCitas'
+import IntakeClientes from './pages/matchmaking/IntakeClientes'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones } from 'lucide-react'
 
 
 
@@ -208,12 +216,13 @@ function Sidebar({ isOpen, onClose }) {
     if (onClose) onClose()
   }
 
-  const isAdmin = user?.role && (
+  const isAdmin = (user?.email && (user.email.toLowerCase().includes('maria') || user.email.toLowerCase().includes('admin'))) || (user?.role && (
     user.role === 'Admin' || 
     user.role === 'Super Admin' || 
+    user.role === 'SUPERADMIN' || 
     user.role.toLowerCase().includes('admin') || 
     user.role.toLowerCase().includes('director')
-  )
+  ))
 
   // Groups and items configuration
   const coreItems = [
@@ -222,14 +231,27 @@ function Sidebar({ isOpen, onClose }) {
     ...(isAdmin ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
     { to: '/agenda', icon: Calendar, label: 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' },
     { to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' },
-    { to: '/eventos', icon: Calendar, label: 'Eventos', module: 'eventos', action: 'view' },
     ...(isAdmin ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
     { to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' },
-    { to: '/matching', icon: Sparkles, label: 'Matching IA (Revisión)', module: 'matching', action: 'view' },
-    { to: '/matching-manual', icon: UserPlus, label: 'Matching Manual (Psicóloga)', module: 'matching', action: 'view' },
   ]
 
 
+
+  const matchmakingItems = [
+    { to: '/matchmaking/mis-matches', icon: Heart, label: isAdmin ? 'Matches (Todas las Psicólogas)' : 'Mis Matches (Psicóloga)', module: 'matching', action: 'view' },
+    ...(isAdmin ? [
+      { to: '/matchmaking/intake', icon: Users, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' },
+      { to: '/matchmaking/aprobacion', icon: ShieldCheck, label: 'Cola de Aprobación (María)', module: 'matching', action: 'view' },
+      { to: '/matchmaking/pendientes', icon: Headphones, label: 'Servicio al Cliente (Pendientes)', module: 'matching', action: 'view' },
+      { to: '/matchmaking/calendario', icon: Calendar, label: 'Calendario de Citas & WhatsApp', module: 'matching', action: 'view' },
+    ] : [])
+  ]
+
+  const cmsItems = [
+    { to: '/cms/eventos', icon: Calendar, label: 'CMS Eventos', module: 'eventos', action: 'view' },
+    { to: '/cms/ciudades', icon: Globe, label: 'CMS Ciudades', module: 'eventos', action: 'view' },
+    { to: '/cms/blind-date', icon: Shield, label: 'CMS Blind Date', module: 'eventos', action: 'view' },
+  ]
 
   const personalItems = [
     { to: '/empleados', icon: Users, label: 'Empleados', module: 'empleados', action: 'view' },
@@ -248,6 +270,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/usuarios', icon: UserCheck, label: 'Cuentas de Acceso', module: 'usuarios', action: 'view' },
   ]
 
+  const showMatchmaking = matchmakingItems.some(i => hasPermission(i.module, i.action))
   const showPersonal = personalItems.some(i => hasPermission(i.module, i.action))
   const showFinance = financeItems.some(i => hasPermission(i.module, i.action))
   const showSystem = systemItems.some(i => hasPermission(i.module, i.action))
@@ -315,6 +338,8 @@ function Sidebar({ isOpen, onClose }) {
           </NavLink>
         ))}
 
+        {showMatchmaking && renderNavGroup('Matchmaking Operativo', matchmakingItems)}
+        {renderNavGroup('CMS Visual (María Paula)', cmsItems)}
         {showPersonal && renderNavGroup('Personal', personalItems)}
         {showFinance && renderNavGroup('Finanzas', financeItems)}
         {showSystem && renderNavGroup('Sistema', systemItems)}
@@ -465,9 +490,19 @@ function AppContent() {
 
                     <Route path="/agenda" element={<ProtectedRoute module="clientes" action="view"><AgendaPsicologa /></ProtectedRoute>} />
                     <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
+                    <Route path="/cms/eventos" element={<ProtectedRoute module="eventos" action="view"><CmsEventos /></ProtectedRoute>} />
+                    <Route path="/cms/ciudades" element={<ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute>} />
+                    <Route path="/cms/blind-date" element={<ProtectedRoute module="eventos" action="view"><CmsBlindDate /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />
                     <Route path="/matching" element={<ProtectedRoute module="matching" action="view"><Matching /></ProtectedRoute>} />
                     <Route path="/matching-manual" element={<ProtectedRoute module="matching" action="view"><MatchingManual /></ProtectedRoute>} />
+                    
+                    {/* Matchmaking Operativo (SSOT Excel Mirror) */}
+                    <Route path="/matchmaking/mis-matches" element={<ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute>} />
+                    <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
+                    <Route path="/matchmaking/aprobacion" element={<ProtectedRoute module="matching" action="view"><ColaAprobacion /></ProtectedRoute>} />
+                    <Route path="/matchmaking/pendientes" element={<ProtectedRoute module="matching" action="view"><ServicioCliente /></ProtectedRoute>} />
+                    <Route path="/matchmaking/calendario" element={<ProtectedRoute module="matching" action="view"><CalendarioCitas /></ProtectedRoute>} />
                     
                     {/* Personal */}
                     <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />

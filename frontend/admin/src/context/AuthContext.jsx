@@ -24,8 +24,11 @@ export function AuthProvider({ children }) {
 
   const hasPermission = (module, action) => {
     if (!user) return false
-    // If the role name is 'Admin', they automatically have full access
-    if (user.role === 'Admin') return true
+    // If Admin or Super Admin, full access
+    if (user.role === 'Admin' || user.role === 'Super Admin' || (user.role && user.role.toLowerCase().includes('admin'))) return true
+    // Matching and Dashboard view allowed for psychologists/team members
+    if (module === 'matching' && action === 'view') return true
+    if (module === 'dashboard' && action === 'view') return true
     const permissionKey = `${module}.${action}`
     return user.permissions?.includes(permissionKey) || false
   }

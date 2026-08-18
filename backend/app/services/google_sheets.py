@@ -22,54 +22,60 @@ SHEET_COLUMN_MAP = {
         "tab": "MATCHES JENN",
         "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES"]
     },
-    "SILVI": {
-        "tab": "MATCHES SILVI",
-        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "STATUS", "OBSERVACIONES"]
-    },
     "ANA": {
         "tab": "MATCHES ANA ",
         "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES"]
+    },
+    "SILVI": {
+        "tab": "MATCHES SILVI",
+        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "STATUS", "OBSERVACIONES"]
     },
     "STEFFY": {
         "tab": "MATCHES STEFFY",
         "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "STATUS", "OBSERVACIONES"]
     },
-    "ALEJA": {
-        "tab": "MATCHES ALEJA",
-        "cols": ["PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES", "APRO DATE"]
-    },
     "SOFI": {
         "tab": "MATCHES SOFI",
         "cols": ["No.", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES"]
-    },
-    "LAU": {
-        "tab": "MATCHES LAU",
-        "cols": ["PERSON A", "PERSON B", "OBSERVACIONES"]
     },
     "MAPE D": {
         "tab": "MATCHES MAPE D",
         "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "STATUS", "OBSERVACIONES", "TAREAS"]
     },
-    "MANU": {
-        "tab": "MATCHES MANU ",
+    "ALEJA": {
+        "tab": "MATCHES ALEJA",
+        "cols": ["PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES", "APRO DATE"]
+    },
+    "MANU 1": {
+        "tab": "MATCHES MANU 1",
         "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "CRM", "STATUS", "OBSERVACIONES"]
+    },
+    "MANU 2": {
+        "tab": "MATCHES MANU 2",
+        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "CRM", "STATUS", "OBSERVACIONES"]
+    },
+    "PIA": {
+        "tab": "MATCHES PIA",
+        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "STATUS", "OBSERVACIONES"]
     }
 }
 
 MATCHMAKER_ALIASES = {
     "jenn": "JENN",
-    "silvi": "SILVI",
     "ana": "ANA",
+    "silvi": "SILVI",
     "steff": "STEFFY",
     "steffy": "STEFFY",
-    "aleja": "ALEJA",
     "sofi": "SOFI",
-    "lau": "LAU",
     "mape": "MAPE D",
     "mape d": "MAPE D",
     "maria paula": "MAPE D",
     "maría paula": "MAPE D",
-    "manu": "MANU",
+    "aleja": "ALEJA",
+    "manu 1": "MANU 1",
+    "manu 2": "MANU 2",
+    "manu": "MANU 1",
+    "pia": "PIA"
 }
 
 def get_sheets_client():
