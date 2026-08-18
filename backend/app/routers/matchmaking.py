@@ -141,24 +141,28 @@ class ResolveProfileRequest(BaseModel):
 async def get_my_matches(
     psychologist: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    plan_tier: Optional[str] = Query(None),
+    approved: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna la lista de matches operativos.
-    Si el match aún no ha sido aprobado por María, autocompleta/refresca dinámicamente
-    CITY, PREF y PLAN desde la base de datos de perfiles.
+    Retorna la lista de matches operativos con soporte para multifiltros combinables y CRM IDs.
     """
     query = """
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.psychologist_id,
             m.city, m.pref, m.plan_tier, m.status, m.approved_by_maria, m.approved_at,
             m.observations, m.slot_number, m.created_at, m.updated_at,
+            m.person_a_crm_id, m.person_b_crm_id,
+            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id,
             p.city AS profile_city, p.orientation AS profile_orientation, 
             p.gender AS profile_gender, p.plan_tier AS profile_plan_tier
         FROM operational_matches m
-        LEFT JOIN users u ON LOWER(TRIM(u.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN profiles p ON p.user_id = u.id
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN profiles p ON p.user_id = uA.id
         WHERE 1=1
     """
     params = {}
@@ -172,6 +176,20 @@ async def get_my_matches(
         query += " AND UPPER(m.status) = UPPER(:st)"
         params["st"] = status_filter.strip()
 
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND (m.city ILIKE :city OR p.city ILIKE :city)"
+        params["city"] = f"%{city.strip()}%"
+
+    if plan_tier and plan_tier.lower() not in ("all", "todos"):
+        query += " AND (m.plan_tier ILIKE :plan OR p.plan_tier ILIKE :plan)"
+        params["plan"] = f"%{plan_tier.strip()}%"
+
+    if approved and approved.lower() not in ("all", "todos"):
+        if approved.lower() in ("yes", "si", "sí", "true", "1", "aprobado"):
+            query += " AND m.approved_by_maria = true"
+        elif approved.lower() in ("no", "false", "0", "pendiente"):
+            query += " AND m.approved_by_maria = false"
+
     if search:
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
@@ -183,7 +201,6 @@ async def get_my_matches(
 
     matches = []
     for r in rows:
-        # Autocompletado CRM si no está aprobado
         is_approved = bool(r.approved_by_maria)
         
         final_city = r.city or ""
@@ -200,11 +217,13 @@ async def get_my_matches(
 
         matches.append({
             "id": r.id,
-            "city": normalize_city(final_city),
+            "city": normalize_city(final_city) or "Bogotá",
             "pref": normalize_pref(final_pref),
-            "plan_tier": final_plan,
+            "plan_tier": final_plan or "Estándar 65k (2 citas)",
             "person_a": r.person_a,
+            "person_a_crm_id": r.person_a_crm_id or r.uA_crm_id or "",
             "person_b": r.person_b or "",
+            "person_b_crm_id": r.person_b_crm_id or r.uB_crm_id or "",
             "fecha": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
             "status": r.status or "Listo para match",
             "approved_by_maria": is_approved,
@@ -232,7 +251,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 
     # Buscar datos del perfil en CRM
     prof_res = await db.execute(text("""
-        SELECT p.city, p.orientation, p.gender, p.plan_tier, u.id AS user_id
+        SELECT p.city, p.orientation, p.gender, p.plan_tier, u.id AS user_id, u.crm_id
         FROM users u
         JOIN profiles p ON p.user_id = u.id
         WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
@@ -240,83 +259,95 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     """), {"n": person_a_clean})
     prof_row = prof_res.fetchone()
 
-    city_val = payload.city or (normalize_city(prof_row.city) if prof_row and prof_row.city else "")
-    pref_val = payload.pref or (normalize_pref(prof_row.orientation) if prof_row and prof_row.orientation else "hetero")
-    plan_val = payload.plan_tier or (prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)")
-    user_id_a = prof_row.user_id if prof_row else None
+    city_val = payload.city or (prof_row.city if prof_row else "Bogotá")
+    pref_val = payload.pref or (prof_row.orientation if prof_row else "hetero")
+    plan_val = payload.plan_tier or (prof_row.plan_tier if prof_row else "Estándar 65k (2 citas)")
+    crm_id_val = prof_row.crm_id if prof_row else None
 
+    # Insertar los 3 slots en operational_matches
     created_ids = []
-    for slot in [1, 2, 3]:
+    for slot_num in [1, 2, 3]:
         ins_res = await db.execute(text("""
-            INSERT INTO operational_matches (
-                person_a, user_id_a, psychologist_name, city, pref, plan_tier,
-                status, approved_by_maria, observations, slot_number, created_at, updated_at
-            )
-            VALUES (
-                :pA, :uidA, :psyc, :city, :pref, :plan,
-                'Listo para match', false, :obs, :slot, NOW(), NOW()
-            )
+            INSERT INTO operational_matches 
+            (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, created_at, updated_at)
+            VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, 'Listo para match', :obs, :cid, NOW(), NOW())
             RETURNING id
         """), {
-            "pA": person_a_clean,
-            "uidA": user_id_a,
-            "psyc": psyc_clean,
-            "city": city_val,
-            "pref": pref_val,
+            "city": normalize_city(city_val),
+            "pref": normalize_pref(pref_val),
             "plan": plan_val,
-            "obs": payload.observations or "",
-            "slot": slot
+            "person_a": person_a_clean,
+            "psyc": psyc_clean,
+            "slot": slot_num,
+            "obs": payload.observations.strip() if payload.observations else None,
+            "cid": crm_id_val
         })
-        created_ids.append(ins_res.scalar())
+        new_id = ins_res.scalar()
+        created_ids.append(new_id)
 
-    # Registrar en person_history
+    # Registrar evento en person_history
     await db.execute(text("""
-        INSERT INTO person_history (person_name, event_type, details, created_at)
-        VALUES (:name, 'INTAKE_CREATED', :det, NOW())
+        INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+        VALUES (:name, :mid, 'INTAKE_CREATED', :details, NOW())
     """), {
         "name": person_a_clean,
-        "det": f"Cliente ingresado con 3 slots asignados a psicóloga {psyc_clean} (Plan: {plan_val}, Ciudad: {city_val})"
+        "mid": created_ids[0],
+        "details": f"Cliente registrado en Intake por {psyc_clean}. 3 slots generados automáticamente."
     })
 
     await db.commit()
-    return {"status": "success", "created_ids": created_ids, "person_a": person_a_clean, "slots": 3}
+    return {
+        "status": "success",
+        "message": f"Cliente {person_a_clean} registrado con éxito y 3 slots asignados a {psyc_clean}.",
+        "slot_ids": created_ids
+    }
 
 
 @router.get("/intake-list")
 async def get_intake_list(
-    psychologist: Optional[str] = None,
-    search: Optional[str] = None,
+    psychologist: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    plan_tier: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna la lista agregada de clientes en Intake (PROFILES), agrupados por Persona A
-    con la cantidad de slots asignados, psicóloga asignada, ciudad, preferencia y plan.
+    con la cantidad de slots asignados, psicóloga asignada, ciudad, preferencia, plan y CRM ID.
     """
     query = """
         SELECT 
-            person_a,
-            psychologist_name,
-            city,
-            pref,
-            plan_tier,
-            COUNT(id) as total_slots,
-            COUNT(CASE WHEN person_b IS NOT NULL AND person_b != '' THEN 1 END) as filled_slots,
-            COUNT(CASE WHEN approved_by_maria = true THEN 1 END) as approved_slots,
-            MAX(created_at) as created_at
-        FROM operational_matches
+            m.person_a,
+            m.psychologist_name,
+            m.city,
+            m.pref,
+            m.plan_tier,
+            MAX(COALESCE(m.person_a_crm_id, u.crm_id)) as crm_id,
+            COUNT(m.id) as total_slots,
+            COUNT(CASE WHEN m.person_b IS NOT NULL AND m.person_b != '' THEN 1 END) as filled_slots,
+            COUNT(CASE WHEN m.approved_by_maria = true THEN 1 END) as approved_slots,
+            MAX(m.created_at) as created_at
+        FROM operational_matches m
+        LEFT JOIN users u ON LOWER(TRIM(u.name)) = LOWER(TRIM(m.person_a))
         WHERE 1=1
     """
     params = {}
-    if psychologist and psychologist.lower() != 'all':
-        query += " AND UPPER(psychologist_name) = UPPER(:psyc)"
+    if psychologist and psychologist.lower() not in ('all', 'todas'):
+        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
         params["psyc"] = psychologist.strip()
+    if city and city.lower() not in ('all', 'todas'):
+        query += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+    if plan_tier and plan_tier.lower() not in ('all', 'todos'):
+        query += " AND m.plan_tier ILIKE :plan"
+        params["plan"] = f"%{plan_tier.strip()}%"
     if search:
-        query += " AND (person_a ILIKE :s OR city ILIKE :s OR psychologist_name ILIKE :s)"
+        query += " AND (m.person_a ILIKE :s OR m.city ILIKE :s OR m.psychologist_name ILIKE :s)"
         params["s"] = f"%{search.strip()}%"
 
     query += """
-        GROUP BY person_a, psychologist_name, city, pref, plan_tier
-        ORDER BY MAX(created_at) DESC
+        GROUP BY m.person_a, m.psychologist_name, m.city, m.pref, m.plan_tier
+        ORDER BY MAX(m.created_at) DESC
     """
 
     res = await db.execute(text(query), params)
@@ -326,9 +357,10 @@ async def get_intake_list(
     for r in rows:
         clients.append({
             "person_a": r.person_a,
+            "crm_id": r.crm_id or "",
             "psychologist_name": r.psychologist_name,
-            "city": r.city or "Bogotá",
-            "pref": r.pref or "hetero",
+            "city": normalize_city(r.city) or "Bogotá",
+            "pref": normalize_pref(r.pref),
             "plan_tier": r.plan_tier or "Estándar 65k (2 citas)",
             "total_slots": r.total_slots,
             "filled_slots": r.filled_slots,
@@ -404,25 +436,45 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
 @router.get("/approval-queue")
 async def get_approval_queue(
     psychologist: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    plan_tier: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna todos los matches en estado 'HECHO' que aún no han sido aprobados por María.
+    Retorna todos los matches en estado 'HECHO' que aún no han sido aprobados por María,
+    con soporte para multifiltros y CRM IDs.
     """
     query = """
         SELECT 
-            id, psychologist_name, person_a, person_b, city, plan_tier, pref,
-            created_at, updated_at, observations
-        FROM operational_matches
-        WHERE status = 'HECHO' AND approved_by_maria = false
+            m.id, m.psychologist_name, m.person_a, m.person_b, m.city, m.plan_tier, m.pref,
+            m.created_at, m.updated_at, m.observations,
+            m.person_a_crm_id, m.person_b_crm_id,
+            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id
+        FROM operational_matches m
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        WHERE m.status = 'HECHO' AND m.approved_by_maria = false
     """
     params = {}
 
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        query += " AND UPPER(psychologist_name) = UPPER(:psyc)"
+        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
         params["psyc"] = psychologist.strip()
 
-    query += " ORDER BY updated_at DESC"
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+
+    if plan_tier and plan_tier.lower() not in ("all", "todos"):
+        query += " AND m.plan_tier ILIKE :plan"
+        params["plan"] = f"%{plan_tier.strip()}%"
+
+    if search:
+        query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY m.updated_at DESC"
 
     result = await db.execute(text(query), params)
     rows = result.fetchall()
@@ -432,8 +484,10 @@ async def get_approval_queue(
             "id": r.id,
             "psychologist_name": r.psychologist_name,
             "person_a": r.person_a,
+            "person_a_crm_id": r.person_a_crm_id or r.uA_crm_id or "",
             "person_b": r.person_b or "",
-            "city": normalize_city(r.city),
+            "person_b_crm_id": r.person_b_crm_id or r.uB_crm_id or "",
+            "city": normalize_city(r.city) or "Bogotá",
             "plan_tier": r.plan_tier or "Estándar 65k",
             "pref": normalize_pref(r.pref),
             "fecha_hecho": r.updated_at.strftime("%Y-%m-%d %H:%M") if r.updated_at else "",
@@ -500,22 +554,24 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
 @router.get("/confirmations")
 async def get_confirmations(
     stage: str = Query("pendientes", regex="^(pendientes|en_pausa|en_pausa_indefinida|trouble)$"),
+    psychologist: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    confirmation_a: Optional[str] = Query(None),
+    confirmation_b: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna la lista de matches según la pestaña seleccionada:
-    - 'pendientes'
-    - 'en_pausa'
-    - 'en_pausa_indefinida'
-    - 'trouble'
+    Retorna la lista de matches según la pestaña seleccionada con soporte para multifiltros y CRM IDs.
     """
     query = """
         SELECT 
             c.id AS confirmation_id, c.match_id, c.person_a_confirmation, c.person_b_confirmation,
             c.stage, c.pause_reason, c.created_at AS date_approved, c.updated_at,
             m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.pref,
-            uA.phone AS phone_a, uB.phone AS phone_b
+            m.person_a_crm_id, m.person_b_crm_id,
+            uA.phone AS phone_a, uB.phone AS phone_b,
+            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id
         FROM match_confirmations c
         JOIN operational_matches m ON m.id = c.match_id
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
@@ -523,6 +579,22 @@ async def get_confirmations(
         WHERE c.stage = :st
     """
     params = {"st": stage}
+
+    if psychologist and psychologist.lower() not in ("all", "todas"):
+        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
+        params["psyc"] = psychologist.strip()
+
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+
+    if confirmation_a and confirmation_a.lower() not in ("all", "todas", "todos"):
+        query += " AND c.person_a_confirmation = :conf_a"
+        params["conf_a"] = confirmation_a.strip()
+
+    if confirmation_b and confirmation_b.lower() not in ("all", "todas", "todos"):
+        query += " AND c.person_b_confirmation = :conf_b"
+        params["conf_b"] = confirmation_b.strip()
 
     if search:
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.psychologist_name ILIKE :srch)"
@@ -538,13 +610,15 @@ async def get_confirmations(
             "confirmation_id": r.confirmation_id,
             "match_id": r.match_id,
             "person_a": r.person_a,
+            "person_a_crm_id": r.person_a_crm_id or r.uA_crm_id or "",
             "phone_a": r.phone_a or "+573000000000",
             "person_a_confirmation": r.person_a_confirmation or "Pendiente",
             "person_b": r.person_b or "",
+            "person_b_crm_id": r.person_b_crm_id or r.uB_crm_id or "",
             "phone_b": r.phone_b or "+573000000000",
             "person_b_confirmation": r.person_b_confirmation or "Pendiente",
             "psychologist_name": r.psychologist_name,
-            "city": normalize_city(r.city),
+            "city": normalize_city(r.city) or "Bogotá",
             "plan_tier": r.plan_tier or "Estándar 65k",
             "pref": normalize_pref(r.pref),
             "stage": r.stage,
@@ -568,13 +642,12 @@ async def update_confirmation(
     
     PRINCIPIO DEL EXCEL (NUNCA SE BORRA / COPIA HACIA ADELANTE):
     1. La fila original se actualiza con sus confirmaciones, pero NUNCA cambia su stage (permanece en 'pendientes' o 'en_pausa' como historial permanente).
-    2. Cuando la matriz de transición determina un nuevo destino (Calendario, Trouble, En Pausa, En Pausa Indefinida),
-       se realiza un INSERT de una fila NUEVA en la tabla/pestaña correspondiente (copiando match_id, confirmaciones y motivo),
-       manteniendo el registro de origen intacto y visible.
+    2. Si los valores cumplen las condiciones para avanzar (Aceptó+Aceptó, o Trouble, o Pausa), se crea un NUEVO registro (INSERT) hacia la tabla/pestaña de destino correspondiente.
     """
     res = await db.execute(text("""
-        SELECT c.id, c.match_id, c.person_a_confirmation, c.person_b_confirmation, c.stage, c.pause_reason,
-               m.person_a, m.person_b, m.city, m.psychologist_name
+        SELECT 
+            c.id, c.match_id, c.person_a_confirmation, c.person_b_confirmation, c.stage,
+            m.person_a, m.person_b, m.psychologist_name, m.city
         FROM match_confirmations c
         JOIN operational_matches m ON m.id = c.match_id
         WHERE c.id = :id
@@ -584,76 +657,66 @@ async def update_confirmation(
     if not row:
         raise HTTPException(status_code=404, detail="Confirmación no encontrada")
 
-    conf_a = payload.person_a_confirmation if payload.person_a_confirmation is not None else (row.person_a_confirmation or "Pendiente")
-    conf_b = payload.person_b_confirmation if payload.person_b_confirmation is not None else (row.person_b_confirmation or "Pendiente")
-    reason = payload.pause_reason or row.pause_reason
+    conf_a = payload.person_a_confirmation or row.person_a_confirmation
+    conf_b = payload.person_b_confirmation or row.person_b_confirmation
+    reason = payload.pause_reason
 
-    # 1. Actualizar confirmaciones en la fila original SIN modificar su stage (se queda en su pestaña de origen para siempre)
+    # 1. SIEMPRE actualizar la fila original in-place
     await db.execute(text("""
         UPDATE match_confirmations
-        SET person_a_confirmation = :cA,
-            person_b_confirmation = :cB,
-            pause_reason = :pr,
-            updated_at = NOW()
+        SET person_a_confirmation = :cA, person_b_confirmation = :cB, updated_at = NOW()
         WHERE id = :id
-    """), {"id": confirmation_id, "cA": conf_a, "cB": conf_b, "pr": reason})
+    """), {"id": confirmation_id, "cA": conf_a, "cB": conf_b})
 
-    # 2. Evaluar matriz de transición y COPIAR HACIA ADELANTE (INSERT nueva fila)
-    target_stage = None
+    target_stage = row.stage
 
+    # 2. EVALUAR TRANSICIÓN A CALENDARIO
     if conf_a == "Aceptó" and conf_b == "Aceptó":
         target_stage = "calendario"
-        # Verificar si ya existe una cita para este match_id en Calendario para evitar duplicados
         existing_cal = await db.execute(text("""
             SELECT id FROM scheduled_dates WHERE match_id = :mid LIMIT 1
         """), {"mid": row.match_id})
+        
         if not existing_cal.fetchone():
-            # Copiar hacia Calendario (scheduled_dates)
             await db.execute(text("""
                 INSERT INTO scheduled_dates (
-                    match_id, person_a, person_b, date_time, venue, city, reservation_name, created_at, updated_at
+                    match_id, person_a, person_b, date_time, venue, city,
+                    reservation_name, had_date, reschedule, created_at, updated_at
                 ) VALUES (
-                    :mid, :pA, :pB, 'Por definir', 'Restaurante Por definir', :city, 'María Paula Salinas', NOW(), NOW()
+                    :mid, :pA, :pB, 'Por definir', 'Por definir', :city,
+                    'María Paula Salinas', false, false, NOW(), NOW()
                 )
             """), {
                 "mid": row.match_id,
                 "pA": row.person_a,
                 "pB": row.person_b,
-                "city": normalize_city(row.city)
+                "city": row.city or "Bogotá"
             })
-            
-            await db.execute(text("""
-                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
-                VALUES (:name, :mid, 'DATE_SCHEDULED', 'Ambas partes aceptaron — copiado a Calendario (registro conservado en Pendientes)', NOW())
-            """), {"name": row.person_a, "mid": row.match_id})
 
-    elif conf_a == "Rechazó" or conf_b == "Rechazó":
+            det = f"¡Ambos aceptaron! Match {row.person_a} x {row.person_b} transferido a Calendario."
+            await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'BOTH_ACCEPTED', :d, NOW())"), {"n": row.person_a, "mid": row.match_id, "d": det})
+            if row.person_b:
+                await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'BOTH_ACCEPTED', :d, NOW())"), {"n": row.person_b, "mid": row.match_id, "d": det})
+
+    elif any(c == "Rechazó" for c in [conf_a, conf_b]):
         target_stage = "trouble"
-        who = "Persona A" if conf_a == "Rechazó" else "Persona B"
-        # Verificar si ya existe en Trouble Matches para este match_id
-        existing_trouble = await db.execute(text("""
+        existing_t = await db.execute(text("""
             SELECT id FROM match_confirmations WHERE match_id = :mid AND stage = 'trouble' LIMIT 1
         """), {"mid": row.match_id})
-        if row.stage != "trouble" and not existing_trouble.fetchone():
+        if row.stage != "trouble" and not existing_t.fetchone():
             await db.execute(text("""
                 INSERT INTO match_confirmations (
                     match_id, person_a_confirmation, person_b_confirmation, stage, pause_reason, created_at, updated_at
                 ) VALUES (
-                    :mid, :cA, :cB, 'trouble', :pr, NOW(), NOW()
+                    :mid, :cA, :cB, 'trouble', 'Rechazado por una o ambas partes', NOW(), NOW()
                 )
             """), {
                 "mid": row.match_id,
                 "cA": conf_a,
-                "cB": conf_b,
-                "pr": reason or f"Rechazado por {who}"
+                "cB": conf_b
             })
-        
-            await db.execute(text("""
-                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
-                VALUES (:name, :mid, 'TROUBLE_REJECTED', :det, NOW())
-            """), {"name": row.person_a, "mid": row.match_id, "det": f"Match rechazado por {who} — copiado a Trouble Matches"})
 
-    elif conf_a == "Viaje largo / indefinido" or conf_b == "Viaje largo / indefinido":
+    elif any(c == "Viaje largo / indefinido" for c in [conf_a, conf_b]):
         target_stage = "en_pausa_indefinida"
         existing_pi = await db.execute(text("""
             SELECT id FROM match_confirmations WHERE match_id = :mid AND stage = 'en_pausa_indefinida' LIMIT 1
@@ -704,17 +767,56 @@ async def update_confirmation(
 # ─── 4. PANTALLA 4: CALENDARIO DE CITAS & WHATSAPP ──────────────────────────
 
 @router.get("/calendar")
-async def get_calendar_dates(db: AsyncSession = Depends(get_db)):
+async def get_calendar_dates(
+    had_date: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Retorna la lista de citas agendadas con los datos formateados para los mensajes de WhatsApp.
+    Retorna la lista de citas agendadas con soporte para multifiltros y CRM IDs.
     """
-    res = await db.execute(text("""
+    query = """
         SELECT 
-            id, match_id, person_a, person_b, date_time, venue, city,
-            reservation_name, had_date, feedback, reschedule, created_at, updated_at
-        FROM scheduled_dates
-        ORDER BY updated_at DESC, id DESC
-    """))
+            s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city,
+            s.reservation_name, s.had_date, s.feedback, s.reschedule, s.created_at, s.updated_at,
+            uA.crm_id AS uA_crm_id, uB.crm_id AS uB_crm_id
+        FROM scheduled_dates s
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(s.person_a))
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(s.person_b))
+        WHERE 1=1
+    """
+    params = {}
+
+    if had_date and had_date.lower() not in ("all", "todos", "todas"):
+        if had_date.lower() in ("yes", "si", "sí", "true", "completada"):
+            query += " AND s.had_date = true"
+        elif had_date.lower() in ("no", "false", "pendiente"):
+            query += " AND s.had_date = false AND s.reschedule = false"
+        elif had_date.lower() in ("reschedule", "reprogramar"):
+            query += " AND s.reschedule = true"
+
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND s.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+
+    if date_from:
+        query += " AND s.created_at >= :d_from"
+        params["d_from"] = date_from
+
+    if date_to:
+        query += " AND s.created_at <= :d_to"
+        params["d_to"] = f"{date_to} 23:59:59"
+
+    if search:
+        query += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch OR s.city ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY s.updated_at DESC, s.id DESC"
+
+    res = await db.execute(text(query), params)
     rows = res.fetchall()
 
     dates = []
@@ -753,10 +855,12 @@ async def get_calendar_dates(db: AsyncSession = Depends(get_db)):
             "id": r.id,
             "match_id": r.match_id,
             "person_a": r.person_a,
+            "person_a_crm_id": r.uA_crm_id or "",
             "person_b": r.person_b,
+            "person_b_crm_id": r.uB_crm_id or "",
             "date_time": dt_val,
             "venue": ven_val,
-            "city": normalize_city(r.city),
+            "city": normalize_city(r.city) or "Bogotá",
             "reservation_name": r.reservation_name,
             "had_date": bool(r.had_date),
             "feedback": r.feedback or "",

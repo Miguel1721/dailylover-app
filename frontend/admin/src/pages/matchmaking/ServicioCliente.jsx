@@ -1,8 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Headphones, Phone, Search, RefreshCw, AlertTriangle, CheckCircle, Clock, ArrowRight, UserCheck, UserX, PauseCircle } from 'lucide-react'
+import { Headphones, Phone, Search, RefreshCw, AlertTriangle, CheckCircle, Clock, ArrowRight, UserCheck, UserX, PauseCircle, User, MapPin, Filter } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = 'https://prueba-daily.agentesia.cloud'
+
+const CITIES = [
+  'Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Bucaramanga',
+  'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
+]
+
+const PSYCHOLOGIST_LIST = [
+  'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU 1', 'MANU 2', 'PIA'
+]
 
 const CONFIRMATION_OPTIONS = [
   'Pendiente',
@@ -38,16 +48,36 @@ const TABS = [
 export default function ServicioCliente() {
   const { token } = useAuth()
   const [activeTab, setActiveTab] = useState('pendientes')
+  const [selectedPsyc, setSelectedPsyc] = useState('all')
+  const [selectedCity, setSelectedCity] = useState('all')
+  const [selectedConfA, setSelectedConfA] = useState('all')
+  const [selectedConfB, setSelectedConfB] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [psycList, setPsycList] = useState(PSYCHOLOGIST_LIST)
   const [confirmations, setConfirmations] = useState([])
   const [loading, setLoading] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
   const [updatingId, setUpdatingId] = useState(null)
   const [notification, setNotification] = useState('')
 
+  useEffect(() => {
+    fetch(`${API}/api/v1/matchmaking/psychologists`)
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.names && d.names.length > 0) {
+          setPsycList(d.names)
+        }
+      })
+      .catch(e => console.error('Error fetching psychologists:', e))
+  }, [])
+
   const fetchConfirmations = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/confirmations?stage=${activeTab}`
-    if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`
+    let url = `${API}/api/v1/matchmaking/confirmations?stage=${activeTab}&`
+    if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
+    if (selectedCity && selectedCity !== 'all') url += `city=${encodeURIComponent(selectedCity)}&`
+    if (selectedConfA && selectedConfA !== 'all') url += `confirmation_a=${encodeURIComponent(selectedConfA)}&`
+    if (selectedConfB && selectedConfB !== 'all') url += `confirmation_b=${encodeURIComponent(selectedConfB)}&`
+    if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -61,7 +91,7 @@ export default function ServicioCliente() {
         console.error('Error fetching confirmations:', err)
         setLoading(false)
       })
-  }, [activeTab, searchTerm, token])
+  }, [activeTab, selectedPsyc, selectedCity, selectedConfA, selectedConfB, searchTerm, token])
 
   useEffect(() => {
     fetchConfirmations()
@@ -185,32 +215,152 @@ export default function ServicioCliente() {
         })}
       </div>
 
-      {/* Search Bar */}
+      {/* Filtros Bar */}
       <div style={{
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
         background: 'var(--bg-card)',
-        padding: '10px 16px',
-        borderRadius: 8,
+        padding: '12px 16px',
+        borderRadius: 10,
         border: '1px solid var(--border-color)',
         marginBottom: 16,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12
+        flexWrap: 'wrap'
       }}>
-        <Search size={15} style={{ color: 'var(--text-muted)' }} />
-        <input
-          type="text"
-          placeholder="Buscar por Persona A, Persona B, Psicóloga o Ciudad..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
+        {/* Filtro Psicóloga */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <User size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedPsyc}
+            onChange={e => setSelectedPsyc(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todas las Psicólogas</option>
+            {psycList.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Ciudad */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MapPin size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedCity}
+            onChange={e => setSelectedCity(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todas las Ciudades</option>
+            {CITIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Confirmación Persona A */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <UserCheck size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedConfA}
+            onChange={e => setSelectedConfA(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Confirmación A: Todas</option>
+            {CONFIRMATION_OPTIONS.map(opt => (
+              <option key={opt} value={opt}>A: {opt}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Confirmación Persona B */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <UserCheck size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedConfB}
+            onChange={e => setSelectedConfB(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Confirmación B: Todas</option>
+            {CONFIRMATION_OPTIONS.map(opt => (
+              <option key={opt} value={opt}>B: {opt}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Buscador */}
+        <div style={{ position: 'relative', flex: '1 1 200px' }}>
+          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder="Buscar por Persona A, Persona B, Psicóloga o Ciudad..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '6px 10px 6px 32px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
+        <button
+          onClick={fetchConfirmations}
+          title="Refrescar"
           style={{
-            width: '100%',
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: 'var(--text-primary)',
-            fontSize: 13
+            background: 'none',
+            border: '1px solid var(--border-color)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            color: 'var(--text-secondary)'
           }}
-        />
+        >
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       {/* Confirmations Table */}
@@ -220,17 +370,17 @@ export default function ServicioCliente() {
         border: '1px solid var(--border-color)',
         overflowX: 'auto'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+        <table style={{ width: '100%', minWidth: 1050, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
           <thead>
-            <tr style={{ background: 'rgba(0,0,0,0.03)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>
-              <th style={{ padding: '12px 14px', width: 90 }}>Match ID</th>
-              <th style={{ padding: '12px 14px', minWidth: 240 }}>Persona A & Confirmación</th>
-              <th style={{ padding: '12px 14px', minWidth: 240 }}>Persona B & Confirmación</th>
-              <th style={{ padding: '12px 12px', width: 110 }}>Psicóloga</th>
-              <th style={{ padding: '12px 12px', width: 110 }}>Ciudad</th>
-              <th style={{ padding: '12px 12px', width: 130 }}>Fecha Aprobado</th>
+            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '12px 14px', width: 90, fontWeight: 600 }}>MATCH ID</th>
+              <th style={{ padding: '12px 14px', minWidth: 240, fontWeight: 600 }}>PERSONA A & CONFIRMACIÓN</th>
+              <th style={{ padding: '12px 14px', minWidth: 240, fontWeight: 600 }}>PERSONA B & CONFIRMACIÓN</th>
+              <th style={{ padding: '12px 12px', width: 110, fontWeight: 600 }}>PSICÓLOGA</th>
+              <th style={{ padding: '12px 12px', width: 110, fontWeight: 600 }}>CIUDAD</th>
+              <th style={{ padding: '12px 12px', width: 130, fontWeight: 600 }}>FECHA APROBADO</th>
               {activeTab === 'en_pausa' || activeTab === 'en_pausa_indefinida' ? (
-                <th style={{ padding: '12px 14px', minWidth: 160 }}>Motivo de Pausa</th>
+                <th style={{ padding: '12px 14px', minWidth: 160, fontWeight: 600 }}>MOTIVO DE PAUSA</th>
               ) : null}
             </tr>
           </thead>
@@ -244,7 +394,7 @@ export default function ServicioCliente() {
             ) : confirmations.length === 0 ? (
               <tr>
                 <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No hay registros en la pestaña <strong>{TABS.find(t => t.id === activeTab)?.label}</strong>.
+                  No hay registros en la pestaña <strong>{TABS.find(t => t.id === activeTab)?.label}</strong> para los filtros seleccionados.
                 </td>
               </tr>
             ) : (
@@ -262,8 +412,8 @@ export default function ServicioCliente() {
 
                     {/* Persona A + Confirmation */}
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                        {c.person_a}
+                      <div style={{ marginBottom: 4 }}>
+                        <CrmPersonLink name={c.person_a} crmId={c.person_a_crm_id} />
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Phone size={11} /> {c.phone_a}
@@ -307,8 +457,8 @@ export default function ServicioCliente() {
 
                     {/* Persona B + Confirmation */}
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                        {c.person_b || '—'}
+                      <div style={{ marginBottom: 4 }}>
+                        <CrmPersonLink name={c.person_b} crmId={c.person_b_crm_id} />
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Phone size={11} /> {c.phone_b}

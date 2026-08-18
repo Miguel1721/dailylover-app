@@ -1,8 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { ShieldCheck, CheckCircle, RefreshCw, Filter, User, MapPin, Sparkles } from 'lucide-react'
+import { ShieldCheck, CheckCircle, RefreshCw, Filter, User, MapPin, Sparkles, Tag, Search } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = 'https://prueba-daily.agentesia.cloud'
+
+const CITIES = [
+  'Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Bucaramanga',
+  'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
+]
+
+const PLAN_TIERS_LIST = [
+  'Estándar 65k (2 citas)',
+  'Estándar 65k (1 cita)',
+  'Estándar Plus 98k',
+  'Premium 150k',
+  'VIP 195k',
+  'VIP 295k',
+  'VIP Oro',
+  'Básico 40k',
+  'Eventos Presenciales'
+]
 
 const PLAN_COLORS = {
   'Básico 40k': { bg: '#F3F3F3', color: '#434343' },
@@ -20,6 +38,9 @@ const PSYCHOLOGISTS = [
 export default function ColaAprobacion() {
   const { token } = useAuth()
   const [selectedPsyc, setSelectedPsyc] = useState('Todas')
+  const [selectedCity, setSelectedCity] = useState('all')
+  const [selectedPlan, setSelectedPlan] = useState('all')
+  const [searchTerm, setSearchTerm] = useState('')
   const [psycList, setPsycList] = useState(PSYCHOLOGISTS)
   const [queue, setQueue] = useState([])
   const [loading, setLoading] = useState(false)
@@ -39,9 +60,18 @@ export default function ColaAprobacion() {
 
   const fetchQueue = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/approval-queue`
+    let url = `${API}/api/v1/matchmaking/approval-queue?`
     if (selectedPsyc && selectedPsyc !== 'Todas') {
-      url += `?psychologist=${encodeURIComponent(selectedPsyc)}`
+      url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
+    }
+    if (selectedCity && selectedCity !== 'all') {
+      url += `city=${encodeURIComponent(selectedCity)}&`
+    }
+    if (selectedPlan && selectedPlan !== 'all') {
+      url += `plan_tier=${encodeURIComponent(selectedPlan)}&`
+    }
+    if (searchTerm) {
+      url += `search=${encodeURIComponent(searchTerm)}&`
     }
 
     fetch(url, {
@@ -56,7 +86,7 @@ export default function ColaAprobacion() {
         console.error('Error fetching approval queue:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, token])
+  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm, token])
 
   useEffect(() => {
     fetchQueue()
@@ -155,30 +185,128 @@ export default function ColaAprobacion() {
         </div>
       </div>
 
-      {/* Filter Tabs by Psychologist */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 16, paddingBottom: 4 }}>
-        {psycList.map(p => {
-          const isActive = selectedPsyc === p
-          return (
-            <button
-              key={p}
-              onClick={() => setSelectedPsyc(p)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 600,
-                border: isActive ? '1px solid #B8324F' : '1px solid var(--border-color)',
-                background: isActive ? '#B8324F' : 'var(--bg-card)',
-                color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                transition: 'all 0.15s'
-              }}
-            >
-              {p === 'Todas' ? 'Todas las Psicólogas' : p}
-            </button>
-          )
-        })}
+      {/* Filtros Bar */}
+      <div style={{
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
+        background: 'var(--bg-card)',
+        padding: '12px 16px',
+        borderRadius: 10,
+        border: '1px solid var(--border-color)',
+        marginBottom: 16,
+        flexWrap: 'wrap'
+      }}>
+        {/* Filtro Psicóloga */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <User size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedPsyc}
+            onChange={e => setSelectedPsyc(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="Todas">Todas las Psicólogas</option>
+            {psycList.filter(p => p !== 'Todas').map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Ciudad */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MapPin size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedCity}
+            onChange={e => setSelectedCity(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todas las Ciudades</option>
+            {CITIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Plan */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Tag size={13} color="var(--text-secondary)" />
+          <select
+            value={selectedPlan}
+            onChange={e => setSelectedPlan(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todos los Planes</option>
+            {PLAN_TIERS_LIST.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Buscador */}
+        <div style={{ position: 'relative', flex: '1 1 200px' }}>
+          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder="Buscar por Persona A, Persona B, Ciudad u Observaciones..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '6px 10px 6px 32px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
+        <button
+          onClick={fetchQueue}
+          title="Refrescar"
+          style={{
+            background: 'none',
+            border: '1px solid var(--border-color)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
       </div>
 
       {/* Main Queue Table */}
@@ -188,17 +316,17 @@ export default function ColaAprobacion() {
         border: '1px solid var(--border-color)',
         overflowX: 'auto'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+        <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
           <thead>
-            <tr style={{ background: 'rgba(0,0,0,0.03)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>
-              <th style={{ padding: '12px 14px', width: 110 }}>Psicóloga</th>
-              <th style={{ padding: '12px 14px', minWidth: 160 }}>Persona A (Cliente)</th>
-              <th style={{ padding: '12px 14px', minWidth: 160 }}>Persona B (Candidato)</th>
-              <th style={{ padding: '12px 12px', width: 100 }}>Ciudad</th>
-              <th style={{ padding: '12px 12px', width: 140 }}>Plan</th>
-              <th style={{ padding: '12px 12px', width: 120 }}>Marcado HECHO</th>
-              <th style={{ padding: '12px 14px', minWidth: 180 }}>Observaciones</th>
-              <th style={{ padding: '12px 14px', width: 140, textAlign: 'center' }}>Acción</th>
+            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '12px 14px', width: 110, fontWeight: 600 }}>PSICÓLOGA</th>
+              <th style={{ padding: '12px 14px', minWidth: 160, fontWeight: 600 }}>PERSONA A (CLIENTE)</th>
+              <th style={{ padding: '12px 14px', minWidth: 160, fontWeight: 600 }}>PERSONA B (CANDIDATO)</th>
+              <th style={{ padding: '12px 12px', width: 100, fontWeight: 600 }}>CIUDAD</th>
+              <th style={{ padding: '12px 12px', width: 140, fontWeight: 600 }}>PLAN</th>
+              <th style={{ padding: '12px 12px', width: 120, fontWeight: 600 }}>MARCADO HECHO</th>
+              <th style={{ padding: '12px 14px', minWidth: 180, fontWeight: 600 }}>OBSERVACIONES</th>
+              <th style={{ padding: '12px 14px', width: 140, textAlign: 'center', fontWeight: 600 }}>ACCIÓN</th>
             </tr>
           </thead>
           <tbody>
@@ -214,7 +342,7 @@ export default function ColaAprobacion() {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                     <CheckCircle size={32} color="#10B981" />
                     <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>¡Todo al día!</span>
-                    <span style={{ fontSize: 13 }}>No hay matches pendientes de aprobación para esta psicóloga.</span>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No hay matches pendientes de aprobación para los filtros seleccionados.</span>
                   </div>
                 </td>
               </tr>
@@ -228,11 +356,11 @@ export default function ColaAprobacion() {
                     <td style={{ padding: '12px 14px', fontWeight: 700, color: '#B8324F' }}>
                       {item.psychologist_name}
                     </td>
-                    <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {item.person_a}
+                    <td style={{ padding: '12px 14px' }}>
+                      <CrmPersonLink name={item.person_a} crmId={item.person_a_crm_id} />
                     </td>
-                    <td style={{ padding: '12px 14px', fontWeight: 600, color: '#134F5C' }}>
-                      {item.person_b || '—'}
+                    <td style={{ padding: '12px 14px' }}>
+                      <CrmPersonLink name={item.person_b} crmId={item.person_b_crm_id} />
                     </td>
                     <td style={{ padding: '12px 12px' }}>
                       {item.city || '—'}

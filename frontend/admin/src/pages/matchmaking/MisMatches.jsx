@@ -1,8 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin } from 'lucide-react'
+import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin, Tag, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = 'https://prueba-daily.agentesia.cloud'
+
+const CITIES = [
+  'Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Bucaramanga',
+  'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
+]
+
+const PLAN_TIERS_LIST = [
+  'Estándar 65k (2 citas)',
+  'Estándar 65k (1 cita)',
+  'Estándar Plus 98k',
+  'Premium 150k',
+  'VIP 195k',
+  'VIP 295k',
+  'VIP Oro',
+  'Básico 40k',
+  'Eventos Presenciales'
+]
 
 // PALETA EXACTA SSOT
 const PREF_COLORS = {
@@ -77,6 +95,9 @@ export default function MisMatches() {
   const [selectedPsyc, setSelectedPsyc] = useState(getInitialPsyc())
   const [psycList, setPsycList] = useState(PSYCHOLOGIST_LIST)
   const [statusFilter, setStatusFilter] = useState('all')
+  const [cityFilter, setCityFilter] = useState('all')
+  const [planFilter, setPlanFilter] = useState('all')
+  const [approvedFilter, setApprovedFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(false)
@@ -111,6 +132,9 @@ export default function MisMatches() {
     let url = `${API}/api/v1/matchmaking/my-matches?`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (statusFilter && statusFilter !== 'all') url += `status_filter=${encodeURIComponent(statusFilter)}&`
+    if (cityFilter && cityFilter !== 'all') url += `city=${encodeURIComponent(cityFilter)}&`
+    if (planFilter && planFilter !== 'all') url += `plan_tier=${encodeURIComponent(planFilter)}&`
+    if (approvedFilter && approvedFilter !== 'all') url += `approved=${encodeURIComponent(approvedFilter)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
@@ -125,7 +149,7 @@ export default function MisMatches() {
         console.error('Error fetching matches:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, statusFilter, searchTerm, token])
+  }, [selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, token])
 
   useEffect(() => {
     fetchMatches()
@@ -136,7 +160,7 @@ export default function MisMatches() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [selectedPsyc, statusFilter, searchTerm])
+  }, [selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm])
 
   const totalPages = Math.ceil(matches.length / pageSize) || 1
   const paginatedMatches = matches.slice((currentPage - 1) * pageSize, currentPage * pageSize)
@@ -323,8 +347,9 @@ export default function MisMatches() {
         marginBottom: 16,
         flexWrap: 'wrap'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Psicóloga:</span>
+        {/* Filtro Psicóloga */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <User size={13} color="var(--text-secondary)" />
           <select
             value={selectedPsyc}
             onChange={e => setSelectedPsyc(e.target.value)}
@@ -334,7 +359,8 @@ export default function MisMatches() {
               border: '1px solid var(--border-color)',
               background: 'var(--bg-base)',
               color: 'var(--text-primary)',
-              fontSize: 13,
+              fontSize: 12,
+              fontWeight: 600,
               outline: 'none'
             }}
           >
@@ -345,8 +371,9 @@ export default function MisMatches() {
           </select>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Estado:</span>
+        {/* Filtro Estado */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Filter size={13} color="var(--text-secondary)" />
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
@@ -356,7 +383,8 @@ export default function MisMatches() {
               border: '1px solid var(--border-color)',
               background: 'var(--bg-base)',
               color: 'var(--text-primary)',
-              fontSize: 13,
+              fontSize: 12,
+              fontWeight: 600,
               outline: 'none'
             }}
           >
@@ -367,7 +395,78 @@ export default function MisMatches() {
           </select>
         </div>
 
-        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+        {/* Filtro Ciudad */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MapPin size={13} color="var(--text-secondary)" />
+          <select
+            value={cityFilter}
+            onChange={e => setCityFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todas las Ciudades</option>
+            {CITIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Plan */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Tag size={13} color="var(--text-secondary)" />
+          <select
+            value={planFilter}
+            onChange={e => setPlanFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todos los Planes</option>
+            {PLAN_TIERS_LIST.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filtro Aprobado */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ShieldCheck size={13} color="var(--text-secondary)" />
+          <select
+            value={approvedFilter}
+            onChange={e => setApprovedFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Aprobado: Todos</option>
+            <option value="yes">Aprobado: Sí (Bloqueado)</option>
+            <option value="no">Aprobado: No (En Proceso)</option>
+          </select>
+        </div>
+
+        <div style={{ position: 'relative', flex: '1 1 200px' }}>
           <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
@@ -382,7 +481,8 @@ export default function MisMatches() {
               background: 'var(--bg-base)',
               color: 'var(--text-primary)',
               fontSize: 13,
-              outline: 'none'
+              outline: 'none',
+              boxSizing: 'border-box'
             }}
           />
         </div>
@@ -413,30 +513,30 @@ export default function MisMatches() {
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch'
       }}>
-        <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+        <table style={{ width: '100%', minWidth: 1080, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ background: 'rgba(0,0,0,0.03)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-              <th style={{ padding: '10px 12px', width: 90 }}>Ciudad</th>
-              <th style={{ padding: '10px 10px', width: 75 }}>Pref</th>
-              <th style={{ padding: '10px 10px', width: 140 }}>Plan</th>
-              <th style={{ padding: '10px 12px', minWidth: 150 }}>Persona A (Cliente)</th>
-              <th style={{ padding: '10px 12px', minWidth: 170 }}>Persona B (Candidato)</th>
-              <th style={{ padding: '10px 10px', width: 110 }}>Fecha</th>
-              <th style={{ padding: '10px 12px', width: 180 }}>Status</th>
-              <th style={{ padding: '10px 10px', width: 70, textAlign: 'center' }}>Aprobado</th>
-              <th style={{ padding: '10px 12px', minWidth: 200 }}>Observaciones</th>
+            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '12px 12px', fontWeight: 600 }}>CIUDAD</th>
+              <th style={{ padding: '12px 10px', fontWeight: 600 }}>PREF</th>
+              <th style={{ padding: '12px 10px', fontWeight: 600 }}>PLAN</th>
+              <th style={{ padding: '12px 12px', fontWeight: 600 }}>PERSONA A</th>
+              <th style={{ padding: '12px 12px', fontWeight: 600 }}>PERSONA B (PROPUESTA)</th>
+              <th style={{ padding: '12px 10px', fontWeight: 600 }}>FECHA</th>
+              <th style={{ padding: '12px 12px', fontWeight: 600 }}>STATUS</th>
+              <th style={{ padding: '12px 10px', fontWeight: 600, textAlign: 'center' }}>APROBADO</th>
+              <th style={{ padding: '12px 12px', fontWeight: 600 }}>OBSERVACIONES</th>
             </tr>
           </thead>
           <tbody>
-            {loading && matches.length === 0 ? (
+            {loading ? (
               <tr>
-                <td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                   Cargando matches...
                 </td>
               </tr>
-            ) : matches.length === 0 ? (
+            ) : paginatedMatches.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                   No se encontraron matches para el filtro seleccionado.
                 </td>
               </tr>
@@ -495,9 +595,7 @@ export default function MisMatches() {
                     {/* PERSONA A */}
                     <td style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {m.person_a}
-                        </span>
+                        <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id} />
                         <span style={{
                           fontSize: 10,
                           padding: '1px 5px',
@@ -512,32 +610,37 @@ export default function MisMatches() {
                     </td>
 
                     {/* PERSONA B - ALWAYS EDITABLE */}
-                    <td style={{ padding: '8px 12px', minWidth: 170 }}>
-                      <input
-                        type="text"
-                        defaultValue={m.person_b || ''}
-                        placeholder="Nombre Persona B o pega enlace CRM..."
-                        onBlur={e => {
-                          if (e.target.value !== (m.person_b || '')) {
-                            handleUpdateField(m.id, 'person_b', e.target.value)
-                          }
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') e.target.blur()
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          borderRadius: 6,
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--bg-base)',
-                          color: 'var(--text-primary)',
-                          fontSize: 13,
-                          fontWeight: 600,
-                          outline: 'none',
-                          boxSizing: 'border-box'
-                        }}
-                      />
+                    <td style={{ padding: '8px 12px', minWidth: 200 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="text"
+                          defaultValue={m.person_b || ''}
+                          placeholder="Nombre Persona B o pega enlace CRM..."
+                          onBlur={e => {
+                            if (e.target.value !== (m.person_b || '')) {
+                              handleUpdateField(m.id, 'person_b', e.target.value)
+                            }
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') e.target.blur()
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-base)',
+                            color: 'var(--text-primary)',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
+                        {m.person_b && (
+                          <CrmPersonLink name="" crmId={m.person_b_crm_id} showIcon={true} />
+                        )}
+                      </div>
                     </td>
 
                     {/* FECHA */}

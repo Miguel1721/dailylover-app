@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
   Users, Plus, Search, Filter, RefreshCw, CheckCircle,
-  Clock, Heart, ShieldCheck, ArrowRight, UserPlus, X, Layers
+  Clock, Heart, ShieldCheck, ArrowRight, UserPlus, X, Layers, MapPin, Tag
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
@@ -20,9 +21,12 @@ const CITIES = [
 const PLAN_TIERS = [
   'Estándar 65k (2 citas)',
   'Estándar 65k (1 cita)',
+  'Estándar Plus 98k',
+  'Premium 150k',
   'VIP 195k',
   'VIP 295k',
   'VIP Oro',
+  'Básico 40k',
   'Eventos Presenciales'
 ]
 
@@ -33,6 +37,8 @@ export default function IntakeClientes() {
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedPsyc, setSelectedPsyc] = useState('all')
+  const [selectedCity, setSelectedCity] = useState('all')
+  const [selectedPlan, setSelectedPlan] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -64,6 +70,8 @@ export default function IntakeClientes() {
     setLoading(true)
     let url = `${API}/api/v1/matchmaking/intake-list?`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
+    if (selectedCity && selectedCity !== 'all') url += `city=${encodeURIComponent(selectedCity)}&`
+    if (selectedPlan && selectedPlan !== 'all') url += `plan_tier=${encodeURIComponent(selectedPlan)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
@@ -78,7 +86,7 @@ export default function IntakeClientes() {
         console.error('Error fetching intake list:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, searchTerm, token])
+  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm, token])
 
   useEffect(() => {
     fetchIntakeList()
@@ -279,39 +287,93 @@ export default function IntakeClientes() {
         ))}
       </div>
 
-      {/* Search Bar */}
+      {/* Search & Filters Bar */}
       <div style={{
         display: 'flex',
         gap: 12,
         alignItems: 'center',
+        flexWrap: 'wrap',
         background: 'var(--bg-card)',
         padding: '12px 16px',
         borderRadius: 10,
         border: '1px solid var(--border-color)',
         marginBottom: 16
       }}>
-        <Search size={16} color="var(--text-secondary)" />
-        <input
-          type="text"
-          placeholder="Buscar cliente por nombre, ciudad o psicóloga..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            color: 'var(--text-primary)',
-            fontSize: 13,
-            flex: 1
-          }}
-        />
+        {/* Search */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 240px' }}>
+          <Search size={16} color="var(--text-secondary)" />
+          <input
+            type="text"
+            placeholder="Buscar cliente por nombre, psicóloga..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              width: '100%'
+            }}
+          />
+        </div>
+
+        {/* Filter Ciudad */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MapPin size={14} color="var(--text-secondary)" />
+          <select
+            value={selectedCity}
+            onChange={e => setSelectedCity(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todas las Ciudades</option>
+            {CITIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Filter Plan */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Tag size={14} color="var(--text-secondary)" />
+          <select
+            value={selectedPlan}
+            onChange={e => setSelectedPlan(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todos los Planes</option>
+            {PLAN_TIERS.map(p => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
         <button
           onClick={fetchIntakeList}
           style={{
             background: 'transparent',
             border: 'none',
             cursor: 'pointer',
-            color: 'var(--text-secondary)'
+            color: 'var(--text-secondary)',
+            padding: 4
           }}
           title="Refrescar lista"
         >
@@ -363,8 +425,8 @@ export default function IntakeClientes() {
                     transition: 'background 0.15s ease'
                   }}
                 >
-                  <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {c.person_a}
+                  <td style={{ padding: '12px 16px' }}>
+                    <CrmPersonLink name={c.person_a} crmId={c.crm_id} />
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <span style={{

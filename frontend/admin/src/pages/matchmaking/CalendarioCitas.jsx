@@ -1,20 +1,38 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar as CalendarIcon, MessageCircle, Copy, CheckCircle, RefreshCw, MapPin, User, Clock, AlertCircle } from 'lucide-react'
+import { Calendar as CalendarIcon, MessageCircle, Copy, CheckCircle, RefreshCw, MapPin, User, Clock, AlertCircle, Search, Filter } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = 'https://prueba-daily.agentesia.cloud'
+
+const CITIES = [
+  'Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Bucaramanga',
+  'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
+]
 
 export default function CalendarioCitas() {
   const { token } = useAuth()
   const [calendarDates, setCalendarDates] = useState([])
   const [loading, setLoading] = useState(false)
+  const [hadDateFilter, setHadDateFilter] = useState('all')
+  const [cityFilter, setCityFilter] = useState('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
   const [copiedId, setCopiedId] = useState(null)
   const [savingId, setSavingId] = useState(null)
   const [successBanner, setSuccessBanner] = useState('')
 
   const fetchCalendar = useCallback(() => {
     setLoading(true)
-    fetch(`${API}/api/v1/matchmaking/calendar`, {
+    let url = `${API}/api/v1/matchmaking/calendar?`
+    if (hadDateFilter && hadDateFilter !== 'all') url += `had_date=${encodeURIComponent(hadDateFilter)}&`
+    if (cityFilter && cityFilter !== 'all') url += `city=${encodeURIComponent(cityFilter)}&`
+    if (dateFrom) url += `date_from=${encodeURIComponent(dateFrom)}&`
+    if (dateTo) url += `date_to=${encodeURIComponent(dateTo)}&`
+    if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
+
+    fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(r => r.json())
@@ -26,7 +44,7 @@ export default function CalendarioCitas() {
         console.error('Error fetching calendar:', err)
         setLoading(false)
       })
-  }, [token])
+  }, [hadDateFilter, cityFilter, dateFrom, dateTo, searchTerm, token])
 
   useEffect(() => {
     fetchCalendar()
@@ -128,6 +146,142 @@ export default function CalendarioCitas() {
         </div>
       )}
 
+      {/* Filtros Bar */}
+      <div style={{
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
+        background: 'var(--bg-card)',
+        padding: '12px 16px',
+        borderRadius: 10,
+        border: '1px solid var(--border-color)',
+        marginBottom: 16,
+        flexWrap: 'wrap'
+      }}>
+        {/* Filtro ¿Ya tuvo la cita? */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Filter size={13} color="var(--text-secondary)" />
+          <select
+            value={hadDateFilter}
+            onChange={e => setHadDateFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">¿Tuvo la Cita?: Todos</option>
+            <option value="yes">Sí (Completada)</option>
+            <option value="no">No (Pendiente)</option>
+            <option value="reschedule">Por Reprogramar</option>
+          </select>
+        </div>
+
+        {/* Filtro Ciudad */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MapPin size={13} color="var(--text-secondary)" />
+          <select
+            value={cityFilter}
+            onChange={e => setCityFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 600,
+              outline: 'none'
+            }}
+          >
+            <option value="all">Todas las Ciudades</option>
+            {CITIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Rango de Fechas */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Clock size={13} color="var(--text-secondary)" />
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)}
+            title="Fecha Desde"
+            style={{
+              padding: '5px 8px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              outline: 'none'
+            }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>a</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={e => setDateTo(e.target.value)}
+            title="Fecha Hasta"
+            style={{
+              padding: '5px 8px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              outline: 'none'
+            }}
+          />
+        </div>
+
+        {/* Buscador */}
+        <div style={{ position: 'relative', flex: '1 1 200px' }}>
+          <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder="Buscar por Persona A, Persona B, Lugar o Ciudad..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '6px 10px 6px 32px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+        </div>
+
+        <button
+          onClick={fetchCalendar}
+          title="Refrescar"
+          style={{
+            background: 'none',
+            border: '1px solid var(--border-color)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
       {/* Main Calendar Table */}
       <div style={{
         background: 'var(--bg-card)',
@@ -135,17 +289,17 @@ export default function CalendarioCitas() {
         border: '1px solid var(--border-color)',
         overflowX: 'auto'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+        <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
           <thead>
-            <tr style={{ background: 'rgba(0,0,0,0.03)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>
-              <th style={{ padding: '12px 14px', minWidth: 180 }}>Persona A × Persona B</th>
-              <th style={{ padding: '12px 12px', minWidth: 160 }}>Día / Fecha & Hora</th>
-              <th style={{ padding: '12px 12px', minWidth: 180 }}>Lugar / Restaurante</th>
-              <th style={{ padding: '12px 10px', width: 90 }}>Ciudad</th>
-              <th style={{ padding: '12px 14px', minWidth: 320, textAlign: 'center' }}>Mensajes WhatsApp (1-Clic)</th>
-              <th style={{ padding: '12px 12px', width: 130, textAlign: 'center' }}>¿Tuvo la Cita?</th>
-              <th style={{ padding: '12px 14px', minWidth: 200 }}>Retroalimentación</th>
-              <th style={{ padding: '12px 12px', width: 120, textAlign: 'center' }}>¿Reprogramar?</th>
+            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+              <th style={{ padding: '12px 14px', minWidth: 180, fontWeight: 600 }}>PERSONA A × PERSONA B</th>
+              <th style={{ padding: '12px 12px', minWidth: 160, fontWeight: 600 }}>DÍA / FECHA & HORA</th>
+              <th style={{ padding: '12px 12px', minWidth: 180, fontWeight: 600 }}>LUGAR / RESTAURANTE</th>
+              <th style={{ padding: '12px 10px', width: 90, fontWeight: 600 }}>CIUDAD</th>
+              <th style={{ padding: '12px 14px', minWidth: 320, textAlign: 'center', fontWeight: 600 }}>MENSAJES WHATSAPP (1-CLIC)</th>
+              <th style={{ padding: '12px 12px', width: 130, textAlign: 'center', fontWeight: 600 }}>¿TUVO LA CITA?</th>
+              <th style={{ padding: '12px 14px', minWidth: 200, fontWeight: 600 }}>RETROALIMENTACIÓN</th>
+              <th style={{ padding: '12px 12px', width: 120, textAlign: 'center', fontWeight: 600 }}>¿REPROGRAMAR?</th>
             </tr>
           </thead>
           <tbody>
@@ -158,7 +312,7 @@ export default function CalendarioCitas() {
             ) : calendarDates.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No hay citas agendadas actualmente en el calendario.
+                  No hay citas agendadas actualmente para los filtros seleccionados.
                 </td>
               </tr>
             ) : (
@@ -181,11 +335,12 @@ export default function CalendarioCitas() {
                   >
                     {/* Pareja */}
                     <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {item.person_a}
+                      <div style={{ marginBottom: 4 }}>
+                        <CrmPersonLink name={item.person_a} crmId={item.person_a_crm_id} />
                       </div>
-                      <div style={{ fontSize: 12, color: '#134F5C', fontWeight: 600 }}>
-                        × {item.person_b}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>×</span>
+                        <CrmPersonLink name={item.person_b} crmId={item.person_b_crm_id} style={{ color: '#134F5C' }} />
                       </div>
                     </td>
 
