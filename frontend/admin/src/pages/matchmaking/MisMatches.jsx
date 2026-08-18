@@ -379,16 +379,17 @@ export default function MisMatches() {
         background: 'var(--bg-card)',
         borderRadius: 10,
         border: '1px solid var(--border-color)',
-        overflowX: 'auto'
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+        <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
           <thead>
-            <tr style={{ background: 'rgba(0,0,0,0.03)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' }}>
+            <tr style={{ background: 'rgba(0,0,0,0.03)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
               <th style={{ padding: '10px 12px', width: 90 }}>Ciudad</th>
               <th style={{ padding: '10px 10px', width: 75 }}>Pref</th>
               <th style={{ padding: '10px 10px', width: 140 }}>Plan</th>
               <th style={{ padding: '10px 12px', minWidth: 150 }}>Persona A (Cliente)</th>
-              <th style={{ padding: '10px 12px', minWidth: 160 }}>Persona B (Candidato)</th>
+              <th style={{ padding: '10px 12px', minWidth: 170 }}>Persona B (Candidato)</th>
               <th style={{ padding: '10px 10px', width: 110 }}>Fecha</th>
               <th style={{ padding: '10px 12px', width: 180 }}>Status</th>
               <th style={{ padding: '10px 10px', width: 70, textAlign: 'center' }}>Aprobado</th>
@@ -470,32 +471,33 @@ export default function MisMatches() {
                       </div>
                     </td>
 
-                    {/* PERSONA B */}
-                    <td style={{ padding: '8px 12px' }}>
-                      {isLocked ? (
-                        <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{m.person_b || '—'}</span>
-                      ) : (
-                        <input
-                          type="text"
-                          defaultValue={m.person_b}
-                          placeholder="Nombre Persona B..."
-                          onBlur={e => {
-                            if (e.target.value !== m.person_b) {
-                              handleUpdateField(m.id, 'person_b', e.target.value)
-                            }
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            borderRadius: 4,
-                            border: '1px solid var(--border-color)',
-                            background: 'var(--bg-base)',
-                            color: 'var(--text-primary)',
-                            fontSize: 13,
-                            outline: 'none'
-                          }}
-                        />
-                      )}
+                    {/* PERSONA B - ALWAYS EDITABLE */}
+                    <td style={{ padding: '8px 12px', minWidth: 170 }}>
+                      <input
+                        type="text"
+                        defaultValue={m.person_b || ''}
+                        placeholder="Nombre Persona B..."
+                        onBlur={e => {
+                          if (e.target.value !== (m.person_b || '')) {
+                            handleUpdateField(m.id, 'person_b', e.target.value)
+                          }
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') e.target.blur()
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-base)',
+                          color: 'var(--text-primary)',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
                     </td>
 
                     {/* FECHA */}
@@ -556,32 +558,32 @@ export default function MisMatches() {
                       )}
                     </td>
 
-                    {/* OBSERVACIONES */}
-                    <td style={{ padding: '8px 12px' }}>
-                      {isLocked ? (
-                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.observations || '—'}</span>
-                      ) : (
-                        <input
-                          type="text"
-                          defaultValue={m.observations}
-                          placeholder="Notas u observaciones..."
-                          onBlur={e => {
-                            if (e.target.value !== m.observations) {
-                              handleUpdateField(m.id, 'observations', e.target.value)
-                            }
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            borderRadius: 4,
-                            border: '1px solid var(--border-color)',
-                            background: 'var(--bg-base)',
-                            color: 'var(--text-primary)',
-                            fontSize: 12,
-                            outline: 'none'
-                          }}
-                        />
-                      )}
+                    {/* OBSERVACIONES - ALWAYS EDITABLE */}
+                    <td style={{ padding: '8px 12px', minWidth: 200 }}>
+                      <input
+                        type="text"
+                        defaultValue={m.observations || ''}
+                        placeholder="Notas u observaciones..."
+                        onBlur={e => {
+                          if (e.target.value !== (m.observations || '')) {
+                            handleUpdateField(m.id, 'observations', e.target.value)
+                          }
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') e.target.blur()
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-base)',
+                          color: 'var(--text-secondary)',
+                          fontSize: 12,
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
                     </td>
                   </tr>
                 )

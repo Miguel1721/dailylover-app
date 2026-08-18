@@ -275,11 +275,12 @@ export default function IntakeClientes() {
         background: 'var(--bg-card)',
         borderRadius: 10,
         border: '1px solid var(--border-color)',
-        overflow: 'hidden'
+        overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch'
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
-            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
               <th style={{ padding: '12px 16px', fontWeight: 600 }}>PERSONA A (CLIENTE)</th>
               <th style={{ padding: '12px 16px', fontWeight: 600 }}>PSICÓLOGA ASIGNADA</th>
               <th style={{ padding: '12px 16px', fontWeight: 600 }}>CIUDAD</th>

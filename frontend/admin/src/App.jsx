@@ -238,9 +238,9 @@ function Sidebar({ isOpen, onClose }) {
 
 
   const matchmakingItems = [
+    ...(isAdmin ? [{ to: '/matchmaking/intake', icon: Users, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
     { to: '/matchmaking/mis-matches', icon: Heart, label: isAdmin ? 'Matches (Todas las Psicólogas)' : 'Mis Matches (Psicóloga)', module: 'matching', action: 'view' },
     ...(isAdmin ? [
-      { to: '/matchmaking/intake', icon: Users, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' },
       { to: '/matchmaking/aprobacion', icon: ShieldCheck, label: 'Cola de Aprobación (María)', module: 'matching', action: 'view' },
       { to: '/matchmaking/pendientes', icon: Headphones, label: 'Servicio al Cliente (Pendientes)', module: 'matching', action: 'view' },
       { to: '/matchmaking/calendario', icon: Calendar, label: 'Calendario de Citas & WhatsApp', module: 'matching', action: 'view' },
@@ -471,7 +471,7 @@ function AppContent() {
                     {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
                   </button>
                 </header>
-                <main className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
+                <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
                   <Routes>
                     <Route 
                       path="/" 
