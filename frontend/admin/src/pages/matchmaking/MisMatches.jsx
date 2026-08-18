@@ -131,6 +131,16 @@ export default function MisMatches() {
     fetchMatches()
   }, [fetchMatches])
 
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedPsyc, statusFilter, searchTerm])
+
+  const totalPages = Math.ceil(matches.length / pageSize) || 1
+  const paginatedMatches = matches.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   const handleUpdateField = async (matchId, field, value) => {
     let finalValue = value
     if (field === 'person_b' && value) {
@@ -431,7 +441,7 @@ export default function MisMatches() {
                 </td>
               </tr>
             ) : (
-              matches.map((m) => {
+              paginatedMatches.map((m) => {
                 const isLocked = m.is_locked
                 const prefCfg = PREF_COLORS[m.pref] || PREF_COLORS['hetero']
                 const planCfg = PLAN_COLORS[m.plan_tier] || PLAN_COLORS['Estándar 65k (2 citas)'] || { bg: '#F3F3F3', color: '#434343' }
@@ -483,11 +493,20 @@ export default function MisMatches() {
                     </td>
 
                     {/* PERSONA A */}
-                    <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <td style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>{m.person_a}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: 3 }}>
-                          Slot {m.slot_number}
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {m.person_a}
+                        </span>
+                        <span style={{
+                          fontSize: 10,
+                          padding: '1px 5px',
+                          borderRadius: 3,
+                          background: 'var(--bg-card-hover)',
+                          color: 'var(--text-muted)',
+                          border: '1px solid var(--border-color)'
+                        }}>
+                          Slot {m.slot_number || 1}
                         </span>
                       </div>
                     </td>
@@ -497,7 +516,7 @@ export default function MisMatches() {
                       <input
                         type="text"
                         defaultValue={m.person_b || ''}
-                        placeholder="Nombre Persona B..."
+                        placeholder="Nombre Persona B o pega enlace CRM..."
                         onBlur={e => {
                           if (e.target.value !== (m.person_b || '')) {
                             handleUpdateField(m.id, 'person_b', e.target.value)
@@ -613,6 +632,61 @@ export default function MisMatches() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Toolbar */}
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 16,
+          padding: '12px 16px',
+          background: 'var(--bg-card)',
+          borderRadius: 8,
+          border: '1px solid var(--border-color)'
+        }}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            Mostrando <b>{(currentPage - 1) * pageSize + 1}</b> - <b>{Math.min(currentPage * pageSize, matches.length)}</b> de <b>{matches.length}</b> matches
+          </span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-base)',
+                color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600
+              }}
+            >
+              Anterior
+            </button>
+            <span style={{ fontSize: 12, fontWeight: 700, padding: '0 8px', color: 'var(--text-primary)' }}>
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-base)',
+                color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600
+              }}
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal Ingresar Cliente Nuevo (3 Slots) */}
       {showIntakeModal && (

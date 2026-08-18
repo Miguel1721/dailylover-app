@@ -80,6 +80,17 @@ export default function IntakeClientes() {
       })
   }, [selectedPsyc, searchTerm, token])
 
+  useEffect(() => {
+    fetchIntakeList()
+  }, [fetchIntakeList])
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedPsyc, searchTerm])
+
   const [resolving, setResolving] = useState(false)
   const [resolveHint, setResolveHint] = useState('')
 
@@ -163,6 +174,9 @@ export default function IntakeClientes() {
   const totalClients = clients.length
   const totalSlotsCreated = clients.reduce((acc, c) => acc + (c.total_slots || 0), 0)
   const totalWithMatches = clients.filter(c => c.filled_slots > 0).length
+
+  const totalPages = Math.ceil(clients.length / pageSize) || 1
+  const paginatedClients = clients.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1600, margin: '0 auto' }}>
@@ -341,7 +355,7 @@ export default function IntakeClientes() {
                 </td>
               </tr>
             ) : (
-              clients.map((c, idx) => (
+              paginatedClients.map((c, idx) => (
                 <tr
                   key={idx}
                   style={{
@@ -403,7 +417,7 @@ export default function IntakeClientes() {
                       fontWeight: 700,
                       color: 'var(--text-primary)'
                     }}>
-                      {c.total_slots} Slots
+                      <Layers size={13} color="#3B82F6" /> {c.total_slots} slots
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px' }}>
@@ -447,6 +461,61 @@ export default function IntakeClientes() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Toolbar */}
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 16,
+          padding: '12px 16px',
+          background: 'var(--bg-card)',
+          borderRadius: 8,
+          border: '1px solid var(--border-color)'
+        }}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            Mostrando <b>{(currentPage - 1) * pageSize + 1}</b> - <b>{Math.min(currentPage * pageSize, clients.length)}</b> de <b>{clients.length}</b> clientes
+          </span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-base)',
+                color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600
+              }}
+            >
+              Anterior
+            </button>
+            <span style={{ fontSize: 12, fontWeight: 700, padding: '0 8px', color: 'var(--text-primary)' }}>
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-base)',
+                color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                fontSize: 12,
+                fontWeight: 600
+              }}
+            >
+              Siguiente
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal para Crear Cliente Nuevo (3 Slots) */}
       {showModal && (

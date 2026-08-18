@@ -106,10 +106,10 @@ async def sync_incremental():
                     continue
                 
                 crm_id = extract_crm_id_from_cell(cell_name)
-                raw_city = str(ws.cell(row=row_idx, column=4).value or "").strip()
-                raw_pref = str(ws.cell(row=row_idx, column=5).value or "").strip()
-                raw_plan = str(ws.cell(row=row_idx, column=6).value or "").strip()
-                raw_psyc = str(ws.cell(row=row_idx, column=2).value or "").strip().upper()
+                raw_psyc = str(ws.cell(row=row_idx, column=5).value or "").strip().upper() # Col E: Responsable
+                raw_city = str(ws.cell(row=row_idx, column=6).value or "").strip() # Col F: Ciudad
+                raw_pref = str(ws.cell(row=row_idx, column=7).value or "").strip() # Col G: Pref
+                raw_plan = str(ws.cell(row=row_idx, column=8).value or "").strip() # Col H: Plan
                 
                 psyc = raw_psyc if raw_psyc in ACTIVE_PSYCHOLOGISTS else "SILVI"
                 city = (normalize_city(raw_city) or "")[:50]
