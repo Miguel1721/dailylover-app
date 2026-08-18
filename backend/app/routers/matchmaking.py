@@ -600,30 +600,38 @@ async def update_confirmation(
 
     if conf_a == "Aceptó" and conf_b == "Aceptó":
         target_stage = "calendario"
-        # Copiar hacia Calendario (scheduled_dates)
-        await db.execute(text("""
-            INSERT INTO scheduled_dates (
-                match_id, person_a, person_b, date_time, venue, city, reservation_name, created_at, updated_at
-            ) VALUES (
-                :mid, :pA, :pB, 'Por definir', 'Restaurante Por definir', :city, 'María Paula Salinas', NOW(), NOW()
-            )
-        """), {
-            "mid": row.match_id,
-            "pA": row.person_a,
-            "pB": row.person_b,
-            "city": normalize_city(row.city)
-        })
-        
-        await db.execute(text("""
-            INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
-            VALUES (:name, :mid, 'DATE_SCHEDULED', 'Ambas partes aceptaron — copiado a Calendario (registro conservado en Pendientes)', NOW())
-        """), {"name": row.person_a, "mid": row.match_id})
+        # Verificar si ya existe una cita para este match_id en Calendario para evitar duplicados
+        existing_cal = await db.execute(text("""
+            SELECT id FROM scheduled_dates WHERE match_id = :mid LIMIT 1
+        """), {"mid": row.match_id})
+        if not existing_cal.fetchone():
+            # Copiar hacia Calendario (scheduled_dates)
+            await db.execute(text("""
+                INSERT INTO scheduled_dates (
+                    match_id, person_a, person_b, date_time, venue, city, reservation_name, created_at, updated_at
+                ) VALUES (
+                    :mid, :pA, :pB, 'Por definir', 'Restaurante Por definir', :city, 'María Paula Salinas', NOW(), NOW()
+                )
+            """), {
+                "mid": row.match_id,
+                "pA": row.person_a,
+                "pB": row.person_b,
+                "city": normalize_city(row.city)
+            })
+            
+            await db.execute(text("""
+                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+                VALUES (:name, :mid, 'DATE_SCHEDULED', 'Ambas partes aceptaron — copiado a Calendario (registro conservado en Pendientes)', NOW())
+            """), {"name": row.person_a, "mid": row.match_id})
 
     elif conf_a == "Rechazó" or conf_b == "Rechazó":
         target_stage = "trouble"
         who = "Persona A" if conf_a == "Rechazó" else "Persona B"
-        # Si la fila actual no era ya de trouble, insertar una fila nueva en Trouble Matches
-        if row.stage != "trouble":
+        # Verificar si ya existe en Trouble Matches para este match_id
+        existing_trouble = await db.execute(text("""
+            SELECT id FROM match_confirmations WHERE match_id = :mid AND stage = 'trouble' LIMIT 1
+        """), {"mid": row.match_id})
+        if row.stage != "trouble" and not existing_trouble.fetchone():
             await db.execute(text("""
                 INSERT INTO match_confirmations (
                     match_id, person_a_confirmation, person_b_confirmation, stage, pause_reason, created_at, updated_at
@@ -637,15 +645,17 @@ async def update_confirmation(
                 "pr": reason or f"Rechazado por {who}"
             })
         
-        await db.execute(text("""
-            INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
-            VALUES (:name, :mid, 'TROUBLE_REJECTED', :det, NOW())
-        """), {"name": row.person_a, "mid": row.match_id, "det": f"Match rechazado por {who} — copiado a Trouble Matches"})
+            await db.execute(text("""
+                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+                VALUES (:name, :mid, 'TROUBLE_REJECTED', :det, NOW())
+            """), {"name": row.person_a, "mid": row.match_id, "det": f"Match rechazado por {who} — copiado a Trouble Matches"})
 
     elif conf_a == "Viaje largo / indefinido" or conf_b == "Viaje largo / indefinido":
         target_stage = "en_pausa_indefinida"
-        # Si la fila actual no era ya de pausa indefinida, insertar una fila nueva
-        if row.stage != "en_pausa_indefinida":
+        existing_pi = await db.execute(text("""
+            SELECT id FROM match_confirmations WHERE match_id = :mid AND stage = 'en_pausa_indefinida' LIMIT 1
+        """), {"mid": row.match_id})
+        if row.stage != "en_pausa_indefinida" and not existing_pi.fetchone():
             await db.execute(text("""
                 INSERT INTO match_confirmations (
                     match_id, person_a_confirmation, person_b_confirmation, stage, pause_reason, created_at, updated_at
@@ -661,8 +671,10 @@ async def update_confirmation(
     elif any(c in ["No contesta", "De viaje", "Problema personal", "Reprogramar"] for c in [conf_a, conf_b]):
         target_stage = "en_pausa"
         pause_r = reason or next((c for c in [conf_a, conf_b] if c in ["No contesta", "De viaje", "Problema personal", "Reprogramar"]), "Pausa temporal")
-        # Si la fila actual no era ya de pausa, insertar una fila nueva en En Pausa
-        if row.stage != "en_pausa":
+        existing_p = await db.execute(text("""
+            SELECT id FROM match_confirmations WHERE match_id = :mid AND stage = 'en_pausa' LIMIT 1
+        """), {"mid": row.match_id})
+        if row.stage != "en_pausa" and not existing_p.fetchone():
             await db.execute(text("""
                 INSERT INTO match_confirmations (
                     match_id, person_a_confirmation, person_b_confirmation, stage, pause_reason, created_at, updated_at
