@@ -131,6 +131,9 @@ class UpdateCalendarDateRequest(BaseModel):
     feedback: Optional[str] = None
     reschedule: Optional[bool] = None
 
+class ResolveProfileRequest(BaseModel):
+    url_or_query: str
+
 
 # ─── 1. PANTALLA 1: MIS MATCHES (VISTA PSICÓLOGA) ────────────────────────────
 
@@ -921,4 +924,89 @@ async def get_person_history(person_name: str, db: AsyncSession = Depends(get_db
     ]
 
     return {"person_name": clean_name, "events": history, "total": len(history)}
+
+
+@router.post("/resolve-profile")
+async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Resuelve una URL de perfil del CRM SmartMatchApp, un CRM ID o un nombre.
+    Extrae el ID numérico y busca el usuario y perfil correspondiente.
+    """
+    raw_input = (payload.url_or_query or "").strip()
+    if not raw_input:
+        raise HTTPException(status_code=400, detail="Entrada vacía")
+
+    # 1. Intentar extraer CRM ID por regex de URL o número directo
+    extracted_crm_id = None
+    url_match = re.search(r"(?:client|profile|view)[/=](\d+)", raw_input, re.IGNORECASE)
+    if url_match:
+        extracted_crm_id = url_match.group(1)
+    elif re.search(r"[?&]id=(\d+)", raw_input, re.IGNORECASE):
+        extracted_crm_id = re.search(r"[?&]id=(\d+)", raw_input, re.IGNORECASE).group(1)
+    elif raw_input.isdigit():
+        extracted_crm_id = raw_input
+
+    # 2. Búsqueda en DB por crm_id o user id
+    row = None
+    if extracted_crm_id:
+        res = await db.execute(text("""
+            SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                   p.city, p.orientation, p.gender, p.plan_tier
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.crm_id = :cid OR CAST(u.id AS TEXT) = :cid
+            LIMIT 1
+        """), {"cid": extracted_crm_id})
+        row = res.fetchone()
+
+    # Si no se encontró por ID o no era ID, buscar por nombre
+    if not row:
+        clean_name = re.sub(r'https?://\S+', '', raw_input).strip()
+        if clean_name:
+            res = await db.execute(text("""
+                SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                       p.city, p.orientation, p.gender, p.plan_tier
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+                   OR u.name ILIKE :n_like
+                ORDER BY CASE WHEN LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) THEN 1 ELSE 2 END
+                LIMIT 1
+            """), {"n": clean_name, "n_like": f"%{clean_name}%"})
+            row = res.fetchone()
+
+    if not row:
+        if extracted_crm_id:
+            return {
+                "found": False,
+                "crm_id": extracted_crm_id,
+                "name": "",
+                "city": "",
+                "pref": "hetero",
+                "plan_tier": "Estándar 65k (2 citas)",
+                "phone": "",
+                "email": ""
+            }
+        raise HTTPException(status_code=404, detail="Perfil no encontrado para el link o nombre proporcionado")
+
+    orientation_val = row.orientation or "hetero"
+    pref_val = "hetero"
+    if "gay" in orientation_val.lower() or "homo" in orientation_val.lower():
+        pref_val = "gay"
+    elif "lesb" in orientation_val.lower():
+        pref_val = "lesb"
+    elif "bi" in orientation_val.lower():
+        pref_val = "bi"
+
+    return {
+        "found": True,
+        "crm_id": row.crm_id or extracted_crm_id or str(row.id),
+        "name": row.name or "",
+        "city": normalize_city(row.city),
+        "pref": pref_val,
+        "plan_tier": row.plan_tier or "Estándar 65k (2 citas)",
+        "phone": row.phone or "",
+        "email": row.email or ""
+    }
+
 

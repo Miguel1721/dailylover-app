@@ -132,6 +132,27 @@ export default function MisMatches() {
   }, [fetchMatches])
 
   const handleUpdateField = async (matchId, field, value) => {
+    let finalValue = value
+    if (field === 'person_b' && value) {
+      const isUrlOrId = value.includes('http') || value.includes('smartmatchapp') || value.includes('client/') || value.includes('profile/') || /^\d{3,}$/.test(value.trim())
+      if (isUrlOrId) {
+        try {
+          const resRes = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ url_or_query: value })
+          })
+          if (resRes.ok) {
+            const dataRes = await resRes.json()
+            if (dataRes.name) {
+              finalValue = dataRes.name
+            }
+          }
+        } catch (e) {
+          // ignore fallback to raw value
+        }
+      }
+    }
     setSavingId(matchId)
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}`, {
@@ -140,16 +161,16 @@ export default function MisMatches() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ [field]: value })
+        body: JSON.stringify({ [field]: finalValue })
       })
 
       const data = await res.json()
       if (!res.ok) {
         alert(data.detail || 'Error al actualizar')
       } else {
-        setMatches(prev => prev.map(m => m.id === matchId ? { ...m, [field]: value } : m))
-        setFeedbackMsg('Actualizado correctamente')
-        setTimeout(() => setFeedbackMsg(''), 2000)
+        setMatches(prev => prev.map(m => m.id === matchId ? { ...m, [field]: finalValue } : m))
+        setFeedbackMsg(finalValue !== value ? `Link CRM resuelto a "${finalValue}" y guardado` : 'Actualizado correctamente')
+        setTimeout(() => setFeedbackMsg(''), 3000)
         if (field === 'status' && value === 'HECHO') {
           fetchMatches()
         }

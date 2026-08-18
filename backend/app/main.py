@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from app.config import get_settings, Settings
-from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks
+from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking
 import structlog
 import os
 
@@ -51,14 +51,14 @@ async def startup_seed():
         async with AsyncSessionLocal() as db:
             # Ensure admin role
             await db.execute(text("""
-                INSERT INTO roles (id, name, is_system) VALUES (1, 'Super Admin', true)
-                ON CONFLICT (id) DO NOTHING;
+                INSERT INTO roles (name, is_system) VALUES ('Super Admin', true)
+                ON CONFLICT (name) DO NOTHING;
             """))
             h_pass = hash_password('Daily2026!')
             # Ensure Maria Paula in user_accounts
             await db.execute(text("""
-                INSERT INTO user_accounts (email, password_hash, status, must_change_password, role_id)
-                VALUES ('mariapaula@dailylover.com', :pass, 'active', false, 1)
+                INSERT INTO user_accounts (email, password_hash, status, must_change_password)
+                VALUES ('mariapaula@dailylover.com', :pass, 'active', false)
                 ON CONFLICT (email) DO UPDATE SET password_hash = :pass;
             """), {'pass': h_pass})
             # Ensure tables webhook_events_raw and client_notes exist
@@ -94,6 +94,8 @@ async def startup_seed():
                     height INTEGER,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
+            """))
+            await db.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_client_images_user_id ON client_images(user_id);
             """))
             await db.execute(text("""
@@ -123,6 +125,8 @@ async def get_config():
 
 # Register admin and import routers
 app.include_router(auth.router)
+app.include_router(cms_public.router)
+app.include_router(cms_admin.router)
 app.include_router(client.router)
 app.include_router(admin.router)
 app.include_router(import_excel.router)
@@ -136,11 +140,15 @@ app.include_router(incidents.router)
 app.include_router(vendors.router)
 app.include_router(reports.router)
 app.include_router(webhooks.router)
+app.include_router(matchmaking.router)
 
 # ─── STATIC FILES (Admin Panel & App Preview) ─────────────────────────────────
 
 ADMIN_STATIC = os.path.join(os.path.dirname(__file__), "static", "admin")
 APP_PREVIEW_STATIC = os.path.join(os.path.dirname(__file__), "static", "app-preview")
+UPLOADS_STATIC = os.path.join(os.path.dirname(__file__), "static", "uploads")
+os.makedirs(UPLOADS_STATIC, exist_ok=True)
+app.mount("/static/uploads", StaticFiles(directory=UPLOADS_STATIC), name="static_uploads")
 FAVICON_PATH = os.path.join(APP_PREVIEW_STATIC, "favicon.svg")
 
 @app.get("/login", include_in_schema=False)

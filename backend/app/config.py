@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     anthropic_base_url: str = Field("", validation_alias="ANTHROPIC_BASE_URL")
     demo_mode: bool = Field(False, validation_alias="DEMO_MODE")
     jwt_secret_key: str = Field("default_insecure_jwt_secret", validation_alias="JWT_SECRET_KEY")
+    encryption_key: str = Field("", validation_alias="ENCRYPTION_KEY")
+    sheet_integration_api_key: str = Field("", validation_alias="SHEET_INTEGRATION_API_KEY")
     
     # Webhooks
     whatsapp_api_token: str = Field("", validation_alias="WHATSAPP_API_TOKEN")

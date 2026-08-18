@@ -279,8 +279,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
             user_res = await db.execute(text("""
                 SELECT 
                     ua.id, ua.email, ua.password_hash, ua.role_id, COALESCE(ua.status, 'active') as status, ua.must_change_password,
-                    COALESCE(r.name, 'SUPERADMIN') as role_name, COALESCE(r.is_system, true) as role_is_system,
-                    COALESCE(e.full_name, 'María Paula') as employee_name
+                    COALESCE(r.name, ('Psicóloga' if 'silvi' in req.email.lower() else 'SUPERADMIN')) as role_name, COALESCE(r.is_system, true) as role_is_system,
+                    COALESCE(e.full_name, ('Silvi' if 'silvi' in req.email.lower() else 'María Paula')) as employee_name
                 FROM user_accounts ua
                 LEFT JOIN roles r ON r.id = ua.role_id
                 LEFT JOIN employees e ON e.id = ua.employee_id

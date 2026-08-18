@@ -80,9 +80,43 @@ export default function IntakeClientes() {
       })
   }, [selectedPsyc, searchTerm, token])
 
-  useEffect(() => {
-    fetchIntakeList()
-  }, [fetchIntakeList])
+  const [resolving, setResolving] = useState(false)
+  const [resolveHint, setResolveHint] = useState('')
+
+  const handleResolveInput = async (val) => {
+    setFormData(prev => ({ ...prev, person_a: val }))
+    const isUrlOrId = val.includes('http') || val.includes('smartmatchapp') || val.includes('client/') || val.includes('profile/') || /^\d{3,}$/.test(val.trim())
+    if (isUrlOrId) {
+      setResolving(true)
+      setResolveHint('🔍 Detectado enlace/ID del CRM SmartMatchApp — consultando datos...')
+      try {
+        const res = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ url_or_query: val })
+        })
+        const data = await res.json()
+        if (res.ok && data.name) {
+          setFormData(prev => ({
+            ...prev,
+            person_a: data.name,
+            city: data.city || prev.city,
+            pref: data.pref || prev.pref,
+            plan_tier: data.plan_tier || prev.plan_tier,
+          }))
+          setResolveHint(`✅ Datos extraídos del CRM: ${data.name} (${data.city || 'Sin ciudad'}, ${data.pref.toUpperCase()}, ${data.plan_tier})`)
+        } else {
+          setResolveHint('⚠️ Link detectado pero el cliente no está en base local aún.')
+        }
+      } catch (err) {
+        setResolveHint('')
+      } finally {
+        setResolving(false)
+      }
+    } else {
+      setResolveHint('')
+    }
+  }
 
   const handleCreateClient = async (e) => {
     e.preventDefault()
@@ -103,6 +137,7 @@ export default function IntakeClientes() {
       const data = await res.json()
       if (res.ok) {
         setShowModal(false)
+        setResolveHint('')
         setFeedback(`Cliente "${formData.person_a}" registrado con 3 slots asignados a ${formData.psychologist_name}`)
         setTimeout(() => setFeedback(''), 4000)
         setFormData({
@@ -455,19 +490,19 @@ export default function IntakeClientes() {
             <form onSubmit={handleCreateClient} style={{ padding: '20px 24px' }}>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Nombre Completo de Persona A (Cliente) *
+                  Nombre Completo o Link del CRM (SmartMatchApp) *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej: Valeria Linero"
+                  placeholder="Ej: Valeria Linero o pega enlace https://dailylover.smartmatchapp.com/client/3923..."
                   value={formData.person_a}
-                  onChange={e => setFormData({ ...formData, person_a: e.target.value })}
+                  onChange={e => handleResolveInput(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '8px 12px',
+                    padding: '9px 12px',
                     borderRadius: 6,
-                    border: '1px solid var(--border-color)',
+                    border: resolveHint.startsWith('✅') ? '1px solid #10B981' : '1px solid var(--border-color)',
                     background: 'var(--bg-base)',
                     color: 'var(--text-primary)',
                     fontSize: 13,
@@ -475,6 +510,24 @@ export default function IntakeClientes() {
                     boxSizing: 'border-box'
                   }}
                 />
+                {resolving && (
+                  <div style={{ fontSize: 12, marginTop: 5, color: '#3B82F6', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <RefreshCw size={12} className="animate-spin" /> Extrayendo datos del CRM...
+                  </div>
+                )}
+                {resolveHint && !resolving && (
+                  <div style={{
+                    fontSize: 12,
+                    marginTop: 6,
+                    padding: '6px 10px',
+                    borderRadius: 4,
+                    background: resolveHint.startsWith('✅') ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                    color: resolveHint.startsWith('✅') ? '#059669' : '#D97706',
+                    fontWeight: 500
+                  }}>
+                    {resolveHint}
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>

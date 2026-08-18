@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Header, Request
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import os
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
+from app.config import get_settings
 from app.core.permissions import require_permission
 from typing import Optional
 import math
@@ -2531,6 +2533,107 @@ async def save_psychologist_availability(
     await db.commit()
 
     return {"ok": True, "message": f"Disponibilidad del día {dow} guardada con éxito."}
+
+
+CITY_NORM_MAP = {
+    "bgota": "Bogotá",
+    "bogota": "Bogotá",
+    "medellin": "Medellín",
+    "baq": "Barranquilla",
+    "bquilla": "Barranquilla",
+    "quilla": "Barranquilla",
+    "barranca": "Barranquilla",
+    "bmanga": "Bucaramanga",
+    "buc": "Bucaramanga",
+    "buca": "Bucaramanga",
+    "bga": "Bucaramanga",
+    "ctg": "Cartagena",
+    "mad": "Madrid",
+    "mia": "Miami",
+    "cdmx": "CDMX",
+    "peira": "Pereira",
+    "ibag": "Ibagué",
+    "caqu": "Caquetá",
+}
+
+def normalize_city_name(raw_city: Optional[str]) -> str:
+    if not raw_city:
+        return ""
+    c = str(raw_city).strip()
+    if not c or c in (",", "2 Dates", "Todo El Mundo"):
+        return ""
+    c_lower = c.lower()
+    if c_lower in CITY_NORM_MAP:
+        return CITY_NORM_MAP[c_lower]
+    return c.title()
+
+def normalize_pref(raw_orientation: Optional[str], raw_gender: Optional[str]) -> str:
+    ori = str(raw_orientation or "").lower().strip()
+    gen = str(raw_gender or "").lower().strip()
+
+    if "bi" in ori:
+        return "bi"
+    if "lesb" in ori:
+        return "lesb"
+    if "gay" in ori or "homo" in ori:
+        if "fem" in gen or "mujer" in gen or "female" in gen:
+            return "lesb"
+        return "gay"
+    if "straight" in ori or "hetero" in ori:
+        return "hetero"
+    
+    return "hetero"
+
+
+@router.get("/clients-plans")
+async def get_clients_plans(
+    request: Request,
+    x_api_key: Optional[str] = Header(None, alias="x-api-key"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint de solo lectura para consultar la lista de clientes con su plan_tier, ciudad y preferencia.
+    Diseñado para integrarse periódicamente con Google Sheets (Apps Script).
+    Protegido vía API Key (header x-api-key o SHEET_INTEGRATION_API_KEY).
+    """
+    api_key_env = (os.environ.get("SHEET_INTEGRATION_API_KEY") or get_settings().sheet_integration_api_key or "").strip()
+    provided_key = (
+        x_api_key or 
+        request.headers.get("x-api-key") or 
+        request.headers.get("X-API-Key") or 
+        request.headers.get("X-Api-Key") or ""
+    ).strip()
+
+    if not api_key_env or not provided_key or provided_key != api_key_env:
+        raise HTTPException(status_code=401, detail="API key inválida")
+
+    result = await db.execute(text("""
+        SELECT u.name, u.email, u.phone, p.plan_tier, p.city, p.orientation, p.gender
+        FROM profiles p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.plan_tier IS NOT NULL 
+          AND TRIM(p.plan_tier) != ''
+        ORDER BY u.name ASC
+    """))
+    rows = result.fetchall()
+
+    clients = [
+        {
+            "name": row.name or "",
+            "email": row.email or "",
+            "phone": row.phone or "",
+            "plan_tier": row.plan_tier,
+            "city": normalize_city_name(row.city),
+            "pref": normalize_pref(row.orientation, row.gender)
+        }
+        for row in rows
+    ]
+
+    return {
+        "clients": clients,
+        "updated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    }
+
 
 
 
