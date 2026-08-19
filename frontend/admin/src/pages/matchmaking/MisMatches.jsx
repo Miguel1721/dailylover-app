@@ -609,13 +609,14 @@ export default function MisMatches() {
                       </div>
                     </td>
 
-                    {/* PERSONA B - ALWAYS EDITABLE */}
-                    <td style={{ padding: '8px 12px', minWidth: 200 }}>
+                    {/* PERSONA B - EDITABLE WITH DIRECT CRM LINK */}
+                    <td style={{ padding: '8px 12px', minWidth: 220 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <input
                           type="text"
                           defaultValue={m.person_b || ''}
-                          placeholder="Nombre Persona B o pega enlace CRM..."
+                          placeholder="Nombre Persona B o enlace CRM..."
+                          disabled={isLocked}
                           onBlur={e => {
                             if (e.target.value !== (m.person_b || '')) {
                               handleUpdateField(m.id, 'person_b', e.target.value)
@@ -629,7 +630,7 @@ export default function MisMatches() {
                             padding: '6px 10px',
                             borderRadius: 6,
                             border: '1px solid var(--border-color)',
-                            background: 'var(--bg-base)',
+                            background: isLocked ? 'var(--bg-card-hover)' : 'var(--bg-base)',
                             color: 'var(--text-primary)',
                             fontSize: 13,
                             fontWeight: 600,
@@ -637,8 +638,32 @@ export default function MisMatches() {
                             boxSizing: 'border-box'
                           }}
                         />
-                        {m.person_b && (
-                          <CrmPersonLink name="" crmId={m.person_b_crm_id} showIcon={true} />
+                        {m.person_b && m.person_b.trim() !== '' && (
+                          <a
+                            href={
+                              m.person_b_crm_id
+                                ? (String(m.person_b_crm_id).startsWith('http') ? m.person_b_crm_id : `https://dailylover.smartmatchapp.com/client/${m.person_b_crm_id}`)
+                                : (String(m.person_b).startsWith('http') ? m.person_b : (/^\d+$/.test(m.person_b.trim()) ? `https://dailylover.smartmatchapp.com/client/${m.person_b.trim()}` : `https://dailylover.smartmatchapp.com/app/clients?search=${encodeURIComponent(m.person_b.trim())}`))
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Abrir perfil de ${m.person_b} en SmartMatchApp (nueva pestaña)`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              padding: '6px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(184, 50, 79, 0.12)',
+                              color: '#B8324F',
+                              textDecoration: 'none',
+                              flexShrink: 0,
+                              cursor: 'pointer',
+                              border: '1px solid rgba(184, 50, 79, 0.25)'
+                            }}
+                          >
+                            <ExternalLink size={13} />
+                          </a>
                         )}
                       </div>
                     </td>
