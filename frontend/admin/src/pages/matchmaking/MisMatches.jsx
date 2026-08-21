@@ -46,17 +46,23 @@ const STATUS_COLORS = {
   'Listo para match': { bg: '#FFE599', color: '#7F6000' },
   'EN PAUSA': { bg: '#F9CB9C', color: '#783F04' },
   'EN PAUSA INDEFINIDA': { bg: '#B4A7D6', color: '#351C75' },
+  'HECHO POR MAPE': { bg: '#A2C4C9', color: '#134F5C' },
+  'NOT APPROVED': { bg: '#F4CCCC', color: '#660000' },
   'TROUBLE': { bg: '#FF6B35', color: '#FFFFFF' },
   'TROUBLEMAKER': { bg: '#FF6B35', color: '#FFFFFF' },
-  'DESCALIFICADO': { bg: '#CCCCCC', color: '#434343' },
-  'EN ESPERA': { bg: '#D9D2E9', color: '#351C75' },
-  'PENDIENTE': { bg: '#FFF2CC', color: '#7F6000' },
   'REFUND': { bg: '#EA9999', color: '#660000' },
-  'NO MATCH/CAMBIAR': { bg: '#F4CCCC', color: '#660000' },
-  'REQUEST PROFILE UPDATE': { bg: '#C9DAF8', color: '#1155CC' },
-  'REVISAR': { bg: '#D5A6BD', color: '#4C1130' },
-  'HACER OTRO MATCH': { bg: '#B4A7D6', color: '#351C75' },
+  'REFUND DONE': { bg: '#D9EAD3', color: '#274E13' },
+  'DESCALIFICADO': { bg: '#CCCCCC', color: '#434343' },
   'NO HAY GENTE': { bg: '#E69138', color: '#FFFFFF' },
+  'REVISAR': { bg: '#D5A6BD', color: '#4C1130' },
+  'REVISAR POR SI TOCA OTRO MATCH': { bg: '#B4A7D6', color: '#351C75' },
+  'MATCH DONE': { bg: '#6AA84F', color: '#FFFFFF' },
+  'RESUELTO': { bg: '#D9EAD3', color: '#274E13' },
+  'Pendiente': { bg: '#FFF2CC', color: '#7F6000' },
+  'PENDIENTE': { bg: '#FFF2CC', color: '#7F6000' },
+  'Urgente': { bg: '#E06666', color: '#FFFFFF' },
+  'EN ESPERA': { bg: '#D9D2E9', color: '#351C75' },
+  'REQUEST PROFILE UPDATE': { bg: '#C9DAF8', color: '#1155CC' },
 }
 
 const PSYCHOLOGIST_LIST = [
@@ -64,10 +70,11 @@ const PSYCHOLOGIST_LIST = [
 ]
 
 const STATUS_OPTIONS = [
-  'HECHO', 'DESCALIFICADO', 'TROUBLE', 'TROUBLEMAKER', 'Listo para match',
-  'EN PAUSA', 'EN PAUSA INDEFINIDA', 'CITA COMPLETADA', 'EN ESPERA', 'PENDIENTE',
-  'REFUND', 'NO MATCH/CAMBIAR', 'REQUEST PROFILE UPDATE', 'REVISAR',
-  'HACER OTRO MATCH', 'NO HAY GENTE'
+  'HECHO', 'HECHO POR MAPE', 'NOT APPROVED', 'TROUBLE', 'TROUBLEMAKER',
+  'REFUND', 'REFUND DONE', 'DESCALIFICADO', 'NO HAY GENTE', 'REVISAR',
+  'REVISAR POR SI TOCA OTRO MATCH', 'MATCH DONE', 'RESUELTO', 'Pendiente',
+  'Urgente', 'Listo para match', 'REQUEST PROFILE UPDATE',
+  'EN PAUSA', 'EN PAUSA INDEFINIDA', 'CITA COMPLETADA', 'EN ESPERA'
 ]
 
 export default function MisMatches() {

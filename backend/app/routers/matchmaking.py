@@ -43,29 +43,46 @@ PLAN_COLORS = {
 STATUS_COLORS = {
     "APROBADO": "#B6D7A8",
     "HECHO": "#A2C4C9",
-    "CITA COMPLETADA": "#6AA84F",
-    "Listo para match": "#FFE599",
-    "EN PAUSA": "#F9CB9C",
-    "EN PAUSA INDEFINIDA": "#B4A7D6",
+    "HECHO POR MAPE": "#A2C4C9",
+    "NOT APPROVED": "#F4CCCC",
     "TROUBLE": "#FF6B35",
     "TROUBLEMAKER": "#FF6B35",
-    "DESCALIFICADO": "#CCCCCC",
-    "EN ESPERA": "#D9D2E9",
-    "PENDIENTE": "#FFF2CC",
     "REFUND": "#EA9999",
-    "NO MATCH/CAMBIAR": "#F4CCCC",
-    "REQUEST PROFILE UPDATE": "#C9DAF8",
-    "REVISAR": "#D5A6BD",
-    "HACER OTRO MATCH": "#B4A7D6",
+    "REFUND DONE": "#D9EAD3",
+    "DESCALIFICADO": "#CCCCCC",
     "NO HAY GENTE": "#E69138",
+    "REVISAR": "#D5A6BD",
+    "REVISAR POR SI TOCA OTRO MATCH": "#B4A7D6",
+    "MATCH DONE": "#6AA84F",
+    "RESUELTO": "#D9EAD3",
+    "Pendiente": "#FFF2CC",
+    "PENDIENTE": "#FFF2CC",
+    "Urgente": "#E06666",
+    "Listo para match": "#FFE599",
+    "REQUEST PROFILE UPDATE": "#C9DAF8",
+    "EN PAUSA": "#F9CB9C",
+    "EN PAUSA INDEFINIDA": "#B4A7D6",
+    "CITA COMPLETADA": "#6AA84F",
+    "EN ESPERA": "#D9D2E9",
 }
 
 ALLOWED_STATUSES = [
-    "HECHO", "DESCALIFICADO", "TROUBLE", "TROUBLEMAKER", "Listo para match",
-    "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA", "PENDIENTE",
-    "REFUND", "NO MATCH/CAMBIAR", "REQUEST PROFILE UPDATE", "REVISAR",
-    "HACER OTRO MATCH", "NO HAY GENTE"
+    "HECHO", "HECHO POR MAPE", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
+    "REFUND", "REFUND DONE", "DESCALIFICADO", "NO HAY GENTE", "REVISAR",
+    "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
+    "Urgente", "Listo para match", "REQUEST PROFILE UPDATE",
+    "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA"
 ]
+
+def get_slots_by_plan(plan_str: Optional[str]) -> int:
+    if not plan_str:
+        return 3
+    p = plan_str.lower()
+    if "vip" in p:
+        return 4
+    elif "40k" in p or "básico" in p or "basico" in p or "1 cita" in p:
+        return 2
+    return 3  # Estándar 65k (2 citas) -> 3 slots
 
 CONFIRMATION_OPTIONS = [
     "Pendiente", "Listo para escribir", "No contesta", "De viaje",
@@ -265,9 +282,12 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     plan_val = payload.plan_tier or (prof_row.plan_tier if prof_row else "Estándar 65k (2 citas)")
     crm_id_val = prof_row.crm_id if prof_row else None
 
-    # Insertar los 3 slots en operational_matches
+    # Calcular slots según el plan (Básico: 2, Estándar: 3, VIP: 4)
+    num_slots = get_slots_by_plan(plan_val)
+
+    # Insertar los slots en operational_matches
     created_ids = []
-    for slot_num in [1, 2, 3]:
+    for slot_num in range(1, num_slots + 1):
         ins_res = await db.execute(text("""
             INSERT INTO operational_matches 
             (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, created_at, updated_at)
@@ -293,13 +313,13 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     """), {
         "name": person_a_clean,
         "mid": created_ids[0],
-        "details": f"Cliente registrado en Intake por {psyc_clean}. 3 slots generados automáticamente."
+        "details": f"Cliente registrado en Intake por {psyc_clean}. {num_slots} slots generados automáticamente ({plan_val})."
     })
 
     await db.commit()
     return {
         "status": "success",
-        "message": f"Cliente {person_a_clean} registrado con éxito y 3 slots asignados a {psyc_clean}.",
+        "message": f"Cliente {person_a_clean} registrado con éxito y {num_slots} slots asignados a {psyc_clean}.",
         "slot_ids": created_ids
     }
 
@@ -422,11 +442,48 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
 
     await db.execute(text(f"UPDATE operational_matches SET {', '.join(updates)} WHERE id = :id"), params)
 
-    if payload.status == "HECHO":
+    # 1. Registro de evento al pasar a HECHO / HECHO POR MAPE
+    if payload.status in ("HECHO", "HECHO POR MAPE"):
         await db.execute(text("""
             INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
             VALUES (:name, :mid, 'MARKED_HECHO', 'Psicóloga marcó el match como HECHO (enviado a revisión)', NOW())
         """), {"name": match_row.person_a, "mid": match_id})
+
+    # 2. Flujo SSOT v2: Si pasa a NOT APPROVED, TROUBLEMAKER o REVISAR POR SI TOCA OTRO MATCH:
+    # La fila original queda INTACTA con su status y se genera una nueva fila de reintento para Persona A
+    if payload.status in ("NOT APPROVED", "TROUBLEMAKER", "REVISAR POR SI TOCA OTRO MATCH"):
+        curr_res = await db.execute(text("""
+            SELECT city, pref, plan_tier, person_a, psychologist_name, person_a_crm_id,
+                   (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM operational_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))) AS next_slot
+            FROM operational_matches
+            WHERE id = :id
+        """), {"id": match_id, "pa": match_row.person_a})
+        curr_row = curr_res.fetchone()
+
+        if curr_row:
+            await db.execute(text("""
+                INSERT INTO operational_matches
+                (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, created_at, updated_at)
+                VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, 'Listo para match', :obs, :cid, NOW(), NOW())
+            """), {
+                "city": curr_row.city,
+                "pref": curr_row.pref,
+                "plan": curr_row.plan_tier,
+                "person_a": curr_row.person_a,
+                "psyc": curr_row.psychologist_name,
+                "slot": curr_row.next_slot or 1,
+                "obs": f"Reintento automático tras {payload.status.strip()}",
+                "cid": curr_row.person_a_crm_id
+            })
+
+            await db.execute(text("""
+                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+                VALUES (:name, :mid, 'RETRY_SLOT_CREATED', :details, NOW())
+            """), {
+                "name": curr_row.person_a,
+                "mid": match_id,
+                "details": f"Fila de reintento generada tras estado {payload.status.strip()} (fila original preservada)."
+            })
 
     await db.commit()
     return {"status": "success", "message": f"Match {match_id} actualizado exitosamente"}
