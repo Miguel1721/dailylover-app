@@ -1,53 +1,69 @@
 /**
  * ============================================================================
- * DAILY LOVER MATCHMAKING — APPS SCRIPT AUTOMATION v2 (SPEC REAL SSOT)
+ * DAILY LOVER MATCHMAKING — APPS SCRIPT AUTOMATION v2 (SPEC REAL SSOT CORREGIDA)
  * ============================================================================
  * Archivo: Copia final de Daily Lover MATCHMAKING
  * 
- * Funcionalidades implementadas:
- * 1. Disparador de FECHA automático únicamente al pasar STATUS a HECHO / HECHO POR MAPE.
- * 2. Flujo post-aprobación / rechazo:
- *    - NOT APPROVED o TROUBLEMAKER: La fila original queda INTACTA. Se crea una fila
- *      NUEVA al final de la pestaña de la psicóloga para reintentar con la misma Persona A.
- *    - TROUBLEMAKER: Se copia además la fila hacia la pestaña "TROUBLE MATCHES".
- * 3. Flujo de Refunds (Lina - Servicio al Cliente):
- *    - Control de estados REFUND -> REFUND DONE.
- * 4. Integración de tabla "Vuelve a Pagar" / Reasignación (Profile Prioritario):
- *    - Generación de slots según plan: Básico 40k -> 2 | Estándar 65k -> 3 | VIP 195k -> 4.
- * 5. Búsqueda dinámica de columnas por encabezado de texto (tolerante a variaciones).
- * 6. Cálculo seguro de última fila real (no afectado por checkboxes vacíos).
+ * CORRECCIONES & MEJORAS IMPLEMENTADAS:
+ * 1. DISPARADOR INSTALABLE: Función principal `onEditInstallable(e)` para evitar
+ *    límites de permisos y fallos silenciosos de CacheService/LockService.
+ * 2. REVISAR POR SI TOCA OTRO MATCH: Excluido de la creación de filas de reintento.
+ *    Solo NOT APPROVED y TROUBLEMAKER generan nuevas filas.
+ * 3. PRESERVACIÓN DE HIPERVÍNCULOS CRM: Se lee y escribe el `RichTextValue` completo
+ *    y/o fórmula `=HYPERLINK(...)` de Persona A y Persona B para no perder links.
+ * 4. CONTROL DE CONCURRENCIA: `LockService.getScriptLock()` con timeout de 30s
+ *    para evitar que múltiples psicólogas calculen la misma fila al mismo tiempo.
+ * 5. MÓDULO DE REFUNDS PARA LINA: Pestaña dedicada "REFUNDS PENDIENTES" con registro
+ *    automático al marcar REFUND y flujo de aprobación hacia REFUND DONE.
+ * 6. PESTAÑA "VUELVE A PAGAR": Nombre exacto SSOT "VUELVE A PAGAR".
+ * 7. VALIDACIÓN DE PLANES: Si el PLAN viene vacío o no reconocido en Vuelve a Pagar,
+ *    NO se asume plan por defecto; se marca visiblemente como ERROR para revisión.
+ * 8. BÚSQUEDA ROBUSTA DE PESTAÑAS: `findPsychologistSheet()` maneja espacios extras
+ *    (ej: "MATCHES ANA ") y registra avisos visibles si la pestaña no existe.
+ * 9. DIFERENCIACIÓN: DESCALIFICADO (bloqueo permanente sin reintento) vs REFUND (contable, reutilizable).
  * ============================================================================
  */
 
 // ─── CONFIGURACIÓN GLOBAL & CONSTANTES ───────────────────────────────────────
 
-var PSYCHOLOGIST_SHEET_PREFIX = "MATCHES ";
-var TROUBLE_SHEET_NAME = "TROUBLE MATCHES";
-var REASSIGNMENT_SHEET_NAMES = ["VUELVE A PAGAR", "REASIGNACIONES", "PROFILE PRIORITARIO", "REASIGNACION"];
-
-// Slots por plan activo (SSOT v2)
-var PLAN_SLOTS_MAP = {
-  "Básico 40k": 2,
-  "Básico 40k (1 cita)": 2,
-  "Básico": 2,
-  "Estándar 65k (2 citas)": 3,
-  "Estándar 65k (1 cita)": 3,
-  "Estándar 65k": 3,
-  "Estándar Plus 98k": 3,
-  "Estándar": 3,
-  "VIP 195k": 4,
-  "VIP 295k": 4,
-  "VIP": 4,
-  "VIP Oro": 4
+var CONFIG = {
+  PSYCHOLOGIST_SHEET_PREFIX: "MATCHES ",
+  TROUBLE_SHEET_NAME: "TROUBLE MATCHES",
+  REFUNDS_SHEET_NAME: "REFUNDS PENDIENTES",
+  VUELVE_A_PAGAR_SHEET_NAME: "VUELVE A PAGAR",
+  TIMEZONE: "America/Bogota",
+  LOCK_TIMEOUT_MS: 30000,
+  PLAN_SLOTS_MAP: {
+    "BÁSICO 40K (1 CITA)": 2,
+    "BÁSICO 40K": 2,
+    "BASICO 40K": 2,
+    "BÁSICO": 2,
+    "BASICO": 2,
+    "ESTÁNDAR 65K (2 CITAS)": 3,
+    "ESTANDAR 65K (2 CITAS)": 3,
+    "ESTÁNDAR 65K (1 CITA)": 3,
+    "ESTANDAR 65K (1 CITA)": 3,
+    "ESTÁNDAR 65K": 3,
+    "ESTANDAR 65K": 3,
+    "ESTÁNDAR PLUS 98K": 3,
+    "ESTANDAR PLUS 98K": 3,
+    "ESTÁNDAR": 3,
+    "ESTANDAR": 3,
+    "VIP 195K": 4,
+    "VIP 295K": 4,
+    "VIP ORO": 4,
+    "VIP": 4
+  }
 };
 
-// ─── DISPARADOR PRINCIPAL ONEDIT ────────────────────────────────────────────
+// ─── 1. DISPARADOR PRINCIPAL INSTALABLE ─────────────────────────────────────
 
 /**
- * Evento onEdit principal de Google Sheets.
- * Soporta edición manual y disparador instalable.
+ * Función principal para el disparador instalable:
+ * Configuración en Google Sheets:
+ * Triggers (icono de reloj) -> Agregar disparador -> Función: onEditInstallable -> Evento: Al editar
  */
-function onEdit(e) {
+function onEditInstallable(e) {
   if (!e || !e.range) return;
 
   var sheet = e.range.getSheet();
@@ -55,24 +71,28 @@ function onEdit(e) {
   var row = e.range.getRow();
   var col = e.range.getColumn();
 
-  // Ignorar edición en fila de encabezados
+  // Ignorar fila 1 de encabezados
   if (row <= 1) return;
 
-  // 1. Manejo de pestañas de psicólogas ("MATCHES JENN", "MATCHES SILVI", etc.)
-  if (sheetName.toUpperCase().indexOf(PSYCHOLOGIST_SHEET_PREFIX) === 0 && sheetName.toUpperCase() !== "MATCHES") {
+  var upperSheetName = sheetName.trim().toUpperCase();
+
+  // A. Pestañas de psicólogas ("MATCHES SILVI", "MATCHES JENN", "MATCHES ANA ", etc.)
+  if (upperSheetName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperSheetName !== "MATCHES") {
     handlePsychologistSheetEdit(sheet, row, col, e.value, e.oldValue);
   }
 
-  // 2. Manejo de pestaña "Vuelve a pagar" / Reasignaciones
-  for (var i = 0; i < REASSIGNMENT_SHEET_NAMES.length; i++) {
-    if (sheetName.toUpperCase().indexOf(REASSIGNMENT_SHEET_NAMES[i]) !== -1) {
-      handleReassignmentSheetEdit(sheet, row, col, e.value, e.oldValue);
-      break;
-    }
+  // B. Pestaña oficial "VUELVE A PAGAR"
+  if (upperSheetName === CONFIG.VUELVE_A_PAGAR_SHEET_NAME) {
+    handleVuelveAPagarEdit(sheet, row, col, e.value, e.oldValue);
+  }
+
+  // C. Pestaña de Refunds de Lina ("REFUNDS PENDIENTES")
+  if (upperSheetName === CONFIG.REFUNDS_SHEET_NAME) {
+    handleRefundsSheetEdit(sheet, row, col, e.value, e.oldValue);
   }
 }
 
-// ─── 1. GESTIÓN DE PESTAÑAS DE PSICÓLOGAS ───────────────────────────────────
+// ─── 2. GESTIÓN DE PESTAÑAS DE PSICÓLOGAS ───────────────────────────────────
 
 function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
@@ -90,8 +110,11 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var planCol = headers["PLAN"] || headers["PLAN TIER"];
   var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACION"] || headers["NOTAS"];
 
-  var personA = personACol ? sheet.getRange(row, personACol).getValue().toString().trim() : "";
-  var personB = personBCol ? sheet.getRange(row, personBCol).getValue().toString().trim() : "";
+  var personACell = personACol ? getCellData(sheet, row, personACol) : null;
+  var personBCell = personBCol ? getCellData(sheet, row, personBCol) : null;
+  var personAName = personACell ? personACell.text : "";
+  var personBName = personBCell ? personBCell.text : "";
+
   var city = cityCol ? sheet.getRange(row, cityCol).getValue().toString().trim() : "";
   var pref = prefCol ? sheet.getRange(row, prefCol).getValue().toString().trim() : "";
   var plan = planCol ? sheet.getRange(row, planCol).getValue().toString().trim() : "";
@@ -103,66 +126,224 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
       var currentFecha = sheet.getRange(row, fechaCol).getValue();
       if (!currentFecha || currentFecha.toString().trim() === "") {
         var now = new Date();
-        var formattedDate = Utilities.formatDate(now, Session.getScriptTimeZone() || "America/Bogota", "yyyy-MM-dd HH:mm");
+        var formattedDate = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
         sheet.getRange(row, fechaCol).setValue(formattedDate);
       }
     }
   }
 
   // ── B. NOT APPROVED / TROUBLEMAKER: Fila intacta + Nueva fila al final ───
-  if (statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER" || statusVal === "REVISAR POR SI TOCA OTRO MATCH") {
-    if (personA && personA !== "") {
-      // Evitar duplicación accidental si ya existe una fila idéntica pendiente creada en los últimos segundos
+  // NOTA: "REVISAR POR SI TOCA OTRO MATCH" está explícitamente EXCLUIDO de esta acción
+  if (statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER") {
+    if (personAName && personAName !== "") {
       var cacheKey = "retry_created_" + sheet.getName() + "_" + row + "_" + statusVal;
       var cache = CacheService.getScriptCache();
       if (!cache.get(cacheKey)) {
-        cache.put(cacheKey, "true", 60); // 60 segundos de deduplicación
+        cache.put(cacheKey, "true", 45); // Deduplicación 45s
 
-        appendNewRetryRow(sheet, headers, {
-          city: city,
-          pref: pref,
-          plan: plan,
-          personA: personA,
-          personB: "",
-          fecha: "",
-          status: "Listo para match",
-          observaciones: "Reintento automático tras: " + statusVal + (personB ? " (ex: " + personB + ")" : "")
+        withScriptLock(function() {
+          appendNewRetryRow(sheet, headers, {
+            city: city,
+            pref: pref,
+            plan: plan,
+            personACell: personACell,
+            personBCell: null,
+            fecha: "",
+            status: "Listo para match",
+            observaciones: "Reintento automático tras " + statusVal + (personBName ? " (ex: " + personBName + ")" : "")
+          });
         });
       }
     }
   }
 
-  // ── C. TROUBLEMAKER / TROUBLE: Copiado hacia pestaña TROUBLE MATCHES ────
-  if (statusVal === "TROUBLEMAKER" || statusVal === "TROUBLE") {
-    copyToTroubleMatches(sheet.getName(), {
-      city: city,
-      pref: pref,
-      plan: plan,
-      personA: personA,
-      personB: personB,
-      fecha: fechaCol ? sheet.getRange(row, fechaCol).getValue() : "",
-      status: statusVal,
-      observaciones: obs
+  // ── C. TROUBLEMAKER: Copiado hacia pestaña TROUBLE MATCHES ───────────────
+  if (statusVal === "TROUBLEMAKER") {
+    withScriptLock(function() {
+      copyToTroubleMatches(sheet.getName(), {
+        city: city,
+        pref: pref,
+        plan: plan,
+        personACell: personACell,
+        personBCell: personBCell,
+        fecha: fechaCol ? sheet.getRange(row, fechaCol).getValue() : "",
+        status: statusVal,
+        observaciones: obs
+      });
     });
   }
 
-  // ── D. FLUJO DE REFUND: REFUND -> REFUND DONE ───────────────────────────
-  if (statusVal === "REFUND DONE") {
-    // Si Lina finalizó el reembolso, dejamos constancia en observaciones sin crear nuevos slots
+  // ── D. REFUND: Enviar automáticamente a la cola de Lina (REFUNDS PENDIENTES) ─
+  if (statusVal === "REFUND") {
+    withScriptLock(function() {
+      syncToRefundsQueue(sheet.getName(), row, {
+        personACell: personACell,
+        plan: plan,
+        observaciones: obs
+      });
+    });
+  }
+
+  // ── E. DESCALIFICADO vs REFUND: Registro y bloqueo permanente ────────────
+  if (statusVal === "DESCALIFICADO") {
     if (obsCol) {
       var currentObs = sheet.getRange(row, obsCol).getValue().toString();
-      if (currentObs.indexOf("[REFUND PROCESADO]") === -1) {
-        var nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "America/Bogota", "yyyy-MM-dd");
-        sheet.getRange(row, obsCol).setValue((currentObs ? currentObs + " | " : "") + "[REFUND PROCESADO POR LINA " + nowStr + "]");
+      if (currentObs.indexOf("[DESCALIFICADO - BLOQUEO PERMANENTE]") === -1) {
+        sheet.getRange(row, obsCol).setValue((currentObs ? currentObs + " | " : "") + "[DESCALIFICADO - BLOQUEO PERMANENTE]");
       }
     }
   }
 }
 
-// ─── 2. AGREGAR NUEVA FILA DE REINTENTO AL FINAL ────────────────────────────
+// ─── 3. GESTIÓN DE TABLA "VUELVE A PAGAR" (SSOT EXACTO) ──────────────────────
+
+function handleVuelveAPagarEdit(sheet, row, col, newValue, oldValue) {
+  var headers = getSheetHeaders(sheet);
+  var statusCol = headers["STATUS"];
+  if (!statusCol || col !== statusCol) return;
+
+  var statusVal = (newValue || sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase();
+  if (!statusVal) return;
+
+  var personaCol = headers["PERSONA"] || headers["PERSON A"] || headers["CLIENTE"];
+  var psychologistCol = headers["HECHO POR"] || headers["PSICOLOGA"] || headers["PSICÓLOGA"];
+  var planCol = headers["PLAN"] || headers["PLAN TIER"];
+  var csObsCol = headers["COMENTARIO CUSTOMER SERVICE"] || headers["OBSERVACIONES"] || headers["COMENTARIO"];
+
+  var personACell = personaCol ? getCellData(sheet, row, personaCol) : null;
+  var personAName = personACell ? personACell.text : "";
+  var psychologist = psychologistCol ? sheet.getRange(row, psychologistCol).getValue().toString().trim() : "";
+  var rawPlan = planCol ? sheet.getRange(row, planCol).getValue().toString().trim() : "";
+
+  if (!personAName) return;
+
+  // 7. VALIDACIÓN DE PLAN: NO asumir silenciosamente
+  var cleanPlanKey = rawPlan.toUpperCase().replace(/\s+/g, " ");
+  var numSlots = CONFIG.PLAN_SLOTS_MAP[cleanPlanKey];
+
+  if (!numSlots) {
+    // Marcar visiblemente como error en la celda de plan y observación
+    if (planCol) {
+      sheet.getRange(row, planCol).setBackground("#F4CCCC").setNote("PLAN NO ESPECIFICADO O NO VÁLIDO. Especifique: Básico 40k, Estándar 65k o VIP 195k.");
+    }
+    if (csObsCol) {
+      var existingObs = sheet.getRange(row, csObsCol).getValue().toString();
+      if (existingObs.indexOf("[ERROR: PLAN REQUERIDO]") === -1) {
+        sheet.getRange(row, csObsCol).setValue((existingObs ? existingObs + " | " : "") + "[ERROR: PLAN REQUERIDO PARA CREAR SLOTS]");
+      }
+    }
+    SpreadsheetApp.getActiveSpreadsheet().toast("Error: El plan '" + rawPlan + "' no es válido. No se crearon slots.", "Plan Requerido", 6);
+    return;
+  }
+
+  // 8. BÚSQUEDA ROBUSTA DE PESTAÑA DE PSICÓLOGA
+  if (statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER" || statusVal === "APROBADO") {
+    if (!psychologist) {
+      if (psychologistCol) {
+        sheet.getRange(row, psychologistCol).setBackground("#FFF2CC").setNote("Indique la psicóloga responsable en 'Hecho por'.");
+      }
+      return;
+    }
+
+    var psycSheet = findPsychologistSheet(psychologist);
+    if (!psycSheet) {
+      // Aviso visible de que la psicóloga no tiene pestaña
+      if (psychologistCol) {
+        sheet.getRange(row, psychologistCol).setBackground("#F4CCCC").setNote("No se encontró la pestaña 'MATCHES " + psychologist + "'. Verifique el nombre.");
+      }
+      Logger.log("ERROR: Pestaña no encontrada para psicóloga: " + psychologist);
+      SpreadsheetApp.getActiveSpreadsheet().toast("No se encontró la pestaña de " + psychologist, "Error de Psicóloga", 6);
+      return;
+    }
+
+    // Crear fila de reasignación con preservación de CRM Link
+    withScriptLock(function() {
+      var psycHeaders = getSheetHeaders(psycSheet);
+      appendNewRetryRow(psycSheet, psycHeaders, {
+        city: "",
+        pref: "hetero",
+        plan: rawPlan,
+        personACell: personACell,
+        personBCell: null,
+        fecha: "",
+        status: "Listo para match",
+        observaciones: "Vuelve a Pagar / Reasignación (" + statusVal + ")"
+      });
+    });
+  }
+}
+
+// ─── 4. FLUJO DE REFUNDS DE LINA (REFUNDS PENDIENTES) ─────────────────────────
+
+function syncToRefundsQueue(sourceSheetName, sourceRow, data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var refundSheet = ss.getSheetByName(CONFIG.REFUNDS_SHEET_NAME);
+
+  if (!refundSheet) {
+    refundSheet = ss.insertSheet(CONFIG.REFUNDS_SHEET_NAME);
+    var headerRow = [
+      "FECHA REPORTE", "ORIGEN (PESTAÑA)", "FILA ORIGEN", "PERSONA A", "PLAN", "OBSERVACIONES / MOTIVO", "ESTADO REFUND", "FECHA PROCESADO", "LINA NOTAS"
+    ];
+    refundSheet.appendRow(headerRow);
+    refundSheet.getRange(1, 1, 1, headerRow.length).setFontWeight("bold").setBackground("#D9D2E9");
+    refundSheet.setFrozenRows(1);
+  }
+
+  var headers = getSheetHeaders(refundSheet);
+  var trueLastRow = getTrueLastRow(refundSheet, headers["PERSONA A"] || 4);
+  var targetRow = trueLastRow + 1;
+
+  var nowStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+
+  if (headers["FECHA REPORTE"]) refundSheet.getRange(targetRow, headers["FECHA REPORTE"]).setValue(nowStr);
+  if (headers["ORIGEN (PESTAÑA)"]) refundSheet.getRange(targetRow, headers["ORIGEN (PESTAÑA)"]).setValue(sourceSheetName);
+  if (headers["FILA ORIGEN"]) refundSheet.getRange(targetRow, headers["FILA ORIGEN"]).setValue(sourceRow);
+  if (headers["PLAN"]) refundSheet.getRange(targetRow, headers["PLAN"]).setValue(data.plan || "");
+  if (headers["OBSERVACIONES / MOTIVO"]) refundSheet.getRange(targetRow, headers["OBSERVACIONES / MOTIVO"]).setValue(data.observaciones || "");
+  if (headers["ESTADO REFUND"]) refundSheet.getRange(targetRow, headers["ESTADO REFUND"]).setValue("PENDIENTE LINA");
+
+  if (headers["PERSONA A"] && data.personACell) {
+    setCellData(refundSheet, targetRow, headers["PERSONA A"], data.personACell);
+  }
+}
+
+function handleRefundsSheetEdit(sheet, row, col, newValue, oldValue) {
+  var headers = getSheetHeaders(sheet);
+  var estadoCol = headers["ESTADO REFUND"];
+  if (!estadoCol || col !== estadoCol) return;
+
+  var val = (newValue || sheet.getRange(row, estadoCol).getValue() || "").toString().trim().toUpperCase();
+
+  if (val === "REFUND DONE" || val === "APROBADO" || val === "PROCESADO") {
+    var origenCol = headers["ORIGEN (PESTAÑA)"];
+    var filaOrigenCol = headers["FILA ORIGEN"];
+    var fechaProcCol = headers["FECHA PROCESADO"];
+
+    var nowStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+    if (fechaProcCol) sheet.getRange(row, fechaProcCol).setValue(nowStr);
+
+    var sourceSheetName = origenCol ? sheet.getRange(row, origenCol).getValue().toString().trim() : "";
+    var sourceRow = filaOrigenCol ? parseInt(sheet.getRange(row, filaOrigenCol).getValue(), 10) : 0;
+
+    if (sourceSheetName && sourceRow > 1) {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sourceSheet = ss.getSheetByName(sourceSheetName);
+      if (sourceSheet) {
+        var sourceHeaders = getSheetHeaders(sourceSheet);
+        var sourceStatusCol = sourceHeaders["STATUS"];
+        if (sourceStatusCol) {
+          sourceSheet.getRange(sourceRow, sourceStatusCol).setValue("REFUND DONE");
+        }
+      }
+    }
+  }
+}
+
+// ─── 5. AGREGAR NUEVA FILA DE REINTENTO (PRESERVA LINKS CRM) ────────────────
 
 function appendNewRetryRow(sheet, headers, data) {
-  var trueLastRow = getTrueLastRow(sheet, headers["PERSON A"] || headers["PERSONA A"] || 1);
+  var checkCol = headers["PERSON A"] || headers["PERSONA A"] || 1;
+  var trueLastRow = getTrueLastRow(sheet, checkCol);
   var newRow = trueLastRow + 1;
 
   if (headers["CITY"]) sheet.getRange(newRow, headers["CITY"]).setValue(data.city);
@@ -174,27 +355,29 @@ function appendNewRetryRow(sheet, headers, data) {
   if (headers["PLAN"]) sheet.getRange(newRow, headers["PLAN"]).setValue(data.plan);
   if (headers["PLAN TIER"]) sheet.getRange(newRow, headers["PLAN TIER"]).setValue(data.plan);
 
-  if (headers["PERSON A"]) sheet.getRange(newRow, headers["PERSON A"]).setValue(data.personA);
-  if (headers["PERSONA A"]) sheet.getRange(newRow, headers["PERSONA A"]).setValue(data.personA);
+  // 3. PRESERVAR HIPERVÍNCULO CRM DE PERSONA A
+  if (headers["PERSON A"] && data.personACell) {
+    setCellData(sheet, newRow, headers["PERSON A"], data.personACell);
+  } else if (headers["PERSONA A"] && data.personACell) {
+    setCellData(sheet, newRow, headers["PERSONA A"], data.personACell);
+  }
 
   if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
   if (headers["PERSONA B"]) sheet.getRange(newRow, headers["PERSONA B"]).setValue("");
 
   if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
-
   if (headers["STATUS"]) sheet.getRange(newRow, headers["STATUS"]).setValue(data.status);
 
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(data.observaciones);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(data.observaciones);
 }
 
-// ─── 3. COPIAR A TROUBLE MATCHES (DESTINO EXCLUSIVO) ─────────────────────────
+// ─── 6. COPIAR A TROUBLE MATCHES (PRESERVA LINKS CRM) ────────────────────────
 
 function copyToTroubleMatches(sourcePsychologistSheet, data) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var troubleSheet = ss.getSheetByName(TROUBLE_SHEET_NAME);
+  var troubleSheet = ss.getSheetByName(CONFIG.TROUBLE_SHEET_NAME);
   if (!troubleSheet) {
-    // Si tiene otro nombre similar buscar tolerante
     var allSheets = ss.getSheets();
     for (var i = 0; i < allSheets.length; i++) {
       if (allSheets[i].getName().toUpperCase().indexOf("TROUBLE") !== -1) {
@@ -206,12 +389,13 @@ function copyToTroubleMatches(sourcePsychologistSheet, data) {
   if (!troubleSheet) return;
 
   var headers = getSheetHeaders(troubleSheet);
-  var trueLastRow = getTrueLastRow(troubleSheet, headers["PERSON A"] || headers["PERSONA A"] || 1);
+  var checkCol = headers["PERSON A"] || headers["PERSONA A"] || 1;
+  var trueLastRow = getTrueLastRow(troubleSheet, checkCol);
   var targetRow = trueLastRow + 1;
 
   if (headers["PSICOLOGA"] || headers["PSICÓLOGA"] || headers["HECHO POR"]) {
     var pCol = headers["PSICOLOGA"] || headers["PSICÓLOGA"] || headers["HECHO POR"];
-    troubleSheet.getRange(targetRow, pCol).setValue(sourcePsychologistSheet.replace(PSYCHOLOGIST_PREFIX, "").trim());
+    troubleSheet.getRange(targetRow, pCol).setValue(sourcePsychologistSheet.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim());
   }
 
   if (headers["CITY"] || headers["CIUDAD"]) {
@@ -220,95 +404,108 @@ function copyToTroubleMatches(sourcePsychologistSheet, data) {
   if (headers["PREF"]) troubleSheet.getRange(targetRow, headers["PREF"]).setValue(data.pref);
   if (headers["PLAN"]) troubleSheet.getRange(targetRow, headers["PLAN"]).setValue(data.plan);
 
-  if (headers["PERSON A"] || headers["PERSONA A"]) {
-    troubleSheet.getRange(targetRow, headers["PERSON A"] || headers["PERSONA A"]).setValue(data.personA);
+  // 3. PRESERVAR HIPERVÍNCULOS CRM
+  if ((headers["PERSON A"] || headers["PERSONA A"]) && data.personACell) {
+    setCellData(troubleSheet, targetRow, headers["PERSON A"] || headers["PERSONA A"], data.personACell);
   }
-  if (headers["PERSON B"] || headers["PERSONA B"] || headers["MATCH"]) {
-    troubleSheet.getRange(targetRow, headers["PERSON B"] || headers["PERSONA B"] || headers["MATCH"]).setValue(data.personB);
+  if ((headers["PERSON B"] || headers["PERSONA B"] || headers["MATCH"]) && data.personBCell) {
+    setCellData(troubleSheet, targetRow, headers["PERSON B"] || headers["PERSONA B"] || headers["MATCH"], data.personBCell);
   }
-  if (headers["FECHA"]) troubleSheet.getRange(targetRow, headers["FECHA"]).setValue(data.fecha || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "America/Bogota", "yyyy-MM-dd"));
+
+  if (headers["FECHA"]) troubleSheet.getRange(targetRow, headers["FECHA"]).setValue(data.fecha || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd"));
   if (headers["STATUS"]) troubleSheet.getRange(targetRow, headers["STATUS"]).setValue(data.status);
   if (headers["OBSERVACIONES"] || headers["OBSERVACION"]) {
     troubleSheet.getRange(targetRow, headers["OBSERVACIONES"] || headers["OBSERVACION"]).setValue(data.observaciones);
   }
 }
 
-// ─── 4. GESTIÓN DE TABLA "VUELVE A PAGAR" / REASIGNACIONES ───────────────────
+// ─── 7. FUNCIONES UTILITARIAS Y DE SEGURIDAD ────────────────────────────────
 
-function handleReassignmentSheetEdit(sheet, row, col, newValue, oldValue) {
-  var headers = getSheetHeaders(sheet);
-  var statusCol = headers["STATUS"];
-  if (!statusCol || col !== statusCol) return;
-
-  var statusVal = (newValue || sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase();
-  if (!statusVal) return;
-
-  var personaCol = headers["PERSONA"] || headers["PERSON A"] || headers["CLIENTE"];
-  var psychologistCol = headers["HECHO POR"] || headers["PSICOLOGA"] || headers["PSICÓLOGA"];
-  var planCol = headers["PLAN"] || headers["PLAN TIER"];
-
-  var persona = personaCol ? sheet.getRange(row, personaCol).getValue().toString().trim() : "";
-  var psychologist = psychologistCol ? sheet.getRange(row, psychologistCol).getValue().toString().trim() : "";
-  var plan = planCol ? sheet.getRange(row, planCol).getValue().toString().trim() : "Estándar 65k (2 citas)";
-
-  if (!persona || !psychologist) return;
-
-  // Si María aprueba o marca para reintento en Vuelve a Pagar
-  if (statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER") {
-    // Abrir la pestaña de la psicóloga y agregar fila de reintento
-    var psycSheetName = "MATCHES " + psychologist.toUpperCase();
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var psycSheet = ss.getSheetByName(psycSheetName);
-    if (psycSheet) {
-      var psycHeaders = getSheetHeaders(psycSheet);
-      appendNewRetryRow(psycSheet, psycHeaders, {
-        city: "",
-        pref: "hetero",
-        plan: plan,
-        personA: persona,
-        personB: "",
-        fecha: "",
-        status: "Listo para match",
-        observaciones: "Reasignación / Vuelve a Pagar (" + statusVal + ")"
-      });
+/**
+ * Ejecuta una acción protegida por LockService para evitar concurrencia y sobreescrituras.
+ */
+function withScriptLock(actionFn) {
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
+  try {
+    hasLock = lock.tryLock(CONFIG.LOCK_TIMEOUT_MS);
+    if (!hasLock) {
+      Logger.log("No se pudo obtener el bloqueo de concurrencia en " + CONFIG.LOCK_TIMEOUT_MS + "ms.");
+      return false;
+    }
+    actionFn();
+    return true;
+  } catch (err) {
+    Logger.log("Error en operación con bloqueo: " + err.message);
+    return false;
+  } finally {
+    if (hasLock) {
+      lock.releaseLock();
     }
   }
 }
 
 /**
- * Función pública para crear los slots correspondientes según el plan del cliente.
- * Básico 40k -> 2 slots | Estándar 65k -> 3 slots | VIP 195k -> 4 slots
+ * 8. Búsqueda tolerante de la pestaña de psicóloga (maneja espacios extras como 'MATCHES ANA ')
  */
-function createSlotsForClient(psychologistName, clientData) {
+function findPsychologistSheet(psycName) {
+  if (!psycName) return null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var psycSheetName = "MATCHES " + psychologistName.toUpperCase().trim();
-  var psycSheet = ss.getSheetByName(psycSheetName);
-  if (!psycSheet) return false;
+  var cleanName = psycName.toString().trim().toUpperCase();
+  var targetPrefix = CONFIG.PSYCHOLOGIST_SHEET_PREFIX + cleanName;
 
-  var headers = getSheetHeaders(psycSheet);
-  var plan = clientData.plan || "Estándar 65k (2 citas)";
-  var numSlots = PLAN_SLOTS_MAP[plan] || 3;
+  var direct = ss.getSheetByName(targetPrefix);
+  if (direct) return direct;
 
-  for (var i = 0; i < numSlots; i++) {
-    appendNewRetryRow(psycSheet, psycHeaders, {
-      city: clientData.city || "",
-      pref: clientData.pref || "hetero",
-      plan: plan,
-      personA: clientData.personA || clientData.name,
-      personB: "",
-      fecha: "",
-      status: "Listo para match",
-      observaciones: "Slot " + (i + 1) + " de " + numSlots + " (" + plan + ")"
-    });
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sName = sheets[i].getName().trim().toUpperCase();
+    if (sName === targetPrefix || sName.replace(/\s+/g, " ") === targetPrefix.replace(/\s+/g, " ")) {
+      return sheets[i];
+    }
   }
-  return true;
+  return null;
 }
 
-// ─── 5. FUNCIONES UTILITARIAS Y DE SEGURIDAD ────────────────────────────────
+/**
+ * Extrae texto, RichTextValue y fórmula de una celda para preservar hipervínculos.
+ */
+function getCellData(sheet, row, col) {
+  if (!col) return null;
+  var range = sheet.getRange(row, col);
+  var formula = range.getFormula();
+  var richText = range.getRichTextValue();
+  var value = range.getValue();
+  var text = richText ? richText.getText() : (value !== null && value !== undefined ? value.toString().trim() : "");
+
+  return {
+    text: text,
+    value: value,
+    richText: richText,
+    formula: formula
+  };
+}
+
+/**
+ * Escribe en una celda preservando fórmulas de hipervínculo o RichTextValue con URL.
+ */
+function setCellData(sheet, row, col, cellData) {
+  if (!col || !cellData) return;
+  var range = sheet.getRange(row, col);
+
+  if (cellData.formula && cellData.formula.indexOf("=HYPERLINK") !== -1) {
+    range.setFormula(cellData.formula);
+  } else if (cellData.richText && cellData.richText.getLinkUrl()) {
+    range.setRichTextValue(cellData.richText);
+  } else if (cellData.richText && cellData.richText.getText()) {
+    range.setRichTextValue(cellData.richText);
+  } else {
+    range.setValue(cellData.value !== undefined ? cellData.value : cellData.text);
+  }
+}
 
 /**
  * Lee los encabezados de la fila 1 y devuelve un mapa { "HEADER_TEXT": col_index (1-based) }
- * Cumple la Regla de Seguridad #5: "Verificar encabezados reales de la fila 1 por texto".
  */
 function getSheetHeaders(sheet) {
   var lastCol = sheet.getLastColumn();
@@ -327,7 +524,6 @@ function getSheetHeaders(sheet) {
 
 /**
  * Encuentra la verdadera última fila con datos reales en una columna dada.
- * Cumple la Regla de Seguridad #4: "getLastRow() no es confiable con checkboxes o filas vacías".
  */
 function getTrueLastRow(sheet, checkColIndex) {
   var col = checkColIndex || 1;
@@ -337,7 +533,7 @@ function getTrueLastRow(sheet, checkColIndex) {
   for (var r = values.length - 1; r >= 0; r--) {
     var val = values[r][0];
     if (val !== null && val !== undefined && val.toString().trim() !== "") {
-      return r + 1; // 1-based index
+      return r + 1;
     }
   }
   return 1;
