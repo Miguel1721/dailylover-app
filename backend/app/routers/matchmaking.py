@@ -146,6 +146,8 @@ class UpdateCalendarDateRequest(BaseModel):
     city: Optional[str] = None
     had_date: Optional[bool] = None
     feedback: Optional[str] = None
+    feedback_ella: Optional[str] = None
+    feedback_el: Optional[str] = None
     reschedule: Optional[bool] = None
 
 class ResolveProfileRequest(BaseModel):
@@ -561,10 +563,10 @@ async def get_approval_queue(
 @router.post("/matches/{match_id}/approve")
 async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_db)):
     """
-    ACCIÓN ÚNICA DE MARÍA:
+    ACCIÓN ÚNICA DE MARÍA (SPEC v2):
     1. Marca status = 'APROBADO', approved_by_maria = true, approved_at = now().
-    2. Bloquea la fila en la vista de psicóloga para siempre.
-    3. Copia el match a match_confirmations (Servicio al Cliente - Pendientes).
+    2. Bloquea la fila en la vista de psicóloga directamente en operational_matches.
+    3. NO COPIA a otra tabla — todo vive y se gestiona en operational_matches.
     4. Registra en person_history para Persona A y Persona B.
     """
     exist_res = await db.execute(text("""
@@ -580,31 +582,100 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
     if match_row.approved_by_maria:
         return {"status": "already_approved", "message": f"Match {match_id} ya fue aprobado previamente."}
 
-    # 1. Actualizar estado y bloquear fila
+    # 1. Actualizar estado y bloquear fila in-situ en operational_matches
     await db.execute(text("""
         UPDATE operational_matches
         SET status = 'APROBADO', approved_by_maria = true, approved_at = NOW(), updated_at = NOW()
         WHERE id = :id
     """), {"id": match_id})
 
-    # 2. Copiar hacia match_confirmations (Pendientes)
-    await db.execute(text("""
-        INSERT INTO match_confirmations (match_id, person_a_confirmation, person_b_confirmation, stage, created_at, updated_at)
-        VALUES (:mid, 'Pendiente', 'Pendiente', 'pendientes', NOW(), NOW())
-        ON CONFLICT (match_id) DO NOTHING
-    """), {"mid": match_id})
-
-    # 3. Registrar trazabilidad
+    # 2. Registrar trazabilidad
     pA = match_row.person_a
     pB = match_row.person_b or "Candidato B"
 
-    det = f"Match aprobado por María ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}) — transferido a Pendientes de confirmación"
+    det = f"Match aprobado directamente por María ({pA} x {pB}, Psicóloga: {match_row.psychologist_name})."
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pA, "mid": match_id, "d": det})
     if pB and pB != "Candidato B":
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pB, "mid": match_id, "d": det})
 
     await db.commit()
-    return {"status": "success", "match_id": match_id, "message": f"Match {match_id} aprobado exitosamente y transferido a Pendientes."}
+    return {"status": "success", "match_id": match_id, "message": f"Match {match_id} aprobado exitosamente por María Paula (fila actualizada in-situ)."}
+
+
+# ─── 2B. COLA DE REFUNDS (LINA - SERVICIO AL CLIENTE) ───────────────────────
+
+@router.get("/refunds")
+async def get_refunds_queue(
+    status: Optional[str] = Query("REFUND"),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna la cola de refunds para Lina (Servicio al Cliente).
+    Filtra por REFUND (pendientes de procesar) o REFUND DONE (procesados en Stripe/Nequi).
+    """
+    target_status = "REFUND DONE" if status and status.upper() == "REFUND DONE" else "REFUND"
+    query = """
+        SELECT 
+            m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier,
+            m.status, m.observations, m.created_at, m.updated_at,
+            m.person_a_crm_id, uA.crm_id AS ua_crm_id
+        FROM operational_matches m
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        WHERE m.status = :st
+    """
+    params = {"st": target_status}
+
+    if search:
+        query += " AND (m.person_a ILIKE :srch OR m.psychologist_name ILIKE :srch OR m.observations ILIKE :srch OR m.city ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY m.updated_at DESC"
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    refunds = []
+    for r in rows:
+        d = dict(r._mapping)
+        refunds.append({
+            "id": d.get("id"),
+            "person_a": d.get("person_a"),
+            "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
+            "psychologist_name": d.get("psychologist_name"),
+            "city": normalize_city(d.get("city")) or "Bogotá",
+            "plan_tier": d.get("plan_tier") or "Estándar 65k",
+            "status": d.get("status"),
+            "observations": d.get("observations") or "",
+            "fecha": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else ""
+        })
+
+    return {"refunds": refunds, "total": len(refunds)}
+
+
+@router.patch("/refunds/{match_id}/process")
+async def process_refund(match_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Acción exclusiva de Lina: Marca el match como REFUND DONE tras procesar el reembolso en Stripe/Nequi.
+    """
+    res = await db.execute(text("SELECT id, person_a, observations FROM operational_matches WHERE id = :id"), {"id": match_id})
+    row = res.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    obs = (row.observations or "") + f" | [REFUND PROCESADO POR LINA]"
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'REFUND DONE', observations = :obs, updated_at = NOW()
+        WHERE id = :id
+    """), {"id": match_id, "obs": obs})
+
+    await db.execute(text("""
+        INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+        VALUES (:name, :mid, 'REFUND_PROCESSED', 'Reembolso aprobado y procesado por Lina en pasarela/banco.', NOW())
+    """), {"name": row.person_a, "mid": match_id})
+
+    await db.commit()
+    return {"status": "success", "message": f"Reembolso #{match_id} marcado como REFUND DONE exitosamente."}
 
 
 # ─── 3. PANTALLA 3: SERVICIO AL CLIENTE (PENDIENTES & PAUSAS) ────────────────
@@ -839,7 +910,7 @@ async def get_calendar_dates(
     query = """
         SELECT 
             s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city,
-            s.reservation_name, s.had_date, s.feedback, s.reschedule, s.created_at, s.updated_at,
+            s.reservation_name, s.had_date, s.feedback, s.feedback_ella, s.feedback_el, s.reschedule, s.created_at, s.updated_at,
             uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id
         FROM scheduled_dates s
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(s.person_a))
@@ -920,11 +991,13 @@ async def get_calendar_dates(
             "person_b_crm_id": d.get("ub_crm_id") or "",
             "date_time": dt_val,
             "venue": ven_val,
-            "city": normalize_city(r.city) or "Bogotá",
-            "reservation_name": r.reservation_name,
-            "had_date": bool(r.had_date),
-            "feedback": r.feedback or "",
-            "reschedule": bool(r.reschedule),
+            "city": normalize_city(d.get("city")) or "Bogotá",
+            "reservation_name": res_name,
+            "had_date": bool(d.get("had_date")),
+            "feedback": d.get("feedback") or "",
+            "feedback_ella": d.get("feedback_ella") or "",
+            "feedback_el": d.get("feedback_el") or "",
+            "reschedule": bool(d.get("reschedule")),
             "whatsapp_confirmacion": msg_confirmacion,
             "whatsapp_dia_antes": msg_dia_antes,
             "whatsapp_hoy": msg_hoy,
@@ -941,9 +1014,8 @@ async def update_calendar_date(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Actualiza fecha, lugar, feedback o reprogramación.
+    Actualiza fecha, lugar, feedback separado (ELLA / ÉL) o reprogramación.
     REGLA: Si had_date = true y hay feedback, el STATUS del match original cambia a 'CITA COMPLETADA'.
-    REGLA: Si reschedule = true, clona la pareja a 'En Pausa' con motivo 'Reprogramar'.
     """
     res = await db.execute(text("SELECT id, match_id, person_a, person_b FROM scheduled_dates WHERE id = :id"), {"id": calendar_id})
     cal_row = res.fetchone()
@@ -973,6 +1045,14 @@ async def update_calendar_date(
     if payload.feedback is not None:
         updates.append("feedback = :fb")
         params["fb"] = payload.feedback.strip()
+
+    if payload.feedback_ella is not None:
+        updates.append("feedback_ella = :fbe")
+        params["fbe"] = payload.feedback_ella.strip()
+
+    if payload.feedback_el is not None:
+        updates.append("feedback_el = :fbel")
+        params["fbel"] = payload.feedback_el.strip()
 
     if payload.reschedule is not None:
         updates.append("reschedule = :rs")

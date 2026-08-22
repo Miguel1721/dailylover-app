@@ -298,7 +298,8 @@ export default function CalendarioCitas() {
               <th style={{ padding: '12px 10px', width: 90, fontWeight: 600 }}>CIUDAD</th>
               <th style={{ padding: '12px 14px', minWidth: 320, textAlign: 'center', fontWeight: 600 }}>MENSAJES WHATSAPP (1-CLIC)</th>
               <th style={{ padding: '12px 12px', width: 130, textAlign: 'center', fontWeight: 600 }}>¿TUVO LA CITA?</th>
-              <th style={{ padding: '12px 14px', minWidth: 200, fontWeight: 600 }}>RETROALIMENTACIÓN</th>
+              <th style={{ padding: '12px 12px', minWidth: 160, fontWeight: 600 }}>FEEDBACK (ELLA)</th>
+              <th style={{ padding: '12px 12px', minWidth: 160, fontWeight: 600 }}>FEEDBACK (ÉL)</th>
               <th style={{ padding: '12px 12px', width: 120, textAlign: 'center', fontWeight: 600 }}>¿REPROGRAMAR?</th>
             </tr>
           </thead>
@@ -480,15 +481,15 @@ export default function CalendarioCitas() {
                       </label>
                     </td>
 
-                    {/* Retroalimentación */}
-                    <td style={{ padding: '8px 12px' }}>
+                    {/* Feedback ELLA */}
+                    <td style={{ padding: '8px 10px' }}>
                       <input
                         type="text"
-                        defaultValue={item.feedback}
-                        placeholder="Notas de feedback tras la cita..."
+                        defaultValue={item.feedback_ella || ''}
+                        placeholder="Feedback Ella..."
                         onBlur={e => {
-                          if (e.target.value !== item.feedback) {
-                            handleUpdateDate(item.id, { feedback: e.target.value, had_date: item.had_date })
+                          if (e.target.value !== (item.feedback_ella || '')) {
+                            handleUpdateDate(item.id, { feedback_ella: e.target.value, had_date: item.had_date })
                           }
                         }}
                         style={{
@@ -499,7 +500,33 @@ export default function CalendarioCitas() {
                           background: 'var(--bg-base)',
                           color: 'var(--text-primary)',
                           fontSize: 12,
-                          outline: 'none'
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </td>
+
+                    {/* Feedback ÉL */}
+                    <td style={{ padding: '8px 10px' }}>
+                      <input
+                        type="text"
+                        defaultValue={item.feedback_el || ''}
+                        placeholder="Feedback Él..."
+                        onBlur={e => {
+                          if (e.target.value !== (item.feedback_el || '')) {
+                            handleUpdateDate(item.id, { feedback_el: e.target.value, had_date: item.had_date })
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 8px',
+                          borderRadius: 4,
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-base)',
+                          color: 'var(--text-primary)',
+                          fontSize: 12,
+                          outline: 'none',
+                          boxSizing: 'border-box'
                         }}
                       />
                     </td>
