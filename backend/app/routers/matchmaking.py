@@ -451,9 +451,9 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
             VALUES (:name, :mid, 'MARKED_HECHO', 'Psicóloga marcó el match como HECHO (enviado a revisión)', NOW())
         """), {"name": match_row.person_a, "mid": match_id})
 
-    # 2. Flujo SSOT v2: Si pasa a NOT APPROVED, TROUBLEMAKER o REVISAR POR SI TOCA OTRO MATCH:
+    # 2. Flujo SSOT v2: Si pasa a NOT APPROVED o TROUBLEMAKER:
     # La fila original queda INTACTA con su status y se genera una nueva fila de reintento para Persona A
-    if payload.status in ("NOT APPROVED", "TROUBLEMAKER", "REVISAR POR SI TOCA OTRO MATCH"):
+    if payload.status in ("NOT APPROVED", "TROUBLEMAKER"):
         curr_res = await db.execute(text("""
             SELECT city, pref, plan_tier, person_a, psychologist_name, person_a_crm_id,
                    (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM operational_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))) AS next_slot
