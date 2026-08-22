@@ -550,7 +550,7 @@ function getTrueLastRow(sheet, checkColIndex) {
  */
 function reconstruirRevisionMaria() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetName = "REVISIÓN MARÍA";
+  var sheetName = CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA";
   var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
 
   var headers = [
@@ -562,7 +562,7 @@ function reconstruirRevisionMaria() {
     revisionSheet.setTabColor("#D5A6BD");
   }
 
-  // Asegurar encabezados en fila 1
+  // Asegurar encabezados
   revisionSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   revisionSheet.getRange(1, 1, 1, headers.length)
     .setFontWeight("bold")
@@ -570,10 +570,10 @@ function reconstruirRevisionMaria() {
     .setFontColor("#000000");
   revisionSheet.setFrozenRows(1);
 
-  // Limpiar contenido anterior (desde fila 2 hasta la última fila existente)
+  // Limpiar contenido anterior
   var lastRow = revisionSheet.getLastRow();
   if (lastRow > 1) {
-    revisionSheet.getRange(2, 1, lastRow - 1, headers.length).clear({ contentsOnly: false });
+    revisionSheet.getRange(2, 1, lastRow - 1, headers.length).clear({ contentsOnly: true });
   }
 
   var allSheets = ss.getSheets();
@@ -602,69 +602,78 @@ function reconstruirRevisionMaria() {
 
       if (!statusCol || !personACol) continue;
 
-      var trueLast = getTrueLastRow(curSheet, personACol);
-      if (trueLast <= 1) continue;
+      var lastCol = curSheet.getLastColumn();
+      var totalRows = curSheet.getLastRow();
+      if (totalRows <= 1 || lastCol < 1) continue;
 
-      var numRows = trueLast - 1;
-      var statusVals = curSheet.getRange(2, statusCol, numRows, 1).getValues();
+      // ⚡ LECTURA BATCH ULTRA-RÁPIDA (1 sola llamada RPC por pestaña)
+      var sheetValues = curSheet.getRange(1, 1, totalRows, lastCol).getValues();
+      var sheetRichTexts = curSheet.getRange(1, 1, totalRows, lastCol).getRichTextValues();
 
-      for (var r = 0; r < statusVals.length; r++) {
-        var st = (statusVals[r][0] || "").toString().trim().toUpperCase();
+      var statusIdx = statusCol - 1;
+      var personAIdx = personACol - 1;
+      var personBIdx = personBCol ? personBCol - 1 : -1;
+      var cityIdx = cityCol ? cityCol - 1 : -1;
+      var prefIdx = prefCol ? prefCol - 1 : -1;
+      var planIdx = planCol ? planCol - 1 : -1;
+      var fechaIdx = fechaCol ? fechaCol - 1 : -1;
+      var obsIdx = obsCol ? obsCol - 1 : -1;
+
+      for (var r = 1; r < sheetValues.length; r++) {
+        var rowVal = sheetValues[r];
+        var st = (rowVal[statusIdx] || "").toString().trim().toUpperCase();
+
         if (st === "HECHO" || st === "HECHO POR MAPE") {
-          var realRow = r + 2;
+          var realRow = r + 1; // 1-indexed row
 
-          var cityVal = cityCol ? curSheet.getRange(realRow, cityCol).getValue().toString().trim() : "";
-          var prefVal = prefCol ? curSheet.getRange(realRow, prefCol).getValue().toString().trim() : "";
-          var planVal = planCol ? curSheet.getRange(realRow, planCol).getValue().toString().trim() : "";
-          var fechaVal = fechaCol ? curSheet.getRange(realRow, fechaCol).getValue() : "";
-          var obsVal = obsCol ? curSheet.getRange(realRow, obsCol).getValue().toString().trim() : "";
+          var cityVal = cityIdx !== -1 ? (rowVal[cityIdx] || "").toString().trim() : "";
+          var prefVal = prefIdx !== -1 ? (rowVal[prefIdx] || "").toString().trim() : "";
+          var planVal = planIdx !== -1 ? (rowVal[planIdx] || "").toString().trim() : "";
+          var fechaVal = fechaIdx !== -1 ? (rowVal[fechaIdx] || "") : "";
+          var obsVal = obsIdx !== -1 ? (rowVal[obsIdx] || "").toString().trim() : "";
 
-          var cellDataA = getCellData(curSheet, realRow, personACol);
-          var cellDataB = personBCol ? getCellData(curSheet, realRow, personBCol) : null;
+          var richTextA = sheetRichTexts[r][personAIdx];
+          var richTextB = personBIdx !== -1 ? sheetRichTexts[r][personBIdx] : null;
+
+          var textA = richTextA ? richTextA.getText() : (rowVal[personAIdx] || "").toString().trim();
+          var textB = richTextB ? richTextB.getText() : (personBIdx !== -1 ? (rowVal[personBIdx] || "").toString().trim() : "");
+
+          if (!textA) continue;
 
           collectedRows.push([
-            psycName,
-            cityVal,
-            prefVal,
-            planVal,
-            cellDataA ? (cellDataA.value !== undefined ? cellDataA.value : cellDataA.text) : "",
-            cellDataB ? (cellDataB.value !== undefined ? cellDataB.value : cellDataB.text) : "",
-            fechaVal,
-            obsVal,
-            curName,
-            realRow,
-            "" // Columna APROBAR (gestionada por la función de Claude)
+            psycName, cityVal, prefVal, planVal, textA, textB, fechaVal, obsVal, curName, realRow, ""
           ]);
 
-          collectedRichTextsA.push(cellDataA);
-          collectedRichTextsB.push(cellDataB);
+          collectedRichTextsA.push(richTextA);
+          collectedRichTextsB.push(richTextB);
         }
       }
     }
   }
 
-  // Escribir todas las filas recopiladas
+  // ⚡ ESCRITURA BATCH ULTRA-RÁPIDA
   if (collectedRows.length > 0) {
     if (revisionSheet.getMaxRows() < collectedRows.length + 1) {
-      revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), (collectedRows.length + 1) - revisionSheet.getMaxRows() + 5);
+      revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), (collectedRows.length + 1) - revisionSheet.getMaxRows() + 10);
     }
 
     var targetRange = revisionSheet.getRange(2, 1, collectedRows.length, headers.length);
     targetRange.setValues(collectedRows);
 
-    // Preservar hipervínculos RichText nativos en PERSON A (Col 5) y PERSON B (Col 6)
-    for (var i = 0; i < collectedRows.length; i++) {
-      var rowNum = i + 2;
-      if (collectedRichTextsA[i]) {
-        setCellData(revisionSheet, rowNum, 5, collectedRichTextsA[i]);
-      }
-      if (collectedRichTextsB[i]) {
-        setCellData(revisionSheet, rowNum, 6, collectedRichTextsB[i]);
-      }
-    }
+    // Inyectar hipervínculos en batch por columna
+    var rangeA = revisionSheet.getRange(2, 5, collectedRows.length, 1);
+    var rangeB = revisionSheet.getRange(2, 6, collectedRows.length, 1);
+
+    var richColA = collectedRichTextsA.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
+    var richColB = collectedRichTextsB.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
+
+    rangeA.setRichTextValues(richColA);
+    rangeB.setRichTextValues(richColB);
   }
 
-  Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas.");
+  Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas en batch.");
+  ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos.", "Revisión Lista", 5);
+}
 }
 
 /**
