@@ -89,10 +89,14 @@ function handleClaudePsychologistSheetEdit(sheet, row, col, newValue) {
     if (pastedValue) {
       var profile = claudeResolveProfile(pastedValue);
       if (profile && profile.found) {
-        // Reemplazar el texto plano por el nombre oficial, preservando el link si era una URL
+        // Reemplazar el texto plano por el nombre oficial, preservando el link nativo
         var cellRange = sheet.getRange(row, col);
         if (pastedValue.indexOf("http") === 0) {
-          cellRange.setFormula('=HYPERLINK("' + pastedValue + '","' + profile.name.replace(/"/g, '""') + '")');
+          var richText = SpreadsheetApp.newRichTextValue()
+            .setText(profile.name)
+            .setLinkUrl(pastedValue)
+            .build();
+          cellRange.setRichTextValue(richText);
         } else if (profile.name) {
           cellRange.setValue(profile.name);
         }
