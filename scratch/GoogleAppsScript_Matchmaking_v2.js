@@ -538,3 +538,150 @@ function getTrueLastRow(sheet, checkColIndex) {
   }
   return 1;
 }
+
+// ─── 8. VISTA DINÁMICA: REVISIÓN MARÍA ─────────────────────────────────────
+
+/**
+ * Reconstruye la pestaña 'REVISIÓN MARÍA' consolidando todos los matches con
+ * STATUS = HECHO o HECHO POR MAPE de todas las psicólogas para revisión de María.
+ *
+ * Columnas oficiales:
+ * PSICÓLOGA | CITY | PREF | PLAN | PERSON A | PERSON B | FECHA | OBSERVACIONES | ORIGEN (PESTAÑA) | FILA ORIGEN | APROBAR
+ */
+function reconstruirRevisionMaria() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = "REVISIÓN MARÍA";
+  var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
+
+  var headers = [
+    "PSICÓLOGA", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "OBSERVACIONES", "ORIGEN (PESTAÑA)", "FILA ORIGEN", "APROBAR"
+  ];
+
+  if (!revisionSheet) {
+    revisionSheet = ss.insertSheet(sheetName);
+    revisionSheet.setTabColor("#D5A6BD");
+  }
+
+  // Asegurar encabezados en fila 1
+  revisionSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  revisionSheet.getRange(1, 1, 1, headers.length)
+    .setFontWeight("bold")
+    .setBackground("#D5A6BD")
+    .setFontColor("#000000");
+  revisionSheet.setFrozenRows(1);
+
+  // Limpiar contenido anterior (desde fila 2 hasta la última fila existente)
+  var lastRow = revisionSheet.getLastRow();
+  if (lastRow > 1) {
+    revisionSheet.getRange(2, 1, lastRow - 1, headers.length).clear({ contentsOnly: false });
+  }
+
+  var allSheets = ss.getSheets();
+  var collectedRows = [];
+  var collectedRichTextsA = [];
+  var collectedRichTextsB = [];
+
+  for (var s = 0; s < allSheets.length; s++) {
+    var curSheet = allSheets[s];
+    var curName = curSheet.getName().trim();
+    var upperCurName = curName.toUpperCase();
+
+    // Solo pestañas de psicólogas (ej. "MATCHES JENN", "MATCHES ANA ", etc.)
+    if (upperCurName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperCurName !== "MATCHES" && upperCurName !== "MATCHES COMPLETED") {
+      var psycName = curName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
+      var sHeaders = getSheetHeaders(curSheet);
+
+      var statusCol = sHeaders["STATUS"];
+      var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
+      var personBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"] || sHeaders["CANDIDATO"] || sHeaders["MATCH"];
+      var cityCol = sHeaders["CITY"] || sHeaders["CIUDAD"];
+      var prefCol = sHeaders["PREF"] || sHeaders["PREFERENCIA"];
+      var planCol = sHeaders["PLAN"] || sHeaders["PLAN TIER"];
+      var fechaCol = sHeaders["FECHA"];
+      var obsCol = sHeaders["OBSERVACIONES"] || sHeaders["OBSERVACION"] || sHeaders["NOTAS"];
+
+      if (!statusCol || !personACol) continue;
+
+      var trueLast = getTrueLastRow(curSheet, personACol);
+      if (trueLast <= 1) continue;
+
+      var numRows = trueLast - 1;
+      var statusVals = curSheet.getRange(2, statusCol, numRows, 1).getValues();
+
+      for (var r = 0; r < statusVals.length; r++) {
+        var st = (statusVals[r][0] || "").toString().trim().toUpperCase();
+        if (st === "HECHO" || st === "HECHO POR MAPE") {
+          var realRow = r + 2;
+
+          var cityVal = cityCol ? curSheet.getRange(realRow, cityCol).getValue().toString().trim() : "";
+          var prefVal = prefCol ? curSheet.getRange(realRow, prefCol).getValue().toString().trim() : "";
+          var planVal = planCol ? curSheet.getRange(realRow, planCol).getValue().toString().trim() : "";
+          var fechaVal = fechaCol ? curSheet.getRange(realRow, fechaCol).getValue() : "";
+          var obsVal = obsCol ? curSheet.getRange(realRow, obsCol).getValue().toString().trim() : "";
+
+          var cellDataA = getCellData(curSheet, realRow, personACol);
+          var cellDataB = personBCol ? getCellData(curSheet, realRow, personBCol) : null;
+
+          collectedRows.push([
+            psycName,
+            cityVal,
+            prefVal,
+            planVal,
+            cellDataA ? (cellDataA.value !== undefined ? cellDataA.value : cellDataA.text) : "",
+            cellDataB ? (cellDataB.value !== undefined ? cellDataB.value : cellDataB.text) : "",
+            fechaVal,
+            obsVal,
+            curName,
+            realRow,
+            "" // Columna APROBAR (gestionada por la función de Claude)
+          ]);
+
+          collectedRichTextsA.push(cellDataA);
+          collectedRichTextsB.push(cellDataB);
+        }
+      }
+    }
+  }
+
+  // Escribir todas las filas recopiladas
+  if (collectedRows.length > 0) {
+    if (revisionSheet.getMaxRows() < collectedRows.length + 1) {
+      revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), (collectedRows.length + 1) - revisionSheet.getMaxRows() + 5);
+    }
+
+    var targetRange = revisionSheet.getRange(2, 1, collectedRows.length, headers.length);
+    targetRange.setValues(collectedRows);
+
+    // Preservar hipervínculos RichText nativos en PERSON A (Col 5) y PERSON B (Col 6)
+    for (var i = 0; i < collectedRows.length; i++) {
+      var rowNum = i + 2;
+      if (collectedRichTextsA[i]) {
+        setCellData(revisionSheet, rowNum, 5, collectedRichTextsA[i]);
+      }
+      if (collectedRichTextsB[i]) {
+        setCellData(revisionSheet, rowNum, 6, collectedRichTextsB[i]);
+      }
+    }
+  }
+
+  Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas.");
+}
+
+/**
+ * Instala el disparador periódico para reconstruir REVISIÓN MARÍA cada 15 minutos
+ */
+function instalarTriggerRevisionMaria() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "reconstruirRevisionMaria") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  ScriptApp.newTrigger("reconstruirRevisionMaria")
+    .timeBased()
+    .everyMinutes(15)
+    .create();
+
+  Logger.log("✅ Disparador de REVISIÓN MARÍA configurado para ejecutarse cada 15 minutos.");
+}
