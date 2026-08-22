@@ -239,7 +239,7 @@ async def get_my_matches(
             "id": d.get("id"),
             "city": normalize_city(final_city) or "Bogotá",
             "pref": normalize_pref(final_pref),
-            "plan_tier": final_plan or "Estándar 65k (2 citas)",
+            "plan_tier": final_plan or "",
             "person_a": d.get("person_a"),
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "person_b": d.get("person_b") or "",
@@ -263,7 +263,7 @@ async def get_my_matches(
 @router.post("/intake-client")
 async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends(get_db)):
     """
-    Crea automáticamente las 3 filas idénticas (slots) para Persona A asignada a la psicóloga.
+    Crea automáticamente las filas de slots para Persona A asignada a la psicóloga según su plan.
     Cruza con profiles para autocompletar CITY, PREF y PLAN.
     """
     person_a_clean = payload.person_a.strip()
@@ -281,7 +281,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 
     city_val = payload.city or (prof_row.city if prof_row else "Bogotá")
     pref_val = payload.pref or (prof_row.orientation if prof_row else "hetero")
-    plan_val = payload.plan_tier or (prof_row.plan_tier if prof_row else "Estándar 65k (2 citas)")
+    plan_val = payload.plan_tier or (prof_row.plan_tier if prof_row else "")
     crm_id_val = prof_row.crm_id if prof_row else None
 
     # Calcular slots según el plan (Básico: 2, Estándar: 3, VIP: 4)
@@ -384,7 +384,7 @@ async def get_intake_list(
             "psychologist_name": r.psychologist_name,
             "city": normalize_city(r.city) or "Bogotá",
             "pref": normalize_pref(r.pref),
-            "plan_tier": r.plan_tier or "Estándar 65k (2 citas)",
+            "plan_tier": r.plan_tier or "",
             "total_slots": r.total_slots,
             "filled_slots": r.filled_slots,
             "approved_slots": r.approved_slots,
@@ -550,7 +550,7 @@ async def get_approval_queue(
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
             "city": normalize_city(d.get("city")) or "Bogotá",
-            "plan_tier": d.get("plan_tier") or "Estándar 65k",
+            "plan_tier": d.get("plan_tier") or "",
             "pref": normalize_pref(d.get("pref")),
             "fecha_hecho": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else "",
             "observations": d.get("observations") or "",
@@ -643,7 +643,7 @@ async def get_refunds_queue(
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "psychologist_name": d.get("psychologist_name"),
             "city": normalize_city(d.get("city")) or "Bogotá",
-            "plan_tier": d.get("plan_tier") or "Estándar 65k",
+            "plan_tier": d.get("plan_tier") or "",
             "status": d.get("status"),
             "observations": d.get("observations") or "",
             "fecha": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else ""
@@ -750,7 +750,7 @@ async def get_confirmations(
             "person_b_confirmation": d.get("person_b_confirmation") or "Pendiente",
             "psychologist_name": d.get("psychologist_name"),
             "city": normalize_city(d.get("city")) or "Bogotá",
-            "plan_tier": d.get("plan_tier") or "Estándar 65k",
+            "plan_tier": d.get("plan_tier") or "",
             "pref": normalize_pref(d.get("pref")),
             "stage": d.get("stage"),
             "pause_reason": d.get("pause_reason") or "",
