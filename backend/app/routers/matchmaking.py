@@ -288,8 +288,8 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     """), {"n": person_a_clean})
     prof_row = prof_res.fetchone()
 
-    city_val = payload.city or (prof_row.city if prof_row else "Bogotá")
-    pref_val = payload.pref or (prof_row.orientation if prof_row else "hetero")
+    city_val = payload.city or (prof_row.city if prof_row else "")
+    pref_val = payload.pref or (prof_row.orientation if prof_row else "")
     plan_val = payload.plan_tier or (prof_row.plan_tier if prof_row else "")
     crm_id_val = prof_row.crm_id if prof_row else None
 
