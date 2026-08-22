@@ -74,15 +74,24 @@ ALLOWED_STATUSES = [
     "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA"
 ]
 
-def get_slots_by_plan(plan_str: Optional[str]) -> int:
-    if not plan_str:
-        return 3
-    p = plan_str.lower()
+def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
+    """
+    Retorna la cantidad exacta de slots según el plan activo (SSOT v2):
+    - Básico 40k (1 cita) -> 2 slots
+    - Estándar 65k (2 citas) -> 3 slots
+    - VIP 195k -> 4 slots
+    Si el plan está vacío o no es reconocido, retorna None para obligar a validación explícita.
+    """
+    if not plan_str or not str(plan_str).strip():
+        return None
+    p = str(plan_str).lower().strip()
     if "vip" in p:
         return 4
     elif "40k" in p or "básico" in p or "basico" in p or "1 cita" in p:
         return 2
-    return 3  # Estándar 65k (2 citas) -> 3 slots
+    elif "65k" in p or "estándar" in p or "estandar" in p or "2 citas" in p or "98k" in p:
+        return 3
+    return None
 
 CONFIRMATION_OPTIONS = [
     "Pendiente", "Listo para escribir", "No contesta", "De viaje",
@@ -286,6 +295,11 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 
     # Calcular slots según el plan (Básico: 2, Estándar: 3, VIP: 4)
     num_slots = get_slots_by_plan(plan_val)
+    if not num_slots:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Plan no válido o no especificado ('{plan_val}'). Especifique un plan activo: Básico 40k (1 cita) [2 slots], Estándar 65k (2 citas) [3 slots], o VIP 195k [4 slots]."
+        )
 
     # Insertar los slots en operational_matches
     created_ids = []
