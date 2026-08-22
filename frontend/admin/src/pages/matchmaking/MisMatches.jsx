@@ -66,7 +66,7 @@ const STATUS_COLORS = {
 }
 
 const PSYCHOLOGIST_LIST = [
-  'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU 1', 'MANU 2', 'PIA'
+  'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA'
 ]
 
 const STATUS_OPTIONS = [
@@ -92,10 +92,9 @@ export default function MisMatches() {
     if (name.toLowerCase().includes('sofi') || email.toLowerCase().includes('sofi')) return 'SOFI'
     if (name.toLowerCase().includes('mape') || email.toLowerCase().includes('mape')) return 'MAPE D'
     if (name.toLowerCase().includes('aleja') || email.toLowerCase().includes('aleja')) return 'ALEJA'
-    if (name.toLowerCase().includes('manu 1') || email.toLowerCase().includes('manu 1')) return 'MANU 1'
-    if (name.toLowerCase().includes('manu 2') || email.toLowerCase().includes('manu 2')) return 'MANU 2'
-    if (name.toLowerCase().includes('manu') || email.toLowerCase().includes('manu')) return 'MANU 1'
+    if (name.toLowerCase().includes('manu') || email.toLowerCase().includes('manu')) return 'MANU'
     if (name.toLowerCase().includes('pia') || email.toLowerCase().includes('pia')) return 'PIA'
+    if (name.toLowerCase().includes('isa') || email.toLowerCase().includes('isa') || name.toLowerCase().includes('isabella')) return 'ISA'
     return 'SILVI'
   }
   

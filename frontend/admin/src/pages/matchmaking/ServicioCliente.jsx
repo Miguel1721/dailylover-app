@@ -11,7 +11,7 @@ const CITIES = [
 ]
 
 const PSYCHOLOGIST_LIST = [
-  'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU 1', 'MANU 2', 'PIA'
+  'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA'
 ]
 
 const CONFIRMATION_OPTIONS = [
