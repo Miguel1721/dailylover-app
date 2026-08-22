@@ -22,7 +22,7 @@ var CLAUDE_CONFIG = {
   PSYCHOLOGIST_SHEET_PREFIX: "MATCHES ",
   BACKEND_RESOLVE_URL: "https://prueba-daily.agentesia.cloud/api/v1/matchmaking/resolve-profile",
   LOCK_TIMEOUT_MS: 30000,
-  MARIA_EMAIL: "agente.sti.col@gmail.com", // Correo de PRUEBA para el rol de María — reemplazar por el real antes de producción
+  MARIA_EMAIL: "agente.col.bot@gmail.com", // María (admin absoluto — el único que edita filas bloqueadas)
   STATUS_COLORS: {
     "APROBADO": "#B6D7A8",
     "HECHO": "#A2C4C9",
