@@ -23,9 +23,9 @@ const PSYCHOLOGISTS = [
   { id: 'JENN', label: 'Jenn' },
   { id: 'SOFI', label: 'Sofi' },
   { id: 'STEFFY', label: 'Steffy' },
-  { id: 'STEFF', label: 'Steff' },
   { id: 'ANA', label: 'Ana' },
-  { id: 'LAU', label: 'Lau' },
+  { id: 'PIA', label: 'Pia' },
+  { id: 'ISA', label: 'Isa' },
   { id: 'MAPE D', label: 'Mape D (María Paula)' }
 ]
 

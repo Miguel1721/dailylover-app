@@ -1114,10 +1114,10 @@ async def update_calendar_date(
 async def get_active_psychologists(db: AsyncSession = Depends(get_db)):
     """
     Retorna la lista de psicólogas dinámicamente desde la base de datos (con conteos reales),
-    asegurando la presencia de las psicólogas activas oficiales (JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU 1, MANU 2, PIA).
+    asegurando la presencia de las 10 psicólogas activas oficiales (JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA).
     """
     OFFICIAL_PSYCHOLOGISTS = [
-        "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU 1", "MANU 2", "PIA"
+        "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"
     ]
     res = await db.execute(text("""
         SELECT UPPER(TRIM(psychologist_name)) as psyc_name, 

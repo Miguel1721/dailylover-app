@@ -32,7 +32,7 @@ const PLAN_COLORS = {
 }
 
 const PSYCHOLOGISTS = [
-  'Todas', 'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU 1', 'MANU 2', 'PIA'
+  'Todas', 'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA'
 ]
 
 export default function ColaAprobacion() {

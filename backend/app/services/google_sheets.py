@@ -46,17 +46,17 @@ SHEET_COLUMN_MAP = {
         "tab": "MATCHES ALEJA",
         "cols": ["PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES", "APRO DATE"]
     },
-    "MANU 1": {
-        "tab": "MATCHES MANU 1",
-        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "CRM", "STATUS", "OBSERVACIONES"]
-    },
-    "MANU 2": {
-        "tab": "MATCHES MANU 2",
-        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "CRM", "STATUS", "OBSERVACIONES"]
+    "MANU": {
+        "tab": "MATCHES MANU",
+        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES"]
     },
     "PIA": {
         "tab": "MATCHES PIA",
         "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "STATUS", "OBSERVACIONES"]
+    },
+    "ISA": {
+        "tab": "MATCHES ISA",
+        "cols": ["ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "CRM", "STATUS", "OBSERVACIONES"]
     }
 }
 
@@ -72,10 +72,12 @@ MATCHMAKER_ALIASES = {
     "maria paula": "MAPE D",
     "maría paula": "MAPE D",
     "aleja": "ALEJA",
-    "manu 1": "MANU 1",
-    "manu 2": "MANU 2",
-    "manu": "MANU 1",
-    "pia": "PIA"
+    "manu": "MANU",
+    "manu 1": "MANU",
+    "manu 2": "MANU",
+    "pia": "PIA",
+    "isa": "ISA",
+    "isabella": "ISA"
 }
 
 def get_sheets_client():
