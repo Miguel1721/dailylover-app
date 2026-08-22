@@ -1220,18 +1220,16 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
             row = res.fetchone()
 
     if not row:
-        if extracted_crm_id:
-            return {
-                "found": False,
-                "crm_id": extracted_crm_id,
-                "name": "",
-                "city": "",
-                "pref": "hetero",
-                "plan_tier": "Estándar 65k (2 citas)",
-                "phone": "",
-                "email": ""
-            }
-        raise HTTPException(status_code=404, detail="Perfil no encontrado para el link o nombre proporcionado")
+        return {
+            "found": False,
+            "crm_id": extracted_crm_id or "",
+            "name": "",
+            "city": "",
+            "pref": "",
+            "plan_tier": "",
+            "phone": "",
+            "email": ""
+        }
 
     orientation_val = row.orientation or "hetero"
     pref_val = "hetero"
@@ -1248,7 +1246,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
         "name": row.name or "",
         "city": normalize_city(row.city),
         "pref": pref_val,
-        "plan_tier": row.plan_tier or "Estándar 65k (2 citas)",
+        "plan_tier": row.plan_tier or "",
         "phone": row.phone or "",
         "email": row.email or ""
     }
