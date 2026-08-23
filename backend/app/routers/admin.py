@@ -2582,7 +2582,7 @@ def normalize_pref(raw_orientation: Optional[str], raw_gender: Optional[str]) ->
     if "straight" in ori or "hetero" in ori:
         return "hetero"
     
-    return "hetero"
+    return ""
 
 
 @router.get("/clients-plans")

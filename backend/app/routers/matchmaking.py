@@ -103,7 +103,7 @@ CONFIRMATION_OPTIONS = [
 
 def normalize_pref(val: Optional[str]) -> str:
     if not val:
-        return "hetero"
+        return ""
     v = val.lower().strip()
     if "bi" in v:
         return "bi"
@@ -111,7 +111,9 @@ def normalize_pref(val: Optional[str]) -> str:
         return "lesb"
     if "gay" in v or "homo" in v:
         return "gay"
-    return "hetero"
+    if "hetero" in v or "straight" in v:
+        return "hetero"
+    return ""
 
 def normalize_city(raw_city: Optional[str]) -> str:
     if not raw_city:
@@ -233,7 +235,7 @@ async def get_my_matches(
         is_approved = bool(d.get("approved_by_maria"))
         
         final_city = d.get("city") or ""
-        final_pref = d.get("pref") or "hetero"
+        final_pref = d.get("pref") or ""
         final_plan = d.get("plan_tier") or ""
 
         if not is_approved:
@@ -242,13 +244,13 @@ async def get_my_matches(
             if d.get("profile_orientation") or d.get("profile_gender"):
                 final_pref = normalize_pref(d.get("profile_orientation"))
             if d.get("profile_plan_tier"):
-                final_plan = d.get("profile_plan_tier")
+                final_plan = normalize_plan(d.get("profile_plan_tier"))
 
         matches.append({
             "id": d.get("id"),
-            "city": normalize_city(final_city) or "Bogotá",
+            "city": normalize_city(final_city),
             "pref": normalize_pref(final_pref),
-            "plan_tier": final_plan or "",
+            "plan_tier": normalize_plan(final_plan),
             "person_a": d.get("person_a"),
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "person_b": d.get("person_b") or "",
@@ -396,9 +398,9 @@ async def get_intake_list(
             "person_a": r.person_a,
             "crm_id": r.crm_id or "",
             "psychologist_name": r.psychologist_name,
-            "city": normalize_city(r.city) or "Bogotá",
+            "city": normalize_city(r.city),
             "pref": normalize_pref(r.pref),
-            "plan_tier": r.plan_tier or "",
+            "plan_tier": normalize_plan(r.plan_tier),
             "total_slots": r.total_slots,
             "filled_slots": r.filled_slots,
             "approved_slots": r.approved_slots,
@@ -563,8 +565,8 @@ async def get_approval_queue(
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
-            "city": normalize_city(d.get("city")) or "Bogotá",
-            "plan_tier": d.get("plan_tier") or "",
+            "city": normalize_city(d.get("city")),
+            "plan_tier": normalize_plan(d.get("plan_tier")),
             "pref": normalize_pref(d.get("pref")),
             "fecha_hecho": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else "",
             "observations": d.get("observations") or "",
@@ -656,8 +658,8 @@ async def get_refunds_queue(
             "person_a": d.get("person_a"),
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "psychologist_name": d.get("psychologist_name"),
-            "city": normalize_city(d.get("city")) or "Bogotá",
-            "plan_tier": d.get("plan_tier") or "",
+            "city": normalize_city(d.get("city")),
+            "plan_tier": normalize_plan(d.get("plan_tier")),
             "status": d.get("status"),
             "observations": d.get("observations") or "",
             "fecha": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else ""
@@ -763,8 +765,8 @@ async def get_confirmations(
             "phone_b": d.get("phone_b") or "+573000000000",
             "person_b_confirmation": d.get("person_b_confirmation") or "Pendiente",
             "psychologist_name": d.get("psychologist_name"),
-            "city": normalize_city(d.get("city")) or "Bogotá",
-            "plan_tier": d.get("plan_tier") or "",
+            "city": normalize_city(d.get("city")),
+            "plan_tier": normalize_plan(d.get("plan_tier")),
             "pref": normalize_pref(d.get("pref")),
             "stage": d.get("stage"),
             "pause_reason": d.get("pause_reason") or "",
@@ -1005,7 +1007,7 @@ async def get_calendar_dates(
             "person_b_crm_id": d.get("ub_crm_id") or "",
             "date_time": dt_val,
             "venue": ven_val,
-            "city": normalize_city(d.get("city")) or "Bogotá",
+            "city": normalize_city(d.get("city")),
             "reservation_name": res_name,
             "had_date": bool(d.get("had_date")),
             "feedback": d.get("feedback") or "",
