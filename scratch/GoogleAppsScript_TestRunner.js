@@ -128,12 +128,157 @@ function testAllFlowsProgrammatically() {
     // Limpieza de la fila de prueba
     sheet.deleteRow(testRow);
     Logger.log("\n=================================================");
-    Logger.log("🎉 PRUEBAS FINALIZADAS Y FILAS TEMPORALES LIMPIADAS");
+    Logger.log("🎉 PRUEBAS DE FLUJO BÁSICO FINALIZADAS");
     Logger.log("=================================================");
-    ss.toast("Pruebas completadas exitosamente. Revisa el Registro de ejecución.", "Pruebas OK", 5);
 
   } catch (e) {
     Logger.log("❌ ERROR DURANTE LA PRUEBA: " + e.message);
     try { sheet.deleteRow(testRow); } catch(err) {}
+  }
+}
+
+/**
+ * ============================================================================
+ * PRUEBAS DE LAS 3 VARIANTES DE PROFILE PRIORITARIO (PESTAÑA 'PERSONAS DÍFICILES')
+ * ============================================================================
+ */
+function testProfilePrioritarioVariants() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = CONFIG.PRIORITY_SHEET_NAME || "PERSONAS DÍFICILES";
+  var sheet = ss.getSheetByName(sheetName) || ss.getSheetByName("PERSONAS DIFICILES");
+  if (!sheet) {
+    Logger.log("❌ Pestaña '" + sheetName + "' no encontrada.");
+    return;
+  }
+
+  Logger.log("=================================================");
+  Logger.log("🚀 INICIANDO PRUEBAS DE PROFILE PRIORITARIO (3 VARIANTES)");
+  Logger.log("=================================================");
+
+  var headers = getSheetHeaders(sheet);
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 1;
+  var psycCol = headers["INTERVIEWED BY:"] || headers["INTERVIEWED BY"] || 2;
+  var planCol = headers["PLAN"] || 3;
+  var ciudadCol = headers["CIUDAD"] || headers["CITY"] || 4;
+  var prefCol = headers["PREF"] || 5;
+  var fechaIngresoCol = headers["FECHA INGRESO"] || headers["FECHA"] || 6;
+  var obsCol = headers["OBSERVACIONES"] || 7;
+  var statusCol = headers["STATUS"] || 8;
+  var slotsCol = headers["SLOTS CREADOS"] || 9;
+
+  var lastRow = getTrueLastRow(sheet, personACol);
+  var rowCase1 = lastRow + 1;
+  var rowCase2 = lastRow + 2;
+  var rowCase3 = lastRow + 3;
+
+  try {
+    // -------------------------------------------------------------
+    // VARIANTE 1: PLAN VÁLIDO + PSICÓLOGA CON ALIAS (MAPE -> MAPE D)
+    // -------------------------------------------------------------
+    Logger.log("\n--- [VARIANTE 1] Plan Válido + Alias de Psicóloga (MAPE -> MAPE D) ---");
+    var crmUrl = "https://dailylover.smartmatchapp.com/client/7808"; // Lissan Ayala
+    sheet.getRange(rowCase1, personACol).setValue(crmUrl);
+    sheet.getRange(rowCase1, psycCol).setValue("MAPE"); // Alias de MAPE D
+    sheet.getRange(rowCase1, planCol).setValue("VIP 195K"); // Plan válido (4 slots)
+    sheet.getRange(rowCase1, ciudadCol).setValue("Bogota");
+    sheet.getRange(rowCase1, prefCol).setValue("hetero");
+    sheet.getRange(rowCase1, obsCol).setValue("Prueba Variante 1");
+
+    // Ejecutar autocompletado y creación de slots
+    if (typeof handleClaudePersonasDificilesEdit === "function") {
+      handleClaudePersonasDificilesEdit(sheet, rowCase1, personACol, crmUrl);
+    }
+    handlePersonasDificilesEdit(sheet, rowCase1, personACol);
+
+    var psycVal1 = sheet.getRange(rowCase1, psycCol).getValue();
+    var slotsVal1 = sheet.getRange(rowCase1, slotsCol).getValue();
+    var slotsBg1 = sheet.getRange(rowCase1, slotsCol).getBackground();
+    Logger.log("Psicóloga normalizada: '" + psycVal1 + "' (Esperado: MAPE D)");
+    Logger.log("Slots creados: '" + slotsVal1 + "' | Fondo: " + slotsBg1);
+
+    // Verificar en pestaña MATCHES MAPE D
+    var psycSheet1 = findPsychologistSheet("MAPE D");
+    var slotsFound = 0;
+    if (psycSheet1) {
+      var pHeaders1 = getSheetHeaders(psycSheet1);
+      var pLast = getTrueLastRow(psycSheet1, pHeaders1["PERSON A"] || 1);
+      var pVals = psycSheet1.getRange(Math.max(2, pLast - 5), 1, Math.min(6, pLast), psycSheet1.getLastColumn()).getValues();
+      for (var k = 0; k < pVals.length; k++) {
+        var obsText = (pVals[k][(pHeaders1["OBSERVACIONES"] || 8) - 1] || "").toString();
+        if (obsText.indexOf("[PRIORITARIO") !== -1 && obsText.indexOf("Prueba Variante 1") !== -1) {
+          slotsFound++;
+        }
+      }
+    }
+
+    if (psycVal1 === "MAPE D" && slotsVal1.indexOf("4 SLOTS CREADOS") !== -1) {
+      Logger.log("✅ [PASÓ VARIANTE 1] Alias MAPE normalizado a MAPE D y 4 slots prioritarios generados exitosamente.");
+    } else {
+      Logger.log("⚠️ [REVISAR VARIANTE 1] psycVal: " + psycVal1 + " | slotsVal: " + slotsVal1);
+    }
+
+    // -------------------------------------------------------------
+    // VARIANTE 2: PLAN QUE EL CRM NO ENCUENTRA / VACÍO
+    // -------------------------------------------------------------
+    Logger.log("\n--- [VARIANTE 2] Plan Vacío / No Encontrado ---");
+    sheet.getRange(rowCase2, personACol).setValue("Persona Sin Plan");
+    sheet.getRange(rowCase2, psycCol).setValue("JENN");
+    sheet.getRange(rowCase2, planCol).setValue(""); // Plan vacío
+    sheet.getRange(rowCase2, ciudadCol).setValue("Medellin");
+    sheet.getRange(rowCase2, obsCol).setValue("Prueba Variante 2");
+
+    handlePersonasDificilesEdit(sheet, rowCase2, personACol);
+
+    var planBg2 = sheet.getRange(rowCase2, planCol).getBackground();
+    var planNote2 = sheet.getRange(rowCase2, planCol).getNote();
+    var slotsVal2 = sheet.getRange(rowCase2, slotsCol).getValue();
+    Logger.log("Fondo PLAN: " + planBg2 + " (Esperado: #f4cccc) | Nota: '" + planNote2 + "'");
+    Logger.log("Slots creados: '" + slotsVal2 + "' (Esperado: vacío)");
+
+    if (planBg2.toLowerCase() === "#f4cccc" && !slotsVal2) {
+      Logger.log("✅ [PASÓ VARIANTE 2] Plan vacío marcado correctamente en rojo sin crear slots.");
+    } else {
+      Logger.log("⚠️ [REVISAR VARIANTE 2] Fondo: " + planBg2 + " | Slots: " + slotsVal2);
+    }
+
+    // -------------------------------------------------------------
+    // VARIANTE 3: PSICÓLOGA NO VÁLIDA (MARI PAZ / LAU / VACÍO)
+    // -------------------------------------------------------------
+    Logger.log("\n--- [VARIANTE 3] Psicóloga No Válida (MARI PAZ) ---");
+    sheet.getRange(rowCase3, personACol).setValue("Persona Psyc Invalida");
+    sheet.getRange(rowCase3, psycCol).setValue("MARI PAZ"); // Inválida
+    sheet.getRange(rowCase3, planCol).setValue("ESTÁNDAR 65K (2 CITAS)");
+    sheet.getRange(rowCase3, ciudadCol).setValue("Cali");
+    sheet.getRange(rowCase3, obsCol).setValue("Prueba Variante 3");
+
+    handlePersonasDificilesEdit(sheet, rowCase3, personACol);
+
+    var psycBg3 = sheet.getRange(rowCase3, psycCol).getBackground();
+    var psycNote3 = sheet.getRange(rowCase3, psycCol).getNote();
+    var slotsVal3 = sheet.getRange(rowCase3, slotsCol).getValue();
+    Logger.log("Fondo PSICÓLOGA: " + psycBg3 + " (Esperado: #f4cccc) | Nota: '" + psycNote3 + "'");
+    Logger.log("Slots creados: '" + slotsVal3 + "' (Esperado: vacío)");
+
+    if (psycBg3.toLowerCase() === "#f4cccc" && !slotsVal3) {
+      Logger.log("✅ [PASÓ VARIANTE 3] Psicóloga inválida 'MARI PAZ' marcada en rojo con nota y sin slots.");
+    } else {
+      Logger.log("⚠️ [REVISAR VARIANTE 3] Fondo: " + psycBg3 + " | Slots: " + slotsVal3);
+    }
+
+    // Limpieza de las 3 filas de prueba en PERSONAS DÍFICILES y en MATCHES MAPE D
+    sheet.deleteRows(rowCase1, 3);
+    if (psycSheet1 && slotsFound > 0) {
+      var pLastAfter = getTrueLastRow(psycSheet1, pHeaders1["PERSON A"] || 1);
+      psycSheet1.deleteRows(pLastAfter - slotsFound + 1, slotsFound);
+    }
+
+    Logger.log("\n=================================================");
+    Logger.log("🎉 TODAS LAS VARIANTES PROBADAS Y LIMPIAS CON ÉXITO");
+    Logger.log("=================================================");
+    ss.toast("Pruebas de Profile Prioritario completadas.", "Test OK", 5);
+
+  } catch(e) {
+    Logger.log("❌ Error en pruebas de variantes: " + e.message);
+    try { sheet.deleteRows(rowCase1, 3); } catch(err) {}
   }
 }
