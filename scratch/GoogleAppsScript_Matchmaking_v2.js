@@ -866,10 +866,8 @@ function appendPrioritySlotRow(sheet, headers, data) {
 
   if (headers["PERSON A"] && data.personACell) {
     setCellData(sheet, newRow, headers["PERSON A"], data.personACell);
-    sheet.getRange(newRow, headers["PERSON A"]).setBackground("#FFF2CC"); // Marca visual de prioridad
   } else if (headers["PERSONA A"] && data.personACell) {
     setCellData(sheet, newRow, headers["PERSONA A"], data.personACell);
-    sheet.getRange(newRow, headers["PERSONA A"]).setBackground("#FFF2CC");
   }
 
   if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
@@ -878,13 +876,16 @@ function appendPrioritySlotRow(sheet, headers, data) {
   if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
   if (headers["STATUS"]) {
     sheet.getRange(newRow, headers["STATUS"]).setValue("Listo para match");
-    sheet.getRange(newRow, headers["STATUS"]).setBackground("#FFE599");
   }
 
   var priorityTag = "[PRIORITARIO Slot " + data.slotIndex + "/" + data.totalSlots + "]";
   var finalObs = priorityTag + (data.observaciones ? " " + data.observaciones : "");
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(finalObs);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(finalObs);
+
+  // Unificar toda la fila con el color prioritario #FFF2CC
+  var lastCol = sheet.getLastColumn() || 11;
+  sheet.getRange(newRow, 1, 1, lastCol).setBackground("#FFF2CC");
 }
 
 function syncToPriorityQueue(sourceSheetName, data) {
