@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("sync_sheets_incremental")
 
 settings = get_settings()
-SHEET_ID = os.environ.get("GOOGLE_SHEET_MIGRATION_ID") or getattr(settings, "google_sheet_migration_id", "1u9M-q0RwM4qpE1hCSGQEv53IQXmZDRBzhzunQwQ1bWg")
+SHEET_ID = os.environ.get("GOOGLE_SHEET_MIGRATION_ID") or getattr(settings, "google_sheet_migration_id", "1ziZsPwYv6I3fEIEyVM7I0Na7LLgzrwyfM8vcglUQ8RA")
 SHEET_EXPORT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=xlsx"
 
 ACTIVE_PSYCHOLOGISTS = [
