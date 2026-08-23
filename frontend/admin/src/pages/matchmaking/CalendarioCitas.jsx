@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar as CalendarIcon, MessageCircle, Copy, CheckCircle, RefreshCw, MapPin, User, Clock, AlertCircle, Search, Filter } from 'lucide-react'
+import { Calendar as CalendarIcon, MessageCircle, Copy, CheckCircle, RefreshCw, MapPin, User, Clock, AlertCircle, Search, Filter, Utensils, RotateCcw } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
@@ -74,14 +74,20 @@ export default function CalendarioCitas() {
 
       const data = await res.json()
       if (res.ok) {
-        setCalendarDates(prev => prev.map(item => item.id === calId ? { ...item, ...updates } : item))
-        if (updates.had_date && updates.feedback) {
-          setSuccessBanner('¡Cita marcada como COMPLETADA! Estado actualizado en la psicóloga y en el historial.')
-          setTimeout(() => setSuccessBanner(''), 4000)
-        }
         if (updates.reschedule) {
-          setSuccessBanner('¡Cita marcada para reprogramar! Transferida a EN PAUSA conservando historial.')
-          setTimeout(() => setSuccessBanner(''), 4000)
+          setSuccessBanner('¡Cita reprogramada! Se ha generado una FILA NUEVA de reintento en el calendario.')
+          setTimeout(() => setSuccessBanner(''), 5000)
+          // Recargar calendario completo para traer la nueva fila
+          fetchCalendar()
+        } else {
+          setCalendarDates(prev => prev.map(item => item.id === calId ? { ...item, ...updates } : item))
+          if (updates.had_date && updates.feedback) {
+            setSuccessBanner('¡Cita marcada como COMPLETADA! Estado actualizado en la psicóloga y en el historial.')
+            setTimeout(() => setSuccessBanner(''), 4000)
+          } else if (updates.reservation_confirmed !== undefined) {
+            setSuccessBanner(`Reserva ${updates.reservation_confirmed ? 'CONFIRMADA' : 'PENDIENTE'}`)
+            setTimeout(() => setSuccessBanner(''), 2500)
+          }
         }
       } else {
         alert(data.detail || 'Error al actualizar cita')
@@ -94,7 +100,7 @@ export default function CalendarioCitas() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1600, margin: '0 auto' }}>
+    <div style={{ padding: '24px 32px', maxWidth: 1700, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
@@ -103,7 +109,7 @@ export default function CalendarioCitas() {
             Calendario de Citas & Despacho WhatsApp
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-            Citas agendadas formalmente. Botones con plantillas de WhatsApp personalizadas (Reserva fija: <strong>María Paula Salinas</strong>).
+            Citas agendadas formalmente (Pestaña MATCHES). Incluye reserva con restaurante, 3 mensajes de WhatsApp y feedback separado por persona.
           </p>
         </div>
 
@@ -263,23 +269,6 @@ export default function CalendarioCitas() {
             }}
           />
         </div>
-
-        <button
-          onClick={fetchCalendar}
-          title="Refrescar"
-          style={{
-            background: 'none',
-            border: '1px solid var(--border-color)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            color: 'var(--text-secondary)'
-          }}
-        >
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-        </button>
       </div>
 
       {/* Main Calendar Table */}
@@ -289,30 +278,31 @@ export default function CalendarioCitas() {
         border: '1px solid var(--border-color)',
         overflowX: 'auto'
       }}>
-        <table style={{ width: '100%', minWidth: 1100, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+        <table style={{ width: '100%', minWidth: 1250, borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
           <thead>
             <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
-              <th style={{ padding: '12px 14px', minWidth: 180, fontWeight: 600 }}>PERSONA A × PERSONA B</th>
-              <th style={{ padding: '12px 12px', minWidth: 160, fontWeight: 600 }}>DÍA / FECHA & HORA</th>
-              <th style={{ padding: '12px 12px', minWidth: 180, fontWeight: 600 }}>LUGAR / RESTAURANTE</th>
-              <th style={{ padding: '12px 10px', width: 90, fontWeight: 600 }}>CIUDAD</th>
-              <th style={{ padding: '12px 14px', minWidth: 320, textAlign: 'center', fontWeight: 600 }}>MENSAJES WHATSAPP (1-CLIC)</th>
-              <th style={{ padding: '12px 12px', width: 130, textAlign: 'center', fontWeight: 600 }}>¿TUVO LA CITA?</th>
-              <th style={{ padding: '12px 12px', minWidth: 160, fontWeight: 600 }}>FEEDBACK (ELLA)</th>
-              <th style={{ padding: '12px 12px', minWidth: 160, fontWeight: 600 }}>FEEDBACK (ÉL)</th>
-              <th style={{ padding: '12px 12px', width: 120, textAlign: 'center', fontWeight: 600 }}>¿REPROGRAMAR?</th>
+              <th style={{ padding: '12px 14px', minWidth: 170, fontWeight: 600 }}>PERSONA A × PERSONA B</th>
+              <th style={{ padding: '12px 10px', minWidth: 140, fontWeight: 600 }}>DÍA / FECHA</th>
+              <th style={{ padding: '12px 10px', minWidth: 160, fontWeight: 600 }}>LUGAR / RESTAURANTE</th>
+              <th style={{ padding: '12px 8px', width: 85, fontWeight: 600 }}>CIUDAD</th>
+              <th style={{ padding: '12px 10px', width: 95, textAlign: 'center', fontWeight: 600 }}>RESERVA</th>
+              <th style={{ padding: '12px 12px', minWidth: 310, textAlign: 'center', fontWeight: 600 }}>MENSAJES WHATSAPP (1-CLIC)</th>
+              <th style={{ padding: '12px 10px', width: 110, textAlign: 'center', fontWeight: 600 }}>¿TUVO CITA?</th>
+              <th style={{ padding: '12px 10px', minWidth: 140, fontWeight: 600 }}>FEEDBACK (ELLA)</th>
+              <th style={{ padding: '12px 10px', minWidth: 140, fontWeight: 600 }}>FEEDBACK (ÉL)</th>
+              <th style={{ padding: '12px 10px', width: 110, textAlign: 'center', fontWeight: 600 }}>¿REPROGRAMAR?</th>
             </tr>
           </thead>
           <tbody>
             {loading && calendarDates.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={10} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                   Cargando calendario de citas...
                 </td>
               </tr>
             ) : calendarDates.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={10} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                   No hay citas agendadas actualmente para los filtros seleccionados.
                 </td>
               </tr>
@@ -346,11 +336,11 @@ export default function CalendarioCitas() {
                     </td>
 
                     {/* Día */}
-                    <td style={{ padding: '10px 12px' }}>
+                    <td style={{ padding: '8px 10px' }}>
                       <input
                         type="text"
                         defaultValue={item.date_time}
-                        placeholder="Ej: Sáb 24 Ago - 7:30 PM"
+                        placeholder="Ej: 10.18 - 7:30 PM"
                         onBlur={e => {
                           if (e.target.value !== item.date_time) {
                             handleUpdateDate(item.id, { date_time: e.target.value })
@@ -358,23 +348,23 @@ export default function CalendarioCitas() {
                         }}
                         style={{
                           width: '100%',
-                          padding: '6px 8px',
+                          padding: '5px 7px',
                           borderRadius: 4,
                           border: '1px solid var(--border-color)',
                           background: 'var(--bg-base)',
                           color: 'var(--text-primary)',
-                          fontSize: 13,
+                          fontSize: 12,
                           outline: 'none'
                         }}
                       />
                     </td>
 
                     {/* Lugar */}
-                    <td style={{ padding: '10px 12px' }}>
+                    <td style={{ padding: '8px 10px' }}>
                       <input
                         type="text"
                         defaultValue={item.venue}
-                        placeholder="Ej: Restaurante Criterión"
+                        placeholder="Ej: Criterión"
                         onBlur={e => {
                           if (e.target.value !== item.venue) {
                             handleUpdateDate(item.id, { venue: e.target.value })
@@ -382,44 +372,72 @@ export default function CalendarioCitas() {
                         }}
                         style={{
                           width: '100%',
-                          padding: '6px 8px',
+                          padding: '5px 7px',
                           borderRadius: 4,
                           border: '1px solid var(--border-color)',
                           background: 'var(--bg-base)',
                           color: 'var(--text-primary)',
-                          fontSize: 13,
+                          fontSize: 12,
                           outline: 'none'
                         }}
                       />
                     </td>
 
                     {/* Ciudad */}
-                    <td style={{ padding: '12px 10px', fontWeight: 500 }}>
-                      {item.city || '—'}
+                    <td style={{ padding: '8px 8px' }}>
+                      {item.city ? (
+                        <span style={{ fontSize: 12 }}>{item.city}</span>
+                      ) : (
+                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '2px 5px', borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
+                          Falta ciudad
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Columna RESERVA CONFIRMADA */}
+                    <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                      <label style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={item.reservation_confirmed}
+                          onChange={e => handleUpdateDate(item.id, { reservation_confirmed: e.target.checked })}
+                          style={{ transform: 'scale(1.15)', cursor: 'pointer' }}
+                        />
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: item.reservation_confirmed ? '#274E13' : '#783F04',
+                          background: item.reservation_confirmed ? '#D9EAD3' : '#FFF2CC',
+                          padding: '1px 4px',
+                          borderRadius: 3
+                        }}>
+                          {item.reservation_confirmed ? 'Confirmada' : 'Pendiente'}
+                        </span>
+                      </label>
                     </td>
 
                     {/* Botones WhatsApp */}
-                    <td style={{ padding: '10px 12px' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                    <td style={{ padding: '8px 10px' }}>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
                         <button
                           onClick={() => copyToClipboard(item.whatsapp_confirmacion, 'confirmacion', item.id)}
                           title="Copiar mensaje de confirmación inicial"
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 4,
+                            gap: 3,
                             background: '#D9EAD3',
                             color: '#274E13',
                             border: '1px solid #B6D7A8',
                             borderRadius: 4,
-                            padding: '5px 8px',
-                            fontSize: 11,
+                            padding: '4px 6px',
+                            fontSize: 10,
                             fontWeight: 700,
                             cursor: 'pointer'
                           }}
                         >
-                          <MessageCircle size={13} color="#274E13" />
-                          {copiedId === `${item.id}-confirmacion` ? '✓ Copiado' : '1. Confirmación'}
+                          <MessageCircle size={11} color="#274E13" />
+                          {copiedId === `${item.id}-confirmacion` ? '✓' : '1. Conf.'}
                         </button>
 
                         <button
@@ -428,19 +446,19 @@ export default function CalendarioCitas() {
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 4,
+                            gap: 3,
                             background: '#CFE2F3',
                             color: '#1B365D',
                             border: '1px solid #A2C4C9',
                             borderRadius: 4,
-                            padding: '5px 8px',
-                            fontSize: 11,
+                            padding: '4px 6px',
+                            fontSize: 10,
                             fontWeight: 700,
                             cursor: 'pointer'
                           }}
                         >
-                          <Clock size={13} color="#1B365D" />
-                          {copiedId === `${item.id}-dia_antes` ? '✓ Copiado' : '2. Día Antes'}
+                          <Clock size={11} color="#1B365D" />
+                          {copiedId === `${item.id}-dia_antes` ? '✓' : '2. Antes'}
                         </button>
 
                         <button
@@ -449,31 +467,31 @@ export default function CalendarioCitas() {
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 4,
+                            gap: 3,
                             background: '#FFE599',
                             color: '#7F6000',
                             border: '1px solid #F9CB9C',
                             borderRadius: 4,
-                            padding: '5px 8px',
-                            fontSize: 11,
+                            padding: '4px 6px',
+                            fontSize: 10,
                             fontWeight: 700,
                             cursor: 'pointer'
                           }}
                         >
-                          <CheckCircle size={13} color="#7F6000" />
-                          {copiedId === `${item.id}-hoy` ? '✓ Copiado' : '3. Hoy'}
+                          <CheckCircle size={11} color="#7F6000" />
+                          {copiedId === `${item.id}-hoy` ? '✓' : '3. Hoy'}
                         </button>
                       </div>
                     </td>
 
                     {/* ¿Tuvo la Cita? */}
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
                         <input
                           type="checkbox"
                           checked={item.had_date}
-                          onChange={e => handleUpdateDate(item.id, { had_date: e.target.checked, feedback: item.feedback })}
-                          style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                          onChange={e => handleUpdateDate(item.id, { had_date: e.target.checked, feedback: item.feedback || item.feedback_ella || item.feedback_el || 'Cita efectuada' })}
+                          style={{ transform: 'scale(1.15)', cursor: 'pointer' }}
                         />
                         <span style={{ fontSize: 11, fontWeight: 600, color: item.had_date ? '#274E13' : 'var(--text-secondary)' }}>
                           {item.had_date ? 'Sí' : 'No'}
@@ -482,24 +500,24 @@ export default function CalendarioCitas() {
                     </td>
 
                     {/* Feedback ELLA */}
-                    <td style={{ padding: '8px 10px' }}>
+                    <td style={{ padding: '6px 8px' }}>
                       <input
                         type="text"
                         defaultValue={item.feedback_ella || ''}
                         placeholder="Feedback Ella..."
                         onBlur={e => {
                           if (e.target.value !== (item.feedback_ella || '')) {
-                            handleUpdateDate(item.id, { feedback_ella: e.target.value, had_date: item.had_date })
+                            handleUpdateDate(item.id, { feedback_ella: e.target.value, feedback: e.target.value })
                           }
                         }}
                         style={{
                           width: '100%',
-                          padding: '6px 8px',
+                          padding: '5px 7px',
                           borderRadius: 4,
                           border: '1px solid var(--border-color)',
                           background: 'var(--bg-base)',
                           color: 'var(--text-primary)',
-                          fontSize: 12,
+                          fontSize: 11,
                           outline: 'none',
                           boxSizing: 'border-box'
                         }}
@@ -507,41 +525,41 @@ export default function CalendarioCitas() {
                     </td>
 
                     {/* Feedback ÉL */}
-                    <td style={{ padding: '8px 10px' }}>
+                    <td style={{ padding: '6px 8px' }}>
                       <input
                         type="text"
                         defaultValue={item.feedback_el || ''}
                         placeholder="Feedback Él..."
                         onBlur={e => {
                           if (e.target.value !== (item.feedback_el || '')) {
-                            handleUpdateDate(item.id, { feedback_el: e.target.value, had_date: item.had_date })
+                            handleUpdateDate(item.id, { feedback_el: e.target.value, feedback: e.target.value })
                           }
                         }}
                         style={{
                           width: '100%',
-                          padding: '6px 8px',
+                          padding: '5px 7px',
                           borderRadius: 4,
                           border: '1px solid var(--border-color)',
                           background: 'var(--bg-base)',
                           color: 'var(--text-primary)',
-                          fontSize: 12,
+                          fontSize: 11,
                           outline: 'none',
                           boxSizing: 'border-box'
                         }}
                       />
                     </td>
 
-                    {/* ¿Reprogramar? */}
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                    {/* ¿Reprogramar? -> Genera fila nueva */}
+                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                      <label style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}>
                         <input
                           type="checkbox"
                           checked={item.reschedule}
                           onChange={e => handleUpdateDate(item.id, { reschedule: e.target.checked })}
-                          style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                          style={{ transform: 'scale(1.15)', cursor: 'pointer' }}
                         />
-                        <span style={{ fontSize: 11, fontWeight: 600, color: item.reschedule ? '#783F04' : 'var(--text-secondary)' }}>
-                          {item.reschedule ? 'Sí (En Pausa)' : 'No'}
+                        <span style={{ fontSize: 9, fontWeight: 700, color: item.reschedule ? '#783F04' : 'var(--text-muted)' }}>
+                          {item.reschedule ? 'Reprogramada (+1)' : 'No'}
                         </span>
                       </label>
                     </td>

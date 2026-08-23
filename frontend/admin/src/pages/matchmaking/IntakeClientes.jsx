@@ -738,7 +738,7 @@ export default function IntakeClientes() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Plan Tier *
+                    Plan Oficial
                   </label>
                   <select
                     value={formData.plan_tier}
@@ -754,11 +754,26 @@ export default function IntakeClientes() {
                       outline: 'none'
                     }}
                   >
-                    {PLAN_TIERS.map(pt => (
-                      <option key={pt} value={pt}>{pt}</option>
-                    ))}
+                    <option value="">(Sin plan — marcar en amarillo PENDIENTE PLAN)</option>
+                    <option value="Estándar 65k (2 citas)">Estándar 65k (3 slots)</option>
+                    <option value="VIP 195k">VIP 195k (4 slots)</option>
+                    <option value="Básico 40k">Básico 40k (2 slots)</option>
                   </select>
                 </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.is_priority || false}
+                    onChange={e => setFormData({ ...formData, is_priority: e.target.checked })}
+                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#B8324F' }}>
+                    ⚡ Marcar como PROFILE PRIORITARIO (Personas Difíciles)
+                  </span>
+                </label>
               </div>
 
               <div style={{ marginBottom: 18 }}>
@@ -815,7 +830,7 @@ export default function IntakeClientes() {
                     cursor: submitting ? 'wait' : 'pointer'
                   }}
                 >
-                  {submitting ? 'Creando 3 Slots...' : '✓ Registrar & Crear 3 Slots'}
+                  {submitting ? 'Creando slots...' : '✓ Registrar & Crear Slots'}
                 </button>
               </div>
             </form>
