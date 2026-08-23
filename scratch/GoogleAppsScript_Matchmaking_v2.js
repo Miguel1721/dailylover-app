@@ -572,8 +572,13 @@ function getSheetHeaders(sheet) {
  * Encuentra la verdadera última fila con datos reales en una columna dada.
  */
 function getTrueLastRow(sheet, checkColIndex) {
-  var col = checkColIndex || 1;
+  var col = checkColIndex;
+  if (!col || col <= 0) {
+    var headers = getSheetHeaders(sheet);
+    col = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"] || 1;
+  }
   var maxRows = sheet.getMaxRows();
+  if (maxRows <= 1) return 1;
   var values = sheet.getRange(1, col, maxRows, 1).getValues();
 
   for (var r = values.length - 1; r >= 0; r--) {
