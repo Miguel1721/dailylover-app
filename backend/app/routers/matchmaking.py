@@ -1184,6 +1184,32 @@ async def get_person_history(person_name: str, db: AsyncSession = Depends(get_db
     return {"person_name": clean_name, "events": history, "total": len(history)}
 
 
+def normalize_plan(raw_plan: Optional[str]) -> str:
+    """
+    Normaliza valores crudos del CRM o etiquetas a los 3 planes oficiales:
+    - VIP 195k (VIP, 195k, 295k, VIP client) -> 4 slots
+    - Estándar 65k (2 citas) (2 dates, 2 citas, standard, 65k, 98k, 150k) -> 3 slots
+    - Básico 40k (1 date, 1 cita, basic, 40k) -> 2 slots
+    """
+    if not raw_plan:
+        return ""
+    p = raw_plan.lower().strip()
+    
+    # 1. VIP (máxima prioridad de match si tiene 'vip')
+    if "vip" in p or "195k" in p or "295k" in p:
+        return "VIP 195k"
+    
+    # 2. Estándar (2 dates / standard / 65k / 98k / 150k)
+    if "2 date" in p or "2 cita" in p or "standard" in p or "estandar" in p or "estándar" in p or "65k" in p or "98k" in p or "150k" in p or "premium" in p:
+        return "Estándar 65k (2 citas)"
+    
+    # 3. Básico (1 date / basic / 40k)
+    if "1 date" in p or "1 cita" in p or "basic" in p or "basico" in p or "básico" in p or "40k" in p:
+        return "Básico 40k"
+        
+    return ""
+
+
 @router.post("/resolve-profile")
 async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -1260,7 +1286,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
         "name": row.name or "",
         "city": normalize_city(row.city),
         "pref": pref_val,
-        "plan_tier": row.plan_tier or "",
+        "plan_tier": normalize_plan(row.plan_tier),
         "phone": row.phone or "",
         "email": row.email or ""
     }
