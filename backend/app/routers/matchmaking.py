@@ -551,6 +551,24 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
             })
 
     await db.commit()
+
+    # 3. Notificar a Apps Script Web App si está configurado (Webhook instantáneo)
+    if payload.status:
+        try:
+            from app.services.google_sheets import notify_apps_script_status_change
+            psyc_name = match_row.psychologist_name
+            tab_name = f"MATCHES {psyc_name}" if psyc_name else ""
+            asyncio.create_task(notify_apps_script_status_change(
+                tab=tab_name,
+                match_id=match_id,
+                new_status=payload.status.strip(),
+                role="psicologa",
+                person_a=match_row.person_a,
+                person_b=payload.person_b or match_row.person_b
+            ))
+        except Exception:
+            pass
+
     return {"status": "success", "message": f"Match {match_id} actualizado exitosamente"}
 
 
@@ -662,6 +680,23 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pB, "mid": match_id, "d": det})
 
     await db.commit()
+
+    # 3. Notificar a Apps Script Web App si está configurado (Webhook instantáneo)
+    try:
+        from app.services.google_sheets import notify_apps_script_status_change
+        psyc_name = match_row.psychologist_name
+        tab_name = f"MATCHES {psyc_name}" if psyc_name else ""
+        asyncio.create_task(notify_apps_script_status_change(
+            tab=tab_name,
+            match_id=match_id,
+            new_status="APROBADO",
+            role="maria",
+            person_a=match_row.person_a,
+            person_b=match_row.person_b
+        ))
+    except Exception:
+        pass
+
     return {"status": "success", "match_id": match_id, "message": f"Match {match_id} aprobado exitosamente por María Paula (fila actualizada in-situ)."}
 
 

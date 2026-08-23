@@ -160,3 +160,46 @@ def prepare_matches_lau_header(spreadsheet_id: Optional[str] = None) -> bool:
         logger.error(f"Error actualizando encabezado de MATCHES LAU: {e}")
         return False
 
+
+async def notify_apps_script_status_change(
+    tab: str,
+    row: Optional[int] = None,
+    match_id: Optional[int] = None,
+    new_status: Optional[str] = None,
+    role: Optional[str] = None,
+    person_a: Optional[str] = None,
+    person_b: Optional[str] = None
+) -> bool:
+    """
+    Envía un webhook HTTP POST al Web App de Google Apps Script cuando un STATUS cambia por API/Web,
+    garantizando actualización instantánea en las pestañas derivadas sin esperar el trigger por tiempo.
+    """
+    webhook_url = os.environ.get("APPS_SCRIPT_WEBHOOK_URL")
+    if not webhook_url:
+        logger.debug("APPS_SCRIPT_WEBHOOK_URL no configurado, omitiendo notificación HTTP.")
+        return False
+
+    payload = {
+        "tab": tab,
+        "row": row,
+        "match_id": match_id,
+        "new_status": new_status,
+        "role": role or "sistema",
+        "person_a": person_a,
+        "person_b": person_b
+    }
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(webhook_url, json=payload)
+            if res.status_code in (200, 201, 302):
+                logger.info(f"✅ Notificación de STATUS enviada a Apps Script ({tab} - {new_status})")
+                return True
+            else:
+                logger.warning(f"⚠️ Apps Script Webhook respondió status {res.status_code}")
+                return False
+    except Exception as e:
+        logger.warning(f"No se pudo contactar el Web App de Apps Script: {e}")
+        return False
+
