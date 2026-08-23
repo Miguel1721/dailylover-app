@@ -70,6 +70,8 @@ function onEditClaude(e) {
 
   if (sheetName.indexOf(CLAUDE_CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sheetName !== "MATCHES") {
     handleClaudePsychologistSheetEdit(sheet, row, col, e.value);
+  } else if (sheetName === "PERSONAS DÍFICILES" || sheetName === "PERSONAS DIFICILES" || sheetName === "MATCHES QUE HACEN FALTA") {
+    handleClaudePersonasDificilesEdit(sheet, row, col, e.value);
   }
 }
 
@@ -208,5 +210,52 @@ function claudeWithLock(actionFn) {
     Logger.log("Claude error con lock: " + err.message);
   } finally {
     if (hasLock) lock.releaseLock();
+  }
+}
+
+// ─── PROFILE PRIORITARIO: AUTOCOMPLETADO CRM EN PERSONAS DÍFICILES ─────────
+function handleClaudePersonasDificilesEdit(sheet, row, col, newValue) {
+  var headers = claudeGetSheetHeaders(sheet);
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"] || 1;
+  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 3;
+  var ciudadCol = headers["CIUDAD"] || headers["CITY"] || 4;
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 5;
+  var fechaIngresoCol = headers["FECHA INGRESO"] || headers["FECHA"] || 6;
+
+  if (personACol && col === personACol) {
+    var pastedValue = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim();
+    if (pastedValue) {
+      var profile = claudeResolveProfile(pastedValue);
+      if (profile && profile.found) {
+        var cellRange = sheet.getRange(row, col);
+        if (pastedValue.indexOf("http") === 0) {
+          var richText = SpreadsheetApp.newRichTextValue()
+            .setText(profile.name)
+            .setLinkUrl(pastedValue)
+            .build();
+          cellRange.setRichTextValue(richText);
+        } else if (profile.name) {
+          cellRange.setValue(profile.name);
+        }
+
+        if (ciudadCol && !sheet.getRange(row, ciudadCol).getValue()) {
+          sheet.getRange(row, ciudadCol).setValue(profile.city || "");
+        }
+        if (prefCol && !sheet.getRange(row, prefCol).getValue()) {
+          sheet.getRange(row, prefCol).setValue(profile.pref || "hetero");
+        }
+        if (planCol && !sheet.getRange(row, planCol).getValue()) {
+          sheet.getRange(row, planCol).setValue(profile.plan_tier || "");
+        }
+        if (fechaIngresoCol && !sheet.getRange(row, fechaIngresoCol).getValue()) {
+          sheet.getRange(row, fechaIngresoCol).setValue(Utilities.formatDate(new Date(), "America/Bogota", "yyyy-MM-dd HH:mm"));
+        }
+
+        // Si ya hay psicóloga y plan válidos, disparar generación de slots
+        if (typeof handlePersonasDificilesEdit === "function") {
+          handlePersonasDificilesEdit(sheet, row, col);
+        }
+      }
+    }
   }
 }

@@ -31,8 +31,33 @@ var CONFIG = {
   TROUBLE_SHEET_NAME: "TROUBLE MATCHES",
   REFUNDS_SHEET_NAME: "REFUNDS PENDIENTES",
   VUELVE_A_PAGAR_SHEET_NAME: "VUELVE A PAGAR",
+  REVISION_MARIA_SHEET_NAME: "REVISIÓN MARÍA",
+  PRIORITY_SHEET_NAME: "PERSONAS DÍFICILES",
   TIMEZONE: "America/Bogota",
   LOCK_TIMEOUT_MS: 30000,
+  VALID_PSYCHOLOGISTS: [
+    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"
+  ],
+  PSYCHOLOGIST_ALIASES: {
+    "MAPE": "MAPE D",
+    "MAPE D": "MAPE D",
+    "MARIA PAULA": "MAPE D",
+    "MARÍA PAULA": "MAPE D",
+    "STEFF": "STEFFY",
+    "STEFFY": "STEFFY",
+    "MANU": "MANU",
+    "MANU 1": "MANU",
+    "MANU 2": "MANU",
+    "SILVI": "SILVI",
+    "SILVANA": "SILVI",
+    "ANA": "ANA",
+    "JENN": "JENN",
+    "SOFI": "SOFI",
+    "ALEJA": "ALEJA",
+    "PIA": "PIA",
+    "ISA": "ISA",
+    "ISABELLA": "ISA"
+  },
   PLAN_SLOTS_MAP: {
     "BÁSICO 40K (1 CITA)": 2,
     "BÁSICO 40K": 2,
@@ -58,11 +83,6 @@ var CONFIG = {
 
 // ─── 1. DISPARADOR PRINCIPAL INSTALABLE ─────────────────────────────────────
 
-/**
- * Función principal para el disparador instalable:
- * Configuración en Google Sheets:
- * Triggers (icono de reloj) -> Agregar disparador -> Función: onEditInstallable -> Evento: Al editar
- */
 function onEditInstallable(e) {
   if (!e || !e.range) return;
 
@@ -79,16 +99,12 @@ function onEditInstallable(e) {
   // A. Pestañas de psicólogas ("MATCHES SILVI", "MATCHES JENN", "MATCHES ANA ", etc.)
   if (upperSheetName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperSheetName !== "MATCHES") {
     handlePsychologistSheetEdit(sheet, row, col, e.value, e.oldValue);
-  }
-
-  // B. Pestaña oficial "VUELVE A PAGAR"
-  if (upperSheetName === CONFIG.VUELVE_A_PAGAR_SHEET_NAME) {
+  } else if (upperSheetName === CONFIG.VUELVE_A_PAGAR_SHEET_NAME) {
     handleVuelveAPagarEdit(sheet, row, col, e.value, e.oldValue);
-  }
-
-  // C. Pestaña de Refunds de Lina ("REFUNDS PENDIENTES")
-  if (upperSheetName === CONFIG.REFUNDS_SHEET_NAME) {
+  } else if (upperSheetName === CONFIG.REFUNDS_SHEET_NAME) {
     handleRefundsSheetEdit(sheet, row, col, e.value, e.oldValue);
+  } else if (upperSheetName === CONFIG.PRIORITY_SHEET_NAME || upperSheetName === "PERSONAS DIFICILES" || upperSheetName === "MATCHES QUE HACEN FALTA") {
+    handlePersonasDificilesEdit(sheet, row, col, e.value, e.oldValue);
   }
 }
 
@@ -191,6 +207,36 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
       if (currentObs.indexOf("[DESCALIFICADO - BLOQUEO PERMANENTE]") === -1) {
         sheet.getRange(row, obsCol).setValue((currentObs ? currentObs + " | " : "") + "[DESCALIFICADO - BLOQUEO PERMANENTE]");
       }
+    }
+  }
+
+  // ── F. PROFILE PRIORITARIO: Transferencia automática desde EN PAUSA INDEFINIDA y TROUBLEMAKER ──
+  if (statusVal === "EN PAUSA INDEFINIDA") {
+    withScriptLock(function() {
+      syncToPriorityQueue(sheet.getName(), {
+        personACell: personACell,
+        plan: plan,
+        city: city,
+        pref: pref,
+        status: statusVal,
+        observaciones: obs
+      });
+    });
+  }
+
+  if (statusVal === "TROUBLEMAKER") {
+    var hasOtherActive = checkActiveMatchesInSheet(sheet, headers, personAName, row);
+    if (!hasOtherActive) {
+      withScriptLock(function() {
+        syncToPriorityQueue(sheet.getName(), {
+          personACell: personACell,
+          plan: plan,
+          city: city,
+          pref: pref,
+          status: "TROUBLEMAKER (REASIGNAR)",
+          observaciones: "Reasignación prioritaria tras TROUBLEMAKER" + (obs ? " | " + obs : "")
+        });
+      });
     }
   }
 }
@@ -674,7 +720,6 @@ function reconstruirRevisionMaria() {
   Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas en batch.");
   ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos.", "Revisión Lista", 5);
 }
-}
 
 /**
  * Instala el disparador periódico para reconstruir REVISIÓN MARÍA cada 15 minutos
@@ -693,4 +738,229 @@ function instalarTriggerRevisionMaria() {
     .create();
 
   Logger.log("✅ Disparador de REVISIÓN MARÍA configurado para ejecutarse cada 15 minutos.");
+}
+
+// ─── 9. PROFILE PRIORITARIO: PESTAÑA 'PERSONAS DÍFICILES' ───────────────────
+
+function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
+  var headers = getSheetHeaders(sheet);
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"] || 1;
+  var psycCol = headers["INTERVIEWED BY:"] || headers["INTERVIEWED BY"] || headers["PSICOLOGA"] || headers["PSICÓLOGA"] || 2;
+  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 3;
+  var ciudadCol = headers["CIUDAD"] || headers["CITY"] || 4;
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 5;
+  var fechaIngresoCol = headers["FECHA INGRESO"] || headers["FECHA"] || 6;
+  var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACION"] || headers["NOTAS"] || 7;
+  var statusCol = headers["STATUS"] || 8;
+  var slotsCol = headers["SLOTS CREADOS"] || headers["SLOTS"] || 9;
+
+  var personACell = getCellData(sheet, row, personACol);
+  var personAName = personACell ? personACell.text : "";
+  if (!personAName) return;
+
+  var rawPsyc = (sheet.getRange(row, psycCol).getValue() || "").toString().trim();
+  var rawPlan = (sheet.getRange(row, planCol).getValue() || "").toString().trim();
+  var ciudad = ciudadCol ? (sheet.getRange(row, ciudadCol).getValue() || "").toString().trim() : "";
+  var pref = prefCol ? (sheet.getRange(row, prefCol).getValue() || "").toString().trim() : "";
+  var obs = obsCol ? (sheet.getRange(row, obsCol).getValue() || "").toString().trim() : "";
+  var slotsCreados = slotsCol ? (sheet.getRange(row, slotsCol).getValue() || "").toString().trim() : "";
+
+  // 1. DEDUPLICACIÓN: si ya tiene slots creados, abortar
+  if (slotsCreados && slotsCreados.toUpperCase() !== "PENDIENTE") return;
+
+  // 2. NORMALIZACIÓN Y VALIDACIÓN DE PSICÓLOGA (Interviewed by:)
+  var cleanPsyc = normalizePsychologistName(rawPsyc);
+  if (!cleanPsyc) {
+    sheet.getRange(row, psycCol)
+      .setBackground("#F4CCCC")
+      .setNote("Psicóloga no activa o inválida ('" + rawPsyc + "'). Reasigne a una de las 10 psicólogas activas: JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA.");
+    return;
+  } else {
+    // Si era un alias (ej: MAPE -> MAPE D), actualizar celda con nombre oficial
+    if (rawPsyc.toUpperCase() !== cleanPsyc) {
+      sheet.getRange(row, psycCol).setValue(cleanPsyc);
+    }
+    sheet.getRange(row, psycCol).setBackground(null).clearNote();
+  }
+
+  // 3. VALIDACIÓN ESTRICTA DE PLAN (nunca asumir)
+  var cleanPlanKey = rawPlan.toUpperCase().replace(/\s+/g, " ");
+  var numSlots = CONFIG.PLAN_SLOTS_MAP[cleanPlanKey];
+  if (!numSlots) {
+    sheet.getRange(row, planCol)
+      .setBackground("#F4CCCC")
+      .setNote("PLAN REQUERIDO: No se especificó plan o no es válido. Especifique: Básico 40k (2 slots), Estándar 65k (3 slots) o VIP 195k (4 slots).");
+    return;
+  } else {
+    sheet.getRange(row, planCol).setBackground(null).clearNote();
+  }
+
+  // 4. BÚSQUEDA DE PESTAÑA DE PSICÓLOGA
+  var psycSheet = findPsychologistSheet(cleanPsyc);
+  if (!psycSheet) {
+    sheet.getRange(row, psycCol)
+      .setBackground("#F4CCCC")
+      .setNote("No se encontró la pestaña 'MATCHES " + cleanPsyc + "'.");
+    return;
+  }
+
+  // 5. GENERACIÓN DE SLOTS PRIORITARIOS
+  withScriptLock(function() {
+    // Fecha de ingreso
+    if (fechaIngresoCol) {
+      var currentFecha = sheet.getRange(row, fechaIngresoCol).getValue();
+      if (!currentFecha) {
+        var nowStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+        sheet.getRange(row, fechaIngresoCol).setValue(nowStr);
+      }
+    }
+
+    var psycHeaders = getSheetHeaders(psycSheet);
+    for (var i = 1; i <= numSlots; i++) {
+      appendPrioritySlotRow(psycSheet, psycHeaders, {
+        city: ciudad,
+        pref: pref || "hetero",
+        plan: rawPlan,
+        personACell: personACell,
+        slotIndex: i,
+        totalSlots: numSlots,
+        observaciones: obs
+      });
+    }
+
+    // Marcar como procesado en PERSONAS DÍFICILES
+    var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+    if (slotsCol) {
+      sheet.getRange(row, slotsCol)
+        .setValue(numSlots + " SLOTS CREADOS (" + todayStr + ")")
+        .setBackground("#D9EAD3")
+        .clearNote();
+    }
+    if (statusCol) {
+      var curSt = sheet.getRange(row, statusCol).getValue();
+      if (!curSt || curSt.toString().trim() === "") {
+        sheet.getRange(row, statusCol).setValue("SLOTS GENERADOS");
+      }
+    }
+  });
+}
+
+function appendPrioritySlotRow(sheet, headers, data) {
+  var checkCol = headers["PERSON A"] || headers["PERSONA A"] || 1;
+  var trueLastRow = getTrueLastRow(sheet, checkCol);
+  var newRow = trueLastRow + 1;
+
+  if (headers["CITY"]) sheet.getRange(newRow, headers["CITY"]).setValue(data.city);
+  if (headers["CIUDAD"]) sheet.getRange(newRow, headers["CIUDAD"]).setValue(data.city);
+
+  if (headers["PREF"]) sheet.getRange(newRow, headers["PREF"]).setValue(data.pref);
+  if (headers["PREFERENCIA"]) sheet.getRange(newRow, headers["PREFERENCIA"]).setValue(data.pref);
+
+  if (headers["PLAN"]) sheet.getRange(newRow, headers["PLAN"]).setValue(data.plan);
+  if (headers["PLAN TIER"]) sheet.getRange(newRow, headers["PLAN TIER"]).setValue(data.plan);
+
+  if (headers["PERSON A"] && data.personACell) {
+    setCellData(sheet, newRow, headers["PERSON A"], data.personACell);
+    sheet.getRange(newRow, headers["PERSON A"]).setBackground("#FFF2CC"); // Marca visual de prioridad
+  } else if (headers["PERSONA A"] && data.personACell) {
+    setCellData(sheet, newRow, headers["PERSONA A"], data.personACell);
+    sheet.getRange(newRow, headers["PERSONA A"]).setBackground("#FFF2CC");
+  }
+
+  if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
+  if (headers["PERSONA B"]) sheet.getRange(newRow, headers["PERSONA B"]).setValue("");
+
+  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
+  if (headers["STATUS"]) {
+    sheet.getRange(newRow, headers["STATUS"]).setValue("Listo para match");
+    sheet.getRange(newRow, headers["STATUS"]).setBackground("#FFE599");
+  }
+
+  var priorityTag = "[PRIORITARIO Slot " + data.slotIndex + "/" + data.totalSlots + "]";
+  var finalObs = priorityTag + (data.observaciones ? " " + data.observaciones : "");
+  if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(finalObs);
+  if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(finalObs);
+}
+
+function syncToPriorityQueue(sourceSheetName, data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = CONFIG.PRIORITY_SHEET_NAME || "PERSONAS DÍFICILES";
+  var prioritySheet = ss.getSheetByName(sheetName) || ss.getSheetByName("PERSONAS DIFICILES") || ss.getSheetByName("MATCHES QUE HACEN FALTA");
+  if (!prioritySheet) return;
+
+  var headers = getSheetHeaders(prioritySheet);
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 1;
+  var trueLastRow = getTrueLastRow(prioritySheet, personACol);
+  var targetRow = trueLastRow + 1;
+
+  var psycName = sourceSheetName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
+  var cleanPsyc = normalizePsychologistName(psycName) || psycName;
+
+  var psycCol = headers["INTERVIEWED BY:"] || headers["INTERVIEWED BY"] || headers["PSICOLOGA"] || 2;
+  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 3;
+  var ciudadCol = headers["CIUDAD"] || headers["CITY"] || 4;
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 5;
+  var fechaIngresoCol = headers["FECHA INGRESO"] || headers["FECHA"] || 6;
+  var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACION"] || 7;
+  var statusCol = headers["STATUS"] || 8;
+  var slotsCol = headers["SLOTS CREADOS"] || headers["SLOTS"] || 9;
+
+  if (personACol && data.personACell) setCellData(prioritySheet, targetRow, personACol, data.personACell);
+  if (psycCol) prioritySheet.getRange(targetRow, psycCol).setValue(cleanPsyc);
+  if (planCol) prioritySheet.getRange(targetRow, planCol).setValue(data.plan || "");
+  if (ciudadCol) prioritySheet.getRange(targetRow, ciudadCol).setValue(data.city || "");
+  if (prefCol) prioritySheet.getRange(targetRow, prefCol).setValue(data.pref || "hetero");
+  if (fechaIngresoCol) prioritySheet.getRange(targetRow, fechaIngresoCol).setValue(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm"));
+  if (obsCol) prioritySheet.getRange(targetRow, obsCol).setValue(data.observaciones || "");
+  if (statusCol) prioritySheet.getRange(targetRow, statusCol).setValue(data.status || "PENDIENTE");
+  if (slotsCol) prioritySheet.getRange(targetRow, slotsCol).setValue(data.status === "EN PAUSA INDEFINIDA" ? "EN PAUSA" : "");
+}
+
+function normalizePsychologistName(rawName) {
+  if (!rawName) return null;
+  var trimmed = rawName.toString().trim();
+  var upper = trimmed.toUpperCase();
+
+  // 1. Coincidencia exacta en lista oficial
+  for (var i = 0; i < CONFIG.VALID_PSYCHOLOGISTS.length; i++) {
+    if (upper === CONFIG.VALID_PSYCHOLOGISTS[i]) {
+      return CONFIG.VALID_PSYCHOLOGISTS[i];
+    }
+  }
+
+  // 2. Coincidencia en mapa de alias
+  if (CONFIG.PSYCHOLOGIST_ALIASES[upper]) {
+    return CONFIG.PSYCHOLOGIST_ALIASES[upper];
+  }
+
+  var normalized = upper.replace(/\s+/g, " ");
+  if (CONFIG.PSYCHOLOGIST_ALIASES[normalized]) {
+    return CONFIG.PSYCHOLOGIST_ALIASES[normalized];
+  }
+
+  return null; // Inválido (ej: MARI PAZ, LAU, Steff/Manu, vacío)
+}
+
+function checkActiveMatchesInSheet(sheet, headers, personAName, currentRow) {
+  if (!personAName) return false;
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 1;
+  var statusCol = headers["STATUS"];
+  if (!statusCol) return false;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return false;
+
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var r = i + 2;
+    if (r === currentRow) continue;
+    var pa = (values[i][personACol - 1] || "").toString().trim().toUpperCase();
+    var st = (values[i][statusCol - 1] || "").toString().trim().toUpperCase();
+    if (pa === personAName.toUpperCase()) {
+      if (st === "LISTO PARA MATCH" || st === "HECHO" || st === "HECHO POR MAPE" || st === "APROBADO") {
+        return true;
+      }
+    }
+  }
+  return false;
 }
