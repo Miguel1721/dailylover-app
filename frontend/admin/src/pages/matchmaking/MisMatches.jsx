@@ -154,19 +154,23 @@ function PersonHistoryModal({ queryTarget, onClose }) {
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No se encontró información para esta persona.</div>
           ) : (
             <>
-              {/* Profile Summary & Counters */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
-                <div style={{ background: 'var(--bg-base)', border: '1px solid #B6D7A8', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 10, color: '#274E13', fontWeight: 700, textTransform: 'uppercase' }}>Citas Completadas</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#274E13', marginTop: 2 }}>{data.dates_completed_count}</div>
+              {/* Profile Summary & Counters (Paridad Exacta con Google Sheets) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+                <div style={{ background: 'var(--bg-base)', border: '1px solid #B6D7A8', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10, color: '#274E13', fontWeight: 700, textTransform: 'uppercase' }}>Completadas</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#274E13', marginTop: 2 }}>{data.completed_count ?? data.dates_completed_count ?? 0}</div>
                 </div>
-                <div style={{ background: 'var(--bg-base)', border: '1px solid #EA9999', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 10, color: '#660000', fontWeight: 700, textTransform: 'uppercase' }}>Rechazos / Trouble</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: '#660000', marginTop: 2 }}>{data.rejections_count}</div>
+                <div style={{ background: 'var(--bg-base)', border: '1px solid #FF6B35', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10, color: '#C0392B', fontWeight: 700, textTransform: 'uppercase' }}>Rechazos (Trouble)</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#C0392B', marginTop: 2 }}>{data.trouble_count ?? data.rejections_count ?? 0}</div>
                 </div>
-                <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Matches Históricos</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>{data.total_matches_count}</div>
+                <div style={{ background: 'var(--bg-base)', border: '1px solid #A2C4C9', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10, color: '#134F5C', fontWeight: 700, textTransform: 'uppercase' }}>En Proceso</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#134F5C', marginTop: 2 }}>{data.in_progress_count ?? 0}</div>
+                </div>
+                <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>Cerrados</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>{data.closed_count ?? 0}</div>
                 </div>
               </div>
 

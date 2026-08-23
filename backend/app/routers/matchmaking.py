@@ -1310,7 +1310,12 @@ async def check_duplicate_match(
 async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_db)):
     """
     Retorna la trazabilidad completa y permanente de todas las citas y eventos de una persona
-    buscando por CRM ID o por nombre. Incluye conteo de citas completadas y rechazos.
+    buscando por CRM ID o por nombre.
+    Clasificación canónica de paridad con Google Sheets:
+    - Completadas: APROBADO, MATCH DONE, CITA COMPLETADA
+    - Rechazos (trouble): cualquier status que contenga TROUBLE (ej. TROUBLE, TROUBLEMAKER)
+    - En proceso: HECHO, HECHO POR MAPE, LISTO PARA MATCH, PENDIENTE, PENDIENTE PLAN, REVISAR, REVISAR POR SI TOCA OTRO MATCH, etc.
+    - Cerrados: DESCALIFICADO, REFUND, REFUND DONE, NOT APPROVED, NO HAY GENTE, RESUELTO
     """
     clean_q = query_or_name.strip()
     
@@ -1339,25 +1344,16 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     target_name = user_row.name if user_row else clean_q
     target_crm_id = user_row.crm_id if user_row else (clean_q if clean_q.isdigit() else "")
 
-    # 2. Conteo de citas completadas
+    # 2. Conteo de citas completadas en calendario
     res_dates = await db.execute(text("""
         SELECT COUNT(*) 
         FROM scheduled_dates
         WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:n)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:n)))
           AND had_date = true
     """), {"n": target_name})
-    dates_completed_count = res_dates.scalar() or 0
+    dates_had_count = res_dates.scalar() or 0
 
-    # 3. Conteo de rechazos
-    res_rejections = await db.execute(text("""
-        SELECT COUNT(*)
-        FROM operational_matches
-        WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:n)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:n)))
-          AND status IN ('REFUND', 'NOT APPROVED', 'TROUBLE', 'TROUBLEMAKER', 'DESCALIFICADO')
-    """), {"n": target_name})
-    rejections_count = res_rejections.scalar() or 0
-
-    # 4. Historial cronológico de eventos
+    # 3. Historial cronológico de eventos
     res_hist = await db.execute(text("""
         SELECT id, person_name, match_id, event_type, details, created_at
         FROM person_history
@@ -1366,7 +1362,7 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     """), {"n": target_name})
     hist_rows = res_hist.fetchall()
 
-    # 5. Lista de todos los matches históricos
+    # 4. Lista de todos los matches históricos
     res_matches = await db.execute(text("""
         SELECT id, person_a, person_b, psychologist_name, status, plan_tier, city, created_at, updated_at
         FROM operational_matches
@@ -1375,6 +1371,29 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     """), {"n": target_name})
     match_rows = res_matches.fetchall()
 
+    # 5. Categorización exacta según Google Sheets SSOT
+    completed_count = 0
+    trouble_count = 0
+    in_progress_count = 0
+    closed_count = 0
+
+    COMPLETED_STATUSES = {"APROBADO", "MATCH DONE", "CITA COMPLETADA"}
+    CLOSED_STATUSES = {"DESCALIFICADO", "REFUND", "REFUND DONE", "NOT APPROVED", "NO HAY GENTE", "RESUELTO"}
+
+    for r in match_rows:
+        st = (r.status or "").strip().upper()
+        if st in COMPLETED_STATUSES:
+            completed_count += 1
+        elif "TROUBLE" in st:
+            trouble_count += 1
+        elif st in CLOSED_STATUSES:
+            closed_count += 1
+        else:
+            in_progress_count += 1
+
+    if dates_had_count > completed_count:
+        completed_count = dates_had_count
+
     return {
         "person_name": target_name,
         "crm_id": target_crm_id,
@@ -1382,8 +1401,12 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
         "pref": normalize_pref(user_row.orientation) if user_row else "",
         "plan_tier": normalize_plan(user_row.plan_tier) if user_row else "",
         "psychologist": normalize_psychologist(user_row.responsable) if user_row else "",
-        "dates_completed_count": dates_completed_count,
-        "rejections_count": rejections_count,
+        "dates_completed_count": completed_count,
+        "completed_count": completed_count,
+        "rejections_count": trouble_count,
+        "trouble_count": trouble_count,
+        "in_progress_count": in_progress_count,
+        "closed_count": closed_count,
         "total_matches_count": len(match_rows),
         "events": [
             {
