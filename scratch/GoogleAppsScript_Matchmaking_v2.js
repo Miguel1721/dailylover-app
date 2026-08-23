@@ -747,6 +747,16 @@ function instalarTriggerRevisionMaria() {
 
 // ─── 9. PROFILE PRIORITARIO: PESTAÑA 'PERSONAS DÍFICILES' ───────────────────
 
+function resolvePlanSlots(rawPlan) {
+  if (!rawPlan) return 0;
+  var clean = rawPlan.toString().toUpperCase().trim().replace(/\s+/g, " ");
+  if (CONFIG.PLAN_SLOTS_MAP[clean]) return CONFIG.PLAN_SLOTS_MAP[clean];
+  if (clean.indexOf("VIP") >= 0 || clean.indexOf("4 DATE") >= 0 || clean.indexOf("4 CITA") >= 0) return 4;
+  if (clean.indexOf("ESTANDAR") >= 0 || clean.indexOf("ESTÁNDAR") >= 0 || clean.indexOf("3 DATE") >= 0 || clean.indexOf("3 CITA") >= 0) return 3;
+  if (clean.indexOf("BASICO") >= 0 || clean.indexOf("BÁSICO") >= 0 || clean.indexOf("2 DATE") >= 0 || clean.indexOf("2 CITA") >= 0 || clean.indexOf("1 CITA") >= 0) return 2;
+  return 0;
+}
+
 function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
   var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"] || 1;
@@ -770,16 +780,20 @@ function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
   var obs = obsCol ? (sheet.getRange(row, obsCol).getValue() || "").toString().trim() : "";
   var slotsCreados = slotsCol ? (sheet.getRange(row, slotsCol).getValue() || "").toString().trim() : "";
 
-  // 1. DEDUPLICACIÓN: si ya tiene slots creados, abortar
-  if (slotsCreados && slotsCreados.toUpperCase() !== "PENDIENTE") return;
+  // 1. DEDUPLICACIÓN: si ya tiene slots creados generados, abortar
+  if (slotsCreados && slotsCreados.toUpperCase().indexOf("SLOTS CREADOS") >= 0) return;
 
   // 2. NORMALIZACIÓN Y VALIDACIÓN DE PSICÓLOGA (Interviewed by:)
   var cleanPsyc = normalizePsychologistName(rawPsyc);
-  if (!cleanPsyc) {
+  var psycValida = !!cleanPsyc;
+
+  if (!psycValida) {
     sheet.getRange(row, psycCol)
-      .setBackground("#F4CCCC")
-      .setNote("Psicóloga no activa o inválida ('" + rawPsyc + "'). Reasigne a una de las 10 psicólogas activas: JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA.");
-    return;
+      .setBackground("#FFF2CC")
+      .setNote("Psicóloga pendiente de asignación — Seleccione una de las 10 psicólogas activas: JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA.");
+    if (slotsCol && (!slotsCreados || slotsCreados.toUpperCase().indexOf("PENDIENTE") >= 0)) {
+      sheet.getRange(row, slotsCol).setValue("PENDIENTE PSICÓLOGA").setBackground("#FFF2CC");
+    }
   } else {
     // Si era un alias (ej: MAPE -> MAPE D), actualizar celda con nombre oficial
     if (rawPsyc.toUpperCase() !== cleanPsyc) {
@@ -788,28 +802,36 @@ function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(row, psycCol).setBackground(null).clearNote();
   }
 
-  // 3. VALIDACIÓN ESTRICTA DE PLAN (nunca asumir)
-  var cleanPlanKey = rawPlan.toUpperCase().replace(/\s+/g, " ");
-  var numSlots = CONFIG.PLAN_SLOTS_MAP[cleanPlanKey];
-  if (!numSlots) {
+  // 3. VALIDACIÓN DE PLAN (NO BLOQUEANTE: marca en amarillo y espera)
+  var numSlots = resolvePlanSlots(rawPlan);
+  var planValido = numSlots > 0;
+
+  if (!planValido) {
     sheet.getRange(row, planCol)
-      .setBackground("#F4CCCC")
-      .setNote("PLAN REQUERIDO: No se especificó plan o no es válido. Especifique: Básico 40k (2 slots), Estándar 65k (3 slots) o VIP 195k (4 slots).");
-    return;
+      .setBackground("#FFF2CC")
+      .setNote("Falta el plan — María o Servicio al Cliente lo completa a mano (Básico 40k = 2 slots, Estándar 65k = 3 slots, VIP 195k = 4 slots)");
+    if (slotsCol && psycValida && (!slotsCreados || slotsCreados.toUpperCase().indexOf("PENDIENTE") >= 0)) {
+      sheet.getRange(row, slotsCol).setValue("PENDIENTE PLAN").setBackground("#FFF2CC");
+    }
   } else {
     sheet.getRange(row, planCol).setBackground(null).clearNote();
   }
 
-  // 4. BÚSQUEDA DE PESTAÑA DE PSICÓLOGA
+  // 4. SI FALTA PSICÓLOGA O PLAN: no crear slots aún (no bloquea el resto del archivo)
+  if (!psycValida || !planValido) {
+    return;
+  }
+
+  // 5. BÚSQUEDA DE PESTAÑA DE PSICÓLOGA
   var psycSheet = findPsychologistSheet(cleanPsyc);
   if (!psycSheet) {
     sheet.getRange(row, psycCol)
-      .setBackground("#F4CCCC")
+      .setBackground("#FFF2CC")
       .setNote("No se encontró la pestaña 'MATCHES " + cleanPsyc + "'.");
     return;
   }
 
-  // 5. GENERACIÓN DE SLOTS PRIORITARIOS
+  // 6. GENERACIÓN AUTOMÁTICA DE SLOTS PRIORITARIOS
   withScriptLock(function() {
     // Fecha de ingreso
     if (fechaIngresoCol) {
@@ -833,7 +855,7 @@ function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
       });
     }
 
-    // Marcar como procesado en PERSONAS DÍFICILES
+    // Marcar como procesado en PERSONAS DÍFICILES (verde oficial #D9EAD3)
     var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
     if (slotsCol) {
       sheet.getRange(row, slotsCol)
@@ -843,8 +865,8 @@ function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
     }
     if (statusCol) {
       var curSt = sheet.getRange(row, statusCol).getValue();
-      if (!curSt || curSt.toString().trim() === "") {
-        sheet.getRange(row, statusCol).setValue("SLOTS GENERADOS");
+      if (!curSt || curSt.toString().trim() === "" || curSt.toString().toUpperCase().indexOf("PENDIENTE") >= 0) {
+        sheet.getRange(row, statusCol).setValue("SLOTS GENERADOS").setBackground(null).clearNote();
       }
     }
   });

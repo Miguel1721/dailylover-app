@@ -218,9 +218,9 @@ function testProfilePrioritarioVariants() {
     }
 
     // -------------------------------------------------------------
-    // VARIANTE 2: PLAN QUE EL CRM NO ENCUENTRA / VACÍO
+    // VARIANTE 2: PLAN QUE EL CRM NO ENCUENTRA / VACÍO (NO BLOQUEANTE)
     // -------------------------------------------------------------
-    Logger.log("\n--- [VARIANTE 2] Plan Vacío / No Encontrado ---");
+    Logger.log("\n--- [VARIANTE 2] Plan Vacío / No Encontrado (Amarillo No Bloqueante) ---");
     sheet.getRange(rowCase2, personACol).setValue("Persona Sin Plan");
     sheet.getRange(rowCase2, psycCol).setValue("JENN");
     sheet.getRange(rowCase2, planCol).setValue(""); // Plan vacío
@@ -232,19 +232,31 @@ function testProfilePrioritarioVariants() {
     var planBg2 = sheet.getRange(rowCase2, planCol).getBackground();
     var planNote2 = sheet.getRange(rowCase2, planCol).getNote();
     var slotsVal2 = sheet.getRange(rowCase2, slotsCol).getValue();
-    Logger.log("Fondo PLAN: " + planBg2 + " (Esperado: #f4cccc) | Nota: '" + planNote2 + "'");
-    Logger.log("Slots creados: '" + slotsVal2 + "' (Esperado: vacío)");
+    Logger.log("Fondo PLAN: " + planBg2 + " (Esperado: #fff2cc) | Nota: '" + planNote2 + "'");
+    Logger.log("Slots creados: '" + slotsVal2 + "' (Esperado: PENDIENTE PLAN)");
 
-    if (planBg2.toLowerCase() === "#f4cccc" && !slotsVal2) {
-      Logger.log("✅ [PASÓ VARIANTE 2] Plan vacío marcado correctamente en rojo sin crear slots.");
-    } else {
-      Logger.log("⚠️ [REVISAR VARIANTE 2] Fondo: " + planBg2 + " | Slots: " + slotsVal2);
+    if (planBg2.toLowerCase() === "#fff2cc" && slotsVal2.indexOf("PENDIENTE") !== -1) {
+      Logger.log("✅ [PASÓ VARIANTE 2.A] Plan vacío marcado correctamente en amarillo #FFF2CC con advertencia.");
+    }
+
+    // Probar completado manual de plan:
+    Logger.log("Simulando que María/Servicio al Cliente escribe 'Básico 40k' en la celda PLAN...");
+    sheet.getRange(rowCase2, planCol).setValue("Básico 40k");
+    handlePersonasDificilesEdit(sheet, rowCase2, planCol);
+
+    var planBg2After = sheet.getRange(rowCase2, planCol).getBackground();
+    var slotsVal2After = sheet.getRange(rowCase2, slotsCol).getValue();
+    var slotsBg2After = sheet.getRange(rowCase2, slotsCol).getBackground();
+    Logger.log("Post-completado -> Slots: '" + slotsVal2After + "' | Fondo: " + slotsBg2After);
+
+    if (slotsVal2After.indexOf("2 SLOTS CREADOS") !== -1 && slotsBg2After.toLowerCase() === "#d9ead3") {
+      Logger.log("✅ [PASÓ VARIANTE 2.B] Al escribir el plan manualmente, se generaron los 2 slots y pasó a verde #D9EAD3.");
     }
 
     // -------------------------------------------------------------
-    // VARIANTE 3: PSICÓLOGA NO VÁLIDA (MARI PAZ / LAU / VACÍO)
+    // VARIANTE 3: PSICÓLOGA NO VÁLIDA (MARI PAZ / VACÍO)
     // -------------------------------------------------------------
-    Logger.log("\n--- [VARIANTE 3] Psicóloga No Válida (MARI PAZ) ---");
+    Logger.log("\n--- [VARIANTE 3] Psicóloga No Válida (Amarillo No Bloqueante) ---");
     sheet.getRange(rowCase3, personACol).setValue("Persona Psyc Invalida");
     sheet.getRange(rowCase3, psycCol).setValue("MARI PAZ"); // Inválida
     sheet.getRange(rowCase3, planCol).setValue("ESTÁNDAR 65K (2 CITAS)");
@@ -256,13 +268,11 @@ function testProfilePrioritarioVariants() {
     var psycBg3 = sheet.getRange(rowCase3, psycCol).getBackground();
     var psycNote3 = sheet.getRange(rowCase3, psycCol).getNote();
     var slotsVal3 = sheet.getRange(rowCase3, slotsCol).getValue();
-    Logger.log("Fondo PSICÓLOGA: " + psycBg3 + " (Esperado: #f4cccc) | Nota: '" + psycNote3 + "'");
-    Logger.log("Slots creados: '" + slotsVal3 + "' (Esperado: vacío)");
+    Logger.log("Fondo PSICÓLOGA: " + psycBg3 + " (Esperado: #fff2cc) | Nota: '" + psycNote3 + "'");
+    Logger.log("Slots creados: '" + slotsVal3 + "' (Esperado: PENDIENTE PSICÓLOGA)");
 
-    if (psycBg3.toLowerCase() === "#f4cccc" && !slotsVal3) {
-      Logger.log("✅ [PASÓ VARIANTE 3] Psicóloga inválida 'MARI PAZ' marcada en rojo con nota y sin slots.");
-    } else {
-      Logger.log("⚠️ [REVISAR VARIANTE 3] Fondo: " + psycBg3 + " | Slots: " + slotsVal3);
+    if (psycBg3.toLowerCase() === "#fff2cc" && slotsVal3.indexOf("PENDIENTE") !== -1) {
+      Logger.log("✅ [PASÓ VARIANTE 3] Psicóloga 'MARI PAZ' marcada en amarillo con nota y estado pendiente.");
     }
 
     // Limpieza de las 3 filas de prueba en PERSONAS DÍFICILES y en MATCHES MAPE D
