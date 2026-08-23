@@ -552,19 +552,22 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
 
     await db.commit()
 
-    # 3. Notificar a Apps Script Web App si está configurado (Webhook instantáneo)
+    # 3. Notificar a Apps Script Web App si está configurado (Webhook instantáneo con metadatos completos)
     if payload.status:
         try:
-            from app.services.google_sheets import notify_apps_script_status_change
+            from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
             psyc_name = match_row.psychologist_name
-            tab_name = f"MATCHES {psyc_name}" if psyc_name else ""
+            tab_name = get_canonical_tab_name(psyc_name)
             asyncio.create_task(notify_apps_script_status_change(
                 tab=tab_name,
                 match_id=match_id,
+                slot_number=getattr(match_row, 'slot_number', 1) or 1,
                 new_status=payload.status.strip(),
                 role="psicologa",
                 person_a=match_row.person_a,
-                person_b=payload.person_b or match_row.person_b
+                person_b=payload.person_b or match_row.person_b,
+                person_a_crm_id=getattr(match_row, 'person_a_crm_id', None),
+                person_b_crm_id=getattr(match_row, 'person_b_crm_id', None)
             ))
         except Exception:
             pass
@@ -651,7 +654,7 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
     4. Registra en person_history para Persona A y Persona B.
     """
     exist_res = await db.execute(text("""
-        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, approved_by_maria
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id, approved_by_maria
         FROM operational_matches
         WHERE id = :id
     """), {"id": match_id})
@@ -681,18 +684,21 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
 
     await db.commit()
 
-    # 3. Notificar a Apps Script Web App si está configurado (Webhook instantáneo)
+    # 3. Notificar a Apps Script Web App si está configurado (Webhook instantáneo con metadatos completos)
     try:
-        from app.services.google_sheets import notify_apps_script_status_change
+        from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
         psyc_name = match_row.psychologist_name
-        tab_name = f"MATCHES {psyc_name}" if psyc_name else ""
+        tab_name = get_canonical_tab_name(psyc_name)
         asyncio.create_task(notify_apps_script_status_change(
             tab=tab_name,
             match_id=match_id,
+            slot_number=getattr(match_row, 'slot_number', 1) or 1,
             new_status="APROBADO",
             role="maria",
             person_a=match_row.person_a,
-            person_b=match_row.person_b
+            person_b=match_row.person_b,
+            person_a_crm_id=getattr(match_row, 'person_a_crm_id', None),
+            person_b_crm_id=getattr(match_row, 'person_b_crm_id', None)
         ))
     except Exception:
         pass
@@ -755,7 +761,7 @@ async def process_refund(match_id: int, db: AsyncSession = Depends(get_db)):
     """
     Acción exclusiva de Lina: Marca el match como REFUND DONE tras procesar el reembolso en Stripe/Nequi.
     """
-    res = await db.execute(text("SELECT id, person_a, observations FROM operational_matches WHERE id = :id"), {"id": match_id})
+    res = await db.execute(text("SELECT id, person_a, person_b, psychologist_name, slot_number, person_a_crm_id, person_b_crm_id, observations FROM operational_matches WHERE id = :id"), {"id": match_id})
     row = res.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
@@ -773,6 +779,26 @@ async def process_refund(match_id: int, db: AsyncSession = Depends(get_db)):
     """), {"name": row.person_a, "mid": match_id})
 
     await db.commit()
+
+    # Notificar a Apps Script Web App (Webhook instantáneo con metadatos completos)
+    try:
+        from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
+        psyc_name = row.psychologist_name
+        tab_name = get_canonical_tab_name(psyc_name)
+        asyncio.create_task(notify_apps_script_status_change(
+            tab=tab_name,
+            match_id=match_id,
+            slot_number=getattr(row, 'slot_number', 1) or 1,
+            new_status="REFUND DONE",
+            role="servicio_al_cliente",
+            person_a=row.person_a,
+            person_b=row.person_b,
+            person_a_crm_id=getattr(row, 'person_a_crm_id', None),
+            person_b_crm_id=getattr(row, 'person_b_crm_id', None)
+        ))
+    except Exception:
+        pass
+
     return {"status": "success", "message": f"Reembolso #{match_id} marcado como REFUND DONE exitosamente."}
 
 
