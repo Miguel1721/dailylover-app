@@ -113,14 +113,34 @@ function onEditInstallable(e) {
 function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
   var statusCol = headers["STATUS"];
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"];
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || headers["CANDIDATO"] || headers["MATCH"];
+  var psycBCol = headers["PSICÓLOGA DE B"] || headers["PSICOLOGA DE B"] || headers["PSICOLOGA B"] || headers["PSICÓLOGA B"];
+
+  // ── A. CRUCE DE PSICÓLOGA EN PERSONA B (Solo informativo) ─────────────────
+  if (personBCol && col === personBCol) {
+    var personBCell = getCellData(sheet, row, personBCol);
+    if (!psycBCol) {
+      psycBCol = ensurePsycBColumn(sheet, headers, personBCol);
+    }
+    if (psycBCol) {
+      if (personBCell && personBCell.text) {
+        var ownerPsyc = findPsychologistForPersonA(personBCell, sheet);
+        sheet.getRange(row, psycBCol).setValue(ownerPsyc);
+      } else {
+        sheet.getRange(row, psycBCol).setValue("");
+      }
+    }
+    return;
+  }
+
+  // ── B. EDICIÓN DE STATUS ──────────────────────────────────────────────────
   if (!statusCol || col !== statusCol) return;
 
   var statusVal = (newValue || sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase();
   if (!statusVal) return;
 
   var fechaCol = headers["FECHA"];
-  var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"];
-  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || headers["CANDIDATO"] || headers["MATCH"];
   var cityCol = headers["CITY"] || headers["CIUDAD"];
   var prefCol = headers["PREF"] || headers["PREFERENCIA"];
   var planCol = headers["PLAN"] || headers["PLAN TIER"];
@@ -136,7 +156,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var plan = planCol ? sheet.getRange(row, planCol).getValue().toString().trim() : "";
   var obs = obsCol ? sheet.getRange(row, obsCol).getValue().toString().trim() : "";
 
-  // ── A. DISPARADOR DE FECHA: Únicamente al pasar a HECHO o HECHO POR MAPE ──
+  // ── C. DISPARADOR DE FECHA: Únicamente al pasar a HECHO o HECHO POR MAPE ──
   if (statusVal === "HECHO" || statusVal === "HECHO POR MAPE") {
     if (fechaCol) {
       var currentFecha = sheet.getRange(row, fechaCol).getValue();
@@ -992,3 +1012,82 @@ function checkActiveMatchesInSheet(sheet, headers, personAName, currentRow) {
   }
   return false;
 }
+
+/**
+ * Busca si Persona B ya existe como Persona A en alguna de las 10 pestañas de psicólogas.
+ * Compara primero por CRM ID (extraído del enlace del perfil) y por nombre normalizado como respaldo.
+ * @param {Object} personBCell - Objeto { text, link, crmId }
+ * @param {Sheet} currentSheet - Pestaña actual
+ * @returns {string} - Nombre oficial de la psicóloga asignada a Persona A o "" si no se encuentra.
+ */
+function findPsychologistForPersonA(personBCell, currentSheet) {
+  if (!personBCell || (!personBCell.text && !personBCell.link)) return "";
+
+  var targetCrmId = personBCell.crmId || extractCrmIdFromUrl(personBCell.link);
+  var targetName = (personBCell.text || "").trim().toLowerCase();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+
+  for (var i = 0; i < sheets.length; i++) {
+    var s = sheets[i];
+    var sName = s.getName().trim().toUpperCase();
+
+    // Solo inspeccionar pestañas de psicólogas activas
+    if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
+      var psycRaw = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
+      var psycName = normalizePsychologistName(psycRaw) || psycRaw;
+
+      var headers = getSheetHeaders(s);
+      var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"];
+      if (!personACol) continue;
+
+      var lastRow = getTrueLastRow(s, personACol);
+      if (lastRow < 2) continue;
+
+      var richValues = s.getRange(2, personACol, lastRow - 1, 1).getRichTextValues();
+
+      for (var r = 0; r < richValues.length; r++) {
+        var rt = richValues[r][0];
+        if (!rt) continue;
+
+        var cellText = rt.getText().trim();
+        if (!cellText) continue;
+
+        var cellLink = rt.getLinkUrl() || "";
+        var cellCrmId = extractCrmIdFromUrl(cellLink);
+
+        // 1. Comparar por CRM ID si está presente (evita homónimos)
+        if (targetCrmId && cellCrmId && targetCrmId === cellCrmId) {
+          return psycName;
+        }
+
+        // 2. Comparar por nombre normalizado
+        if (targetName && cellText.toLowerCase() === targetName) {
+          return psycName;
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
+/**
+ * Asegura la existencia de la columna 'PSICÓLOGA DE B' al lado de 'PERSON B'.
+ */
+function ensurePsycBColumn(sheet, headers, personBCol) {
+  var psycBCol = headers["PSICÓLOGA DE B"] || headers["PSICOLOGA DE B"] || headers["PSICOLOGA B"] || headers["PSICÓLOGA B"];
+  if (psycBCol) return psycBCol;
+
+  try {
+    sheet.insertColumnAfter(personBCol);
+    var newCol = personBCol + 1;
+    sheet.getRange(1, newCol).setValue("PSICÓLOGA DE B");
+    return newCol;
+  } catch (e) {
+    Logger.log("No se pudo insertar columna PSICÓLOGA DE B: " + e.message);
+    return null;
+  }
+}
+

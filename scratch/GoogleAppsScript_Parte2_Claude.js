@@ -90,9 +90,11 @@ function handleClaudePsychologistSheetEdit(sheet, row, col, newValue) {
     var pastedValue = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim();
     if (pastedValue) {
       var profile = claudeResolveProfile(pastedValue);
+      var personName = (profile && profile.found) ? profile.name : pastedValue;
+      var cellRange = sheet.getRange(row, col);
+
       if (profile && profile.found) {
         // Reemplazar el texto plano por el nombre oficial, preservando el link nativo
-        var cellRange = sheet.getRange(row, col);
         if (pastedValue.indexOf("http") === 0) {
           var richText = SpreadsheetApp.newRichTextValue()
             .setText(profile.name)
@@ -102,6 +104,7 @@ function handleClaudePsychologistSheetEdit(sheet, row, col, newValue) {
         } else if (profile.name) {
           cellRange.setValue(profile.name);
         }
+
         // Solo autocompletar CITY/PREF/PLAN si es Persona A (así se define el intake)
         if (isPersonA) {
           if (cityCol && !sheet.getRange(row, cityCol).getValue()) {
@@ -115,7 +118,34 @@ function handleClaudePsychologistSheetEdit(sheet, row, col, newValue) {
           }
         }
       }
-      // Si no se encontró (found:false), no se toca nada — no se asume ningún dato.
+
+      // Si es Persona B: detectar automáticamente la PSICÓLOGA DE B
+      if (!isPersonA) {
+        var psycBCol = headers["PSICÓLOGA DE B"] || headers["PSICOLOGA DE B"] || headers["PSICOLOGA B"] || headers["PSICÓLOGA B"];
+        if (!psycBCol && typeof ensurePsycBColumn === "function") {
+          psycBCol = ensurePsycBColumn(sheet, headers, personBCol);
+        }
+        if (psycBCol) {
+          var bCellData = {
+            text: personName,
+            link: pastedValue.indexOf("http") === 0 ? pastedValue : "",
+            crmId: (profile && profile.crm_id) ? profile.crm_id : ""
+          };
+          var ownerPsyc = "";
+          if (typeof findPsychologistForPersonA === "function") {
+            ownerPsyc = findPsychologistForPersonA(bCellData, sheet);
+          }
+          // Si no se encontró en las pestañas pero el CRM tiene responsable
+          if (!ownerPsyc && profile && profile.psychologist) {
+            ownerPsyc = profile.psychologist;
+          }
+          sheet.getRange(row, psycBCol).setValue(ownerPsyc);
+        }
+      }
+    } else if (!isPersonA) {
+      // Si se borró Persona B, limpiar PSICÓLOGA DE B
+      var psycBCol = headers["PSICÓLOGA DE B"] || headers["PSICOLOGA DE B"];
+      if (psycBCol) sheet.getRange(row, psycBCol).setValue("");
     }
   }
 

@@ -1210,6 +1210,42 @@ def normalize_plan(raw_plan: Optional[str]) -> str:
     return ""
 
 
+def normalize_psychologist(raw_psyc: Optional[str]) -> str:
+    """
+    Normaliza el nombre de psicóloga a la lista oficial de 10 psicólogas activas.
+    """
+    if not raw_psyc:
+        return ""
+    p = raw_psyc.upper().strip()
+    aliases = {
+        "MAPE D": "MAPE D",
+        "MAPE": "MAPE D",
+        "MARIA PAULA": "MAPE D",
+        "MARÍA PAULA": "MAPE D",
+        "STEFFY": "STEFFY",
+        "STEFF": "STEFFY",
+        "MANU 1": "MANU",
+        "MANU 2": "MANU",
+        "MANU": "MANU",
+        "SILVI": "SILVI",
+        "SILVANA": "SILVI",
+        "ANA MARIA": "ANA",
+        "ANA": "ANA",
+        "JENNIFER": "JENN",
+        "JENN": "JENN",
+        "SOFIA": "SOFI",
+        "SOFI": "SOFI",
+        "ALEJA": "ALEJA",
+        "PIA": "PIA",
+        "ISABELLA": "ISA",
+        "ISA": "ISA"
+    }
+    for k, v in aliases.items():
+        if k in p:
+            return v
+    return p
+
+
 @router.post("/resolve-profile")
 async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -1235,7 +1271,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
     if extracted_crm_id:
         res = await db.execute(text("""
             SELECT u.id, u.name, u.email, u.phone, u.crm_id,
-                   p.city, p.orientation, p.gender, p.plan_tier
+                   p.city, p.orientation, p.gender, p.plan_tier, p.responsable
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             WHERE u.crm_id = :cid OR CAST(u.id AS TEXT) = :cid
@@ -1249,7 +1285,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
         if clean_name:
             res = await db.execute(text("""
                 SELECT u.id, u.name, u.email, u.phone, u.crm_id,
-                       p.city, p.orientation, p.gender, p.plan_tier
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
@@ -1267,6 +1303,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
             "city": "",
             "pref": "",
             "plan_tier": "",
+            "psychologist": "",
             "phone": "",
             "email": ""
         }
@@ -1287,6 +1324,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
         "city": normalize_city(row.city),
         "pref": pref_val,
         "plan_tier": normalize_plan(row.plan_tier),
+        "psychologist": normalize_psychologist(row.responsable),
         "phone": row.phone or "",
         "email": row.email or ""
     }
