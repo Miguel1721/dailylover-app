@@ -83,7 +83,11 @@ var CONFIG = {
   }
 };
 
-// ─── 1. DISPARADOR PRINCIPAL INSTALABLE ─────────────────────────────────────
+// ─── 1. DISPARADOR PRINCIPAL (SIMPLE & INSTALABLE) ──────────────────────────
+
+function onEdit(e) {
+  onEditInstallable(e);
+}
 
 function onEditInstallable(e) {
   if (!e || !e.range) return;
@@ -1277,12 +1281,6 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(1, slotsCol).setValue("SLOTS CREADOS").setFontWeight("bold").setBackground("#D9D2E9");
   }
 
-  // 1. REGLA ANTI-DUPLICADO: Si ya tiene marca de slots creados o histórico, abortar inmediatamente
-  var currentSlotsMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
-  if (currentSlotsMarker && (currentSlotsMarker.indexOf("SLOTS CREADOS") >= 0 || currentSlotsMarker.indexOf("HISTÓRICO") >= 0 || currentSlotsMarker.indexOf("YA GENERADO") >= 0 || currentSlotsMarker.indexOf("YA EXISTEN") >= 0)) {
-    return;
-  }
-
   var personACell = getCellData(sheet, row, fullNameCol);
   var personAName = personACell ? personACell.text.trim() : "";
   if (!personAName) return;
@@ -1290,7 +1288,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var rawPsyc = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
   if (!rawPsyc) return;
 
-  // 1.5 AUTO-GENERACIÓN DE NO. (ID) Y FECHA EN PROFILES (Dispara solo cuando FullName y Responsable están completos)
+  // 1. AUTO-GENERACIÓN DE NO. (ID) Y FECHA EN PROFILES (Dispara cuando FullName y Responsable están completos)
   var noCol = headers["NO."] || headers["NO"] || headers["ID"] || 1;
   var fechaCol = headers["FECHA"] || headers["DATE"] || 3;
 
@@ -1309,7 +1307,13 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     }
   }
 
-  // 2. NORMALIZACIÓN DE PSICÓLOGA
+  // 2. REGLA ANTI-DUPLICADO: Si ya tiene marca de slots creados o histórico, abortar creación de slots
+  var currentSlotsMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
+  if (currentSlotsMarker && (currentSlotsMarker.indexOf("SLOTS CREADOS") >= 0 || currentSlotsMarker.indexOf("HISTÓRICO") >= 0 || currentSlotsMarker.indexOf("YA GENERADO") >= 0 || currentSlotsMarker.indexOf("YA EXISTEN") >= 0)) {
+    return;
+  }
+
+  // 3. NORMALIZACIÓN DE PSICÓLOGA
   var cleanPsyc = normalizePsychologistName(rawPsyc);
   if (!cleanPsyc) {
     sheet.getRange(row, respCol)
