@@ -1105,6 +1105,43 @@ function checkActiveMatchesInSheet(sheet, headers, personAName, currentRow) {
 }
 
 /**
+ * Extrae el ID numérico del cliente a partir de cualquier formato de URL o fórmula de SmartMatchApp.
+ * Soporta:
+ * - https://dailylover.smartmatchapp.com/client/3935
+ * - https://dailylover.smartmatchapp.com/#!/client/4021/
+ * - https://dailylover.smartmatchapp.com/client/4021/
+ * - =HYPERLINK("https://.../client/3935", "Nombre")
+ * - =HYPERLINK("https://.../#!/client/4021/"; "Nombre")
+ * - 3935
+ * @param {string} urlOrFormula - URL, fórmula o ID
+ * @returns {string} - ID numérico extraído o "" si no se encuentra.
+ */
+function extractCrmIdFromUrl(urlOrFormula) {
+  if (!urlOrFormula) return "";
+  var str = urlOrFormula.toString().trim();
+  if (!str) return "";
+
+  // 1. Si ya es un ID numérico puro
+  if (/^\d+$/.test(str)) {
+    return str;
+  }
+
+  // 2. Regex universal para SmartMatchApp (client/XXXX, client/#!/XXXX, #!/client/XXXX)
+  var match = str.match(/client\/(\d+)/i) || str.match(/client\/#!\/(\d+)/i) || str.match(/#!\/client\/(\d+)/i);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  // 3. Formatos con parámetros ?id=XXXX o terminación numérica /XXXX/
+  var matchParam = str.match(/[?&]id=(\d+)/i) || str.match(/\/(\d+)\/?$/);
+  if (matchParam && matchParam[1]) {
+    return matchParam[1];
+  }
+
+  return "";
+}
+
+/**
  * Busca si Persona B ya existe como Persona A en alguna de las 10 pestañas de psicólogas.
  * Compara primero por CRM ID (extraído del enlace del perfil) y por nombre normalizado como respaldo.
  * @param {Object} personBCell - Objeto { text, link, crmId }

@@ -1570,7 +1570,7 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
 
     # 1. Intentar extraer CRM ID por regex de URL o número directo
     extracted_crm_id = None
-    url_match = re.search(r"(?:client|profile|view)[/=](\d+)", raw_input, re.IGNORECASE)
+    url_match = re.search(r"(?:client|profile|view)[/=#!]+(\d+)", raw_input, re.IGNORECASE) or re.search(r"(?:client|profile|view)/(\d+)", raw_input, re.IGNORECASE)
     if url_match:
         extracted_crm_id = url_match.group(1)
     elif re.search(r"[?&]id=(\d+)", raw_input, re.IGNORECASE):
