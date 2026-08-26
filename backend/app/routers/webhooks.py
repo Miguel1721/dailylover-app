@@ -169,58 +169,99 @@ async def process_webhook_payload(event_type: str, data: dict):
     """
     async with AsyncSessionLocal() as db:
         try:
-            # 1. EVENTOS DE CLIENTE (client.created, client.updated, user.created, user.updated)
-            if any(k in event_type.lower() for k in ["client", "user", "profile"]):
+            # 1. EVENTOS DE CLIENTE (client.created, client.updated, client_profile_updated, client_preferences_updated, user.created, user.updated)
+            if any(k in event_type.lower() for k in ["client", "user", "profile", "preference"]):
+                crm_id = str(data.get("id") or data.get("client_id") or data.get("user_id") or "").strip()
                 phone = str(data.get("phone") or data.get("mobile") or data.get("telefono") or "").strip()
                 name = str(data.get("name") or data.get("full_name") or data.get("nombre") or "").strip()
                 email = str(data.get("email") or data.get("correo") or "").strip()
+                city = str(data.get("city") or data.get("ciudad") or "").strip()
 
-                if phone or email or name:
-                    # Normalizar teléfono
+                # Extraer orientación de campos de SmartMatchApp (ej. pref_65)
+                orientation = ""
+                pref_65 = data.get("pref_65")
+                if isinstance(pref_65, list) and len(pref_65) > 0 and isinstance(pref_65[0], dict):
+                    choice_label = pref_65[0].get("choice_label", "")
+                    if "hetero" in choice_label.lower():
+                        orientation = "hetero"
+                    elif "gay" in choice_label.lower() or "homo" in choice_label.lower():
+                        orientation = "gay"
+                    elif "lesb" in choice_label.lower():
+                        orientation = "lesb"
+                    elif "bi" in choice_label.lower():
+                        orientation = "bi"
+
+                if crm_id or phone or email or name:
+                    # Normalizar teléfono si existe
                     if phone:
                         phone = phone.replace(" ", "").replace("-", "")
                         if not phone.startswith("+"):
                             phone = "+57" + phone.lstrip("0")
+                    else:
+                        phone = f"+57300000{crm_id}" if crm_id else f"+57399999{hash(name)%100000:05d}"
 
-                    # Upsert User
-                    result = await db.execute(text("""
-                        INSERT INTO users (phone, name, email)
-                        VALUES (:phone, :name, :email)
-                        ON CONFLICT (phone) DO UPDATE SET
-                            name = COALESCE(EXCLUDED.name, users.name),
-                            email = COALESCE(EXCLUDED.email, users.email)
-                        RETURNING id
-                    """), {
-                        "phone": phone or f"+57300000{hash(name)%100000:05d}",
-                        "name": name or None,
-                        "email": email or None
-                    })
-                    user_id = result.scalar()
+                    # Upsert User buscando por crm_id primero
+                    existing_user = None
+                    if crm_id:
+                        res = await db.execute(text("SELECT id FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": crm_id})
+                        existing_user = res.fetchone()
+
+                    if not existing_user and phone:
+                        res = await db.execute(text("SELECT id FROM users WHERE phone = :p LIMIT 1"), {"p": phone})
+                        existing_user = res.fetchone()
+
+                    if existing_user:
+                        user_id = existing_user[0]
+                        await db.execute(text("""
+                            UPDATE users SET
+                                name = COALESCE(NULLIF(:name, ''), users.name),
+                                email = COALESCE(NULLIF(:email, ''), users.email),
+                                crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id)
+                            WHERE id = :uid
+                        """), {"uid": user_id, "name": name, "email": email, "cid": crm_id})
+                    else:
+                        result = await db.execute(text("""
+                            INSERT INTO users (phone, name, email, crm_id, created_at)
+                            VALUES (:phone, :name, :email, :cid, NOW())
+                            ON CONFLICT (phone) DO UPDATE SET
+                                name = COALESCE(NULLIF(EXCLUDED.name, ''), users.name),
+                                email = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
+                                crm_id = COALESCE(NULLIF(EXCLUDED.crm_id, ''), users.crm_id)
+                            RETURNING id
+                        """), {
+                            "phone": phone,
+                            "name": name or (f"Cliente CRM {crm_id}" if crm_id else None),
+                            "email": email or None,
+                            "cid": crm_id or None
+                        })
+                        user_id = result.scalar()
 
                     # Upsert Profile
-                    plan_val = data.get("plan_tier") or data.get("plan") or "Estándar 65k"
+                    plan_val = data.get("plan_tier") or data.get("plan") or "Estándar 65k (2 citas)"
                     await db.execute(text("""
-                        INSERT INTO profiles (user_id, age, gender, city, occupation, plan_tier, bio_notes, updated_at)
-                        VALUES (:uid, :age, :gender, :city, :occupation, :plan, :notes, NOW())
+                        INSERT INTO profiles (user_id, age, gender, city, orientation, occupation, plan_tier, bio_notes, updated_at)
+                        VALUES (:uid, :age, :gender, :city, :orientation, :occupation, :plan, :notes, NOW())
                         ON CONFLICT (user_id) DO UPDATE SET
                             age = COALESCE(EXCLUDED.age, profiles.age),
                             gender = COALESCE(EXCLUDED.gender, profiles.gender),
-                            city = COALESCE(EXCLUDED.city, profiles.city),
+                            city = COALESCE(NULLIF(EXCLUDED.city, ''), profiles.city),
+                            orientation = COALESCE(NULLIF(EXCLUDED.orientation, ''), profiles.orientation),
                             occupation = COALESCE(EXCLUDED.occupation, profiles.occupation),
-                            plan_tier = COALESCE(EXCLUDED.plan_tier, profiles.plan_tier),
+                            plan_tier = COALESCE(NULLIF(EXCLUDED.plan_tier, ''), profiles.plan_tier),
                             bio_notes = COALESCE(EXCLUDED.bio_notes, profiles.bio_notes),
                             updated_at = NOW()
                     """), {
                         "uid": user_id,
                         "age": data.get("age") or data.get("edad"),
                         "gender": data.get("gender") or data.get("genero"),
-                        "city": data.get("city") or data.get("ciudad"),
+                        "city": city or data.get("city") or data.get("ciudad") or "",
+                        "orientation": orientation or "",
                         "occupation": data.get("occupation") or data.get("profesion"),
                         "plan": plan_val,
                         "notes": data.get("notes") or data.get("bio") or data.get("observaciones")
                     })
                     await db.commit()
-                    logger.info(f"Cliente procesado exitosamente vía Webhook: {name} (ID: {user_id})")
+                    logger.info(f"Cliente procesado exitosamente vía Webhook: CRM ID {crm_id} - {name} (User ID: {user_id})")
 
             # 2. EVENTOS DE MATCH (match.created, match.updated, match_added, match_group_changed, intro.created)
             elif any(k in event_type.lower() for k in ["match", "intro", "cita", "added", "group"]):
