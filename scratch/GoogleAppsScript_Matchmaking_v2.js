@@ -1506,26 +1506,243 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   Logger.log("<<< handleProfilesEdit FINALIZADO CON ÉXITO >>>");
 }
 
+// ─── 11. MENÚ PERSONALIZADO & HISTORIAL DE PERSONA (SIDEBAR INTERACTIVO) ────
+
 /**
- * Configura la lista desplegable oficial de las 10 psicólogas en la columna Responsable de PROFILES.
+ * Crea el menú '🔎 Daily Lover' en la barra superior al abrir la hoja de cálculo.
  */
-function configurarDropdownResponsable() {
+function onOpen(e) {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu("🔎 Daily Lover")
+      .addItem("Historial de persona", "mostrarHistorialPersona")
+      .addSeparator()
+      .addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable")
+      .addToUi();
+  } catch (err) {
+    Logger.log("No se pudo crear menú en onOpen: " + err);
+  }
+}
+
+/**
+ * Abre el panel lateral (Sidebar) interactivo con el historial completo de candidatos, feedback y notas.
+ */
+function mostrarHistorialPersona() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES");
-  if (!profSheet) return;
+  var sheet = ss.getActiveSheet();
+  var activeRange = sheet.getActiveRange();
+  var initialQuery = "";
 
-  var headers = getSheetHeaders(profSheet);
-  var respCol = headers["RESPONSABLE"] || headers["PSICOLOGA"] || 4;
-  var maxRows = profSheet.getMaxRows() || 10000;
+  if (activeRange) {
+    var row = activeRange.getRow();
+    var val = (activeRange.getValue() || "").toString().trim();
 
-  var rule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(CONFIG.VALID_PSYCHOLOGISTS, true)
-    .setAllowInvalid(true)
-    .setHelpText("Seleccione una de las 10 psicólogas oficiales: " + CONFIG.VALID_PSYCHOLOGISTS.join(", "))
-    .build();
+    // Si la celda seleccionada tiene texto/link directo
+    if (val && val.length > 2 && val.indexOf("http") === -1 && val.toUpperCase() !== "APROBADO" && val.toUpperCase() !== "HECHO") {
+      initialQuery = val;
+    } else if (row > 1) {
+      // Intentar leer de columnas conocidas (Persona A, FullName, Persona B)
+      var headers = getSheetHeaders(sheet);
+      var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["FULLNAME"] || headers["NOMBRE"] || headers["CLIENTE"] || 2;
+      var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 7;
+      
+      var cellA = getCellData(sheet, row, personACol);
+      var cellB = getCellData(sheet, row, personBCol);
 
-  profSheet.getRange(2, respCol, maxRows - 1, 1).setDataValidation(rule);
-  Logger.log("✅ Dropdown de psicólogas configurado en PROFILES!D2:D");
+      if (cellA && cellA.text && cellA.text.indexOf("http") === -1) {
+        initialQuery = cellA.text;
+      } else if (cellB && cellB.text && cellB.text.indexOf("http") === -1) {
+        initialQuery = cellB.text;
+      } else if (val) {
+        initialQuery = val;
+      }
+    }
+  }
+
+  var html = HtmlService.createHtmlOutput(getHistorialSidebarHtml(initialQuery))
+    .setTitle("Daily Lover — Historial de Persona")
+    .setWidth(420);
+
+  SpreadsheetApp.getUi().showSidebar(html);
+}
+
+/**
+ * Consulta el endpoint /history/{query} del backend y retorna los datos JSON al cliente.
+ */
+function fetchPersonHistoryData(query) {
+  if (!query) return { error: "Por favor ingrese un nombre o CRM ID." };
+  var cleanQuery = query.toString().trim();
+  var apiUrl = (CONFIG.BACKEND_API_URL || "https://prueba-daily.agentesia.cloud") + "/api/v1/matchmaking/history/" + encodeURIComponent(cleanQuery);
+
+  try {
+    var response = UrlFetchApp.fetch(apiUrl, {
+      method: "get",
+      muteHttpExceptions: true
+    });
+    var code = response.getResponseCode();
+    if (code === 200) {
+      return JSON.parse(response.getContentText());
+    } else {
+      return { error: "No se encontró historial para '" + cleanQuery + "' (HTTP " + code + ")" };
+    }
+  } catch (e) {
+    return { error: "Error de conexión con el backend: " + e.message };
+  }
+}
+
+/**
+ * Genera el código HTML/CSS/JS del Sidebar con el diseño oficial Daily Lover.
+ */
+function getHistorialSidebarHtml(initialQuery) {
+  var escapedQuery = (initialQuery || "").replace(/"/g, '&quot;');
+  return '<!DOCTYPE html>' +
+'<html>' +
+'<head>' +
+'  <meta charset="utf-8">' +
+'  <base target="_top">' +
+'  <style>' +
+'    * { box-sizing: border-box; margin: 0; padding: 0; }' +
+'    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0D0A0B; color: #F5F0F1; padding: 16px; font-size: 13px; }' +
+'    .header { background: linear-gradient(135deg, #961500, #5c0d00); padding: 14px 16px; border-radius: 12px; margin-bottom: 14px; box-shadow: 0 4px 12px rgba(150,21,0,0.3); }' +
+'    .header h2 { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 2px; }' +
+'    .header p { font-size: 11px; color: rgba(255,255,255,0.8); }' +
+'    .search-box { display: flex; gap: 6px; margin-bottom: 14px; }' +
+'    .search-box input { flex: 1; background: #1A1214; border: 1px solid rgba(150,21,0,0.3); border-radius: 8px; color: #fff; padding: 9px 12px; font-size: 13px; outline: none; }' +
+'    .search-box input:focus { border-color: #961500; box-shadow: 0 0 0 2px rgba(150,21,0,0.2); }' +
+'    .search-box button { background: #961500; color: #fff; border: none; border-radius: 8px; padding: 0 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }' +
+'    .search-box button:hover { background: #c41a00; }' +
+'    .card { background: #1A1214; border: 1px solid rgba(150,21,0,0.2); border-radius: 10px; padding: 14px; margin-bottom: 12px; }' +
+'    .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #9A8A8D; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }' +
+'    .badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }' +
+'    .badge-wine { background: rgba(150,21,0,0.25); color: #ff6b6b; border: 1px solid rgba(150,21,0,0.4); }' +
+'    .badge-green { background: rgba(76,175,80,0.2); color: #81c784; }' +
+'    .badge-yellow { background: rgba(255,193,7,0.2); color: #ffd54f; }' +
+'    .badge-blue { background: rgba(33,150,243,0.2); color: #64b5f6; }' +
+'    .badge-gray { background: rgba(255,255,255,0.1); color: #ccc; }' +
+'    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }' +
+'    .stat-item { background: #150F11; border: 1px solid rgba(150,21,0,0.15); border-radius: 8px; padding: 8px 6px; text-align: center; }' +
+'    .stat-val { font-size: 16px; font-weight: 700; color: #fff; }' +
+'    .stat-lbl { font-size: 9px; color: #9A8A8D; text-transform: uppercase; margin-top: 2px; }' +
+'    .match-item { background: #150F11; border-left: 3px solid #961500; border-radius: 0 8px 8px 0; padding: 10px 12px; margin-bottom: 8px; }' +
+'    .match-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }' +
+'    .match-name { font-weight: 600; color: #fff; font-size: 13px; }' +
+'    .match-meta { font-size: 11px; color: #9A8A8D; margin-bottom: 6px; }' +
+'    .match-feedback { font-size: 11px; color: #ffd54f; background: rgba(255,193,7,0.08); padding: 6px 8px; border-radius: 6px; margin-top: 4px; }' +
+'    .match-obs { font-size: 11px; color: #bbb; margin-top: 4px; font-style: italic; }' +
+'    .loading { text-align: center; padding: 30px; color: #9A8A8D; font-size: 13px; }' +
+'    .spinner { border: 3px solid rgba(150,21,0,0.2); border-top: 3px solid #961500; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.8s linear infinite; margin: 0 auto 10px; }' +
+'    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }' +
+'    .empty-state { text-align: center; padding: 20px; color: #777; font-size: 12px; }' +
+'    .error-msg { background: rgba(244,67,54,0.15); border: 1px solid #f44336; color: #ef5350; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; }' +
+'  </style>' +
+'</head>' +
+'<body>' +
+'  <div class="header">' +
+'    <h2>🔎 Daily Lover</h2>' +
+'    <p>Historial y Candidatos Presentados</p>' +
+'  </div>' +
+'  <div class="search-box">' +
+'    <input type="text" id="search-input" placeholder="Nombre o CRM ID..." value="' + escapedQuery + '" onkeydown="if(event.key===\'Enter\') runSearch()">' +
+'    <button onclick="runSearch()">Buscar</button>' +
+'  </div>' +
+'  <div id="content-area">' +
+'    <div class="loading"><div class="spinner"></div>Cargando historial...</div>' +
+'  </div>' +
+'  <script>' +
+'    function runSearch() {' +
+'      var q = document.getElementById("search-input").value.trim();' +
+'      if (!q) return;' +
+'      document.getElementById("content-area").innerHTML = \'<div class="loading"><div class="spinner"></div>Buscando a <b>\' + escapeHtml(q) + \'</b>...</div>\';' +
+'      google.script.run' +
+'        .withSuccessHandler(renderData)' +
+'        .withFailureHandler(renderError)' +
+'        .fetchPersonHistoryData(q);' +
+'    }' +
+'    function renderData(data) {' +
+'      var area = document.getElementById("content-area");' +
+'      if (!data || data.error) {' +
+'        area.innerHTML = \'<div class="error-msg">\' + escapeHtml(data ? data.error : "No se encontraron datos.") + \'</div>\';' +
+'        return;' +
+'      }' +
+'      var html = "";' +
+'      html += \'<div class="card">\';' +
+'      html += \'  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">\';' +
+'      html += \'    <div><div style="font-size:15px; font-weight:700; color:#fff;">\' + escapeHtml(data.person_name) + \'</div>\';' +
+'      if (data.crm_id && data.crm_id !== "None") {' +
+'        html += \'    <div style="font-size:11px; color:#9A8A8D; margin-top:2px;">CRM ID: <b>\' + escapeHtml(data.crm_id) + \'</b></div>\';' +
+'      }' +
+'      html += \'    </div>\';' +
+'      if (data.plan_tier) {' +
+'        html += \'    <span class="badge badge-wine">\' + escapeHtml(data.plan_tier) + \'</span>\';' +
+'      }' +
+'      html += \'  </div>\';' +
+'      html += \'  <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:8px;">\';' +
+'      if (data.city) html += \'<span class="badge badge-gray">📍 \' + escapeHtml(data.city) + \'</span>\';' +
+'      if (data.pref) html += \'<span class="badge badge-gray">❤️ \' + escapeHtml(data.pref) + \'</span>\';' +
+'      if (data.psychologist) html += \'<span class="badge badge-gray">👩‍⚕️ \' + escapeHtml(data.psychologist) + \'</span>\';' +
+'      if (data.age) html += \'<span class="badge badge-gray">🎂 \' + escapeHtml(data.age) + \' años</span>\';' +
+'      if (data.occupation) html += \'<span class="badge badge-gray">💼 \' + escapeHtml(data.occupation) + \'</span>\';' +
+'      html += \'  </div>\';' +
+'      html += \'</div>\';' +
+'      html += \'<div class="stats-row">\';' +
+'      html += \'  <div class="stat-item"><div class="stat-val">\' + (data.completed_count || 0) + \'</div><div class="stat-lbl">Hechas</div></div>\';' +
+'      html += \'  <div class="stat-item"><div class="stat-val">\' + (data.in_progress_count || 0) + \'</div><div class="stat-lbl">Proceso</div></div>\';' +
+'      html += \'  <div class="stat-item"><div class="stat-val">\' + (data.trouble_count || 0) + \'</div><div class="stat-lbl">Rechazos</div></div>\';' +
+'      html += \'  <div class="stat-item"><div class="stat-val">\' + (data.total_matches_count || 0) + \'</div><div class="stat-lbl">Total</div></div>\';' +
+'      html += \'</div>\';' +
+'      html += \'<div class="card">\';' +
+'      html += \'  <div class="card-title"><span>👥 Candidatos Presentados</span><span class="badge badge-gray">\' + (data.matches ? data.matches.length : 0) + \'</span></div>\';' +
+'      if (!data.matches || data.matches.length === 0) {' +
+'        html += \'  <div class="empty-state">No tiene candidatos previos registrados.</div>\';' +
+'      } else {' +
+'        for (var i = 0; i < data.matches.length; i++) {' +
+'          var m = data.matches[i];' +
+'          var badgeClass = "badge-gray";' +
+'          var stUpper = (m.status || "").toUpperCase();' +
+'          if (stUpper === "APROBADO" || stUpper === "MATCH DONE") badgeClass = "badge-green";' +
+'          else if (stUpper === "HECHO" || stUpper === "HECHO POR MAPE") badgeClass = "badge-blue";' +
+'          else if (stUpper.indexOf("LISTO") >= 0 || stUpper.indexOf("PENDIENTE") >= 0) badgeClass = "badge-yellow";' +
+'          else if (stUpper.indexOf("TROUBLE") >= 0 || stUpper.indexOf("NOT APPROVED") >= 0) badgeClass = "badge-wine";' +
+'          html += \'  <div class="match-item">\';' +
+'          html += \'    <div class="match-header">\';' +
+'          html += \'      <span class="match-name">\' + escapeHtml(m.candidate_name) + \'</span>\';' +
+'          html += \'      <span class="badge \' + badgeClass + \'">\' + escapeHtml(m.status) + \'</span>\';' +
+'          html += \'    </div>\';' +
+'          html += \'    <div class="match-meta">📅 \' + (m.fecha || "Sin fecha") + \' &bull; 👩‍⚕️ \' + (m.psychologist || "General") + (m.role ? " &bull; Rol: " + m.role : "") + \'</div>\';' +
+'          if (m.feedback) {' +
+'            html += \'    <div class="match-feedback">💬 <b>Feedback:</b> \' + escapeHtml(m.feedback) + \'</div>\';' +
+'          }' +
+'          if (m.observations) {' +
+'            html += \'    <div class="match-obs">📝 \' + escapeHtml(m.observations) + \'</div>\';' +
+'          }' +
+'          html += \'  </div>\';' +
+'        }' +
+'      }' +
+'      html += \'</div>\';' +
+'      if (data.bio_notes || data.difficult_notes) {' +
+'        html += \'<div class="card">\';' +
+'        html += \'  <div class="card-title">📝 Notas Internas</div>\';' +
+'        if (data.bio_notes) html += \'  <div style="font-size:12px; color:#ddd; margin-bottom:6px;">\' + escapeHtml(data.bio_notes) + \'</div>\';' +
+'        if (data.difficult_notes) html += \'  <div style="font-size:11px; color:#ff8a80;"><b>Nota Dificultad:</b> \' + escapeHtml(data.difficult_notes) + \'</div>\';' +
+'        html += \'</div>\';' +
+'      }' +
+'      area.innerHTML = html;' +
+'    }' +
+'    function renderError(err) {' +
+'      document.getElementById("content-area").innerHTML = \'<div class="error-msg">Error: \' + escapeHtml(err.message || err) + \'</div>\';' +
+'    }' +
+'    function escapeHtml(str) {' +
+'      if (!str) return "";' +
+'      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");' +
+'    }' +
+'    window.onload = function() {' +
+'      var initQ = document.getElementById("search-input").value.trim();' +
+'      if (initQ) runSearch();' +
+'      else document.getElementById("content-area").innerHTML = \'<div class="empty-state">Seleccione una celda con un cliente o busque por nombre arriba.</div>\';' +
+'    };' +
+'  </script>' +
+'</body>' +
+'</html>';
 }
 
 

@@ -1371,12 +1371,7 @@ async def check_duplicate_match(
 async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_db)):
     """
     Retorna la trazabilidad completa y permanente de todas las citas y eventos de una persona
-    buscando por CRM ID o por nombre.
-    Clasificación canónica de paridad con Google Sheets:
-    - Completadas: APROBADO, MATCH DONE, CITA COMPLETADA
-    - Rechazos (trouble): cualquier status que contenga TROUBLE (ej. TROUBLE, TROUBLEMAKER)
-    - En proceso: HECHO, HECHO POR MAPE, LISTO PARA MATCH, PENDIENTE, PENDIENTE PLAN, REVISAR, REVISAR POR SI TOCA OTRO MATCH, etc.
-    - Cerrados: DESCALIFICADO, REFUND, REFUND DONE, NOT APPROVED, NO HAY GENTE, RESUELTO
+    buscando por CRM ID o por nombre (candidatos presentados, feedback, notas internas y perfil psicográfico).
     """
     clean_q = query_or_name.strip()
     
@@ -1384,7 +1379,9 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     user_row = None
     if clean_q.isdigit():
         res_u = await db.execute(text("""
-            SELECT u.id, u.name, u.phone, u.crm_id, p.city, p.orientation, p.plan_tier, p.responsable
+            SELECT u.id, u.name, u.phone, u.email, u.crm_id,
+                   p.city, p.orientation, p.plan_tier, p.responsable,
+                   p.age, p.occupation, p.motivacion, p.bio_notes, p.difficult_notes, p.is_difficult
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             WHERE u.crm_id = :cid
@@ -1394,12 +1391,16 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     
     if not user_row:
         res_u = await db.execute(text("""
-            SELECT u.id, u.name, u.phone, u.crm_id, p.city, p.orientation, p.plan_tier, p.responsable
+            SELECT u.id, u.name, u.phone, u.email, u.crm_id,
+                   p.city, p.orientation, p.plan_tier, p.responsable,
+                   p.age, p.occupation, p.motivacion, p.bio_notes, p.difficult_notes, p.is_difficult
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+               OR u.name ILIKE :n_like
+            ORDER BY CASE WHEN LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) THEN 1 ELSE 2 END
             LIMIT 1
-        """), {"n": clean_q})
+        """), {"n": clean_q, "n_like": f"%{clean_q}%"})
         user_row = res_u.fetchone()
 
     target_name = user_row.name if user_row else clean_q
@@ -1423,16 +1424,19 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     """), {"n": target_name})
     hist_rows = res_hist.fetchall()
 
-    # 4. Lista de todos los matches históricos
+    # 4. Lista de todos los matches históricos con candidatos presentados y feedback
     res_matches = await db.execute(text("""
-        SELECT id, person_a, person_b, psychologist_name, status, plan_tier, city, created_at, updated_at
-        FROM operational_matches
-        WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:n)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:n))
-        ORDER BY created_at DESC
+        SELECT m.id, m.person_a, m.person_b, m.psychologist_name, m.status, m.plan_tier, m.city,
+               m.observations, m.created_at, m.person_a_crm_id, m.person_b_crm_id,
+               d.feedback, d.feedback_ella, d.feedback_el, d.had_date, d.venue, d.date_time
+        FROM operational_matches m
+        LEFT JOIN scheduled_dates d ON d.match_id = m.id
+        WHERE LOWER(TRIM(m.person_a)) = LOWER(TRIM(:n)) OR LOWER(TRIM(m.person_b)) = LOWER(TRIM(:n))
+        ORDER BY m.created_at DESC
     """), {"n": target_name})
     match_rows = res_matches.fetchall()
 
-    # 5. Categorización exacta según Google Sheets SSOT
+    # 5. Categorización de matches
     completed_count = 0
     trouble_count = 0
     in_progress_count = 0
@@ -1441,6 +1445,7 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
     COMPLETED_STATUSES = {"APROBADO", "MATCH DONE", "CITA COMPLETADA"}
     CLOSED_STATUSES = {"DESCALIFICADO", "REFUND", "REFUND DONE", "NOT APPROVED", "NO HAY GENTE", "RESUELTO"}
 
+    formatted_matches = []
     for r in match_rows:
         st = (r.status or "").strip().upper()
         if st in COMPLETED_STATUSES:
@@ -1452,6 +1457,32 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
         else:
             in_progress_count += 1
 
+        is_person_a = target_name.lower() in (r.person_a or "").lower()
+        candidate = r.person_b if is_person_a else r.person_a
+        candidate_crm = r.person_b_crm_id if is_person_a else r.person_a_crm_id
+
+        # Feedback consolidado
+        fb = r.feedback or ""
+        if r.feedback_ella or r.feedback_el:
+            fb = f"Ella: {r.feedback_ella or 'Sin comentario'} | Él: {r.feedback_el or 'Sin comentario'}"
+
+        formatted_matches.append({
+            "id": r.id,
+            "role": "Persona A" if is_person_a else "Persona B",
+            "candidate_name": candidate or "Por definir",
+            "candidate_crm_id": candidate_crm or "",
+            "psychologist": normalize_psychologist(r.psychologist_name),
+            "status": r.status or "PENDIENTE",
+            "plan_tier": normalize_plan(r.plan_tier),
+            "city": normalize_city(r.city),
+            "observations": r.observations or "",
+            "feedback": fb,
+            "venue": r.venue or "",
+            "date_time": r.date_time or "",
+            "had_date": bool(r.had_date),
+            "fecha": r.created_at.strftime("%Y-%m-%d") if r.created_at else ""
+        })
+
     if dates_had_count > completed_count:
         completed_count = dates_had_count
 
@@ -1462,6 +1493,14 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
         "pref": normalize_pref(user_row.orientation) if user_row else "",
         "plan_tier": normalize_plan(user_row.plan_tier) if user_row else "",
         "psychologist": normalize_psychologist(user_row.responsable) if user_row else "",
+        "age": user_row.age if user_row and user_row.age else "",
+        "occupation": user_row.occupation if user_row and user_row.occupation else "",
+        "motivacion": user_row.motivacion if user_row and user_row.motivacion else "",
+        "bio_notes": user_row.bio_notes if user_row and user_row.bio_notes else "",
+        "difficult_notes": user_row.difficult_notes if user_row and user_row.difficult_notes else "",
+        "is_difficult": bool(user_row.is_difficult) if user_row else False,
+        "phone": user_row.phone if user_row and user_row.phone else "",
+        "email": user_row.email if user_row and user_row.email else "",
         "dates_completed_count": completed_count,
         "completed_count": completed_count,
         "rejections_count": trouble_count,
@@ -1480,19 +1519,7 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
             }
             for r in hist_rows
         ],
-        "matches": [
-            {
-                "id": r.id,
-                "person_a": r.person_a,
-                "person_b": r.person_b,
-                "psychologist": r.psychologist_name,
-                "status": r.status,
-                "plan_tier": normalize_plan(r.plan_tier),
-                "city": normalize_city(r.city),
-                "fecha": r.created_at.strftime("%Y-%m-%d") if r.created_at else ""
-            }
-            for r in match_rows
-        ]
+        "matches": formatted_matches
     }
 
 
