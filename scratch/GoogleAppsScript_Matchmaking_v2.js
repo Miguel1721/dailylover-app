@@ -1353,8 +1353,27 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var cellPsycVal = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
   var rawPsyc = (newValue && col === respCol ? newValue : cellPsycVal).toString().trim();
 
-  // Si Responsable está vacío, intentar autocompletar con la psicóloga registrada en CRM si existe
-  if (!rawPsyc) {
+  // 0. SI PEGARON UNA URL EN FULLNAME, RESOLVER AUTOMÁTICAMENTE NOMBRE, LINK Y PSICÓLOGA
+  if (personAName.indexOf("http") >= 0 || personAName.indexOf("smartmatchapp") >= 0) {
+    var rawUrl = personAName;
+    var crmProfile = fetchProfileFromBackend(rawUrl);
+    if (crmProfile && crmProfile.found && crmProfile.name) {
+      var richText = SpreadsheetApp.newRichTextValue()
+        .setText(crmProfile.name)
+        .setLinkUrl(rawUrl)
+        .build();
+      sheet.getRange(row, fullNameCol).setRichTextValue(richText);
+      personAName = crmProfile.name;
+      personACell = { text: crmProfile.name, richText: richText, formula: "", crmId: crmProfile.crm_id };
+      Logger.log("✅ URL resuelta a Nombre: '" + crmProfile.name + "' con Link");
+
+      if (!rawPsyc && crmProfile.psychologist) {
+        rawPsyc = crmProfile.psychologist;
+        sheet.getRange(row, respCol).setValue(rawPsyc);
+        Logger.log("✅ Psicóloga asignada desde CRM: '" + rawPsyc + "'");
+      }
+    }
+  } else if (!rawPsyc) {
     var checkQuery = (personACell.richText && personACell.richText.getLinkUrl()) ? personACell.richText.getLinkUrl() : personAName;
     var preCrm = fetchProfileFromBackend(checkQuery);
     if (preCrm && preCrm.found && preCrm.psychologist) {
@@ -1367,8 +1386,11 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   Logger.log("Responsable (Col " + respCol + "): Raw = '" + rawPsyc + "' (en celda: '" + cellPsycVal + "', newValue: '" + (newValue || "") + "')");
 
   if (!rawPsyc) {
-    Logger.log("Paso intermedio: FullName '" + personAName + "' ingresado. Esperando selección de psicóloga en Col D.");
+    Logger.log("Paso intermedio: FullName '" + personAName + "' ingresado. Esperando que se elija psicóloga en Col D.");
+    sheet.getRange(row, respCol).setBackground("#FFF2CC").setNote("Seleccione la psicóloga responsable para crear los slots automáticamente.");
     return;
+  } else {
+    sheet.getRange(row, respCol).clearNote();
   }
 
   // 1. AUTO-GENERACIÓN DE NO. (ID) Y FECHA EN PROFILES (Dispara cuando FullName y Responsable están completos)
