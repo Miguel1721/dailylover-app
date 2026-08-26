@@ -27,12 +27,14 @@
 // ─── CONFIGURACIÓN GLOBAL & CONSTANTES ───────────────────────────────────────
 
 var CONFIG = {
+  BACKEND_API_URL: "https://prueba-daily.agentesia.cloud",
   PSYCHOLOGIST_SHEET_PREFIX: "MATCHES ",
   TROUBLE_SHEET_NAME: "TROUBLE MATCHES",
   REFUNDS_SHEET_NAME: "REFUNDS PENDIENTES",
   VUELVE_A_PAGAR_SHEET_NAME: "VUELVE A PAGAR",
   REVISION_MARIA_SHEET_NAME: "REVISIÓN MARÍA",
   PRIORITY_SHEET_NAME: "PERSONAS DÍFICILES",
+  PROFILES_SHEET_NAME: "PROFILES",
   TIMEZONE: "America/Bogota",
   LOCK_TIMEOUT_MS: 30000,
   VALID_PSYCHOLOGISTS: [
@@ -105,6 +107,8 @@ function onEditInstallable(e) {
     handleRefundsSheetEdit(sheet, row, col, e.value, e.oldValue);
   } else if (upperSheetName === CONFIG.PRIORITY_SHEET_NAME || upperSheetName === "PERSONAS DIFICILES" || upperSheetName === "MATCHES QUE HACEN FALTA") {
     handlePersonasDificilesEdit(sheet, row, col, e.value, e.oldValue);
+  } else if (upperSheetName === CONFIG.PROFILES_SHEET_NAME || upperSheetName === "PROFILES") {
+    handleProfilesEdit(sheet, row, col, e.value, e.oldValue);
   }
 }
 
@@ -1111,4 +1115,204 @@ function ensurePsycBColumn(sheet, headers, personBCol) {
     return null;
   }
 }
+
+// ─── 10. AUTOMATIZACIÓN DE PROFILES (Fanning a Pestañas de Psicólogas) ─────────
+
+/**
+ * Consulta el endpoint /resolve-profile del backend de Daily Lover para obtener
+ * datos en tiempo real del CRM SmartMatchApp (plan, ciudad, preferencia, CRM ID).
+ */
+function fetchProfileFromBackend(queryOrUrl) {
+  if (!queryOrUrl) return null;
+  var apiUrl = (CONFIG.BACKEND_API_URL || "https://prueba-daily.agentesia.cloud") + "/api/v1/matchmaking/resolve-profile";
+  
+  try {
+    var options = {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({ url_or_query: queryOrUrl.toString().trim() }),
+      muteHttpExceptions: true
+    };
+    var response = UrlFetchApp.fetch(apiUrl, options);
+    var code = response.getResponseCode();
+    if (code === 200) {
+      return JSON.parse(response.getContentText());
+    } else {
+      Logger.log("Error al consultar resolve-profile (HTTP " + code + "): " + response.getContentText());
+      return null;
+    }
+  } catch (err) {
+    Logger.log("Excepción en fetchProfileFromBackend: " + err);
+    return null;
+  }
+}
+
+/**
+ * Verifica si una persona ya tiene slots creados en PERSONAS DÍFICILES o en la pestaña de la psicóloga.
+ */
+function checkExistingSlots(personACell, psycSheet) {
+  if (!personACell || !personACell.text) return null;
+  var personName = personACell.text.trim().toUpperCase();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Verificar en PERSONAS DÍFICILES
+  var prioritySheet = ss.getSheetByName(CONFIG.PRIORITY_SHEET_NAME || "PERSONAS DÍFICILES") || ss.getSheetByName("PERSONAS DIFICILES");
+  if (prioritySheet) {
+    var pHeaders = getSheetHeaders(prioritySheet);
+    var pPersonCol = pHeaders["PERSON A"] || pHeaders["PERSONA A"] || 1;
+    var pSlotsCol = pHeaders["SLOTS CREADOS"] || pHeaders["SLOTS"] || 9;
+    var lastRow = getTrueLastRow(prioritySheet, pPersonCol);
+    if (lastRow > 1) {
+      var pValues = prioritySheet.getRange(2, 1, lastRow - 1, prioritySheet.getLastColumn()).getValues();
+      for (var i = 0; i < pValues.length; i++) {
+        var rowName = (pValues[i][pPersonCol - 1] || "").toString().trim().toUpperCase();
+        var rowSlots = (pValues[i][pSlotsCol - 1] || "").toString().trim().toUpperCase();
+        if (rowName && rowName === personName && rowSlots.indexOf("SLOTS CREADOS") >= 0) {
+          return "YA GENERADO EN PERSONAS DÍFICILES";
+        }
+      }
+    }
+  }
+
+  // 2. Verificar en la pestaña de la psicóloga
+  if (psycSheet) {
+    var headers = getSheetHeaders(psycSheet);
+    var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
+    var lastRowPsyc = getTrueLastRow(psycSheet, personACol);
+    if (lastRowPsyc > 1) {
+      var psycValues = psycSheet.getRange(2, personACol, lastRowPsyc - 1, 1).getValues();
+      for (var j = 0; j < psycValues.length; j++) {
+        var existingName = (psycValues[j][0] || "").toString().trim().toUpperCase();
+        if (existingName && existingName === personName) {
+          return "SLOTS YA EXISTEN EN " + psycSheet.getName();
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Trigger que procesa filas nuevas añadidas en PROFILES y crea sus slots en la pestaña de la psicóloga.
+ */
+function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
+  var headers = getSheetHeaders(sheet);
+  var fullNameCol = headers["FULLNAME"] || headers["NOMBRE"] || 2;
+  var respCol = headers["RESPONSABLE"] || headers["PSICOLOGA"] || 4;
+  var slotsCol = headers["SLOTS CREADOS"] || headers["SLOTS"] || headers["STATUS SLOTS"];
+
+  // Si no existe la columna SLOTS CREADOS en PROFILES, crearla en Col F (6)
+  if (!slotsCol) {
+    slotsCol = 6;
+    sheet.getRange(1, slotsCol).setValue("SLOTS CREADOS").setFontWeight("bold").setBackground("#D9D2E9");
+  }
+
+  // 1. REGLA ANTI-DUPLICADO: Si ya tiene marca de slots creados o histórico, abortar inmediatamente
+  var currentSlotsMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
+  if (currentSlotsMarker && (currentSlotsMarker.indexOf("SLOTS CREADOS") >= 0 || currentSlotsMarker.indexOf("HISTÓRICO") >= 0 || currentSlotsMarker.indexOf("YA GENERADO") >= 0 || currentSlotsMarker.indexOf("YA EXISTEN") >= 0)) {
+    return;
+  }
+
+  var personACell = getCellData(sheet, row, fullNameCol);
+  var personAName = personACell ? personACell.text.trim() : "";
+  if (!personAName) return;
+
+  var rawPsyc = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
+  if (!rawPsyc) return;
+
+  // 2. NORMALIZACIÓN DE PSICÓLOGA
+  var cleanPsyc = normalizePsychologistName(rawPsyc);
+  if (!cleanPsyc) {
+    sheet.getRange(row, respCol)
+      .setBackground("#FFF2CC")
+      .setNote("Psicóloga no reconocida. Seleccione una de las 10 oficiales: JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA.");
+    sheet.getRange(row, slotsCol).setValue("PENDIENTE PSICÓLOGA").setBackground("#FFF2CC");
+    return;
+  } else {
+    // Si era un alias (ej: Mape -> MAPE D), corregir en celda
+    if (rawPsyc.toUpperCase() !== cleanPsyc) {
+      sheet.getRange(row, respCol).setValue(cleanPsyc);
+    }
+    sheet.getRange(row, respCol).setBackground(null).clearNote();
+  }
+
+  // 3. BÚSQUEDA DE PESTAÑA DE PSICÓLOGA
+  var psycSheet = findPsychologistSheet(cleanPsyc);
+  if (!psycSheet) {
+    sheet.getRange(row, respCol)
+      .setBackground("#FFF2CC")
+      .setNote("No se encontró la pestaña 'MATCHES " + cleanPsyc + "'.");
+    sheet.getRange(row, slotsCol).setValue("ERROR PESTAÑA PSICÓLOGA").setBackground("#F4CCCC");
+    return;
+  }
+
+  // 4. VERIFICACIÓN CRUZADA CONTRA PERSONAS DÍFICILES Y PESTAÑA DE PSICÓLOGA
+  var alreadyExistsReason = checkExistingSlots(personACell, psycSheet);
+  if (alreadyExistsReason) {
+    sheet.getRange(row, slotsCol).setValue(alreadyExistsReason).setBackground("#D9EAD3");
+    return;
+  }
+
+  // 5. CONSULTA AL CRM VÍA RESOLVE-PROFILE PARA OBTENER EL PLAN
+  var queryParam = "";
+  if (personACell.richText && personACell.richText.getLinkUrl()) {
+    queryParam = personACell.richText.getLinkUrl();
+  } else if (personACell.formula && personACell.formula.indexOf("HYPERLINK") !== -1) {
+    var matchUrl = personACell.formula.match(/HYPERLINK\(\s*["']([^"']+)["']/i);
+    queryParam = matchUrl ? matchUrl[1] : personAName;
+  } else {
+    queryParam = personAName;
+  }
+
+  var crmProfile = fetchProfileFromBackend(queryParam);
+  var planFromCrm = crmProfile && crmProfile.found ? (crmProfile.plan_tier || "") : "";
+  var numSlots = resolvePlanSlots(planFromCrm);
+
+  // 6. VALIDACIÓN DE PLAN (Sin default: si no viene, fila amarilla y no genera slots)
+  if (!crmProfile || !crmProfile.found || !numSlots) {
+    sheet.getRange(row, slotsCol)
+      .setValue("PENDIENTE PLAN (CRM)")
+      .setBackground("#FFF2CC")
+      .setNote("El perfil en CRM no tiene un plan válido asignado (Básico 40k, Estándar 65k o VIP 195k). No se crearon slots.");
+    sheet.getRange(row, fullNameCol).setBackground("#FFF2CC");
+    SpreadsheetApp.getActiveSpreadsheet().toast("Cliente " + personAName + " sin plan en CRM. No se crearon slots.", "Plan Requerido", 6);
+    return;
+  } else {
+    sheet.getRange(row, fullNameCol).setBackground(null);
+  }
+
+  var ciudad = crmProfile.city || "";
+  var pref = crmProfile.pref || "hetero";
+
+  // 7. GENERACIÓN DE SLOTS CON LOCK DE SEGURIDAD
+  withScriptLock(function() {
+    // Re-chequear anti-duplicado dentro del Lock
+    var recheckMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
+    if (recheckMarker && (recheckMarker.indexOf("SLOTS CREADOS") >= 0 || recheckMarker.indexOf("HISTÓRICO") >= 0)) return;
+
+    var psycHeaders = getSheetHeaders(psycSheet);
+    for (var i = 1; i <= numSlots; i++) {
+      appendPrioritySlotRow(psycSheet, psycHeaders, {
+        city: ciudad,
+        pref: pref,
+        plan: planFromCrm,
+        personACell: personACell,
+        slotIndex: i,
+        totalSlots: numSlots,
+        observaciones: "[PROFILES] Sincronizado desde CRM"
+      });
+    }
+
+    // 8. MARCAR COMO COMPLETADO EN PROFILES (Verde oficial #D9EAD3)
+    var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+    sheet.getRange(row, slotsCol)
+      .setValue(numSlots + " SLOTS CREADOS (" + todayStr + " - " + cleanPsyc + ")")
+      .setBackground("#D9EAD3")
+      .clearNote();
+    
+    SpreadsheetApp.getActiveSpreadsheet().toast("Se crearon " + numSlots + " slots para " + personAName + " en " + cleanPsyc, "Slots Generados", 5);
+  });
+}
+
 
