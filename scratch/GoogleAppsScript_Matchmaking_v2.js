@@ -1290,6 +1290,25 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var rawPsyc = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
   if (!rawPsyc) return;
 
+  // 1.5 AUTO-GENERACIÓN DE NO. (ID) Y FECHA EN PROFILES (Dispara solo cuando FullName y Responsable están completos)
+  var noCol = headers["NO."] || headers["NO"] || headers["ID"] || 1;
+  var fechaCol = headers["FECHA"] || headers["DATE"] || 3;
+
+  if (noCol) {
+    var curNo = sheet.getRange(row, noCol).getValue();
+    if (curNo === null || curNo === undefined || curNo.toString().trim() === "") {
+      sheet.getRange(row, noCol).setValue(row - 1);
+    }
+  }
+
+  if (fechaCol) {
+    var curFecha = sheet.getRange(row, fechaCol).getValue();
+    if (curFecha === null || curFecha === undefined || curFecha.toString().trim() === "") {
+      var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+      sheet.getRange(row, fechaCol).setValue(todayStr);
+    }
+  }
+
   // 2. NORMALIZACIÓN DE PSICÓLOGA
   var cleanPsyc = normalizePsychologistName(rawPsyc);
   if (!cleanPsyc) {
@@ -1384,5 +1403,28 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     SpreadsheetApp.getActiveSpreadsheet().toast("Se crearon " + numSlots + " slots para " + personAName + " en " + cleanPsyc, "Slots Generados", 5);
   });
 }
+
+/**
+ * Configura la lista desplegable oficial de las 10 psicólogas en la columna Responsable de PROFILES.
+ */
+function configurarDropdownResponsable() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES");
+  if (!profSheet) return;
+
+  var headers = getSheetHeaders(profSheet);
+  var respCol = headers["RESPONSABLE"] || headers["PSICOLOGA"] || 4;
+  var maxRows = profSheet.getMaxRows() || 10000;
+
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(CONFIG.VALID_PSYCHOLOGISTS, true)
+    .setAllowInvalid(true)
+    .setHelpText("Seleccione una de las 10 psicólogas oficiales: " + CONFIG.VALID_PSYCHOLOGISTS.join(", "))
+    .build();
+
+  profSheet.getRange(2, respCol, maxRows - 1, 1).setDataValidation(rule);
+  Logger.log("✅ Dropdown de psicólogas configurado en PROFILES!D2:D");
+}
+
 
 
