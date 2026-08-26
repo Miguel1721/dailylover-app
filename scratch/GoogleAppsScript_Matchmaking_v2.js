@@ -1352,10 +1352,22 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
 
   var cellPsycVal = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
   var rawPsyc = (newValue && col === respCol ? newValue : cellPsycVal).toString().trim();
+
+  // Si Responsable está vacío, intentar autocompletar con la psicóloga registrada en CRM si existe
+  if (!rawPsyc) {
+    var checkQuery = (personACell.richText && personACell.richText.getLinkUrl()) ? personACell.richText.getLinkUrl() : personAName;
+    var preCrm = fetchProfileFromBackend(checkQuery);
+    if (preCrm && preCrm.found && preCrm.psychologist) {
+      rawPsyc = preCrm.psychologist;
+      sheet.getRange(row, respCol).setValue(rawPsyc);
+      Logger.log("Psicóloga autocompletada desde CRM: '" + rawPsyc + "'");
+    }
+  }
+
   Logger.log("Responsable (Col " + respCol + "): Raw = '" + rawPsyc + "' (en celda: '" + cellPsycVal + "', newValue: '" + (newValue || "") + "')");
 
   if (!rawPsyc) {
-    Logger.log("ABORTADO: Responsable está vacío en fila " + row);
+    Logger.log("Paso intermedio: FullName '" + personAName + "' ingresado. Esperando selección de psicóloga en Col D.");
     return;
   }
 
