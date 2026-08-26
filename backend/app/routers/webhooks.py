@@ -236,8 +236,42 @@ async def process_webhook_payload(event_type: str, data: dict):
                         })
                         user_id = result.scalar()
 
-                    # Upsert Profile
-                    plan_val = data.get("plan_tier") or data.get("plan") or "Estándar 65k (2 citas)"
+                    # Extraer Plan de SmartMatchApp (membership, package, contract, custom fields)
+                    plan_val = None
+                    raw_plan = (
+                        data.get("plan_tier") or data.get("plan") or data.get("membership") or
+                        data.get("membership_tier") or data.get("package") or data.get("contract") or
+                        data.get("plan_name") or data.get("membership_name") or ""
+                    )
+                    # Inspeccionar también si viene como dict o choice
+                    if isinstance(raw_plan, dict):
+                        raw_plan = raw_plan.get("choice_label") or raw_plan.get("name") or raw_plan.get("label") or ""
+                    
+                    # Buscar en campos personalizados (prof_XXX o field_XXX)
+                    if not raw_plan:
+                        for k, v in data.items():
+                            if isinstance(v, dict) and "choice_label" in v:
+                                lbl = str(v.get("choice_label", "")).lower()
+                                if any(p in lbl for p in ["40k", "65k", "195k", "150k", "98k", "básico", "basico", "estándar", "estandar", "vip", "premium"]):
+                                    raw_plan = v.get("choice_label")
+                                    break
+                            elif isinstance(v, str) and any(p in v.lower() for p in ["40k", "65k", "195k", "150k", "98k", "básico", "basico", "estándar", "estandar", "vip", "premium"]):
+                                raw_plan = v
+                                break
+
+                    if raw_plan:
+                        r_low = str(raw_plan).lower()
+                        if "195" in r_low or "vip" in r_low:
+                            plan_val = "VIP 195k (5 citas)"
+                        elif "150" in r_low or "premium" in r_low:
+                            plan_val = "Premium 150k"
+                        elif "98" in r_low:
+                            plan_val = "Estándar Plus 98k"
+                        elif "65" in r_low or "estándar" in r_low or "estandar" in r_low or "2 citas" in r_low:
+                            plan_val = "Estándar 65k (2 citas)"
+                        elif "40" in r_low or "básico" in r_low or "basico" in r_low or "1 cita" in r_low:
+                            plan_val = "Básico 40k"
+
                     await db.execute(text("""
                         INSERT INTO profiles (user_id, age, gender, city, orientation, occupation, plan_tier, bio_notes, updated_at)
                         VALUES (:uid, :age, :gender, :city, :orientation, :occupation, :plan, :notes, NOW())
@@ -257,7 +291,7 @@ async def process_webhook_payload(event_type: str, data: dict):
                         "city": city or data.get("city") or data.get("ciudad") or "",
                         "orientation": orientation or "",
                         "occupation": data.get("occupation") or data.get("profesion"),
-                        "plan": plan_val,
+                        "plan": plan_val or "",
                         "notes": data.get("notes") or data.get("bio") or data.get("observaciones")
                     })
                     await db.commit()
