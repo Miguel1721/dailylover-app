@@ -416,14 +416,34 @@ function appendNewRetryRow(sheet, headers, data) {
   var trueLastRow = getTrueLastRow(sheet, checkCol);
   var newRow = trueLastRow + 1;
 
-  if (headers["CITY"]) sheet.getRange(newRow, headers["CITY"]).setValue(data.city);
-  if (headers["CIUDAD"]) sheet.getRange(newRow, headers["CIUDAD"]).setValue(data.city);
+  var idCol = headers["ID"] || 1;
+  sheet.getRange(newRow, idCol).setFormula("=ROW()-1");
 
-  if (headers["PREF"]) sheet.getRange(newRow, headers["PREF"]).setValue(data.pref);
-  if (headers["PREFERENCIA"]) sheet.getRange(newRow, headers["PREFERENCIA"]).setValue(data.pref);
+  if (headers["PAIS"]) sheet.getRange(newRow, headers["PAIS"]).setValue(data.pais || "");
 
-  if (headers["PLAN"]) sheet.getRange(newRow, headers["PLAN"]).setValue(data.plan);
-  if (headers["PLAN TIER"]) sheet.getRange(newRow, headers["PLAN TIER"]).setValue(data.plan);
+  var cityCol = headers["CITY"] || headers["CIUDAD"];
+  if (cityCol) {
+    sheet.getRange(newRow, cityCol).setValue(data.city || "");
+    if (!data.city) {
+      sheet.getRange(newRow, cityCol).setBackground("#FFF2CC").setNote("Ciudad requerida (sin dato en origen)");
+    }
+  }
+
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"];
+  if (prefCol) {
+    sheet.getRange(newRow, prefCol).setValue(data.pref || "");
+    if (!data.pref) {
+      sheet.getRange(newRow, prefCol).setBackground("#FFF2CC").setNote("Preferencia / Orientación requerida (sin dato en origen)");
+    }
+  }
+
+  var planCol = headers["PLAN"] || headers["PLAN TIER"];
+  if (planCol) {
+    sheet.getRange(newRow, planCol).setValue(data.plan || "");
+    if (!data.plan) {
+      sheet.getRange(newRow, planCol).setBackground("#FFF2CC").setNote("Plan requerido");
+    }
+  }
 
   // 3. PRESERVAR HIPERVÍNCULO CRM DE PERSONA A
   if (headers["PERSON A"] && data.personACell) {
@@ -434,6 +454,8 @@ function appendNewRetryRow(sheet, headers, data) {
 
   if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
   if (headers["PERSONA B"]) sheet.getRange(newRow, headers["PERSONA B"]).setValue("");
+
+  if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue("");
 
   if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
   if (headers["STATUS"]) sheet.getRange(newRow, headers["STATUS"]).setValue(data.status);
