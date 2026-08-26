@@ -86,33 +86,51 @@ var CONFIG = {
 // ─── 1. DISPARADOR PRINCIPAL (SIMPLE & INSTALABLE) ──────────────────────────
 
 function onEdit(e) {
+  Logger.log("=== onEdit (Simple Trigger) Disparado ===");
   onEditInstallable(e);
 }
 
 function onEditInstallable(e) {
-  if (!e || !e.range) return;
+  Logger.log("=== onEditInstallable Disparado ===");
+  if (!e || !e.range) {
+    Logger.log("AVISO: Evento 'e' o 'e.range' no definido.");
+    return;
+  }
 
   var sheet = e.range.getSheet();
   var sheetName = sheet.getName();
   var row = e.range.getRow();
   var col = e.range.getColumn();
+  var editVal = e.value || "";
+
+  Logger.log("Pestaña editada: '" + sheetName + "', Fila: " + row + ", Columna: " + col + ", Valor: '" + editVal + "'");
 
   // Ignorar fila 1 de encabezados
-  if (row <= 1) return;
+  if (row <= 1) {
+    Logger.log("Ignorando edición en fila 1 (encabezados).");
+    return;
+  }
 
   var upperSheetName = sheetName.trim().toUpperCase();
 
   // A. Pestañas de psicólogas ("MATCHES SILVI", "MATCHES JENN", "MATCHES ANA ", etc.)
   if (upperSheetName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperSheetName !== "MATCHES") {
+    Logger.log("Despachando a handlePsychologistSheetEdit...");
     handlePsychologistSheetEdit(sheet, row, col, e.value, e.oldValue);
   } else if (upperSheetName === CONFIG.VUELVE_A_PAGAR_SHEET_NAME) {
+    Logger.log("Despachando a handleVuelveAPagarEdit...");
     handleVuelveAPagarEdit(sheet, row, col, e.value, e.oldValue);
   } else if (upperSheetName === CONFIG.REFUNDS_SHEET_NAME) {
+    Logger.log("Despachando a handleRefundsSheetEdit...");
     handleRefundsSheetEdit(sheet, row, col, e.value, e.oldValue);
   } else if (upperSheetName === CONFIG.PRIORITY_SHEET_NAME || upperSheetName === "PERSONAS DIFICILES" || upperSheetName === "MATCHES QUE HACEN FALTA") {
+    Logger.log("Despachando a handlePersonasDificilesEdit...");
     handlePersonasDificilesEdit(sheet, row, col, e.value, e.oldValue);
   } else if (upperSheetName === CONFIG.PROFILES_SHEET_NAME || upperSheetName === "PROFILES") {
+    Logger.log("Despachando a handleProfilesEdit...");
     handleProfilesEdit(sheet, row, col, e.value, e.oldValue);
+  } else {
+    Logger.log("Pestaña '" + sheetName + "' no requiere procesamiento en disparador.");
   }
 }
 
@@ -1270,7 +1288,11 @@ function checkExistingSlots(personACell, targetPsycSheet) {
  * Trigger que procesa filas nuevas añadidas en PROFILES y crea sus slots en la pestaña de la psicóloga.
  */
 function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
+  Logger.log(">>> Entrando a handleProfilesEdit | Fila: " + row + ", Columna: " + col + ", newValue: '" + (newValue || "") + "'");
+  
   var headers = getSheetHeaders(sheet);
+  Logger.log("Headers detectados en PROFILES: " + JSON.stringify(headers));
+
   var fullNameCol = headers["FULLNAME"] || headers["NOMBRE"] || 2;
   var respCol = headers["RESPONSABLE"] || headers["PSICOLOGA"] || 4;
   var slotsCol = headers["SLOTS CREADOS"] || headers["SLOTS"] || headers["STATUS SLOTS"];
@@ -1279,14 +1301,26 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   if (!slotsCol) {
     slotsCol = 6;
     sheet.getRange(1, slotsCol).setValue("SLOTS CREADOS").setFontWeight("bold").setBackground("#D9D2E9");
+    Logger.log("Columna SLOTS CREADOS no existía. Creada en Columna " + slotsCol);
   }
 
   var personACell = getCellData(sheet, row, fullNameCol);
   var personAName = personACell ? personACell.text.trim() : "";
-  if (!personAName) return;
+  Logger.log("FullName (Col " + fullNameCol + "): '" + personAName + "' (RichText Link: " + (personACell && personACell.richText ? personACell.richText.getLinkUrl() : "none") + ")");
 
-  var rawPsyc = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
-  if (!rawPsyc) return;
+  if (!personAName) {
+    Logger.log("ABORTADO: FullName está vacío en fila " + row);
+    return;
+  }
+
+  var cellPsycVal = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
+  var rawPsyc = (newValue && col === respCol ? newValue : cellPsycVal).toString().trim();
+  Logger.log("Responsable (Col " + respCol + "): Raw = '" + rawPsyc + "' (en celda: '" + cellPsycVal + "', newValue: '" + (newValue || "") + "')");
+
+  if (!rawPsyc) {
+    Logger.log("ABORTADO: Responsable está vacío en fila " + row);
+    return;
+  }
 
   // 1. AUTO-GENERACIÓN DE NO. (ID) Y FECHA EN PROFILES (Dispara cuando FullName y Responsable están completos)
   var noCol = headers["NO."] || headers["NO"] || headers["ID"] || 1;
@@ -1294,28 +1328,38 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
 
   if (noCol) {
     var curNo = sheet.getRange(row, noCol).getValue();
+    Logger.log("No. actual en fila " + row + " (Col " + noCol + "): '" + curNo + "'");
     if (curNo === null || curNo === undefined || curNo.toString().trim() === "") {
-      sheet.getRange(row, noCol).setValue(row - 1);
+      var generatedNo = row - 1;
+      sheet.getRange(row, noCol).setValue(generatedNo);
+      Logger.log("✅ Auto-generado No. = " + generatedNo + " en Columna " + noCol);
     }
   }
 
   if (fechaCol) {
     var curFecha = sheet.getRange(row, fechaCol).getValue();
+    Logger.log("FECHA actual en fila " + row + " (Col " + fechaCol + "): '" + curFecha + "'");
     if (curFecha === null || curFecha === undefined || curFecha.toString().trim() === "") {
       var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
       sheet.getRange(row, fechaCol).setValue(todayStr);
+      Logger.log("✅ Auto-generada FECHA = '" + todayStr + "' en Columna " + fechaCol);
     }
   }
 
   // 2. REGLA ANTI-DUPLICADO: Si ya tiene marca de slots creados o histórico, abortar creación de slots
   var currentSlotsMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
+  Logger.log("SlotsCol actual (Col " + slotsCol + "): '" + currentSlotsMarker + "'");
   if (currentSlotsMarker && (currentSlotsMarker.indexOf("SLOTS CREADOS") >= 0 || currentSlotsMarker.indexOf("HISTÓRICO") >= 0 || currentSlotsMarker.indexOf("YA GENERADO") >= 0 || currentSlotsMarker.indexOf("YA EXISTEN") >= 0)) {
+    Logger.log("ABORTADO: Fila ya procesada previamente con marca: '" + currentSlotsMarker + "'");
     return;
   }
 
   // 3. NORMALIZACIÓN DE PSICÓLOGA
   var cleanPsyc = normalizePsychologistName(rawPsyc);
+  Logger.log("Psicóloga normalizada: '" + cleanPsyc + "'");
+
   if (!cleanPsyc) {
+    Logger.log("AVISO: Psicóloga no reconocida: '" + rawPsyc + "'. Marcando amarillo #FFF2CC");
     sheet.getRange(row, respCol)
       .setBackground("#FFF2CC")
       .setNote("Psicóloga no reconocida. Seleccione una de las 10 oficiales: JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA.");
@@ -1329,25 +1373,30 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(row, respCol).setBackground(null).clearNote();
   }
 
-  // 3. BÚSQUEDA DE PESTAÑA DE PSICÓLOGA
+  // 4. BÚSQUEDA DE PESTAÑA DE PSICÓLOGA
   var psycSheet = findPsychologistSheet(cleanPsyc);
   if (!psycSheet) {
+    Logger.log("ERROR: Pestaña 'MATCHES " + cleanPsyc + "' no encontrada en el libro.");
     sheet.getRange(row, respCol)
       .setBackground("#FFF2CC")
       .setNote("No se encontró la pestaña 'MATCHES " + cleanPsyc + "'.");
     sheet.getRange(row, slotsCol).setValue("ERROR PESTAÑA PSICÓLOGA").setBackground("#F4CCCC");
     return;
   }
+  Logger.log("Pestaña de psicóloga encontrada: '" + psycSheet.getName() + "'");
 
-  // 4. VERIFICACIÓN CRUZADA GLOBAL (Las 10 pestañas de psicóloga + PERSONAS DÍFICILES)
+  // 5. VERIFICACIÓN CRUZADA GLOBAL (Las 10 pestañas de psicóloga + PERSONAS DÍFICILES)
+  Logger.log("Ejecutando checkExistingSlots para '" + personAName + "'...");
   var alreadyExistsReason = checkExistingSlots(personACell, psycSheet);
+  Logger.log("Resultado de checkExistingSlots: " + (alreadyExistsReason ? "'" + alreadyExistsReason + "'" : "null (limpio)"));
+
   if (alreadyExistsReason) {
     sheet.getRange(row, slotsCol).setValue(alreadyExistsReason).setBackground("#D9EAD3");
     SpreadsheetApp.getActiveSpreadsheet().toast("Aviso: " + alreadyExistsReason + " para " + personAName, "Detección de Duplicado", 6);
     return;
   }
 
-  // 5. CONSULTA AL CRM VÍA RESOLVE-PROFILE PARA OBTENER EL PLAN
+  // 6. CONSULTA AL CRM VÍA RESOLVE-PROFILE PARA OBTENER EL PLAN
   var queryParam = "";
   if (personACell.richText && personACell.richText.getLinkUrl()) {
     queryParam = personACell.richText.getLinkUrl();
@@ -1357,13 +1406,18 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   } else {
     queryParam = personAName;
   }
+  Logger.log("Consultando CRM resolve-profile con query: '" + queryParam + "'...");
 
   var crmProfile = fetchProfileFromBackend(queryParam);
+  Logger.log("Respuesta recibida de CRM: " + JSON.stringify(crmProfile));
+
   var planFromCrm = crmProfile && crmProfile.found ? (crmProfile.plan_tier || "") : "";
   var numSlots = resolvePlanSlots(planFromCrm);
+  Logger.log("Plan extraído: '" + planFromCrm + "', Slots a generar: " + numSlots);
 
-  // 6. VALIDACIÓN DE PLAN (Sin default: si no viene, fila amarilla y no genera slots)
+  // 7. VALIDACIÓN DE PLAN (Sin default: si no viene, fila amarilla y no genera slots)
   if (!crmProfile || !crmProfile.found || !numSlots) {
+    Logger.log("AVISO: Perfil sin plan válido en CRM. Marcando fila en amarillo #FFF2CC");
     sheet.getRange(row, slotsCol)
       .setValue("PENDIENTE PLAN (CRM)")
       .setBackground("#FFF2CC")
@@ -1378,11 +1432,15 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var ciudad = crmProfile.city || "";
   var pref = crmProfile.pref || ""; // NUNCA default a "hetero"
 
-  // 7. GENERACIÓN DE SLOTS CON LOCK DE SEGURIDAD
+  // 8. GENERACIÓN DE SLOTS CON LOCK DE SEGURIDAD
+  Logger.log("Iniciando creación de " + numSlots + " slots en pestaña '" + psycSheet.getName() + "' con ScriptLock...");
   withScriptLock(function() {
     // Re-chequear anti-duplicado dentro del Lock
     var recheckMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
-    if (recheckMarker && (recheckMarker.indexOf("SLOTS CREADOS") >= 0 || recheckMarker.indexOf("HISTÓRICO") >= 0 || recheckMarker.indexOf("YA GENERADO") >= 0 || recheckMarker.indexOf("YA EXISTEN") >= 0)) return;
+    if (recheckMarker && (recheckMarker.indexOf("SLOTS CREADOS") >= 0 || recheckMarker.indexOf("HISTÓRICO") >= 0 || recheckMarker.indexOf("YA GENERADO") >= 0 || recheckMarker.indexOf("YA EXISTEN") >= 0)) {
+      Logger.log("Recheck dentro del lock detectó marca previa. Abortando.");
+      return;
+    }
 
     var psycHeaders = getSheetHeaders(psycSheet);
     for (var i = 1; i <= numSlots; i++) {
@@ -1395,17 +1453,20 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
         totalSlots: numSlots,
         observaciones: "[PROFILES] Sincronizado desde CRM"
       });
+      Logger.log("Slot " + i + "/" + numSlots + " insertado en '" + psycSheet.getName() + "'");
     }
 
-    // 8. MARCAR COMO COMPLETADO EN PROFILES (Verde oficial #D9EAD3)
+    // 9. MARCAR COMO COMPLETADO EN PROFILES (Verde oficial #D9EAD3)
     var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
     sheet.getRange(row, slotsCol)
       .setValue(numSlots + " SLOTS CREADOS (" + todayStr + " - " + cleanPsyc + ")")
       .setBackground("#D9EAD3")
       .clearNote();
     
+    Logger.log("✅ PROFILES!F marcado con éxito: '" + numSlots + " SLOTS CREADOS (" + todayStr + " - " + cleanPsyc + ")'");
     SpreadsheetApp.getActiveSpreadsheet().toast("Se crearon " + numSlots + " slots para " + personAName + " en " + cleanPsyc, "Slots Generados", 5);
   });
+  Logger.log("<<< handleProfilesEdit FINALIZADO CON ÉXITO >>>");
 }
 
 /**
