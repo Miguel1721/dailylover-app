@@ -1620,14 +1620,19 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
             "email": ""
         }
 
-    orientation_val = row.orientation or "hetero"
-    pref_val = "hetero"
-    if "gay" in orientation_val.lower() or "homo" in orientation_val.lower():
-        pref_val = "gay"
-    elif "lesb" in orientation_val.lower():
-        pref_val = "lesb"
-    elif "bi" in orientation_val.lower():
-        pref_val = "bi"
+    orientation_val = (row.orientation or "").strip()
+    pref_val = ""
+    if orientation_val:
+        if "gay" in orientation_val.lower() or "homo" in orientation_val.lower():
+            pref_val = "gay"
+        elif "lesb" in orientation_val.lower():
+            pref_val = "lesb"
+        elif "bi" in orientation_val.lower():
+            pref_val = "bi"
+        elif "hetero" in orientation_val.lower():
+            pref_val = "hetero"
+        else:
+            pref_val = normalize_pref(orientation_val)
 
     return {
         "found": True,

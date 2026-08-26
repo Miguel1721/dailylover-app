@@ -331,7 +331,7 @@ function handleVuelveAPagarEdit(sheet, row, col, newValue, oldValue) {
       var psycHeaders = getSheetHeaders(psycSheet);
       appendNewRetryRow(psycSheet, psycHeaders, {
         city: "",
-        pref: "hetero",
+        pref: "",
         plan: rawPlan,
         personACell: personACell,
         personBCell: null,
@@ -891,7 +891,7 @@ function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
     for (var i = 1; i <= numSlots; i++) {
       appendPrioritySlotRow(psycSheet, psycHeaders, {
         city: ciudad,
-        pref: pref || "hetero",
+        pref: pref || "",
         plan: rawPlan,
         personACell: personACell,
         slotIndex: i,
@@ -922,14 +922,34 @@ function appendPrioritySlotRow(sheet, headers, data) {
   var trueLastRow = getTrueLastRow(sheet, checkCol);
   var newRow = trueLastRow + 1;
 
-  if (headers["CITY"]) sheet.getRange(newRow, headers["CITY"]).setValue(data.city);
-  if (headers["CIUDAD"]) sheet.getRange(newRow, headers["CIUDAD"]).setValue(data.city);
+  var idCol = headers["ID"] || 1;
+  sheet.getRange(newRow, idCol).setFormula("=ROW()-1");
 
-  if (headers["PREF"]) sheet.getRange(newRow, headers["PREF"]).setValue(data.pref);
-  if (headers["PREFERENCIA"]) sheet.getRange(newRow, headers["PREFERENCIA"]).setValue(data.pref);
+  if (headers["PAIS"]) sheet.getRange(newRow, headers["PAIS"]).setValue(data.pais || "");
 
-  if (headers["PLAN"]) sheet.getRange(newRow, headers["PLAN"]).setValue(data.plan);
-  if (headers["PLAN TIER"]) sheet.getRange(newRow, headers["PLAN TIER"]).setValue(data.plan);
+  var cityCol = headers["CITY"] || headers["CIUDAD"];
+  if (cityCol) {
+    sheet.getRange(newRow, cityCol).setValue(data.city || "");
+    if (!data.city) {
+      sheet.getRange(newRow, cityCol).setBackground("#FFF2CC").setNote("Ciudad requerida (sin dato en origen)");
+    }
+  }
+
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"];
+  if (prefCol) {
+    sheet.getRange(newRow, prefCol).setValue(data.pref || "");
+    if (!data.pref) {
+      sheet.getRange(newRow, prefCol).setBackground("#FFF2CC").setNote("Preferencia / Orientación requerida (sin dato en origen)");
+    }
+  }
+
+  var planCol = headers["PLAN"] || headers["PLAN TIER"];
+  if (planCol) {
+    sheet.getRange(newRow, planCol).setValue(data.plan || "");
+    if (!data.plan) {
+      sheet.getRange(newRow, planCol).setBackground("#FFF2CC").setNote("Plan requerido");
+    }
+  }
 
   if (headers["PERSON A"] && data.personACell) {
     setCellData(sheet, newRow, headers["PERSON A"], data.personACell);
@@ -939,6 +959,8 @@ function appendPrioritySlotRow(sheet, headers, data) {
 
   if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
   if (headers["PERSONA B"]) sheet.getRange(newRow, headers["PERSONA B"]).setValue("");
+
+  if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue("");
 
   if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
   if (headers["STATUS"]) {
@@ -982,7 +1004,7 @@ function syncToPriorityQueue(sourceSheetName, data) {
   if (psycCol) prioritySheet.getRange(targetRow, psycCol).setValue(cleanPsyc);
   if (planCol) prioritySheet.getRange(targetRow, planCol).setValue(data.plan || "");
   if (ciudadCol) prioritySheet.getRange(targetRow, ciudadCol).setValue(data.city || "");
-  if (prefCol) prioritySheet.getRange(targetRow, prefCol).setValue(data.pref || "hetero");
+  if (prefCol) prioritySheet.getRange(targetRow, prefCol).setValue(data.pref || "");
   if (fechaIngresoCol) prioritySheet.getRange(targetRow, fechaIngresoCol).setValue(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm"));
   if (obsCol) prioritySheet.getRange(targetRow, obsCol).setValue(data.observaciones || "");
   if (statusCol) prioritySheet.getRange(targetRow, statusCol).setValue(data.status || "PENDIENTE");
@@ -1148,43 +1170,68 @@ function fetchProfileFromBackend(queryOrUrl) {
 }
 
 /**
- * Verifica si una persona ya tiene slots creados en PERSONAS DÍFICILES o en la pestaña de la psicóloga.
+ * Verifica si una persona ya tiene slots creados en CUALQUIERA de las 10 pestañas de psicóloga
+ * o en PERSONAS DÍFICILES (evita duplicados entre psicólogas o por reasignaciones).
  */
-function checkExistingSlots(personACell, psycSheet) {
+function checkExistingSlots(personACell, targetPsycSheet) {
   if (!personACell || !personACell.text) return null;
-  var personName = personACell.text.trim().toUpperCase();
+  var targetName = personACell.text.trim().toLowerCase();
+  var targetUrl = (personACell.richText ? personACell.richText.getLinkUrl() : "") || personACell.formula || "";
+  var targetCrmId = extractCrmIdFromUrl(targetUrl);
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // 1. Verificar en PERSONAS DÍFICILES
-  var prioritySheet = ss.getSheetByName(CONFIG.PRIORITY_SHEET_NAME || "PERSONAS DÍFICILES") || ss.getSheetByName("PERSONAS DIFICILES");
+  var prioritySheet = ss.getSheetByName(CONFIG.PRIORITY_SHEET_NAME || "PERSONAS DÍFICILES") || ss.getSheetByName("PERSONAS DIFICILES") || ss.getSheetByName("MATCHES QUE HACEN FALTA");
   if (prioritySheet) {
     var pHeaders = getSheetHeaders(prioritySheet);
     var pPersonCol = pHeaders["PERSON A"] || pHeaders["PERSONA A"] || 1;
     var pSlotsCol = pHeaders["SLOTS CREADOS"] || pHeaders["SLOTS"] || 9;
-    var lastRow = getTrueLastRow(prioritySheet, pPersonCol);
-    if (lastRow > 1) {
-      var pValues = prioritySheet.getRange(2, 1, lastRow - 1, prioritySheet.getLastColumn()).getValues();
+    var lastRowP = getTrueLastRow(prioritySheet, pPersonCol);
+    if (lastRowP > 1) {
+      var pValues = prioritySheet.getRange(2, 1, lastRowP - 1, prioritySheet.getLastColumn()).getValues();
+      var pRichValues = prioritySheet.getRange(2, pPersonCol, lastRowP - 1, 1).getRichTextValues();
       for (var i = 0; i < pValues.length; i++) {
-        var rowName = (pValues[i][pPersonCol - 1] || "").toString().trim().toUpperCase();
         var rowSlots = (pValues[i][pSlotsCol - 1] || "").toString().trim().toUpperCase();
-        if (rowName && rowName === personName && rowSlots.indexOf("SLOTS CREADOS") >= 0) {
-          return "YA GENERADO EN PERSONAS DÍFICILES";
+        if (rowSlots.indexOf("SLOTS CREADOS") >= 0) {
+          var rt = pRichValues[i][0];
+          var cellText = rt ? rt.getText().trim().toLowerCase() : (pValues[i][pPersonCol - 1] || "").toString().trim().toLowerCase();
+          var cellLink = rt ? rt.getLinkUrl() || "" : "";
+          var cellCrmId = extractCrmIdFromUrl(cellLink);
+
+          if ((targetCrmId && cellCrmId && targetCrmId === cellCrmId) || (targetName && cellText === targetName)) {
+            return "YA GENERADO EN PERSONAS DÍFICILES";
+          }
         }
       }
     }
   }
 
-  // 2. Verificar en la pestaña de la psicóloga
-  if (psycSheet) {
-    var headers = getSheetHeaders(psycSheet);
-    var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
-    var lastRowPsyc = getTrueLastRow(psycSheet, personACol);
-    if (lastRowPsyc > 1) {
-      var psycValues = psycSheet.getRange(2, personACol, lastRowPsyc - 1, 1).getValues();
-      for (var j = 0; j < psycValues.length; j++) {
-        var existingName = (psycValues[j][0] || "").toString().trim().toUpperCase();
-        if (existingName && existingName === personName) {
-          return "SLOTS YA EXISTEN EN " + psycSheet.getName();
+  // 2. Verificar a través de TODAS las 10 pestañas de psicólogas activas
+  var allSheets = ss.getSheets();
+  for (var sIdx = 0; sIdx < allSheets.length; sIdx++) {
+    var s = allSheets[sIdx];
+    var sName = s.getName().trim().toUpperCase();
+
+    if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
+      var sHeaders = getSheetHeaders(s);
+      var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || 6;
+      var lastRow = getTrueLastRow(s, personACol);
+      if (lastRow > 1) {
+        var richValues = s.getRange(2, personACol, lastRow - 1, 1).getRichTextValues();
+        for (var r = 0; r < richValues.length; r++) {
+          var rt = richValues[r][0];
+          if (!rt) continue;
+          var cellText = rt.getText().trim().toLowerCase();
+          if (!cellText) continue;
+
+          var cellLink = rt.getLinkUrl() || "";
+          var cellCrmId = extractCrmIdFromUrl(cellLink);
+
+          // Coincidencia por CRM ID (prioritario) o por nombre normalizado
+          if ((targetCrmId && cellCrmId && targetCrmId === cellCrmId) || (targetName && cellText === targetName)) {
+            var foundTabName = s.getName().trim();
+            return "SLOTS YA EXISTEN EN " + foundTabName;
+          }
         }
       }
     }
@@ -1247,10 +1294,11 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     return;
   }
 
-  // 4. VERIFICACIÓN CRUZADA CONTRA PERSONAS DÍFICILES Y PESTAÑA DE PSICÓLOGA
+  // 4. VERIFICACIÓN CRUZADA GLOBAL (Las 10 pestañas de psicóloga + PERSONAS DÍFICILES)
   var alreadyExistsReason = checkExistingSlots(personACell, psycSheet);
   if (alreadyExistsReason) {
     sheet.getRange(row, slotsCol).setValue(alreadyExistsReason).setBackground("#D9EAD3");
+    SpreadsheetApp.getActiveSpreadsheet().toast("Aviso: " + alreadyExistsReason + " para " + personAName, "Detección de Duplicado", 6);
     return;
   }
 
@@ -1283,13 +1331,13 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   }
 
   var ciudad = crmProfile.city || "";
-  var pref = crmProfile.pref || "hetero";
+  var pref = crmProfile.pref || ""; // NUNCA default a "hetero"
 
   // 7. GENERACIÓN DE SLOTS CON LOCK DE SEGURIDAD
   withScriptLock(function() {
     // Re-chequear anti-duplicado dentro del Lock
     var recheckMarker = (sheet.getRange(row, slotsCol).getValue() || "").toString().trim().toUpperCase();
-    if (recheckMarker && (recheckMarker.indexOf("SLOTS CREADOS") >= 0 || recheckMarker.indexOf("HISTÓRICO") >= 0)) return;
+    if (recheckMarker && (recheckMarker.indexOf("SLOTS CREADOS") >= 0 || recheckMarker.indexOf("HISTÓRICO") >= 0 || recheckMarker.indexOf("YA GENERADO") >= 0 || recheckMarker.indexOf("YA EXISTEN") >= 0)) return;
 
     var psycHeaders = getSheetHeaders(psycSheet);
     for (var i = 1; i <= numSlots; i++) {
