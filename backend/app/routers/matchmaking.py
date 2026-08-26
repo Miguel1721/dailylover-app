@@ -1613,10 +1613,22 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
                    p.city, p.orientation, p.gender, p.plan_tier, p.responsable
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
-            WHERE u.crm_id = :cid OR CAST(u.id AS TEXT) = :cid
+            WHERE u.crm_id = :cid
+            ORDER BY u.id DESC
             LIMIT 1
         """), {"cid": extracted_crm_id})
         row = res.fetchone()
+
+        if not row and extracted_crm_id.isdigit():
+            res = await db.execute(text("""
+                SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE u.id = :uid
+                LIMIT 1
+            """), {"uid": int(extracted_crm_id)})
+            row = res.fetchone()
 
     # Si no se encontró por ID o no era ID, buscar por nombre
     if not row:
