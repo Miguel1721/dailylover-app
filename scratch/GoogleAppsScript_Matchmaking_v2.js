@@ -231,6 +231,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
 
           // 2. Sincronizar a REVISIÓN MARÍA con estado de doble aprobación
           syncToRevisionMaria({
+            currentPsyc: currentPsyc,
             psycA: currentPsyc,
             psycB: ownerPsycB,
             city: city,
@@ -248,6 +249,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
         // Match interno (misma psicóloga para A y B)
         withScriptLock(function() {
           syncToRevisionMaria({
+            currentPsyc: currentPsyc,
             psycA: currentPsyc,
             psycB: currentPsyc,
             city: city,
@@ -1816,6 +1818,19 @@ function protegerConfigEstados() {
 // ─── 13. FLUJO DE APROBACIÓN REVISIÓN MARÍA & FILAS ESPEJO ──────────────────
 
 /**
+ * Retorna un identificador canónico único e insensible al orden para cualquier pareja.
+ * Ejemplo: ("Diego", "Valentina") -> "diego___valentina"
+ *          ("Valentina", "Diego") -> "diego___valentina"
+ */
+function getCanonicalPairId(nameA, nameB) {
+  var cleanA = (nameA || "").toString().toLowerCase().trim();
+  var cleanB = (nameB || "").toString().toLowerCase().trim();
+  if (!cleanA && !cleanB) return "";
+  var arr = [cleanA, cleanB].sort();
+  return arr[0] + "___" + arr[1];
+}
+
+/**
  * Crea o sincroniza la fila espejo en la pestaña de Psicóloga B cuando Psicóloga A propone un match cruzado.
  */
 function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, city, pref, plan, obs) {
@@ -1835,13 +1850,14 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
   var lastRowB = sheetB.getLastRow();
   var mirrorRow = null;
 
-  // Buscar si ya existe la fila espejo para este par
+  // Buscar si ya existe la fila espejo para este par de forma canónica
+  var targetPairKey = getCanonicalPairId(cellA.text, cellB.text);
   if (lastRowB > 1) {
     var dataB = sheetB.getRange(2, 1, lastRowB - 1, sheetB.getLastColumn()).getValues();
     for (var i = 0; i < dataB.length; i++) {
-      var rowNameA = (dataB[i][personAColB - 1] || "").toString().toLowerCase().trim();
-      var rowNameB = (dataB[i][personBColB - 1] || "").toString().toLowerCase().trim();
-      if (rowNameA === cellB.text.toLowerCase().trim() && rowNameB === cellA.text.toLowerCase().trim()) {
+      var rowNameA = (dataB[i][personAColB - 1] || "").toString();
+      var rowNameB = (dataB[i][personBColB - 1] || "").toString();
+      if (getCanonicalPairId(rowNameA, rowNameB) === targetPairKey) {
         mirrorRow = i + 2;
         break;
       }
@@ -1884,6 +1900,7 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
 
 /**
  * Sincroniza el match a la pestaña 'REVISIÓN MARÍA'.
+ * Utiliza getCanonicalPairId para evitar duplicados sin importar el orden de Persona A / Persona B.
  */
 function syncToRevisionMaria(matchData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1894,42 +1911,71 @@ function syncToRevisionMaria(matchData) {
   }
 
   var headers = getSheetHeaders(revSheet);
-  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 1;
-  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 2;
-  var cityCol = headers["CITY"] || headers["CIUDAD"] || 3;
-  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 4;
-  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 5;
-  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
-  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 7;
-  var fechaCol = headers["FECHA"] || headers["FECHA PROPUESTA"] || 8;
-  var obsCol = headers["OBSERVACIONES"] || 9;
-  var origenTabCol = headers["ORIGEN"] || headers["PESTAÑA ORIGEN"] || 10;
-  var origenFilaCol = headers["FILA ORIGEN"] || 11;
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 12;
+  var idCol = headers["ID MATCH"] || headers["ID"] || 1;
+  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 2;
+  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 3;
+  var cityCol = headers["CITY"] || headers["CIUDAD"] || 4;
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 5;
+  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 6;
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 7;
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 8;
+  var fechaCol = headers["FECHA"] || headers["FECHA PROPUESTA"] || 9;
+  var obsCol = headers["OBSERVACIONES"] || 10;
+  var origenTabCol = headers["ORIGEN"] || headers["PESTAÑA ORIGEN"] || 11;
+  var origenFilaCol = headers["FILA ORIGEN"] || 12;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 13;
 
   var lastRow = revSheet.getLastRow();
   var targetRow = null;
+  var existingRowData = null;
 
-  // Buscar si ya existe este match en REVISIÓN MARÍA
+  var targetPairKey = getCanonicalPairId(matchData.personACell.text, matchData.personBCell.text);
+
+  // Buscar si ya existe este match en REVISIÓN MARÍA de forma CANÓNICA (A ↔ B o B ↔ A)
   if (lastRow > 1) {
     var data = revSheet.getRange(2, 1, lastRow - 1, revSheet.getLastColumn()).getValues();
     for (var i = 0; i < data.length; i++) {
-      var rA = (data[i][personACol - 1] || "").toString().toLowerCase().trim();
-      var rB = (data[i][personBCol - 1] || "").toString().toLowerCase().trim();
-      if (rA === matchData.personACell.text.toLowerCase().trim() && rB === matchData.personBCell.text.toLowerCase().trim()) {
+      var rA = (data[i][personACol - 1] || "").toString();
+      var rB = (data[i][personBCol - 1] || "").toString();
+      if (getCanonicalPairId(rA, rB) === targetPairKey) {
         targetRow = i + 2;
+        existingRowData = data[i];
         break;
       }
     }
   }
 
+  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+  var isCrossMatch = (matchData.psycA && matchData.psycB && matchData.psycA !== matchData.psycB);
+
+  // Si YA EXISTÍA la fila en REVISIÓN MARÍA (es la segunda psicóloga aprobando su fila espejo)
+  if (targetRow && existingRowData) {
+    var prevStatus = (existingRowData[aprobarCol - 1] || "").toString().trim();
+    
+    // Si la segunda psicóloga marca HECHO / APROBADO en su espejo
+    if (isCrossMatch && (matchData.currentPsyc === matchData.psycB || prevStatus.indexOf("ESPERANDO") >= 0)) {
+      var fullApprovalStatus = "APROBADO POR AMBAS PSICÓLOGAS (LISTO PARA MARÍA)";
+      revSheet.getRange(targetRow, aprobarCol).setValue(fullApprovalStatus).setBackground("#CFE2F3");
+      
+      var doubleObs = "[DOBLE APROBACIÓN COMPLETA] " + matchData.psycA + " y " + matchData.psycB + " han aprobado (" + todayStr + ")" + (matchData.obs ? " | " + matchData.obs : "");
+      if (obsCol) revSheet.getRange(targetRow, obsCol).setValue(doubleObs);
+      if (fechaCol) revSheet.getRange(targetRow, fechaCol).setValue(todayStr);
+
+      Logger.log("🎉 Match de doble aprobación completado en REVISIÓN MARÍA (Fila " + targetRow + ")");
+      SpreadsheetApp.getActiveSpreadsheet().toast("Doble aprobación completada para " + matchData.personACell.text + " ↔ " + matchData.personBCell.text, "Listo para María", 5);
+      return;
+    }
+  }
+
+  // Si es una NUEVA entrada
   if (!targetRow) {
     targetRow = lastRow + 1;
   }
 
-  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+  // ID Canónico Único
+  var matchUid = "MATCH-" + targetPairKey.replace(/___/g, "-").toUpperCase();
+  if (idCol) revSheet.getRange(targetRow, idCol).setValue(matchUid);
 
-  // Escribir datos
   if (psycACol) revSheet.getRange(targetRow, psycACol).setValue(matchData.psycA);
   if (psycBCol) revSheet.getRange(targetRow, psycBCol).setValue(matchData.psycB);
   if (cityCol) revSheet.getRange(targetRow, cityCol).setValue(matchData.city);
@@ -1952,8 +1998,17 @@ function syncToRevisionMaria(matchData) {
   if (origenFilaCol) revSheet.getRange(targetRow, origenFilaCol).setValue(matchData.origenFila);
 
   if (aprobarCol) {
-    var initialStatus = matchData.statusAprobacion || "PENDIENTE";
-    var bg = (initialStatus.indexOf("ESPERANDO") >= 0 ? "#FFF2CC" : "#CFE2F3");
+    var initialStatus = "";
+    var bg = "#CFE2F3";
+    
+    if (isCrossMatch) {
+      initialStatus = "ESPERANDO APROBACIÓN DE " + matchData.psycB;
+      bg = "#FFF2CC";
+    } else {
+      initialStatus = "APROBADO POR PSICÓLOGA (LISTO PARA MARÍA)";
+      bg = "#CFE2F3";
+    }
+    
     revSheet.getRange(targetRow, aprobarCol).setValue(initialStatus).setBackground(bg);
   }
 
@@ -1961,25 +2016,26 @@ function syncToRevisionMaria(matchData) {
 }
 
 /**
- * Cuando María aprueba o rechaza en 'REVISIÓN MARÍA':
+ * Cuando María edita la columna 'APROBAR' en 'REVISIÓN MARÍA':
+ * - HARD BLOCKING: Si el match todavía dice 'ESPERANDO APROBACIÓN DE [B]', bloquea la acción y revierte la celda.
  * - APROBADO: Inserta en MATCHES (zona inferior) y actualiza pestañas de psicólogas origen y espejo a APROBADO.
  * - NOT APPROVED: Actualiza pestañas origen y espejo a NOT APPROVED y re-genera slots de reintento.
  */
 function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 12;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 13;
   if (col !== aprobarCol) return;
 
   var val = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim().toUpperCase();
   if (!val) return;
 
-  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
-  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 7;
-  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 1;
-  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 2;
-  var cityCol = headers["CITY"] || headers["CIUDAD"] || 3;
-  var obsCol = headers["OBSERVACIONES"] || 9;
-  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 13;
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 7;
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 8;
+  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 2;
+  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 3;
+  var cityCol = headers["CITY"] || headers["CIUDAD"] || 4;
+  var obsCol = headers["OBSERVACIONES"] || 10;
+  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 14;
 
   var cellA = getCellData(sheet, row, personACol);
   var cellB = getCellData(sheet, row, personBCol);
@@ -1993,7 +2049,25 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // ── CASO A: APROBADO POR MARÍA ───────────────────────────────────────────
+  // ── 1. HARD BLOCKING: VALIDAR DOBLE APROBACIÓN PREVIA ────────────────────
+  var prevStatusVal = (oldValue || "").toString().trim().toUpperCase();
+  var isStillWaiting = (prevStatusVal.indexOf("ESPERANDO") >= 0);
+
+  if ((val === "APROBADO" || val === "TRUE") && isStillWaiting && psycB && psycB !== psycA) {
+    // REVERTIR el intento de aprobación anticipada
+    var waitingText = "ESPERANDO APROBACIÓN DE " + psycB;
+    sheet.getRange(row, aprobarCol).setValue(waitingText).setBackground("#FFF2CC");
+    
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      "⚠️ BLOQUEADO: Este match aún espera la aprobación de la Psicóloga B (" + psycB + "). María solo puede aprobar cuando ambas psicólogas hayan marcado HECHO.",
+      "Aprobación Bloqueada",
+      8
+    );
+    Logger.log("⛔ INTENTO DE APROBACIÓN BLOQUEADO: El match " + cellA.text + " ↔ " + cellB.text + " aún espera aprobación de " + psycB);
+    return; // CORTE TOTAL
+  }
+
+  // ── CASO A: APROBADO POR MARÍA (Válido porque ambas psicólogas ya aprobaron) ──
   if (val === "APROBADO" || val === "TRUE") {
     var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
     if (!matchesSheet) {

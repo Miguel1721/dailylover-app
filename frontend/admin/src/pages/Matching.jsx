@@ -725,6 +725,7 @@ export default function Matching() {
                       <th>Ciudad</th>
                       <th>Plan</th>
                       <th>Estado Validación</th>
+                      <th>Acción Psicóloga B</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -741,6 +742,28 @@ export default function Matching() {
                           <span className="badge badge-yellow">
                             ⏳ {m.status}
                           </span>
+                        </td>
+                        <td>
+                          <button
+                            className="btn btn-sm"
+                            style={{ background: '#2e7d32', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`${API}/api/v1/matchmaking/matches/${m.id}/approve-cross`, {
+                                  method: 'POST',
+                                  headers: { 'Authorization': `Bearer ${token}` }
+                                });
+                                if (res.ok) {
+                                  alert('✓ Propuesta validada por Psicóloga B. Pasa a cola de aprobación de María.');
+                                  fetchCrossApprovals();
+                                }
+                              } catch(e) {
+                                console.error(e);
+                              }
+                            }}
+                          >
+                            ✓ Aprobar como Psyc B
+                          </button>
                         </td>
                       </tr>
                     ))}

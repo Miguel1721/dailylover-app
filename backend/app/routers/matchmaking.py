@@ -1863,4 +1863,34 @@ async def get_cross_approvals(
     return {"cross_matches": cross_list, "total": len(cross_list)}
 
 
+@router.post("/matches/{match_id}/approve-cross")
+async def approve_cross_match_by_psyc_b(
+    match_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    La Psicóloga B aprueba la propuesta de match enviada por la Psicóloga A.
+    El match queda con 'APROBADO POR PSICÓLOGAS (LISTO PARA MARÍA)'.
+    """
+    exist_res = await db.execute(text("""
+        SELECT id, person_a, person_b, psychologist_name, observations
+        FROM operational_matches
+        WHERE id = :id
+    """), {"id": match_id})
+    match_row = exist_res.fetchone()
+    if not match_row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    updated_obs = (match_row.observations or "") + " [Doble aprobación confirmada por Psicóloga B]"
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'APROBADO POR PSICÓLOGAS', observations = :obs, updated_at = NOW()
+        WHERE id = :id
+    """), {"id": match_id, "obs": updated_obs})
+    await db.commit()
+
+    return {"status": "success", "message": f"Match {match_id} validado por Psicóloga B. Ahora está listo para la aprobación final de María."}
+
+
+
 
