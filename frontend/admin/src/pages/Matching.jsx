@@ -65,7 +65,31 @@ function VividStatusBadge({ status }) {
   let icon = <Clock size={13} />
   let text = 'PENDIENTE'
 
-  if (s.includes('APROBADO') || s.includes('HECHO') || s.includes('ACCEPTED')) {
+  if (s === 'REFUND APROBADO' || s === 'REFUND DONE' || s === 'REFUND PROCESADO') {
+    bg = 'rgba(16, 185, 129, 0.15)'
+    color = '#10B981'
+    border = 'rgba(16, 185, 129, 0.4)'
+    icon = <CheckCircle size={13} />
+    text = '💰 ' + s
+  } else if (s === 'REFUND RECHAZADO') {
+    bg = 'rgba(239, 68, 68, 0.15)'
+    color = '#EF4444'
+    border = 'rgba(239, 68, 68, 0.4)'
+    icon = <XCircle size={13} />
+    text = '❌ REFUND RECHAZADO'
+  } else if (s === 'NO HAY GENTE') {
+    bg = 'rgba(252, 229, 205, 0.2)'
+    color = '#E69138'
+    border = 'rgba(230, 145, 56, 0.4)'
+    icon = <AlertTriangle size={13} />
+    text = '⚠️ NO HAY GENTE'
+  } else if (s === 'ESPERA O REFUND') {
+    bg = 'rgba(244, 204, 204, 0.2)'
+    color = '#CC0000'
+    border = 'rgba(204, 0, 0, 0.4)'
+    icon = <Clock size={13} />
+    text = '⏳ ESPERA O REFUND'
+  } else if (s.includes('APROBADO') || s.includes('HECHO') || s.includes('ACCEPTED')) {
     bg = 'rgba(16, 185, 129, 0.15)'
     color = '#10B981'
     border = 'rgba(16, 185, 129, 0.4)'
@@ -77,17 +101,16 @@ function VividStatusBadge({ status }) {
     border = 'rgba(239, 68, 68, 0.4)'
     icon = <XCircle size={13} />
     text = s.includes('REFUND') ? '🔴 REFUND' : (s.includes('CANCELADO') ? '🔴 CANCELADO' : '🔴 RECHAZADO')
-  } else if (s.includes('TROUBLE') || s.includes('REVISAR') || s.includes('NO HAY GENTE') || s.includes('WAITLIST') || s.includes('ESPERA') || s.includes('OTRO MATCH')) {
+  } else if (s.includes('TROUBLE') || s.includes('REVISAR') || s.includes('WAITLIST') || s.includes('ESPERA') || s.includes('OTRO MATCH')) {
     bg = 'rgba(249, 115, 22, 0.15)'
     color = '#F97316'
     border = 'rgba(249, 115, 22, 0.4)'
     icon = <AlertTriangle size={13} />
-    if (s.includes('NO HAY') || s.includes('OTRO MATCH')) text = '⚠️ SIN GENTE'
-    else if (s.includes('REVISAR')) text = '⚠️ REVISAR'
+    if (s.includes('REVISAR')) text = '⚠️ REVISAR'
     else if (s.includes('WAITLIST') || s.includes('ESPERA')) text = '⏳ WAITLIST'
     else text = '⚠️ TROUBLE'
   } else {
-    text = '⏳ PENDIENTE'
+    text = '⏳ ' + s
   }
 
 

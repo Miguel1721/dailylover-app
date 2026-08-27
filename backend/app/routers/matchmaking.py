@@ -49,8 +49,13 @@ STATUS_COLORS = {
     "TROUBLEMAKER": "#FF6B35",
     "REFUND": "#EA9999",
     "REFUND DONE": "#D9EAD3",
+    "REFUND APROBADO": "#B6D7A8",
+    "REFUND RECHAZADO": "#F4CCCC",
+    "REFUND PENDIENTE": "#FFF2CC",
+    "REFUND PROCESADO": "#D9EAD3",
     "DESCALIFICADO": "#CCCCCC",
-    "NO HAY GENTE": "#E69138",
+    "NO HAY GENTE": "#FCE5CD",
+    "ESPERA O REFUND": "#F4CCCC",
     "REVISAR": "#D5A6BD",
     "REVISAR POR SI TOCA OTRO MATCH": "#B4A7D6",
     "MATCH DONE": "#6AA84F",
@@ -70,7 +75,8 @@ STATUS_COLORS = {
 
 ALLOWED_STATUSES = [
     "HECHO", "HECHO POR MAPE", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
-    "REFUND", "REFUND DONE", "DESCALIFICADO", "NO HAY GENTE", "REVISAR",
+    "REFUND", "REFUND DONE", "REFUND APROBADO", "REFUND RECHAZADO", "REFUND PENDIENTE", "REFUND PROCESADO",
+    "DESCALIFICADO", "NO HAY GENTE", "ESPERA O REFUND", "REVISAR",
     "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
     "Urgente", "Listo para match", "REQUEST PROFILE UPDATE",
     "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA",
@@ -192,7 +198,16 @@ class IntakeClientRequest(BaseModel):
 class UpdateMatchRequest(BaseModel):
     person_b: Optional[str] = None
     status: Optional[str] = None
+    status_a: Optional[str] = None
+    status_b: Optional[str] = None
     observations: Optional[str] = None
+
+class CheckCompatibilityRequest(BaseModel):
+    person_a_crm_id: Optional[str] = None
+    person_a_name: Optional[str] = None
+    person_b_crm_id: Optional[str] = None
+    person_b_name: Optional[str] = None
+    person_b_url: Optional[str] = None
 
 class UpdateConfirmationRequest(BaseModel):
     person_a_confirmation: Optional[str] = None
@@ -242,7 +257,7 @@ async def get_my_matches(
     query = """
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.psychologist_id,
-            m.city, m.pref, m.plan_tier, m.status, m.approved_by_maria, m.approved_at,
+            m.city, m.pref, m.plan_tier, m.status, m.status_a, m.status_b, m.approved_by_maria, m.approved_at,
             m.observations, m.slot_number, m.is_priority, m.created_at, m.updated_at,
             m.person_a_crm_id, m.person_b_crm_id,
             uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id,
@@ -334,6 +349,8 @@ async def get_my_matches(
             "is_priority": bool(d.get("is_priority")),
             "fecha": d.get("created_at").strftime("%Y-%m-%d %H:%M") if d.get("created_at") else "",
             "status": d.get("status") or "Listo para match",
+            "status_a": d.get("status_a") or "Listo para match",
+            "status_b": d.get("status_b") or "",
             "approved_by_maria": is_approved,
             "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
             "observations": d.get("observations") or "",
@@ -601,6 +618,14 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
 
         updates.append("status = :st")
         params["st"] = st_clean
+
+    if payload.status_a is not None:
+        updates.append("status_a = :sta")
+        params["sta"] = payload.status_a.strip()
+
+    if payload.status_b is not None:
+        updates.append("status_b = :stb")
+        params["stb"] = payload.status_b.strip()
 
     if payload.observations is not None:
         updates.append("observations = :obs")
@@ -1887,16 +1912,121 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
         else:
             pref_val = normalize_pref(orientation_val)
 
+    final_cid = row.crm_id or extracted_crm_id or str(row.id)
+    canonical_crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{final_cid}/" if final_cid else raw_input
+
     return {
         "found": True,
-        "crm_id": row.crm_id or extracted_crm_id or str(row.id),
+        "crm_id": final_cid,
+        "crm_url": canonical_crm_url,
         "name": row.name or "",
         "city": normalize_city(row.city),
         "pref": pref_val,
+        "gender": row.gender or "",
         "plan_tier": normalize_plan(row.plan_tier),
         "psychologist": normalize_psychologist(row.responsable),
         "phone": row.phone or "",
         "email": row.email or ""
+    }
+
+
+@router.post("/check-compatibility")
+async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Valida la compatibilidad entre Persona A y Persona B antes de asignarlas:
+    1. Cita previa completada juntos en el historial.
+    2. Compatibilidad de orientación/preferencia sexual.
+    3. Compatibilidad de ciudad.
+    """
+    issues = []
+    
+    # 1. Obtener perfil de Persona A
+    prof_a = None
+    if payload.person_a_crm_id:
+        res = await db.execute(text("""
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.crm_id = :cid LIMIT 1
+        """), {"cid": str(payload.person_a_crm_id)})
+        prof_a = res.fetchone()
+    if not prof_a and payload.person_a_name:
+        res = await db.execute(text("""
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) LIMIT 1
+        """), {"n": payload.person_a_name.strip()})
+        prof_a = res.fetchone()
+
+    # 2. Obtener perfil de Persona B
+    prof_b = None
+    b_cid = payload.person_b_crm_id
+    if not b_cid and payload.person_b_url:
+        m = re.search(r"(?:client|profile|view)[/=#!]+(\d+)", payload.person_b_url, re.IGNORECASE) or re.search(r"[?&]id=(\d+)", payload.person_b_url, re.IGNORECASE)
+        if m:
+            b_cid = m.group(1)
+            
+    if b_cid:
+        res = await db.execute(text("""
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.crm_id = :cid LIMIT 1
+        """), {"cid": str(b_cid)})
+        prof_b = res.fetchone()
+    if not prof_b and payload.person_b_name:
+        res = await db.execute(text("""
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) LIMIT 1
+        """), {"n": payload.person_b_name.strip()})
+        prof_b = res.fetchone()
+
+    name_a = prof_a.name if prof_a else (payload.person_a_name or "Persona A")
+    name_b = prof_b.name if prof_b else (payload.person_b_name or "Persona B")
+
+    # Regla 1: Cita previa realizada juntos
+    if name_a and name_b:
+        res_date = await db.execute(text("""
+            SELECT COUNT(*) FROM operational_matches
+            WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
+               OR  (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:a))))
+              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'cita confirmada')
+        """), {"a": name_a, "b": name_b})
+        count_dates = res_date.scalar() or 0
+        if count_dates > 0:
+            issues.append(f"Cita previa existente: {name_a} y {name_b} ya tuvieron una cita registrada en el historial ({count_dates} cita/s).")
+
+    # Regla 2: Orientación / Preferencia
+    if prof_a and prof_b:
+        pref_a = (prof_a.orientation or "").lower().strip()
+        pref_b = (prof_b.orientation or "").lower().strip()
+        gender_a = (prof_a.gender or "").lower().strip()
+        gender_b = (prof_b.gender or "").lower().strip()
+
+        if pref_a == "hetero" and pref_b == "gay":
+            issues.append(f"Incompatibilidad de orientación: {name_a} es HETERO y {name_b} es GAY.")
+        elif pref_a == "gay" and pref_b == "hetero":
+            issues.append(f"Incompatibilidad de orientación: {name_a} es GAY y {name_b} es HETERO.")
+        elif pref_a == "lesbiana" and pref_b == "hetero":
+            issues.append(f"Incompatibilidad de orientación: {name_a} es LESBIANA y {name_b} es HETERO.")
+        elif gender_a and gender_b and pref_a == "hetero" and gender_a == gender_b:
+            issues.append(f"Incompatibilidad de género para pareja hetero: Ambos perfiles tienen género '{gender_a}'.")
+
+    # Regla 3: Ciudad
+    if prof_a and prof_b:
+        city_a = normalize_city(prof_a.city) if prof_a.city else ""
+        city_b = normalize_city(prof_b.city) if prof_b.city else ""
+        if city_a and city_b and city_a.lower() != city_b.lower():
+            issues.append(f"Ciudades distintas: {name_a} está en {city_a} y {name_b} está en {city_b}.")
+
+    return {
+        "compatible": len(issues) == 0,
+        "issues": issues,
+        "name_a": name_a,
+        "name_b": name_b,
+        "city_a": prof_a.city if prof_a else "",
+        "city_b": prof_b.city if prof_b else "",
+        "pref_a": prof_a.orientation if prof_a else "",
+        "pref_b": prof_b.orientation if prof_b else ""
     }
 
 

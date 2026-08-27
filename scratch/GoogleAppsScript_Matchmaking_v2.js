@@ -169,7 +169,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
 
   // ── A. EDICIÓN DE PERSONA A (SOLO URL CRM CON REVERSIÓN DURA) ────────────
   if (personACol && col === personACol) {
-    var rawValA = (newValue || sheet.getRange(row, personACol).getValue() || "").toString().trim();
+    var rawValA = (typeof newValue !== "undefined" && newValue ? newValue : (sheet.getRange(row, personACol).getValue() || "")).toString().trim();
     if (rawValA) {
       var isUrlA = rawValA.indexOf("http") >= 0 || rawValA.indexOf("smartmatchapp") >= 0 || rawValA.indexOf("client/") >= 0 || rawValA.indexOf("profile/") >= 0;
       var cellA = getCellData(sheet, row, personACol);
@@ -184,9 +184,11 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
       }
 
       if (isUrlA) {
-        var crmA = fetchProfileFromBackend(rawValA);
+        var crmIdA = extractCrmIdFromUrl(rawValA);
+        var crmA = fetchProfileFromBackend(crmIdA || rawValA);
         if (crmA && crmA.found && crmA.name) {
-          var richA = SpreadsheetApp.newRichTextValue().setText(crmA.name).setLinkUrl(rawValA).build();
+          var canonUrlA = buildCanonicalCrmUrl(crmA.crm_id || crmIdA, rawValA);
+          var richA = SpreadsheetApp.newRichTextValue().setText(crmA.name).setLinkUrl(canonUrlA).build();
           sheet.getRange(row, personACol).setRichTextValue(richA).setBackground(null).clearNote();
           protegerCeldaPersona(sheet, row, personACol, crmA.name, "Persona A");
         }
@@ -195,9 +197,9 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
     return;
   }
 
-  // ── B. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B (SOLO URL CRM CON REVERSIÓN DURA)
+  // ── B. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B (SOLO URL CRM CON VALIDACIÓN DE COMPATIBILIDAD)
   if (personBCol && col === personBCol) {
-    var rawValB = (newValue || sheet.getRange(row, personBCol).getValue() || "").toString().trim();
+    var rawValB = (typeof newValue !== "undefined" && newValue ? newValue : (sheet.getRange(row, personBCol).getValue() || "")).toString().trim();
     if (rawValB) {
       var isUrlB = rawValB.indexOf("http") >= 0 || rawValB.indexOf("smartmatchapp") >= 0 || rawValB.indexOf("client/") >= 0 || rawValB.indexOf("profile/") >= 0;
       var cellB = getCellData(sheet, row, personBCol);
@@ -214,12 +216,43 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
 
       var personBCell = cellB;
       if (isUrlB) {
-        var crmB = fetchProfileFromBackend(rawValB);
+        var crmIdB = extractCrmIdFromUrl(rawValB);
+        var crmB = fetchProfileFromBackend(crmIdB || rawValB);
         if (crmB && crmB.found && crmB.name) {
-          var richB = SpreadsheetApp.newRichTextValue().setText(crmB.name).setLinkUrl(rawValB).build();
+          var canonUrlB = buildCanonicalCrmUrl(crmB.crm_id || crmIdB, rawValB);
+          var richB = SpreadsheetApp.newRichTextValue().setText(crmB.name).setLinkUrl(canonUrlB).build();
           sheet.getRange(row, personBCol).setRichTextValue(richB).setBackground(null).clearNote();
           protegerCeldaPersona(sheet, row, personBCol, crmB.name, "Persona B");
-          personBCell = { text: crmB.name, richText: richB, formula: "", crmId: crmB.crm_id };
+          personBCell = { text: crmB.name, richText: richB, formula: "", crmId: crmB.crm_id || crmIdB, link: canonUrlB };
+        }
+      }
+
+      // ── VALIDACIÓN DE COMPATIBILIDAD (Cita Previa, Preferencia, Ciudad) ──
+      var cellA = personACol ? getCellData(sheet, row, personACol) : null;
+      if (cellA && cellA.text && personBCell && personBCell.text) {
+        var compCheck = checkPairCompatibility(cellA, personBCell, sheet, row, headers);
+        if (!compCheck.compatible) {
+          var ui = SpreadsheetApp.getUi();
+          var promptMsg = "⚠️ INCOMPATIBILIDAD DETECTADA EN ESTA PROPUESTA:\n\n" + 
+                          compCheck.issues.map(function(iss) { return "• " + iss; }).join("\n") + 
+                          "\n\n¿Deseas FORZAR y guardar esta asignación de todos modos a pesar de la incompatibilidad?";
+          var resp = ui.alert("Validación de Compatibilidad", promptMsg, ui.ButtonSet.YES_NO);
+          if (resp !== ui.Button.YES) {
+            sheet.getRange(row, personBCol).setValue(oldValue || "");
+            if (psycBCol) sheet.getRange(row, psycBCol).setValue("").setBackground(null);
+            SpreadsheetApp.getActiveSpreadsheet().toast("Asignación cancelada por incompatibilidad.", "Propuesta Cancelada", 6);
+            return;
+          } else {
+            var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACION"] || headers["NOTAS"];
+            if (obsCol) {
+              var currObs = (sheet.getRange(row, obsCol).getValue() || "").toString().trim();
+              var forceTag = "[Compatibilidad Forzada: " + compCheck.issues.join("; ") + "]";
+              if (currObs.indexOf(forceTag) === -1) {
+                var newObs = (currObs ? currObs + "\n" : "") + forceTag;
+                sheet.getRange(row, obsCol).setValue(newObs);
+              }
+            }
+          }
         }
       }
 
@@ -636,12 +669,12 @@ function syncToRefundsQueue(sourceSheetName, sourceRow, data) {
 
 function handleRefundsSheetEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
-  var estadoCol = headers["ESTADO REFUND"];
+  var estadoCol = headers["ESTADO REFUND"] || headers["ESTADO"] || headers["STATUS"];
   if (!estadoCol || col !== estadoCol) return;
 
-  var val = (newValue || sheet.getRange(row, estadoCol).getValue() || "").toString().trim().toUpperCase();
+  var val = (typeof newValue !== "undefined" && newValue ? newValue : (sheet.getRange(row, estadoCol).getValue() || "")).toString().trim().toUpperCase();
 
-  if (val === "REFUND DONE" || val === "APROBADO" || val === "PROCESADO") {
+  if (val.indexOf("APROBADO") >= 0 || val.indexOf("RECHAZADO") >= 0 || val.indexOf("PROCESADO") >= 0 || val.indexOf("DONE") >= 0) {
     var origenCol = headers["ORIGEN (PESTAÑA)"];
     var filaOrigenCol = headers["FILA ORIGEN"];
     var fechaProcCol = headers["FECHA PROCESADO"];
@@ -659,10 +692,11 @@ function handleRefundsSheetEdit(sheet, row, col, newValue, oldValue) {
         var sourceHeaders = getSheetHeaders(sourceSheet);
         var sourceStatusCol = sourceHeaders["STATUS"];
         if (sourceStatusCol) {
-          sourceSheet.getRange(sourceRow, sourceStatusCol).setValue("REFUND DONE");
+          sourceSheet.getRange(sourceRow, sourceStatusCol).setValue(val);
         }
       }
     }
+    Logger.log("✅ Refund procesado: '" + val + "' en fila " + row + " (Fecha: " + nowStr + ")");
   }
 }
 
@@ -1396,8 +1430,12 @@ function extractCrmIdFromUrl(urlOrFormula) {
     return str;
   }
 
-  // 2. Regex universal para SmartMatchApp (client/XXXX, client/#!/XXXX, #!/client/XXXX)
-  var match = str.match(/client\/(\d+)/i) || str.match(/client\/#!\/(\d+)/i) || str.match(/#!\/client\/(\d+)/i);
+  // 2. Regex robusto para SmartMatchApp con hash #!/client/3923/activities/ o client/3923
+  var match = str.match(/client\/#!\/(\d+)/i) || 
+              str.match(/#!\/client\/(\d+)/i) || 
+              str.match(/#\/?client\/(\d+)/i) ||
+              str.match(/(?:client|profile|view)[/=#!]+(\d+)/i) ||
+              str.match(/client\/(\d+)/i);
   if (match && match[1]) {
     return match[1];
   }
@@ -1409,6 +1447,86 @@ function extractCrmIdFromUrl(urlOrFormula) {
   }
 
   return "";
+}
+
+/**
+ * Reconstruye la URL canónica del perfil en SmartMatchApp con el hash completo.
+ */
+function buildCanonicalCrmUrl(crmId, fallbackUrl) {
+  if (crmId && /^\d+$/.test(crmId.toString().trim())) {
+    return "https://dailylover.smartmatchapp.com/#!/client/" + crmId.toString().trim() + "/";
+  }
+  return fallbackUrl || "";
+}
+
+/**
+ * Valida la compatibilidad entre Persona A y Persona B:
+ * 1. Cita previa completada juntos en el historial.
+ * 2. Compatibilidad de orientación / preferencia.
+ * 3. Compatibilidad de ciudad.
+ */
+function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
+  var issues = [];
+  var nameA = (cellA && cellA.text ? cellA.text : "").trim();
+  var nameB = (cellB && cellB.text ? cellB.text : "").trim();
+  var linkA = (cellA && cellA.richText && cellA.richText.getLinkUrl()) ? cellA.richText.getLinkUrl() : (cellA && cellA.link ? cellA.link : "");
+  var linkB = (cellB && cellB.richText && cellB.richText.getLinkUrl()) ? cellB.richText.getLinkUrl() : (cellB && cellB.link ? cellB.link : "");
+  var crmIdA = (cellA && cellA.crmId) ? cellA.crmId : extractCrmIdFromUrl(linkA);
+  var crmIdB = (cellB && cellB.crmId) ? cellB.crmId : extractCrmIdFromUrl(linkB);
+
+  // 1. Consultar endpoint backend /check-compatibility
+  try {
+    var response = UrlFetchApp.fetch(CONFIG.API_BASE_URL + "/api/v1/matchmaking/check-compatibility", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "X-Webhook-Secret": CONFIG.WEBHOOK_SECRET || "" },
+      payload: JSON.stringify({
+        person_a_crm_id: crmIdA,
+        person_a_name: nameA,
+        person_b_crm_id: crmIdB,
+        person_b_name: nameB,
+        person_b_url: linkB
+      }),
+      muteHttpExceptions: true
+    });
+    if (response.getResponseCode() === 200) {
+      var data = JSON.parse(response.getContentText());
+      if (data && data.issues && data.issues.length > 0) {
+        return { compatible: false, issues: data.issues };
+      }
+    }
+  } catch (err) {
+    Logger.log("Aviso al consultar check-compatibility en backend: " + err.message);
+  }
+
+  // 2. Validación local en el Sheet (como respaldo)
+  var cityCol = headers["CITY"] || headers["CIUDAD"];
+  var cityA = cityCol ? (sheet.getRange(row, cityCol).getValue() || "").toString().trim() : "";
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var histSheet = ss.getSheetByName("Corazoncito") || ss.getSheetByName("MATCHES");
+  if (histSheet && nameA && nameB) {
+    var lastRow = Math.min(histSheet.getLastRow(), 2000);
+    if (lastRow > 1) {
+      var vals = histSheet.getRange(2, 1, lastRow - 1, 12).getValues();
+      for (var i = 0; i < vals.length; i++) {
+        var hA = (vals[i][5] || "").toString().trim().toLowerCase();
+        var hB = (vals[i][6] || "").toString().trim().toLowerCase();
+        var hStatus = (vals[i][9] || "").toString().trim().toUpperCase();
+        if (((hA === nameA.toLowerCase() && hB === nameB.toLowerCase()) || 
+             (hA === nameB.toLowerCase() && hB === nameA.toLowerCase())) &&
+            (hStatus.indexOf("DATE") >= 0 || hStatus.indexOf("REALIZAD") >= 0 || hStatus.indexOf("APROBAD") >= 0 || hStatus.indexOf("HECHO") >= 0)) {
+          issues.push("Cita previa existente en el historial del libro entre " + nameA + " y " + nameB);
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    compatible: issues.length === 0,
+    issues: issues
+  };
 }
 
 /**
@@ -1674,18 +1792,21 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
 
   // 0. SI PEGARON UNA URL EN FULLNAME, RESOLVER AUTOMÁTICAMENTE NOMBRE, LINK Y PSICÓLOGA
   if (isUrlA) {
-    var rawUrl = personAName;
-    var crmProfile = fetchProfileFromBackend(rawUrl);
+    var rawUrl = (typeof newValue !== "undefined" && newValue) ? newValue.toString().trim() : personAName;
+    var crmId = extractCrmIdFromUrl(rawUrl);
+    var crmProfile = fetchProfileFromBackend(crmId || rawUrl);
     if (crmProfile && crmProfile.found && crmProfile.name) {
+      var resolvedCrmId = crmProfile.crm_id || crmId;
+      var canonicalUrl = buildCanonicalCrmUrl(resolvedCrmId, rawUrl);
       var richText = SpreadsheetApp.newRichTextValue()
         .setText(crmProfile.name)
-        .setLinkUrl(rawUrl)
+        .setLinkUrl(canonicalUrl)
         .build();
       sheet.getRange(row, fullNameCol).setRichTextValue(richText).setBackground(null).clearNote();
       protegerCeldaPersona(sheet, row, fullNameCol, crmProfile.name, "Persona A (PROFILES)");
       personAName = crmProfile.name;
-      personACell = { text: crmProfile.name, richText: richText, formula: "", crmId: crmProfile.crm_id };
-      Logger.log("✅ URL resuelta a Nombre: '" + crmProfile.name + "' con Link y celda protegida");
+      personACell = { text: crmProfile.name, richText: richText, formula: "", crmId: resolvedCrmId, link: canonicalUrl };
+      Logger.log("✅ URL resuelta a Nombre: '" + crmProfile.name + "' con Link Canónico: '" + canonicalUrl + "' y celda protegida");
 
       if (!rawPsyc && crmProfile.psychologist) {
         rawPsyc = crmProfile.psychologist;
@@ -1713,9 +1834,9 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(row, respCol).clearNote();
   }
 
-  // 1. AUTO-GENERACIÓN DE NO. (ID) Y FECHA EN PROFILES (Dispara cuando FullName y Responsable están completos)
+  // 1. AUTO-GENERACIÓN DE NO. (ID) Y FECHA DE ENTREVISTA EN PROFILES (Dispara cuando FullName y Responsable están completos)
   var noCol = headers["NO."] || headers["NO"] || headers["ID"] || 1;
-  var fechaCol = headers["FECHA"] || headers["DATE"] || 3;
+  var fechaCol = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"] || 3;
 
   if (noCol) {
     var curNo = sheet.getRange(row, noCol).getValue();
@@ -1907,6 +2028,7 @@ function getEstadosPorEtapa() {
   
   var result = {
     PSICOLOGA: [],
+    PERSONAS_DIFICILES: [],
     SERVICIO_CLIENTE: [],
     RESULTADO_CITA: [],
     REFUND: [],
@@ -1935,6 +2057,8 @@ function getEstadosPorEtapa() {
 
     if (etapa === "PSICOLOGA") {
       result.PSICOLOGA.push(estado);
+    } else if (etapa === "PERSONAS_DIFICILES" || etapa === "PERSONAS DIFICILES" || etapa === "DIFICILES") {
+      result.PERSONAS_DIFICILES.push(estado);
     } else if (etapa === "SERVICIO_CLIENTE") {
       result.SERVICIO_CLIENTE.push(estado);
     } else if (etapa === "RESULTADO_CITA") {
@@ -1959,14 +2083,24 @@ function actualizarDesplegablesDinamicos() {
   var psycList = estadosData.PSICOLOGA.length > 0 ? estadosData.PSICOLOGA : [
     "Llenar perfil", "Listo para match", "HECHO", "APROBADO", "NOT APPROVED", "DESCALIFICADO",
     "NO HAY GENTE", "REVISAR", "TROUBLEMAKER", "HECHO POR MAPE", "REQUEST PROFILE UPDATE",
-    "PSIC. URG", "MUJER +50", "REFUND"
+    "PSIC. URG", "MUJER +50", "REFUND", "RECHAZADA POR PSICÓLOGA B"
   ];
   var psycRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(psycList, true)
     .setAllowInvalid(true)
     .build();
 
-  // 2. Regla para Etapa SERVICIO_CLIENTE + RESULTADO_CITA (Pestaña MATCHES)
+  // 2. Regla para Etapa PERSONAS DÍFICILES
+  var difList = [].concat(estadosData.PERSONAS_DIFICILES, estadosData.PSICOLOGA);
+  if (difList.length === 0) {
+    difList = ["NO HAY GENTE", "ESPERA O REFUND", "Listo para match", "HECHO", "REVISAR"];
+  }
+  var difRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(difList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // 3. Regla para Etapa SERVICIO_CLIENTE + RESULTADO_CITA (Pestaña MATCHES)
   var matchesList = [].concat(estadosData.SERVICIO_CLIENTE, estadosData.RESULTADO_CITA);
   if (matchesList.length === 0) {
     matchesList = [
@@ -1981,9 +2115,10 @@ function actualizarDesplegablesDinamicos() {
     .setAllowInvalid(true)
     .build();
 
-  // 3. Regla para Etapa REFUND
+  // 4. Regla para Etapa REFUND
   var refundList = estadosData.REFUND.length > 0 ? estadosData.REFUND : [
-    "REFUND DONE", "REFUND PENDIENTE – NEQUI", "REFUND PENDIENTE – DATOS",
+    "REFUND DONE", "REFUND APROBADO", "REFUND RECHAZADO", "REFUND PENDIENTE", "REFUND PROCESADO",
+    "REFUND PENDIENTE – NEQUI", "REFUND PENDIENTE – DATOS",
     "REFUND PENDIENTE – STRIPE", "REFUND PARCIAL PENDIENTE", "PENDIENTE DE RESPUESTA CLIENTE", "CLIENTE QUIERE ESPERAR"
   ];
   var refundRule = SpreadsheetApp.newDataValidation()
@@ -1991,7 +2126,7 @@ function actualizarDesplegablesDinamicos() {
     .setAllowInvalid(true)
     .build();
 
-  // Aplicar a todas las pestañas de Psicólogas
+  // Aplicar a todas las pestañas
   var allSheets = ss.getSheets();
   for (var i = 0; i < allSheets.length; i++) {
     var s = allSheets[i];
@@ -1999,10 +2134,21 @@ function actualizarDesplegablesDinamicos() {
 
     if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
       var headers = getSheetHeaders(s);
-      var statusCol = headers["STATUS"] || 9;
+      var statusCol = headers["STATUS"] || 10;
+      var statusACol = headers["STATUS A"] || headers["STATUS PERSONA A"];
+      var statusBCol = headers["STATUS B"] || headers["STATUS PERSONA B"];
       var maxRows = Math.min(s.getMaxRows(), 5000);
       if (maxRows > 1) {
-        s.getRange(2, statusCol, maxRows - 1, 1).setDataValidation(psycRule);
+        if (statusCol) s.getRange(2, statusCol, maxRows - 1, 1).setDataValidation(psycRule);
+        if (statusACol) s.getRange(2, statusACol, maxRows - 1, 1).setDataValidation(psycRule);
+        if (statusBCol) s.getRange(2, statusBCol, maxRows - 1, 1).setDataValidation(psycRule);
+      }
+    } else if (sName === "PERSONAS DÍFICILES" || sName === "PERSONAS DIFICILES" || sName === (CONFIG.PRIORITY_SHEET_NAME || "").toUpperCase()) {
+      var dHeaders = getSheetHeaders(s);
+      var dStatusCol = dHeaders["STATUS"] || 8;
+      var dMaxRows = Math.min(s.getMaxRows(), 3000);
+      if (dMaxRows > 1) {
+        s.getRange(2, dStatusCol, dMaxRows - 1, 1).setDataValidation(difRule);
       }
     } else if (sName === "MATCHES") {
       var mHeaders = getSheetHeaders(s);
@@ -2011,9 +2157,9 @@ function actualizarDesplegablesDinamicos() {
       if (mMaxRows > 1) {
         s.getRange(2, matchCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
       }
-    } else if (sName === (CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES").toUpperCase()) {
+    } else if (sName === (CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES").toUpperCase() || sName === "REFUNDS PENDIENTES") {
       var rHeaders = getSheetHeaders(s);
-      var rStatusCol = rHeaders["STATUS"] || 7;
+      var rStatusCol = rHeaders["ESTADO REFUND"] || rHeaders["ESTADO"] || rHeaders["STATUS"] || 7;
       var rMaxRows = Math.min(s.getMaxRows(), 3000);
       if (rMaxRows > 1) {
         s.getRange(2, rStatusCol, rMaxRows - 1, 1).setDataValidation(refundRule);
