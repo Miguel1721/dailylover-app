@@ -2423,10 +2423,11 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(row, matchCol).setBackground(estadosData.COLOR_MAP[statusUpper]);
   }
 
-  // A. REGLA DE RECHAZO: Si alguno rechaza, el match muere y AMBOS vuelven como slot a sus psicólogas
+  // A. REGLA DE RECHAZO TERMINAL: Si alguno rechaza, el match muere y AMBOS vuelven como slot a sus psicólogas
+  // NOTA: 'problemas personales', 'no contestan', 'esperar', 'de viaje', 'reprogramar' son estados normales de Servicio al Cliente, NUNCA son rechazos.
   var REJECTION_KEYWORDS = [
     "NO MATCH", "RECHAZÓ", "RECHAZO", "SIN QUÍMICA", "SIN QUIMICA",
-    "TROUBLEMAKER", "DESCALIFICADO", "PROBLEMAS PERSONALES", "NO CONTESTAN"
+    "TROUBLEMAKER", "DESCALIFICADO", "REFUND"
   ];
   
   var isRejection = false;
@@ -2435,6 +2436,18 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
       isRejection = true;
       break;
     }
+  }
+
+  // Salvaguarda explícita: Estados de seguimiento / espera de Servicio al Cliente NUNCA son rechazos
+  if (statusUpper.indexOf("PROBLEMAS PERSONALES") >= 0 ||
+      statusUpper.indexOf("NO CONTESTAN") >= 0 ||
+      statusUpper.indexOf("ESPERAR") >= 0 ||
+      statusUpper.indexOf("DE VIAJE") >= 0 ||
+      statusUpper.indexOf("REPROGRAMAR") >= 0 ||
+      statusUpper.indexOf("AGENDANDO") >= 0 ||
+      statusUpper.indexOf("POR CONFIRMAR") >= 0 ||
+      statusUpper.indexOf("PENDIENTE") >= 0) {
+    isRejection = false;
   }
 
   if (col === matchCol && isRejection) {
