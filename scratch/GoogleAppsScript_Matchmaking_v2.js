@@ -35,7 +35,7 @@ var CONFIG = {
   REVISION_MARIA_SHEET_NAME: "REVISIÓN MARÍA",
   MATCHES_SHEET_NAME: "MATCHES",
   CONFIG_ESTADOS_SHEET_NAME: "⚙️ CONFIG ESTADOS",
-  MARIA_EMAIL: "dailylover.maria@gmail.com",
+  MARIA_EMAIL: "agente.col.bot@gmail.com",
   PRIORITY_SHEET_NAME: "PERSONAS DÍFICILES",
   PROFILES_SHEET_NAME: "PROFILES",
   TIMEZONE: "America/Bogota",
@@ -1941,9 +1941,12 @@ function ensureRealDateColumn(sheet, headers) {
  * Retorna a Persona A y Persona B a sus respectivas pestañas de psicóloga como slots nuevos.
  */
 function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, rejectionReason) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var headers = getSheetHeaders(matchesSheet);
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
   var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
   var noteMsg = "[RETORNO MATCHES] " + rejectionReason + " (" + todayStr + ")";
+  var missingPsyc = false;
 
   // 1. Retornar Persona A a su psicóloga
   var psycA = findPsychologistForPerson(cellA);
@@ -1962,6 +1965,14 @@ function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, reject
       status: "Listo para match"
     });
     Logger.log("✅ Persona A (" + cellA.text + ") retornada a 'MATCHES " + psycA + "'");
+    matchesSheet.getRange(row, personACol).clearNote();
+  } else {
+    // Si no se encuentra psicóloga para Persona A, marcar en amarillo #FFF2CC con nota explicativa
+    matchesSheet.getRange(row, personACol)
+      .setBackground("#FFF2CC")
+      .setNote("No se encontró psicóloga asignada para '" + cellA.text + "'. Asigne la psicóloga manualmente para crear el slot de retorno.");
+    Logger.log("⚠️ Psicóloga de Persona A ('" + cellA.text + "') no encontrada. Fila " + row + " marcada en amarillo.");
+    missingPsyc = true;
   }
 
   // 2. Retornar Persona B a su psicóloga (si existe)
@@ -1982,18 +1993,32 @@ function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, reject
         status: "Listo para match"
       });
       Logger.log("✅ Persona B (" + cellB.text + ") retornada a 'MATCHES " + psycB + "'");
+      matchesSheet.getRange(row, personBCol).clearNote();
+    } else {
+      // Si no se encuentra psicóloga para Persona B, marcar en amarillo #FFF2CC con nota explicativa
+      matchesSheet.getRange(row, personBCol)
+        .setBackground("#FFF2CC")
+        .setNote("No se encontró psicóloga asignada para '" + cellB.text + "'. Asigne la psicóloga manualmente para crear el slot de retorno.");
+      Logger.log("⚠️ Psicóloga de Persona B ('" + cellB.text + "') no encontrada. Fila " + row + " marcada en amarillo.");
+      missingPsyc = true;
     }
   }
 
-  // Marcar en MATCHES que el retorno fue completado
-  matchesSheet.getRange(row, 1, 1, matchesSheet.getLastColumn()).setBackground("#F4CCCC");
-  SpreadsheetApp.getActiveSpreadsheet().toast("Match cerrado. Ambas personas retornadas a sus psicólogas.", "Rechazo Procesado", 5);
+  if (missingPsyc) {
+    SpreadsheetApp.getActiveSpreadsheet().toast("Match rechazado: una o ambas personas no tienen psicóloga asignada. Celdas marcadas en amarillo.", "Revisión Requerida", 6);
+  } else {
+    // Marcar en MATCHES que el retorno fue completado
+    matchesSheet.getRange(row, 1, 1, matchesSheet.getLastColumn()).setBackground("#F4CCCC");
+    SpreadsheetApp.getActiveSpreadsheet().toast("Match cerrado. Ambas personas retornadas a sus psicólogas.", "Rechazo Procesado", 5);
+  }
 }
 
 /**
  * Busca la psicóloga asignada a una persona consultando PROFILES o el backend.
+ * NUNCA asigna psicóloga por defecto si no la encuentra.
  */
 function findPsychologistForPerson(personCell) {
+  if (!personCell || !personCell.text) return "";
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES");
   
@@ -2025,7 +2050,8 @@ function findPsychologistForPerson(personCell) {
     return normalizePsychologistName(crm.psychologist);
   }
 
-  return "SILVI"; // Default seguro si no se encuentra
+  // Si no se encuentra, retornar vacío (NUNCA asignar a SILVI ni a nadie por defecto)
+  return "";
 }
 
 /**
