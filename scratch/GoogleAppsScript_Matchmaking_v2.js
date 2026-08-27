@@ -167,7 +167,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
     }
   }
 
-  // ── A. EDICIÓN DE PERSONA A (SOLO URL CRM) ────────────────────────────────
+  // ── A. EDICIÓN DE PERSONA A (SOLO URL CRM CON REVERSIÓN DURA) ────────────
   if (personACol && col === personACol) {
     var rawValA = (newValue || sheet.getRange(row, personACol).getValue() || "").toString().trim();
     if (rawValA) {
@@ -176,8 +176,10 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
       var hasLinkA = cellA && cellA.richText && cellA.richText.getLinkUrl();
 
       if (!isUrlA && !hasLinkA) {
-        sheet.getRange(row, personACol).setBackground("#F4CCCC").setNote("⚠️ Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
-        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ En Persona A solo se permite pegar el enlace de SmartMatchApp.", "Formato Inválido", 6);
+        // Bloqueo duro: revertir celda al valor previo (o vaciarla si era nueva)
+        sheet.getRange(row, personACol).setValue(oldValue || "");
+        sheet.getRange(row, personACol).setBackground("#F4CCCC").setNote("⚠️ Operación Inválida: Solo se permite pegar el enlace de SmartMatchApp, no texto libre.");
+        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Operación Inválida: Solo se permite pegar el enlace de SmartMatchApp en Persona A.", "Operación Inválida", 6);
         return;
       }
 
@@ -193,7 +195,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
     return;
   }
 
-  // ── B. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B (SOLO URL CRM) 
+  // ── B. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B (SOLO URL CRM CON REVERSIÓN DURA)
   if (personBCol && col === personBCol) {
     var rawValB = (newValue || sheet.getRange(row, personBCol).getValue() || "").toString().trim();
     if (rawValB) {
@@ -201,10 +203,11 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
       var cellB = getCellData(sheet, row, personBCol);
       var hasLinkB = cellB && cellB.richText && cellB.richText.getLinkUrl();
 
-      // Rechazar texto plano sin URL
+      // Bloqueo duro: rechazar y revertir texto plano sin URL
       if (!isUrlB && !hasLinkB) {
-        sheet.getRange(row, personBCol).setBackground("#F4CCCC").setNote("⚠️ Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
-        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ En Persona B solo se permite pegar el enlace de SmartMatchApp, no texto libre.", "Formato Inválido", 6);
+        sheet.getRange(row, personBCol).setValue(oldValue || "");
+        sheet.getRange(row, personBCol).setBackground("#F4CCCC").setNote("⚠️ Operación Inválida: Solo se permite pegar el enlace de SmartMatchApp, no texto libre.");
+        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Operación Inválida: Solo se permite pegar el enlace de SmartMatchApp en Persona B.", "Operación Inválida", 6);
         if (psycBCol) sheet.getRange(row, psycBCol).setValue("").setBackground(null);
         return;
       }
@@ -267,8 +270,41 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var plan = planCol ? sheet.getRange(row, planCol).getValue().toString().trim() : "";
   var obs = obsCol ? sheet.getRange(row, obsCol).getValue().toString().trim() : "";
 
-  // ── C. DISPARADOR DE FECHA: Únicamente al pasar a HECHO o HECHO POR MAPE ──
+  // ── C.1 VALIDACIÓN BLOQUEANTE PARA HECHO / HECHO POR MAPE (EXIGE LINK CRM EN AMBAS) ──
   if (statusVal === "HECHO" || statusVal === "HECHO POR MAPE") {
+    var hasValidLinkA = personACell && personACell.text && (
+      (personACell.richText && !!personACell.richText.getLinkUrl()) ||
+      (personACell.formula && personACell.formula.indexOf("HYPERLINK") >= 0)
+    );
+    var hasValidLinkB = personBCell && personBCell.text && (
+      (personBCell.richText && !!personBCell.richText.getLinkUrl()) ||
+      (personBCell.formula && personBCell.formula.indexOf("HYPERLINK") >= 0)
+    );
+
+    if (!hasValidLinkA || !hasValidLinkB) {
+      // Bloqueo duro: revertir STATUS al valor previo o Listo para match
+      var revertStatus = oldValue || "Listo para match";
+      sheet.getRange(row, statusCol).setValue(revertStatus);
+      if (revertStatus === "Listo para match") {
+        sheet.getRange(row, statusCol).setBackground("#FFF2CC");
+      }
+
+      var missingFields = [];
+      if (!hasValidLinkA) {
+        missingFields.push("Persona A");
+        if (personACol) sheet.getRange(row, personACol).setBackground("#F4CCCC").setNote("⚠️ Se requiere enlace válido de SmartMatchApp para cerrar el match.");
+      }
+      if (!hasValidLinkB) {
+        missingFields.push("Persona B");
+        if (personBCol) sheet.getRange(row, personBCol).setBackground("#F4CCCC").setNote("⚠️ Se requiere enlace válido de SmartMatchApp para cerrar el match.");
+      }
+
+      var msg = "⛔ Operación Bloqueada: No se puede marcar como HECHO. " + missingFields.join(" y ") + " deben tener un enlace válido de SmartMatchApp asignado.";
+      SpreadsheetApp.getActiveSpreadsheet().toast(msg, "Validación Requerida", 8);
+      Logger.log("BLOQUEADO HECHO en fila " + row + ": " + missingFields.join(" y ") + " sin enlace válido.");
+      return;
+    }
+
     if (fechaCol) {
       var currentFecha = sheet.getRange(row, fechaCol).getValue();
       if (!currentFecha || currentFecha.toString().trim() === "") {
@@ -1627,8 +1663,9 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var hasLinkA = personACell && personACell.richText && personACell.richText.getLinkUrl();
 
   if (!isUrlA && !hasLinkA) {
-    sheet.getRange(row, fullNameCol).setBackground("#F4CCCC").setNote("⚠️ Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
-    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ En PROFILES solo se permite pegar el enlace de SmartMatchApp.", "Formato Inválido", 6);
+    sheet.getRange(row, fullNameCol).setValue(oldValue || "");
+    sheet.getRange(row, fullNameCol).setBackground("#F4CCCC").setNote("⚠️ Operación Inválida: Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
+    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Operación Inválida: En PROFILES solo se permite pegar el enlace de SmartMatchApp.", "Operación Inválida", 6);
     return;
   }
 

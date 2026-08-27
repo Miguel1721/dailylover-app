@@ -589,6 +589,16 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
         st_clean = payload.status.strip()
         if st_clean not in ALLOWED_STATUSES:
             raise HTTPException(status_code=400, detail=f"Estado no válido: {st_clean}")
+
+        # Validación estricta para HECHO: Persona A y Persona B requeridas
+        if st_clean in ("HECHO", "HECHO POR MAPE"):
+            effective_person_b = params.get("pb") or match_row.person_b
+            if not match_row.person_a or not effective_person_b:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Operación Bloqueada: No se puede marcar como HECHO. Persona A y Persona B deben tener un perfil válido de SmartMatchApp asignado."
+                )
+
         updates.append("status = :st")
         params["st"] = st_clean
 
