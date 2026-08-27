@@ -757,8 +757,8 @@ function getTrueLastRow(sheet, checkColIndex) {
  * Reconstruye la pestaña 'REVISIÓN MARÍA' consolidando todos los matches con
  * STATUS = HECHO o HECHO POR MAPE de todas las psicólogas para revisión de María.
  *
- * Columnas oficiales:
- * PSICÓLOGA | CITY | PREF | PLAN | PERSON A | PERSON B | FECHA | OBSERVACIONES | ORIGEN (PESTAÑA) | FILA ORIGEN | APROBAR
+ * Columnas exactas:
+ * ID MATCH | Persona A | Origen pestaña (A) | Observaciones (A) | Persona B | Origen pestaña (B) | Observaciones (B) | Aprobar | NOTAS MARÍA
  */
 function reconstruirRevisionMaria() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -766,7 +766,7 @@ function reconstruirRevisionMaria() {
   var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
 
   var headers = [
-    "PSICÓLOGA", "CITY", "PREF", "PLAN", "PERSON A", "PERSON B", "FECHA", "OBSERVACIONES", "ORIGEN (PESTAÑA)", "FILA ORIGEN", "APROBAR"
+    "ID MATCH", "Persona A", "Origen pestaña (A)", "Observaciones (A)", "Persona B", "Origen pestaña (B)", "Observaciones (B)", "Aprobar", "NOTAS MARÍA"
   ];
 
   if (!revisionSheet) {
@@ -792,6 +792,7 @@ function reconstruirRevisionMaria() {
   var collectedRows = [];
   var collectedRichTextsA = [];
   var collectedRichTextsB = [];
+  var seenPairs = {};
 
   for (var s = 0; s < allSheets.length; s++) {
     var curSheet = allSheets[s];
@@ -806,10 +807,6 @@ function reconstruirRevisionMaria() {
       var statusCol = sHeaders["STATUS"];
       var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
       var personBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"] || sHeaders["CANDIDATO"] || sHeaders["MATCH"];
-      var cityCol = sHeaders["CITY"] || sHeaders["CIUDAD"];
-      var prefCol = sHeaders["PREF"] || sHeaders["PREFERENCIA"];
-      var planCol = sHeaders["PLAN"] || sHeaders["PLAN TIER"];
-      var fechaCol = sHeaders["FECHA"];
       var obsCol = sHeaders["OBSERVACIONES"] || sHeaders["OBSERVACION"] || sHeaders["NOTAS"];
 
       if (!statusCol || !personACol) continue;
@@ -818,30 +815,19 @@ function reconstruirRevisionMaria() {
       var totalRows = curSheet.getLastRow();
       if (totalRows <= 1 || lastCol < 1) continue;
 
-      // ⚡ LECTURA BATCH ULTRA-RÁPIDA (1 sola llamada RPC por pestaña)
       var sheetValues = curSheet.getRange(1, 1, totalRows, lastCol).getValues();
       var sheetRichTexts = curSheet.getRange(1, 1, totalRows, lastCol).getRichTextValues();
 
       var statusIdx = statusCol - 1;
       var personAIdx = personACol - 1;
       var personBIdx = personBCol ? personBCol - 1 : -1;
-      var cityIdx = cityCol ? cityCol - 1 : -1;
-      var prefIdx = prefCol ? prefCol - 1 : -1;
-      var planIdx = planCol ? planCol - 1 : -1;
-      var fechaIdx = fechaCol ? fechaCol - 1 : -1;
       var obsIdx = obsCol ? obsCol - 1 : -1;
 
       for (var r = 1; r < sheetValues.length; r++) {
         var rowVal = sheetValues[r];
         var st = (rowVal[statusIdx] || "").toString().trim().toUpperCase();
 
-        if (st === "HECHO" || st === "HECHO POR MAPE") {
-          var realRow = r + 1; // 1-indexed row
-
-          var cityVal = cityIdx !== -1 ? (rowVal[cityIdx] || "").toString().trim() : "";
-          var prefVal = prefIdx !== -1 ? (rowVal[prefIdx] || "").toString().trim() : "";
-          var planVal = planIdx !== -1 ? (rowVal[planIdx] || "").toString().trim() : "";
-          var fechaVal = fechaIdx !== -1 ? (rowVal[fechaIdx] || "") : "";
+        if (st === "HECHO" || st === "HECHO POR MAPE" || st === "APROBADO") {
           var obsVal = obsIdx !== -1 ? (rowVal[obsIdx] || "").toString().trim() : "";
 
           var richTextA = sheetRichTexts[r][personAIdx];
@@ -850,10 +836,22 @@ function reconstruirRevisionMaria() {
           var textA = richTextA ? richTextA.getText() : (rowVal[personAIdx] || "").toString().trim();
           var textB = richTextB ? richTextB.getText() : (personBIdx !== -1 ? (rowVal[personBIdx] || "").toString().trim() : "");
 
-          if (!textA) continue;
+          if (!textA || !textB) continue;
+
+          var pairKey = getCanonicalPairId(textA, textB);
+          if (seenPairs[pairKey]) continue; // Evitar duplicados entre psicóloga origen y espejo
+          seenPairs[pairKey] = true;
+
+          var psycB = findPsychologistForPerson({ text: textB });
+          var isCross = (psycB && psycB !== psycName);
+          var origenTabB = isCross ? "MATCHES " + psycB : curName;
+          var obsB = isCross ? "[Pendiente de revisión]" : obsVal;
+          var aprobarInitial = isCross ? "ESPERANDO APROBACIÓN DE " + psycB : "APROBADO POR PSICÓLOGA (LISTO PARA MARÍA)";
+
+          var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
 
           collectedRows.push([
-            psycName, cityVal, prefVal, planVal, textA, textB, fechaVal, obsVal, curName, realRow, ""
+            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, ""
           ]);
 
           collectedRichTextsA.push(richTextA);
@@ -872,9 +870,9 @@ function reconstruirRevisionMaria() {
     var targetRange = revisionSheet.getRange(2, 1, collectedRows.length, headers.length);
     targetRange.setValues(collectedRows);
 
-    // Inyectar hipervínculos en batch por columna
-    var rangeA = revisionSheet.getRange(2, 5, collectedRows.length, 1);
-    var rangeB = revisionSheet.getRange(2, 6, collectedRows.length, 1);
+    // Inyectar hipervínculos en batch en Persona A (Col 2) y Persona B (Col 5)
+    var rangeA = revisionSheet.getRange(2, 2, collectedRows.length, 1);
+    var rangeB = revisionSheet.getRange(2, 5, collectedRows.length, 1);
 
     var richColA = collectedRichTextsA.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
     var richColB = collectedRichTextsB.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
@@ -1900,7 +1898,8 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
 
 /**
  * Sincroniza el match a la pestaña 'REVISIÓN MARÍA'.
- * Utiliza getCanonicalPairId para evitar duplicados sin importar el orden de Persona A / Persona B.
+ * Estructura exacta de 9 columnas:
+ * ID MATCH | Persona A | Origen pestaña (A) | Observaciones (A) | Persona B | Origen pestaña (B) | Observaciones (B) | Aprobar | NOTAS MARÍA
  */
 function syncToRevisionMaria(matchData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1912,18 +1911,14 @@ function syncToRevisionMaria(matchData) {
 
   var headers = getSheetHeaders(revSheet);
   var idCol = headers["ID MATCH"] || headers["ID"] || 1;
-  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 2;
-  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 3;
-  var cityCol = headers["CITY"] || headers["CIUDAD"] || 4;
-  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 5;
-  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 6;
-  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 7;
-  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 8;
-  var fechaCol = headers["FECHA"] || headers["FECHA PROPUESTA"] || 9;
-  var obsCol = headers["OBSERVACIONES"] || 10;
-  var origenTabCol = headers["ORIGEN"] || headers["PESTAÑA ORIGEN"] || 11;
-  var origenFilaCol = headers["FILA ORIGEN"] || 12;
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 13;
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 2;
+  var origenACol = headers["ORIGEN PESTAÑA (A)"] || headers["ORIGEN (A)"] || headers["ORIGEN PESTAÑA A"] || 3;
+  var obsACol = headers["OBSERVACIONES (A)"] || headers["OBSERVACION (A)"] || headers["OBSERVACIONES A"] || 4;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+  var origenBCol = headers["ORIGEN PESTAÑA (B)"] || headers["ORIGEN (B)"] || headers["ORIGEN PESTAÑA B"] || 6;
+  var obsBCol = headers["OBSERVACIONES (B)"] || headers["OBSERVACION (B)"] || headers["OBSERVACIONES B"] || 7;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 8;
+  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 9;
 
   var lastRow = revSheet.getLastRow();
   var targetRow = null;
@@ -1948,18 +1943,18 @@ function syncToRevisionMaria(matchData) {
   var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
   var isCrossMatch = (matchData.psycA && matchData.psycB && matchData.psycA !== matchData.psycB);
 
-  // Si YA EXISTÍA la fila en REVISIÓN MARÍA (es la segunda psicóloga aprobando su fila espejo)
+  // Si YA EXISTÍA la fila en REVISIÓN MARÍA (la segunda psicóloga aprobando su fila espejo)
   if (targetRow && existingRowData) {
     var prevStatus = (existingRowData[aprobarCol - 1] || "").toString().trim();
     
-    // Si la segunda psicóloga marca HECHO / APROBADO en su espejo
+    // Si la segunda psicóloga aprueba en su pestaña espejo
     if (isCrossMatch && (matchData.currentPsyc === matchData.psycB || prevStatus.indexOf("ESPERANDO") >= 0)) {
       var fullApprovalStatus = "APROBADO POR AMBAS PSICÓLOGAS (LISTO PARA MARÍA)";
       revSheet.getRange(targetRow, aprobarCol).setValue(fullApprovalStatus).setBackground("#CFE2F3");
       
-      var doubleObs = "[DOBLE APROBACIÓN COMPLETA] " + matchData.psycA + " y " + matchData.psycB + " han aprobado (" + todayStr + ")" + (matchData.obs ? " | " + matchData.obs : "");
-      if (obsCol) revSheet.getRange(targetRow, obsCol).setValue(doubleObs);
-      if (fechaCol) revSheet.getRange(targetRow, fechaCol).setValue(todayStr);
+      // Actualizar Origen B y Observaciones B con los datos de Psicóloga B
+      if (origenBCol) revSheet.getRange(targetRow, origenBCol).setValue(matchData.origenTab);
+      if (obsBCol) revSheet.getRange(targetRow, obsBCol).setValue(matchData.obs || "[Aprobado por " + matchData.psycB + "]");
 
       Logger.log("🎉 Match de doble aprobación completado en REVISIÓN MARÍA (Fila " + targetRow + ")");
       SpreadsheetApp.getActiveSpreadsheet().toast("Doble aprobación completada para " + matchData.personACell.text + " ↔ " + matchData.personBCell.text, "Listo para María", 5);
@@ -1976,26 +1971,25 @@ function syncToRevisionMaria(matchData) {
   var matchUid = "MATCH-" + targetPairKey.replace(/___/g, "-").toUpperCase();
   if (idCol) revSheet.getRange(targetRow, idCol).setValue(matchUid);
 
-  if (psycACol) revSheet.getRange(targetRow, psycACol).setValue(matchData.psycA);
-  if (psycBCol) revSheet.getRange(targetRow, psycBCol).setValue(matchData.psycB);
-  if (cityCol) revSheet.getRange(targetRow, cityCol).setValue(matchData.city);
-  if (prefCol) revSheet.getRange(targetRow, prefCol).setValue(matchData.pref);
-  if (planCol) revSheet.getRange(targetRow, planCol).setValue(matchData.planA);
-
   if (personACol) {
     if (matchData.personACell.richText) revSheet.getRange(targetRow, personACol).setRichTextValue(matchData.personACell.richText);
     else revSheet.getRange(targetRow, personACol).setValue(matchData.personACell.text);
   }
+  if (origenACol) revSheet.getRange(targetRow, origenACol).setValue(matchData.origenTab);
+  if (obsACol) revSheet.getRange(targetRow, obsACol).setValue(matchData.obs || "");
 
   if (personBCol) {
     if (matchData.personBCell.richText) revSheet.getRange(targetRow, personBCol).setRichTextValue(matchData.personBCell.richText);
     else revSheet.getRange(targetRow, personBCol).setValue(matchData.personBCell.text);
   }
-
-  if (fechaCol) revSheet.getRange(targetRow, fechaCol).setValue(todayStr);
-  if (obsCol) revSheet.getRange(targetRow, obsCol).setValue(matchData.obs || "");
-  if (origenTabCol) revSheet.getRange(targetRow, origenTabCol).setValue(matchData.origenTab);
-  if (origenFilaCol) revSheet.getRange(targetRow, origenFilaCol).setValue(matchData.origenFila);
+  if (origenBCol) {
+    var tabBName = (matchData.psycB && matchData.psycB !== matchData.psycA) ? "MATCHES " + matchData.psycB : matchData.origenTab;
+    revSheet.getRange(targetRow, origenBCol).setValue(tabBName);
+  }
+  if (obsBCol) {
+    var initialObsB = (matchData.psycB && matchData.psycB !== matchData.psycA) ? "[Pendiente de revisión por " + matchData.psycB + "]" : matchData.obs || "";
+    revSheet.getRange(targetRow, obsBCol).setValue(initialObsB);
+  }
 
   if (aprobarCol) {
     var initialStatus = "";
@@ -2023,27 +2017,30 @@ function syncToRevisionMaria(matchData) {
  */
 function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 13;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 8;
   if (col !== aprobarCol) return;
 
   var val = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim().toUpperCase();
   if (!val) return;
 
-  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 7;
-  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 8;
-  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 2;
-  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 3;
-  var cityCol = headers["CITY"] || headers["CIUDAD"] || 4;
-  var obsCol = headers["OBSERVACIONES"] || 10;
-  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 14;
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 2;
+  var origenACol = headers["ORIGEN PESTAÑA (A)"] || headers["ORIGEN (A)"] || headers["ORIGEN PESTAÑA A"] || 3;
+  var obsACol = headers["OBSERVACIONES (A)"] || headers["OBSERVACION (A)"] || headers["OBSERVACIONES A"] || 4;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+  var origenBCol = headers["ORIGEN PESTAÑA (B)"] || headers["ORIGEN (B)"] || headers["ORIGEN PESTAÑA B"] || 6;
+  var obsBCol = headers["OBSERVACIONES (B)"] || headers["OBSERVACION (B)"] || headers["OBSERVACIONES B"] || 7;
+  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 9;
 
   var cellA = getCellData(sheet, row, personACol);
   var cellB = getCellData(sheet, row, personBCol);
-  var psycA = (sheet.getRange(row, psycACol).getValue() || "").toString().trim();
-  var psycB = (sheet.getRange(row, psycBCol).getValue() || "").toString().trim();
-  var city = (sheet.getRange(row, cityCol).getValue() || "").toString().trim();
-  var obs = (sheet.getRange(row, obsCol).getValue() || "").toString().trim();
+  var origenA = (sheet.getRange(row, origenACol).getValue() || "").toString().trim();
+  var origenB = (sheet.getRange(row, origenBCol).getValue() || "").toString().trim();
+  var obsA = (sheet.getRange(row, obsACol).getValue() || "").toString().trim();
+  var obsB = (sheet.getRange(row, obsBCol).getValue() || "").toString().trim();
   var notasMaria = notasMariaCol ? (sheet.getRange(row, notasMariaCol).getValue() || "").toString().trim() : "";
+
+  var psycA = origenA.replace(/^MATCHES\s*/i, "").trim();
+  var psycB = origenB.replace(/^MATCHES\s*/i, "").trim();
 
   if (!cellA || !cellA.text) return;
 
@@ -2077,15 +2074,18 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 
     withScriptLock(function() {
       // 1. Insertar en zona inferior de MATCHES
+      var combinedObs = "[" + psycA + (psycB && psycB !== psycA ? " ↔ " + psycB : "") + "] " + (obsA ? "Obs A: " + obsA : "") + (obsB && obsB !== obsA ? " | Obs B: " + obsB : "") + (notasMaria ? " | Nota María: " + notasMaria : "");
       insertMatchInLowerZone(matchesSheet, {
         personACell: cellA,
         personBCell: cellB,
-        city: city,
-        observaciones: (psycA ? "[" + psycA + (psycB && psycB !== psycA ? " ↔ " + psycB : "") + "] " : "") + (obs || "") + (notasMaria ? " | Nota María: " + notasMaria : "")
+        city: "",
+        observaciones: combinedObs
       });
 
       // 2. Actualizar estado a APROBADO en la pestaña de Psicóloga A
-      updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8");
+      if (psycA) {
+        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8");
+      }
 
       // 3. Actualizar estado a APROBADO en la pestaña de Psicóloga B (si es distinta)
       if (psycB && psycB !== psycA) {
@@ -2104,19 +2104,21 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
       var motivoRechazo = notasMaria ? "Rechazado por María: " + notasMaria : "NOT APPROVED por María";
 
       // 1. Actualizar estado a NOT APPROVED en pestaña de Psicóloga A y re-generar slot
-      updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC");
-      var sheetA = findPsychologistSheet(psycA);
-      if (sheetA) {
-        appendNewRetryRow(sheetA, getSheetHeaders(sheetA), {
-          city: city,
-          pref: "",
-          plan: "",
-          personACell: cellA,
-          personBCell: null,
-          fecha: "",
-          status: "Listo para match",
-          observaciones: motivoRechazo
-        });
+      if (psycA) {
+        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC");
+        var sheetA = findPsychologistSheet(psycA);
+        if (sheetA) {
+          appendNewRetryRow(sheetA, getSheetHeaders(sheetA), {
+            city: "",
+            pref: "",
+            plan: "",
+            personACell: cellA,
+            personBCell: null,
+            fecha: "",
+            status: "Listo para match",
+            observaciones: motivoRechazo
+          });
+        }
       }
 
       // 2. Actualizar estado a NOT APPROVED en pestaña de Psicóloga B y re-generar slot
@@ -2125,7 +2127,7 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
         var sheetB = findPsychologistSheet(psycB);
         if (sheetB) {
           appendNewRetryRow(sheetB, getSheetHeaders(sheetB), {
-            city: city,
+            city: "",
             pref: "",
             plan: "",
             personACell: cellB,
@@ -2157,17 +2159,19 @@ function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgCo
   var statusCol = headers["STATUS"] || 9;
 
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
+  if (lastRow <= 1) return;
 
-  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  for (var i = 0; i < values.length; i++) {
-    var rowA = (values[i][personACol - 1] || "").toString().toLowerCase().trim();
-    var rowB = (values[i][personBCol - 1] || "").toString().toLowerCase().trim();
-    if (rowA === nameA.toLowerCase().trim() && (rowB === nameB.toLowerCase().trim() || !nameB)) {
-      var targetRow = i + 2;
-      sheet.getRange(targetRow, statusCol).setValue(newStatus);
-      if (bgColor) sheet.getRange(targetRow, statusCol).setBackground(bgColor);
-      Logger.log("✅ Estado actualizado a '" + newStatus + "' en '" + sheet.getName() + "' (Fila " + targetRow + ")");
+  var data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  var targetPairKey = getCanonicalPairId(nameA, nameB);
+
+  for (var i = 0; i < data.length; i++) {
+    var rA = (data[i][personACol - 1] || "").toString();
+    var rB = (data[i][personBCol - 1] || "").toString();
+    if (getCanonicalPairId(rA, rB) === targetPairKey) {
+      var row = i + 2;
+      sheet.getRange(row, statusCol).setValue(newStatus);
+      if (bgColor) sheet.getRange(row, statusCol).setBackground(bgColor);
+      Logger.log("✅ Estado actualizado en '" + sheet.getName() + "' (Fila " + row + ") -> " + newStatus);
       break;
     }
   }
