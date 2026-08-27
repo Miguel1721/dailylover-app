@@ -186,6 +186,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
         if (crmA && crmA.found && crmA.name) {
           var richA = SpreadsheetApp.newRichTextValue().setText(crmA.name).setLinkUrl(rawValA).build();
           sheet.getRange(row, personACol).setRichTextValue(richA).setBackground(null).clearNote();
+          protegerCeldaPersona(sheet, row, personACol, crmA.name, "Persona A");
         }
       }
     }
@@ -214,6 +215,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
         if (crmB && crmB.found && crmB.name) {
           var richB = SpreadsheetApp.newRichTextValue().setText(crmB.name).setLinkUrl(rawValB).build();
           sheet.getRange(row, personBCol).setRichTextValue(richB).setBackground(null).clearNote();
+          protegerCeldaPersona(sheet, row, personBCol, crmB.name, "Persona B");
           personBCell = { text: crmB.name, richText: richB, formula: "", crmId: crmB.crm_id };
         }
       }
@@ -664,11 +666,11 @@ function appendNewRetryRow(sheet, headers, data) {
     }
   }
 
-  // 3. PRESERVAR HIPERVÍNCULO CRM DE PERSONA A
-  if (headers["PERSON A"] && data.personACell) {
-    setCellData(sheet, newRow, headers["PERSON A"], data.personACell);
-  } else if (headers["PERSONA A"] && data.personACell) {
-    setCellData(sheet, newRow, headers["PERSONA A"], data.personACell);
+  // 3. PRESERVAR HIPERVÍNCULO CRM DE PERSONA A Y PROTEGER CELDA
+  var pACol = headers["PERSON A"] || headers["PERSONA A"];
+  if (pACol && data.personACell) {
+    setCellData(sheet, newRow, pACol, data.personACell);
+    protegerCeldaPersona(sheet, newRow, pACol, data.personACell.text, "Persona A");
   }
 
   if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
@@ -1201,16 +1203,17 @@ function appendPrioritySlotRow(sheet, headers, data) {
     }
   }
 
-  if (headers["PERSON A"] && data.personACell) {
-    setCellData(sheet, newRow, headers["PERSON A"], data.personACell);
-  } else if (headers["PERSONA A"] && data.personACell) {
-    setCellData(sheet, newRow, headers["PERSONA A"], data.personACell);
+  var pACol = headers["PERSON A"] || headers["PERSONA A"];
+  if (pACol && data.personACell) {
+    setCellData(sheet, newRow, pACol, data.personACell);
+    protegerCeldaPersona(sheet, newRow, pACol, data.personACell.text, "Persona A");
   }
 
   var personBCol = headers["PERSON B"] || headers["PERSONA B"];
   if (personBCol) {
     if (data.personBCell) {
       setCellData(sheet, newRow, personBCol, data.personBCell);
+      protegerCeldaPersona(sheet, newRow, personBCol, data.personBCell.text, "Persona B");
     } else {
       sheet.getRange(newRow, personBCol).setValue("");
     }
@@ -1642,9 +1645,10 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
         .setLinkUrl(rawUrl)
         .build();
       sheet.getRange(row, fullNameCol).setRichTextValue(richText).setBackground(null).clearNote();
+      protegerCeldaPersona(sheet, row, fullNameCol, crmProfile.name, "Persona A (PROFILES)");
       personAName = crmProfile.name;
       personACell = { text: crmProfile.name, richText: richText, formula: "", crmId: crmProfile.crm_id };
-      Logger.log("✅ URL resuelta a Nombre: '" + crmProfile.name + "' con Link");
+      Logger.log("✅ URL resuelta a Nombre: '" + crmProfile.name + "' con Link y celda protegida");
 
       if (!rawPsyc && crmProfile.psychologist) {
         rawPsyc = crmProfile.psychologist;
@@ -2444,6 +2448,36 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
       sheet.getRange(row, aprobarCol).setBackground("#EA9999").setValue("REFUND");
       ss.toast("Match marcado como Refund por María y enrutado a REFUNDS PENDIENTES.", "Refund Procesado", 5);
     });
+  }
+}
+
+/**
+ * Aplica protección de rango nativa (Range.protect) sobre la celda de Persona A o Persona B
+ * una vez que tiene su link de CRM asignado, impidiendo que pueda ser borrada o modificada
+ * por la psicóloga (solo editable por María).
+ */
+function protegerCeldaPersona(sheet, row, col, personName, role) {
+  if (!sheet || row < 2 || !col) return;
+  try {
+    var cellRange = sheet.getRange(row, col);
+    var desc = "Protección " + (role || "Persona") + ": " + (personName || "") + " (Solo editable por María)";
+    var protection = cellRange.protect().setDescription(desc);
+    
+    // Permitir edición únicamente a María
+    if (CONFIG.MARIA_EMAIL) {
+      try { protection.addEditor(CONFIG.MARIA_EMAIL); } catch (e) {}
+    }
+    
+    var editors = protection.getEditors();
+    for (var i = 0; i < editors.length; i++) {
+      var email = editors[i].getEmail();
+      if (email !== CONFIG.MARIA_EMAIL) {
+        protection.removeEditor(editors[i]);
+      }
+    }
+    Logger.log("🔒 Celda " + (role || "Persona") + " (Fila " + row + ", Col " + col + ") protegida con éxito en '" + sheet.getName() + "'");
+  } catch (err) {
+    Logger.log("Aviso al proteger celda: " + err.message);
   }
 }
 
