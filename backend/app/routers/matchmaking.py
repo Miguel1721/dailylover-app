@@ -314,6 +314,10 @@ async def get_my_matches(
             if d.get("profile_plan_tier"):
                 final_plan = normalize_plan(d.get("profile_plan_tier"))
 
+        p_b_psyc = normalize_psychologist(d.get("psyc_of_b")) or ""
+        curr_psyc = normalize_psychologist(d.get("psychologist_name")) or d.get("psychologist_name")
+        is_cross_locked = bool(p_b_psyc and p_b_psyc != curr_psyc and (d.get("status") in ("HECHO", "HECHO POR MAPE", "REVISAR", "PROPUESTO")))
+
         matches.append({
             "id": d.get("id"),
             "city": normalize_city(final_city),
@@ -323,19 +327,19 @@ async def get_my_matches(
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
-            "psychologist_b": normalize_psychologist(d.get("psyc_of_b")) or "",
+            "psychologist_b": p_b_psyc,
             "is_priority": bool(d.get("is_priority")),
             "fecha": d.get("created_at").strftime("%Y-%m-%d %H:%M") if d.get("created_at") else "",
             "status": d.get("status") or "Listo para match",
             "approved_by_maria": is_approved,
             "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
             "observations": d.get("observations") or "",
-            "psychologist_name": normalize_psychologist(d.get("psychologist_name")) or d.get("psychologist_name"),
+            "psychologist_name": curr_psyc,
             "slot_number": d.get("slot_number") or 1,
             "status_color": STATUS_COLORS.get(d.get("status"), "#FFF2CC"),
             "plan_color": PLAN_COLORS.get(final_plan, "#F3F3F3"),
             "pref_color": PREF_COLORS.get(final_pref, "#CFE2F3"),
-            "is_locked": is_approved
+            "is_locked": is_approved or is_cross_locked
         })
 
     return {"matches": matches, "total": len(matches)}

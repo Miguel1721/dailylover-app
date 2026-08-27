@@ -222,6 +222,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   if (statusVal === "HECHO" || statusVal === "HECHO POR MAPE" || statusVal === "APROBADO") {
     if (personACell && personBCell && personBName) {
       var ownerPsycB = findPsychologistForPerson(personBCell);
+      var isMirrorRow = (obs && obs.indexOf("[ESPEJO]") >= 0) || (headers["PSICÓLOGA DE B"] && sheet.getRange(row, headers["PSICÓLOGA DE B"]).getValue() !== "");
 
       // Si es un match cruzado (Psicóloga A != Psicóloga B)
       if (ownerPsycB && ownerPsycB !== currentPsyc) {
@@ -230,10 +231,11 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
           crearOActualizarFilaEspejo(sheet, row, currentPsyc, ownerPsycB, personACell, personBCell, city, pref, plan, obs);
 
           // 2. Sincronizar a REVISIÓN MARÍA con estado de doble aprobación
+          var statusAprob = isMirrorRow ? "APROBADO POR PSICÓLOGAS" : (statusVal === "APROBADO" ? "APROBADO POR PSICÓLOGAS" : "ESPERANDO APROBACIÓN DE " + ownerPsycB);
           syncToRevisionMaria({
             currentPsyc: currentPsyc,
-            psycA: currentPsyc,
-            psycB: ownerPsycB,
+            psycA: isMirrorRow ? ownerPsycB : currentPsyc,
+            psycB: isMirrorRow ? currentPsyc : ownerPsycB,
             city: city,
             pref: pref,
             planA: plan,
@@ -242,11 +244,25 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
             obs: obs,
             origenTab: sheet.getName(),
             origenFila: row,
-            statusAprobacion: (statusVal === "APROBADO" ? "APROBADO POR PSICÓLOGAS" : "ESPERANDO APROBACIÓN DE " + ownerPsycB)
+            statusAprobacion: statusAprob
           });
+
+          // 3. BLOQUEO INMEDIATO DE LA FILA:
+          // Si es Psicóloga A proponiendo -> Bloquear fila de A para que no quede huérfana la fila espejo en B.
+          // Si es Psicóloga B validando fila espejo -> Bloquear fila de B tras su aprobación.
+          var lockDesc = isMirrorRow
+            ? ("Fila Espejo Validada por " + currentPsyc + " (Solo editable por María)")
+            : ("Fila Bloqueada: Propuesta Cruzada enviada a " + ownerPsycB + " (Solo editable por María)");
+          
+          bloquearFilaPsicologa(sheet, row, lockDesc);
         });
+
+        var toastMsg = isMirrorRow
+          ? ("🔒 Fila espejo bloqueada tras tu validación. Match enviado a Revisión María.")
+          : ("🔒 Fila bloqueada al enviar propuesta cruzada a " + ownerPsycB + ". Si requieres corregir, solicita desbloqueo a María.");
+        SpreadsheetApp.getActiveSpreadsheet().toast(toastMsg, "Match Cruzado", 6);
       } else {
-        // Match interno (misma psicóloga para A y B)
+        // Match interno (misma psicóloga para A y B) - Permanece editable normalmente
         withScriptLock(function() {
           syncToRevisionMaria({
             currentPsyc: currentPsyc,
@@ -1640,9 +1656,10 @@ function onOpen(e) {
     
     var mariaEmail = (CONFIG.MARIA_EMAIL || "").toLowerCase().trim();
 
-    // Solo mostrar 'Generar 🔒 Panel de Supervisión María' y 'Proteger CONFIG ESTADOS' a María
+    // Solo mostrar opciones de supervisión y desbloqueo a María
     if (currentUserEmail && mariaEmail && currentUserEmail === mariaEmail) {
       menu.addItem("Generar 🔒 Panel de Supervisión María", "generarPanelSupervisionMaria");
+      menu.addItem("🔓 Desbloquear Fila Cruzada (Solo María)", "desbloquearFilaCruzada");
       menu.addItem("Proteger ⚙️ CONFIG ESTADOS (Solo María)", "protegerConfigEstados");
       menu.addSeparator();
     }
@@ -2197,16 +2214,17 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 }
 
 /**
- * Bloquea la fila en la pestaña de la psicóloga mientras el match está en manos de Servicio al Cliente.
+ * Bloquea la fila en la pestaña de la psicóloga (Solo editable por María).
  */
-function bloquearFilaPsicologa(sheet, row) {
+function bloquearFilaPsicologa(sheet, row, desc) {
   if (!sheet || row < 2) return;
   try {
     var numCols = Math.max(sheet.getLastColumn(), 15);
     var range = sheet.getRange(row, 1, 1, numCols);
-    var protection = range.protect().setDescription("Fila Bloqueada: En gestión de Servicio al Cliente");
+    var description = desc || "Fila Bloqueada: Match Cruzado / Servicio al Cliente (Solo editable por María)";
+    var protection = range.protect().setDescription(description);
     
-    // Permitir edición a María
+    // Permitir edición únicamente a María
     if (CONFIG.MARIA_EMAIL) {
       try { protection.addEditor(CONFIG.MARIA_EMAIL); } catch (e) {}
     }
@@ -2218,9 +2236,82 @@ function bloquearFilaPsicologa(sheet, row) {
         protection.removeEditor(editors[i]);
       }
     }
-    Logger.log("🔒 Fila " + row + " en '" + sheet.getName() + "' bloqueada para psicóloga.");
+    Logger.log("🔒 Fila " + row + " en '" + sheet.getName() + "' bloqueada para psicóloga. " + description);
   } catch (err) {
     Logger.log("Aviso al bloquear fila: " + err.message);
+  }
+}
+
+/**
+ * Desbloquea una fila protegida en la pestaña de una psicóloga (Función de emergencia solo para María).
+ * Permite destrabar una fila cruzada si una psicóloga requiere corregir un match.
+ */
+function desbloquearFilaCruzada() {
+  var userEmail = "";
+  try {
+    userEmail = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
+  } catch (e) {}
+  var mariaEmail = (CONFIG.MARIA_EMAIL || "").toLowerCase().trim();
+
+  if (mariaEmail && userEmail && userEmail !== mariaEmail) {
+    SpreadsheetApp.getUi().alert("Acceso Restringido", "Esta función es de uso exclusivo para la Supervisora (" + CONFIG.MARIA_EMAIL + ").", SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var activeSheet = ss.getActiveSheet();
+  var activeCell = activeSheet.getActiveCell();
+  var defaultRow = activeCell ? activeCell.getRow() : 2;
+  if (defaultRow < 2) defaultRow = 2;
+
+  var sheetNamePrompt = ui.prompt(
+    "🔓 Desbloquear Fila Cruzada",
+    "Confirma el nombre de la pestaña (por defecto la pestaña activa: '" + activeSheet.getName() + "'):",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (sheetNamePrompt.getSelectedButton() !== ui.Button.OK) return;
+  var targetSheetName = sheetNamePrompt.getResponseText().trim() || activeSheet.getName();
+  var targetSheet = ss.getSheetByName(targetSheetName);
+  if (!targetSheet) {
+    ui.alert("Error", "No se encontró la pestaña '" + targetSheetName + "'.", ui.ButtonSet.OK);
+    return;
+  }
+
+  var rowPrompt = ui.prompt(
+    "🔓 Desbloquear Fila Cruzada",
+    "Ingresa el número de fila a desbloquear en '" + targetSheet.getName() + "' (por defecto fila " + defaultRow + "):",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (rowPrompt.getSelectedButton() !== ui.Button.OK) return;
+  var targetRow = parseInt(rowPrompt.getResponseText().trim() || defaultRow, 10);
+  if (isNaN(targetRow) || targetRow < 2) {
+    ui.alert("Error", "Número de fila inválido. Debe ser un número mayor o igual a 2.", ui.ButtonSet.OK);
+    return;
+  }
+
+  // Buscar y eliminar protecciones de rango en esa fila
+  var protections = targetSheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  var removedCount = 0;
+  for (var i = 0; i < protections.length; i++) {
+    var pRange = protections[i].getRange();
+    var pStartRow = pRange.getRow();
+    var pEndRow = pStartRow + pRange.getNumRows() - 1;
+    if (pStartRow <= targetRow && pEndRow >= targetRow) {
+      try {
+        protections[i].remove();
+        removedCount++;
+      } catch (remErr) {
+        Logger.log("Error al remover protección: " + remErr.message);
+      }
+    }
+  }
+
+  if (removedCount > 0) {
+    ui.alert("✅ Fila Desbloqueada", "Se removieron " + removedCount + " protección(es) de la fila " + targetRow + " en '" + targetSheet.getName() + "'. La psicóloga ya puede editarla nuevamente.", ui.ButtonSet.OK);
+    SpreadsheetApp.getActiveSpreadsheet().toast("Fila " + targetRow + " desbloqueada en " + targetSheet.getName(), "Desbloqueo Exitoso", 5);
+  } else {
+    ui.alert("Aviso", "No se encontraron protecciones de rango activas en la fila " + targetRow + " de '" + targetSheet.getName() + "'. La fila ya se encuentra editable.", ui.ButtonSet.OK);
   }
 }
 
