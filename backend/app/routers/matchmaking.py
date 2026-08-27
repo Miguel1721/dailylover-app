@@ -666,6 +666,29 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
     if match_row.approved_by_maria:
         return {"status": "already_approved", "message": f"Match {match_id} ya fue aprobado previamente."}
 
+    # ── HARD-BLOCKING DE DOBLE APROBACIÓN PREVIA ─────────────────────────
+    # Si el match involucra a un candidato B de otra psicóloga, debe estar validado previamente por ella
+    psyc_a = normalize_psychologist(match_row.psychologist_name)
+    psyc_b = None
+    if match_row.person_b:
+        psyc_b_res = await db.execute(text("""
+            SELECT p.responsable
+            FROM users u
+            JOIN profiles p ON p.user_id = u.id
+            WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:b_name))
+            LIMIT 1
+        """), {"b_name": match_row.person_b.strip()})
+        psyc_b_row = psyc_b_res.fetchone()
+        if psyc_b_row and psyc_b_row.responsable:
+            psyc_b = normalize_psychologist(psyc_b_row.responsable)
+
+    is_cross = (psyc_b and psyc_b != psyc_a)
+    if is_cross and match_row.status not in ('APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"⚠️ BLOQUEADO: Este match es cruzado entre {psyc_a} y {psyc_b}. Aún espera la validación de la Psicóloga B ({psyc_b}) antes de que María pueda aprobarlo."
+        )
+
     # 1. Actualizar estado y bloquear fila in-situ en operational_matches
     await db.execute(text("""
         UPDATE operational_matches

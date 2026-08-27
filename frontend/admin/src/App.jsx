@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import {
   LayoutDashboard, Users, Calendar, Upload, Heart,
@@ -37,9 +37,6 @@ import CmsEventos from './pages/CmsEventos'
 import CmsCiudades from './pages/CmsCiudades'
 import CmsBlindDate from './pages/CmsBlindDate'
 import MisMatches from './pages/matchmaking/MisMatches'
-import ColaAprobacion from './pages/matchmaking/ColaAprobacion'
-import ServicioCliente from './pages/matchmaking/ServicioCliente'
-import CalendarioCitas from './pages/matchmaking/CalendarioCitas'
 import IntakeClientes from './pages/matchmaking/IntakeClientes'
 import RefundsQueue from './pages/matchmaking/RefundsQueue'
 import { Award, UserPlus, Globe, ShieldCheck, Headphones } from 'lucide-react'
@@ -241,11 +238,9 @@ function Sidebar({ isOpen, onClose }) {
   const matchmakingItems = [
     ...(isAdmin ? [{ to: '/matchmaking/intake', icon: Users, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
     { to: '/matchmaking/mis-matches', icon: Heart, label: isAdmin ? 'Matches (Todas las Psicólogas)' : 'Mis Matches (Psicóloga)', module: 'matching', action: 'view' },
+    { to: '/matching', icon: ShieldCheck, label: 'Central de Matches & Aprobaciones', module: 'matching', action: 'view' },
     ...(isAdmin ? [
-      { to: '/matchmaking/aprobacion', icon: ShieldCheck, label: 'Cola de Aprobación (María)', module: 'matching', action: 'view' },
       { to: '/matchmaking/refunds', icon: Wallet, label: 'Cola de Refunds (Lina)', module: 'matching', action: 'view' },
-      { to: '/matchmaking/pendientes', icon: Headphones, label: 'Servicio al Cliente (Pendientes)', module: 'matching', action: 'view' },
-      { to: '/matchmaking/calendario', icon: Calendar, label: 'Calendario de Citas & WhatsApp', module: 'matching', action: 'view' },
     ] : [])
   ]
 
@@ -502,10 +497,12 @@ function AppContent() {
                     {/* Matchmaking Operativo (SSOT Excel Mirror) */}
                     <Route path="/matchmaking/mis-matches" element={<ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute>} />
                     <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
-                    <Route path="/matchmaking/aprobacion" element={<ProtectedRoute module="matching" action="view"><ColaAprobacion /></ProtectedRoute>} />
                     <Route path="/matchmaking/refunds" element={<ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute>} />
-                    <Route path="/matchmaking/pendientes" element={<ProtectedRoute module="matching" action="view"><ServicioCliente /></ProtectedRoute>} />
-                    <Route path="/matchmaking/calendario" element={<ProtectedRoute module="matching" action="view"><CalendarioCitas /></ProtectedRoute>} />
+
+                    {/* Redirecciones de rutas unificadas en Central de Matching */}
+                    <Route path="/matchmaking/aprobacion" element={<Navigate to="/matching" replace />} />
+                    <Route path="/matchmaking/pendientes" element={<Navigate to="/matching" replace />} />
+                    <Route path="/matchmaking/calendario" element={<Navigate to="/matching" replace />} />
                     
                     {/* Personal */}
                     <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />
