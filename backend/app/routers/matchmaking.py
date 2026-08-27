@@ -1686,3 +1686,181 @@ async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Dep
     }
 
 
+# ─── 10. ENDPOINTS DE VISTA DUAL DE MATCHES (ZONA INFERIOR & ZONA SUPERIOR) ──
+
+@router.get("/matches/pending-service")
+async def get_matches_pending_service(
+    search: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna los matches aprobados por María que están en la Zona Inferior
+    (esperando contacto de Servicio al Cliente, sin fecha agendada).
+    """
+    query = """
+        SELECT 
+            m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.pref,
+            m.status, m.observations, m.created_at, m.updated_at,
+            m.person_a_crm_id, m.person_b_crm_id,
+            COALESCE(c.stage, 'pendiente') AS cs_stage,
+            c.person_a_confirmation, c.person_b_confirmation,
+            uA.phone AS phone_a, uB.phone AS phone_b
+        FROM operational_matches m
+        LEFT JOIN match_confirmations c ON c.match_id = m.id
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        WHERE (m.status = 'APROBADO' OR m.approved_by_maria = true)
+          AND (c.stage IS NULL OR c.stage IN ('pendiente', 'agendando', 'por confirmar', 'esperar', 'de viaje', 'problemas personales', 'no contestan', 'reprogramar'))
+          AND (c.scheduled_date IS NULL)
+    """
+    params = {}
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+    if status and status.lower() not in ("all", "todos"):
+        query += " AND COALESCE(c.stage, 'pendiente') = :st"
+        params["st"] = status.strip()
+    if search:
+        query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY m.updated_at DESC"
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    matches = []
+    for r in rows:
+        d = dict(r._mapping)
+        matches.append({
+            "id": d.get("id"),
+            "person_a": d.get("person_a"),
+            "person_b": d.get("person_b"),
+            "phone_a": d.get("phone_a") or "",
+            "phone_b": d.get("phone_b") or "",
+            "psychologist_name": d.get("psychologist_name"),
+            "city": normalize_city(d.get("city")),
+            "plan_tier": normalize_plan(d.get("plan_tier")),
+            "cs_stage": d.get("cs_stage") or "pendiente",
+            "confirmation_a": d.get("person_a_confirmation") or "Pendiente",
+            "confirmation_b": d.get("person_b_confirmation") or "Pendiente",
+            "observations": d.get("observations") or "",
+            "date": d.get("updated_at").strftime("%Y-%m-%d") if d.get("updated_at") else ""
+        })
+
+    return {"matches": matches, "total": len(matches)}
+
+
+@router.get("/matches/scheduled")
+async def get_matches_scheduled(
+    search: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    timeframe: Optional[str] = Query("all"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna los matches agendados y confirmados (Zona Superior de MATCHES),
+    con clasificación de citas pasadas, de hoy y futuras.
+    """
+    query = """
+        SELECT 
+            m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier,
+            c.scheduled_date, c.venue_name, c.stage, c.observations AS cs_notes,
+            uA.phone AS phone_a, uB.phone AS phone_b
+        FROM match_confirmations c
+        JOIN operational_matches m ON m.id = c.match_id
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        WHERE c.scheduled_date IS NOT NULL
+           OR c.stage IN ('cita confirmada', 'DATE PROGRAMADO', 'cita realizada', 'match', 'MATCH DONE')
+    """
+    params = {}
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+    if search:
+        query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR c.venue_name ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY c.scheduled_date ASC, c.id DESC"
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    scheduled = []
+    for r in rows:
+        d = dict(r._mapping)
+        sched_date = d.get("scheduled_date")
+        date_str = sched_date.strftime("%Y-%m-%d") if sched_date else ""
+        
+        timing = "future"
+        if date_str:
+            if date_str < today_str:
+                timing = "past"
+            elif date_str == today_str:
+                timing = "today"
+
+        scheduled.append({
+            "id": d.get("id"),
+            "person_a": d.get("person_a"),
+            "person_b": d.get("person_b"),
+            "phone_a": d.get("phone_a") or "",
+            "phone_b": d.get("phone_b") or "",
+            "psychologist_name": d.get("psychologist_name"),
+            "city": normalize_city(d.get("city")),
+            "scheduled_date": date_str or "Por confirmar",
+            "venue_name": d.get("venue_name") or "Por definir",
+            "stage": d.get("stage") or "cita confirmada",
+            "timing": timing,
+            "cs_notes": d.get("cs_notes") or ""
+        })
+
+    return {"matches": scheduled, "total": len(scheduled)}
+
+
+@router.get("/matches/cross-approvals")
+async def get_cross_approvals(
+    psychologist: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna los matches cruzados entre psicólogas (Psicóloga A ↔ Psicóloga B)
+    pendientes de aprobación por parte de la Psicóloga de B.
+    """
+    query = """
+        SELECT 
+            m.id, m.person_a, m.person_b, m.psychologist_name AS psyc_a,
+            m.city, m.plan_tier, m.pref, m.observations, m.created_at,
+            uB.name AS ub_name, p.responsable AS psyc_b
+        FROM operational_matches m
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN profiles p ON p.user_id = uB.id
+        WHERE m.status IN ('HECHO', 'REVISAR', 'PROPUESTO')
+          AND m.approved_by_maria = false
+    """
+    res = await db.execute(text(query))
+    rows = res.fetchall()
+
+    cross_list = []
+    for r in rows:
+        d = dict(r._mapping)
+        p_b = normalize_psychologist(d.get("psyc_b"))
+        p_a = normalize_psychologist(d.get("psyc_a"))
+        if p_b and p_b != p_a:
+            cross_list.append({
+                "id": d.get("id"),
+                "person_a": d.get("person_a"),
+                "person_b": d.get("person_b"),
+                "psychologist_a": p_a,
+                "psychologist_b": p_b,
+                "city": normalize_city(d.get("city")),
+                "plan_tier": normalize_plan(d.get("plan_tier")),
+                "observations": d.get("observations") or "",
+                "status": "ESPERANDO APROBACIÓN DE PSICÓLOGA B"
+            })
+
+    return {"cross_matches": cross_list, "total": len(cross_list)}
+
+
+

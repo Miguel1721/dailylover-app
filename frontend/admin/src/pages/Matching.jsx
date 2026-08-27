@@ -205,7 +205,11 @@ export default function Matching() {
   const initialStatus = searchParams.get('status_filter') || 'all'
   const initialMatchmaker = searchParams.get('matchmaker') || 'all'
 
+  const [activeSection, setActiveSection] = useState('pending_service') // 'pending_service', 'scheduled', 'cross_approvals', 'lookbook'
   const [matches, setMatches] = useState([])
+  const [pendingServiceMatches, setPendingServiceMatches] = useState([])
+  const [scheduledMatches, setScheduledMatches] = useState([])
+  const [crossMatches, setCrossMatches] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -224,7 +228,7 @@ export default function Matching() {
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search)
-    if (sp.get('matchmaker')) return // Don't override if specified in URL
+    if (sp.get('matchmaker')) return
 
     if (user?.role === 'Matchmaker' && user?.name) {
       const matchName = user.name.split(' ')[0].toUpperCase()
@@ -235,8 +239,43 @@ export default function Matching() {
     }
   }, [user])
 
+  // Fetcher para sección de Servicio al Cliente (Zona Inferior)
+  const fetchPendingService = useCallback(() => {
+    setLoading(true)
+    fetch(`${API}/api/v1/matchmaking/matches/pending-service?search=${encodeURIComponent(search)}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => setPendingServiceMatches(d.matches || []))
+      .catch(() => setPendingServiceMatches([]))
+      .finally(() => setLoading(false))
+  }, [token, search])
 
+  // Fetcher para sección de Citas Agendadas (Zona Superior)
+  const fetchScheduled = useCallback(() => {
+    setLoading(true)
+    fetch(`${API}/api/v1/matchmaking/matches/scheduled?search=${encodeURIComponent(search)}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => setScheduledMatches(d.matches || []))
+      .catch(() => setScheduledMatches([]))
+      .finally(() => setLoading(false))
+  }, [token, search])
 
+  // Fetcher para sección de Aprobaciones Cruzadas
+  const fetchCrossApprovals = useCallback(() => {
+    setLoading(true)
+    fetch(`${API}/api/v1/matchmaking/matches/cross-approvals`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => setCrossMatches(d.cross_matches || []))
+      .catch(() => setCrossMatches([]))
+      .finally(() => setLoading(false))
+  }, [token])
+
+  // Fetcher principal para lookbook / todos los matches
   const fetchMatches = useCallback(() => {
     setLoading(true)
     const searchParams = new URLSearchParams(window.location.search)
@@ -260,23 +299,9 @@ export default function Matching() {
         setTotal(d.total || 0)
         setTargetUserDiagnostic(d.target_user_diagnostic || null)
 
-        // Auto-open modal if match_id was passed in URL query params
         if (urlMatchId) {
           const target = fetchedMatches.find(m => String(m.id) === String(urlMatchId))
-          if (target) {
-            setSelectedMatch(target)
-          } else {
-            // Fetch target match directly if not in current page
-            fetch(`${API}/api/v1/admin/historical-matches?search=${urlMatchId}&limit=1`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            })
-              .then(r => r.json())
-              .then(res => {
-                if (res.matches && res.matches[0]) {
-                  setSelectedMatch(res.matches[0])
-                }
-              }).catch(() => {})
-          }
+          if (target) setSelectedMatch(target)
         }
       })
       .catch(() => {
@@ -287,11 +312,12 @@ export default function Matching() {
       .finally(() => setLoading(false))
   }, [token, page, search, matchmaker, statusFilter])
 
-
-
   useEffect(() => {
-    fetchMatches()
-  }, [fetchMatches])
+    if (activeSection === 'pending_service') fetchPendingService()
+    else if (activeSection === 'scheduled') fetchScheduled()
+    else if (activeSection === 'cross_approvals') fetchCrossApprovals()
+    else fetchMatches()
+  }, [activeSection, fetchPendingService, fetchScheduled, fetchCrossApprovals, fetchMatches])
 
   const handleUpdateStatus = async (matchId, newStatus) => {
     try {
@@ -320,19 +346,111 @@ export default function Matching() {
     <div>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1>Portal de Psicólogas — Informe Clínico de Match & Evaluación Fotográfica</h1>
-          <p className="page-subtitle">Revisión detallada de 4 fases (Filtros, Notas Clínicas, Evaluación de Fotos y Venue) ({total} parejas)</p>
+          <h1>Portal Operativo de Matchmaking — Dos Zonas & Flujo Integral</h1>
+          <p className="page-subtitle">Gestión centralizada de Aprobaciones de María, Servicio al Cliente, Calendario de Citas y Lookbook</p>
         </div>
       </div>
 
       <div className="content-area">
+        {/* Navegación por Secciones Principales (Espejo del Sheet con libertad web) */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20, borderBottom: '1px solid var(--border-color)', paddingBottom: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setActiveSection('pending_service')}
+            style={{
+              background: activeSection === 'pending_service' ? 'var(--color-primary)' : '#1A1214',
+              color: '#fff',
+              border: '1px solid rgba(150,21,0,0.3)',
+              borderRadius: 8,
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s'
+            }}
+          >
+            <span>📥 Aprobados por María (Esperando Llamada)</span>
+            <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 7px', borderRadius: 10, fontSize: 11 }}>
+              {pendingServiceMatches.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('scheduled')}
+            style={{
+              background: activeSection === 'scheduled' ? 'var(--color-primary)' : '#1A1214',
+              color: '#fff',
+              border: '1px solid rgba(150,21,0,0.3)',
+              borderRadius: 8,
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s'
+            }}
+          >
+            <span>📅 Citas Agendadas & Calendario</span>
+            <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 7px', borderRadius: 10, fontSize: 11 }}>
+              {scheduledMatches.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('cross_approvals')}
+            style={{
+              background: activeSection === 'cross_approvals' ? 'var(--color-primary)' : '#1A1214',
+              color: '#fff',
+              border: '1px solid rgba(150,21,0,0.3)',
+              borderRadius: 8,
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s'
+            }}
+          >
+            <span>🤝 Aprobaciones Cruzadas (Psicóloga A ↔ B)</span>
+            <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 7px', borderRadius: 10, fontSize: 11 }}>
+              {crossMatches.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('lookbook')}
+            style={{
+              background: activeSection === 'lookbook' ? 'var(--color-primary)' : '#1A1214',
+              color: '#fff',
+              border: '1px solid rgba(150,21,0,0.3)',
+              borderRadius: 8,
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s'
+            }}
+          >
+            <span>👥 Todos los Matches & Lookbook Clínico</span>
+          </button>
+        </div>
+
         {/* Filters Row with Search */}
         <div className="filters-row" style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative', width: 280 }}>
             <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"
-              placeholder="Buscar candidato por nombre (ej: Diego, Genesis)..."
+              placeholder="Buscar por cliente o candidato..."
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
               style={{
@@ -350,37 +468,40 @@ export default function Matching() {
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Filter size={16} style={{ color: 'var(--text-muted)' }} />
-            <select
-              className="mapping-select"
-              style={{ padding: '8px 14px', fontSize: 13, minWidth: 200 }}
-              value={matchmaker}
-              onChange={e => { setMatchmaker(e.target.value); setPage(1) }}
-            >
-              {PSYCHOLOGISTS.map(p => (
-                <option key={p.id} value={p.id}>{p.label}</option>
-              ))}
-            </select>
-          </div>
+          {activeSection === 'lookbook' && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Filter size={16} style={{ color: 'var(--text-muted)' }} />
+                <select
+                  className="mapping-select"
+                  style={{ padding: '8px 14px', fontSize: 13, minWidth: 200 }}
+                  value={matchmaker}
+                  onChange={e => { setMatchmaker(e.target.value); setPage(1) }}
+                >
+                  {PSYCHOLOGISTS.map(p => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
 
-          <select
-            className="mapping-select"
-            style={{ padding: '8px 14px', fontSize: 13, minWidth: 200 }}
-            value={statusFilter}
-            onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
-          >
-            <option value="all">Todos los Estados</option>
-            <option value="PENDIENTE">⏳ Pendientes de Cita</option>
-            <option value="REVISAR">🔍 Por Revisar (Silvi / Equipo)</option>
-            <option value="SIN_GENTE">⚠️ Sin Gente / Faltan Candidatos</option>
-            <option value="WAITLIST">⏳ En Lista de Espera (Waitlist)</option>
-            <option value="TROUBLE">🚨 Casos Complejos / Trouble</option>
-            <option value="APROBADO">✅ Aprobados / Exitosos</option>
-            <option value="REFUND_CANCELADO">💳 Refund / Cancelados</option>
-            <option value="RECHAZADO">❌ Rechazados</option>
-          </select>
-
+              <select
+                className="mapping-select"
+                style={{ padding: '8px 14px', fontSize: 13, minWidth: 200 }}
+                value={statusFilter}
+                onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+              >
+                <option value="all">Todos los Estados</option>
+                <option value="PENDIENTE">⏳ Pendientes de Cita</option>
+                <option value="REVISAR">🔍 Por Revisar (Silvi / Equipo)</option>
+                <option value="SIN_GENTE">⚠️ Sin Gente / Faltan Candidatos</option>
+                <option value="WAITLIST">⏳ En Lista de Espera (Waitlist)</option>
+                <option value="TROUBLE">🚨 Casos Complejos / Trouble</option>
+                <option value="APROBADO">✅ Aprobados / Exitosos</option>
+                <option value="REFUND_CANCELADO">💳 Refund / Cancelados</option>
+                <option value="RECHAZADO">❌ Rechazados</option>
+              </select>
+            </>
+          )}
         </div>
 
         {/* Banner de Diagnóstico Algorítmico del Formulario Inicial al buscar un cliente */}
@@ -448,125 +569,309 @@ export default function Matching() {
           </div>
         )}
 
-        {loading ? (
-
-          <div className="card"><div className="empty-state">Cargando sugerencias de la IA y expedientes clínicos...</div></div>
-        ) : matches.length === 0 ? (
+        {/* ── SECCIÓN 1: MATCHES APROBADOS POR MARÍA (ESPERANDO LLAMADA - ZONA INFERIOR) ── */}
+        {activeSection === 'pending_service' && (
           <div className="card">
-            <div className="empty-state">
-              <Heart size={36} style={{ color: 'var(--color-primary)', margin: '0 auto 12px', display: 'block' }} />
-              No hay propuestas de match registradas bajo estos filtros.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700 }}>Matches Aprobados por María — Cola de Servicio al Cliente</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Matches listos para contactar y agendar cita (sin fecha asignada todavía)</p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={fetchPendingService}>🔄 Actualizar</button>
             </div>
+
+            {loading ? (
+              <div className="empty-state">Cargando cola de Servicio al Cliente...</div>
+            ) : pendingServiceMatches.length === 0 ? (
+              <div className="empty-state">No hay matches pendientes de llamada en este momento.</div>
+            ) : (
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Persona A (Cliente)</th>
+                      <th>Persona B (Candidato)</th>
+                      <th>Psicóloga</th>
+                      <th>Ciudad</th>
+                      <th>Plan</th>
+                      <th>Estado SC</th>
+                      <th>Observaciones</th>
+                      <th>Fecha Aprob.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingServiceMatches.map(m => (
+                      <tr key={m.id}>
+                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{m.id}</td>
+                        <td>
+                          <div style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{m.person_a}</div>
+                          {m.phone_a && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📞 {m.phone_a}</div>}
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 700, color: '#2196F3' }}>{m.person_b}</div>
+                          {m.phone_b && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📞 {m.phone_b}</div>}
+                        </td>
+                        <td><span className="badge badge-gray">{m.psychologist_name}</span></td>
+                        <td>📍 {m.city || '—'}</td>
+                        <td><span className="badge badge-wine">{m.plan_tier || 'Estándar'}</span></td>
+                        <td>
+                          <span className="badge badge-yellow" style={{ fontWeight: 700 }}>
+                            ⏳ {m.cs_stage || 'pendiente'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 220 }}>{m.observations || '—'}</td>
+                        <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.date || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(370px, 1fr))', gap: 20 }}>
-            {matches.map(m => {
-              const ai = getAIAnalysis(m)
-              const personA = cleanPersonName(m.person_a)
-              const personB = cleanPersonName(m.person_b)
+        )}
 
-              return (
-                <div
-                  key={m.id}
-                  className="card"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    border: selectedMatch?.id === m.id ? '2px solid var(--color-primary)' : '1px solid var(--border-color)',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <div>
-                    {/* Top Bar: Match Score & Status */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(150,21,0,0.15)', padding: '4px 10px', borderRadius: 20 }}>
-                        <Sparkles size={14} style={{ color: '#FFC107' }} />
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#FFC107' }}>
-                          Compatibilidad IA: {ai.globalScore}%
-                        </span>
-                      </div>
+        {/* ── SECCIÓN 2: CITAS AGENDADAS & CALENDARIO (ZONA SUPERIOR) ── */}
+        {activeSection === 'scheduled' && (
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700 }}>Citas Agendadas & Calendario Operativo</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Citas con fecha real programada, sede de encuentro y seguimiento de resultado</p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={fetchScheduled}>🔄 Actualizar</button>
+            </div>
 
-                      <VividStatusBadge status={m.status} />
-                    </div>
+            {loading ? (
+              <div className="empty-state">Cargando citas agendadas...</div>
+            ) : scheduledMatches.length === 0 ? (
+              <div className="empty-state">No hay citas agendadas registradas aún.</div>
+            ) : (
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Fecha Cita</th>
+                      <th>Tiempo</th>
+                      <th>Persona A</th>
+                      <th>Persona B</th>
+                      <th>Lugar / Sede</th>
+                      <th>Psicóloga</th>
+                      <th>Estado Cita</th>
+                      <th>Notas / Feedback</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scheduledMatches.map(m => {
+                      const timingBadge = m.timing === 'past'
+                        ? <span className="badge badge-gray">🗓️ Pasada</span>
+                        : m.timing === 'today'
+                        ? <span className="badge badge-yellow">⭐ Hoy</span>
+                        : <span className="badge badge-blue">🚀 Futura</span>
 
-                    {/* People Comparison Card */}
-                      <div style={{
-                        background: 'var(--bg-base)',
-                        borderRadius: 12,
-                        padding: '16px',
-                        marginBottom: 14,
-                        border: '1px solid rgba(150,21,0,0.15)',
+                      return (
+                        <tr key={m.id}>
+                          <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{m.id}</td>
+                          <td style={{ fontWeight: 700, fontSize: 13 }}>📅 {m.scheduled_date}</td>
+                          <td>{timingBadge}</td>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{m.person_a}</div>
+                            {m.phone_a && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📞 {m.phone_a}</div>}
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{m.person_b}</div>
+                            {m.phone_b && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📞 {m.phone_b}</div>}
+                          </td>
+                          <td>📍 {m.venue_name}</td>
+                          <td><span className="badge badge-gray">{m.psychologist_name}</span></td>
+                          <td><span className="badge badge-green">✅ {m.stage}</span></td>
+                          <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 200 }}>{m.cs_notes || '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SECCIÓN 3: APROBACIONES CRUZADAS (PSICÓLOGA A ↔ PSICÓLOGA B) ── */}
+        {activeSection === 'cross_approvals' && (
+          <div className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700 }}>Aprobaciones Cruzadas entre Psicólogas</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Matches inter-psicólogas que requieren doble validación antes de pasar a María</p>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={fetchCrossApprovals}>🔄 Actualizar</button>
+            </div>
+
+            {loading ? (
+              <div className="empty-state">Cargando aprobaciones cruzadas...</div>
+            ) : crossMatches.length === 0 ? (
+              <div className="empty-state">No hay matches cruzados pendientes de validación entre psicólogas.</div>
+            ) : (
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Cliente A (Propone)</th>
+                      <th>Psicóloga A</th>
+                      <th>Candidato B (Recibe)</th>
+                      <th>Psicóloga B</th>
+                      <th>Ciudad</th>
+                      <th>Plan</th>
+                      <th>Estado Validación</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crossMatches.map(m => (
+                      <tr key={m.id}>
+                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{m.id}</td>
+                        <td style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{m.person_a}</td>
+                        <td><span className="badge badge-wine">{m.psychologist_a}</span></td>
+                        <td style={{ fontWeight: 700, color: '#2196F3' }}>{m.person_b}</td>
+                        <td><span className="badge badge-blue">{m.psychologist_b}</span></td>
+                        <td>📍 {m.city || '—'}</td>
+                        <td><span className="badge badge-gray">{m.plan_tier || '—'}</span></td>
+                        <td>
+                          <span className="badge badge-yellow">
+                            ⏳ {m.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── SECCIÓN 4: TODOS LOS MATCHES & LOOKBOOK CLÍNICO ── */}
+        {activeSection === 'lookbook' && (
+          <>
+            {loading ? (
+              <div className="card"><div className="empty-state">Cargando sugerencias de la IA y expedientes clínicos...</div></div>
+            ) : matches.length === 0 ? (
+              <div className="card">
+                <div className="empty-state">
+                  <Heart size={36} style={{ color: 'var(--color-primary)', margin: '0 auto 12px', display: 'block' }} />
+                  No hay propuestas de match registradas bajo estos filtros.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(370px, 1fr))', gap: 20 }}>
+                {matches.map(m => {
+                  const ai = getAIAnalysis(m)
+                  const personA = cleanPersonName(m.person_a)
+                  const personB = cleanPersonName(m.person_b)
+
+                  return (
+                    <div
+                      key={m.id}
+                      className="card"
+                      style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                      }}>
-                        <div
-                          onClick={() => setCandidateModal(personA.cleanName)}
-                          title={`Haga clic para ver el expediente clínico de ${personA.cleanName}`}
-                          style={{
-                            flex: 1,
-                            textAlign: 'center',
-                            cursor: 'pointer',
-                            padding: '6px',
-                            borderRadius: 10,
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid transparent',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.border = '1px solid var(--color-primary)'}
-                          onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
-                        >
-                          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(150,21,0,0.2)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
-                            {personA.cleanName.charAt(0)}
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        border: selectedMatch?.id === m.id ? '2px solid var(--color-primary)' : '1px solid var(--border-color)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <div>
+                        {/* Top Bar: Match Score & Status */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(150,21,0,0.15)', padding: '4px 10px', borderRadius: 20 }}>
+                            <Sparkles size={14} style={{ color: '#FFC107' }} />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#FFC107' }}>
+                              Compatibilidad IA: {ai.globalScore}%
+                            </span>
                           </div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-primary)', textDecoration: 'underline' }}>{personA.cleanName}</div>
-                          {m.code_a ? (
-                            <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_a}</div>
-                          ) : (
-                            <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
-                          )}
-                          <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3 }}>🔍 Ver Expediente A</div>
+
+                          <VividStatusBadge status={m.status} />
                         </div>
 
-                        <div style={{ padding: '0 8px', color: 'var(--color-primary)' }}>
-                          <Heart size={20} style={{ fill: 'var(--color-primary)' }} />
-                        </div>
-
-                        <div
-                          onClick={() => setCandidateModal(personB.cleanName)}
-                          title={`Haga clic para ver el expediente clínico de ${personB.cleanName}`}
-                          style={{
-                            flex: 1,
-                            textAlign: 'center',
-                            cursor: 'pointer',
-                            padding: '6px',
-                            borderRadius: 10,
-                            background: 'rgba(255,255,255,0.02)',
-                            border: '1px solid transparent',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.border = '1px solid #2196F3'}
-                          onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
-                        >
-                          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(33, 150, 243, 0.2)', color: '#2196F3', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
-                            {personB.cleanName.charAt(0)}
+                        {/* People Comparison Card */}
+                        <div style={{
+                          background: 'var(--bg-base)',
+                          borderRadius: 12,
+                          padding: '16px',
+                          marginBottom: 14,
+                          border: '1px solid rgba(150,21,0,0.15)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}>
+                          <div
+                            onClick={() => setCandidateModal(personA.cleanName)}
+                            title={`Haga clic para ver el expediente clínico de ${personA.cleanName}`}
+                            style={{
+                              flex: 1,
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              padding: '6px',
+                              borderRadius: 10,
+                              background: 'rgba(255,255,255,0.02)',
+                              border: '1px solid transparent',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.border = '1px solid var(--color-primary)'}
+                            onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
+                          >
+                            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(150,21,0,0.2)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
+                              {personA.cleanName.charAt(0)}
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--color-primary)', textDecoration: 'underline' }}>{personA.cleanName}</div>
+                            {m.code_a ? (
+                              <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_a}</div>
+                            ) : (
+                              <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
+                            )}
+                            <div style={{ fontSize: 10, color: '#FFC107', marginTop: 3 }}>🔍 Ver Expediente A</div>
                           </div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: '#2196F3', textDecoration: 'underline' }}>{personB.cleanName}</div>
-                          {m.code_b ? (
-                            <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_b}</div>
-                          ) : (
-                            <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
-                          )}
-                          <div style={{ fontSize: 10, color: '#2196F3', marginTop: 3 }}>🔍 Ver Expediente B</div>
-                        </div>
-                      </div>
 
-                      {(personA.note || personB.note) && (
-                        <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.2)', padding: '6px 10px', borderRadius: 8, marginBottom: 12, fontStyle: 'italic' }}>
-                          📌 <strong>Nota Clínica del Excel:</strong> "{personA.note || personB.note}"
+                          <div style={{ padding: '0 8px', color: 'var(--color-primary)' }}>
+                            <Heart size={20} style={{ fill: 'var(--color-primary)' }} />
+                          </div>
+
+                          <div
+                            onClick={() => setCandidateModal(personB.cleanName)}
+                            title={`Haga clic para ver el expediente clínico de ${personB.cleanName}`}
+                            style={{
+                              flex: 1,
+                              textAlign: 'center',
+                              cursor: 'pointer',
+                              padding: '6px',
+                              borderRadius: 10,
+                              background: 'rgba(255,255,255,0.02)',
+                              border: '1px solid transparent',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.border = '1px solid #2196F3'}
+                            onMouseLeave={e => e.currentTarget.style.border = '1px solid transparent'}
+                          >
+                            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(33, 150, 243, 0.2)', color: '#2196F3', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontWeight: 700, fontSize: 16 }}>
+                              {personB.cleanName.charAt(0)}
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: '#2196F3', textDecoration: 'underline' }}>{personB.cleanName}</div>
+                            {m.code_b ? (
+                              <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#a855f7', fontWeight: 700, marginTop: 2 }}>{m.code_b}</div>
+                            ) : (
+                              <div style={{ fontSize: 9, color: '#FF9800', fontWeight: 600, marginTop: 2 }} title="Esta persona no aparece registrada en el sistema">⚠️ No registrado</div>
+                            )}
+                            <div style={{ fontSize: 10, color: '#2196F3', marginTop: 3 }}>🔍 Ver Expediente B</div>
+                          </div>
                         </div>
-                      )}
+
+                        {(personA.note || personB.note) && (
+                          <div style={{ fontSize: 11, color: '#FFC107', background: 'rgba(255,193,7,0.08)', border: '1px solid rgba(255,193,7,0.2)', padding: '6px 10px', borderRadius: 8, marginBottom: 12, fontStyle: 'italic' }}>
+                            📌 <strong>Nota Clínica del Excel:</strong> "{personA.note || personB.note}"
+                          </div>
+                        )}
 
 
                     {/* AI Venue Suggestion Card */}
@@ -660,6 +965,8 @@ export default function Matching() {
               )
             })}
           </div>
+        )}
+        </>
         )}
       </div>
 

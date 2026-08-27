@@ -155,7 +155,9 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var personBCol = headers["PERSON B"] || headers["PERSONA B"] || headers["CANDIDATO"] || headers["MATCH"];
   var psycBCol = headers["PSICÓLOGA DE B"] || headers["PSICOLOGA DE B"] || headers["PSICOLOGA B"] || headers["PSICÓLOGA B"];
 
-  // ── A. CRUCE DE PSICÓLOGA EN PERSONA B (Solo informativo) ─────────────────
+  var currentPsyc = normalizePsychologistName(sheet.getName());
+
+  // ── A. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B ──────────────
   if (personBCol && col === personBCol) {
     var personBCell = getCellData(sheet, row, personBCol);
     if (!psycBCol) {
@@ -163,10 +165,20 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
     }
     if (psycBCol) {
       if (personBCell && personBCell.text) {
-        var ownerPsyc = findPsychologistForPersonA(personBCell, sheet);
-        sheet.getRange(row, psycBCol).setValue(ownerPsyc);
+        var ownerPsyc = findPsychologistForPerson(personBCell);
+        if (ownerPsyc) {
+          if (ownerPsyc === currentPsyc) {
+            sheet.getRange(row, psycBCol).setValue(ownerPsyc + " (Interno)").setBackground(null);
+          } else {
+            sheet.getRange(row, psycBCol).setValue(ownerPsyc).setBackground("#E8EAED");
+          }
+          Logger.log("✅ Psicóloga de B detectada automáticamente: '" + ownerPsyc + "'");
+        } else {
+          sheet.getRange(row, psycBCol).setValue("").setBackground("#FFF2CC");
+          Logger.log("⚠️ No se encontró psicóloga para Persona B ('" + personBCell.text + "')");
+        }
       } else {
-        sheet.getRange(row, psycBCol).setValue("");
+        sheet.getRange(row, psycBCol).setValue("").setBackground(null);
       }
     }
     return;
@@ -206,8 +218,54 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
     }
   }
 
-  // ── B. NOT APPROVED / TROUBLEMAKER: Fila intacta + Nueva fila al final ───
-  // NOTA: "REVISAR POR SI TOCA OTRO MATCH" está explícitamente EXCLUIDO de esta acción
+  // ── D. FILA ESPEJO & DOBLE APROBACIÓN ANTES DE MARÍA ───────────────────────
+  if (statusVal === "HECHO" || statusVal === "HECHO POR MAPE" || statusVal === "APROBADO") {
+    if (personACell && personBCell && personBName) {
+      var ownerPsycB = findPsychologistForPerson(personBCell);
+
+      // Si es un match cruzado (Psicóloga A != Psicóloga B)
+      if (ownerPsycB && ownerPsycB !== currentPsyc) {
+        withScriptLock(function() {
+          // 1. Crear o sincronizar fila espejo en la pestaña de Psicóloga B
+          crearOActualizarFilaEspejo(sheet, row, currentPsyc, ownerPsycB, personACell, personBCell, city, pref, plan, obs);
+
+          // 2. Sincronizar a REVISIÓN MARÍA con estado de doble aprobación
+          syncToRevisionMaria({
+            psycA: currentPsyc,
+            psycB: ownerPsycB,
+            city: city,
+            pref: pref,
+            planA: plan,
+            personACell: personACell,
+            personBCell: personBCell,
+            obs: obs,
+            origenTab: sheet.getName(),
+            origenFila: row,
+            statusAprobacion: (statusVal === "APROBADO" ? "APROBADO POR PSICÓLOGAS" : "ESPERANDO APROBACIÓN DE " + ownerPsycB)
+          });
+        });
+      } else {
+        // Match interno (misma psicóloga para A y B)
+        withScriptLock(function() {
+          syncToRevisionMaria({
+            psycA: currentPsyc,
+            psycB: currentPsyc,
+            city: city,
+            pref: pref,
+            planA: plan,
+            personACell: personACell,
+            personBCell: personBCell,
+            obs: obs,
+            origenTab: sheet.getName(),
+            origenFila: row,
+            statusAprobacion: "APROBADO POR PSICÓLOGA"
+          });
+        });
+      }
+    }
+  }
+
+  // ── E. NOT APPROVED / TROUBLEMAKER: Fila intacta + Nueva fila al final ───
   if (statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER") {
     if (personAName && personAName !== "") {
       var cacheKey = "retry_created_" + sheet.getName() + "_" + row + "_" + statusVal;
@@ -231,7 +289,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
     }
   }
 
-  // ── C. TROUBLEMAKER: Copiado hacia pestaña TROUBLE MATCHES ───────────────
+  // ── F. TROUBLEMAKER: Copiado hacia pestaña TROUBLE MATCHES ───────────────
   if (statusVal === "TROUBLEMAKER") {
     withScriptLock(function() {
       copyToTroubleMatches(sheet.getName(), {
@@ -1563,6 +1621,7 @@ function onOpen(e) {
       .createMenu("🔎 Daily Lover")
       .addItem("Historial de persona", "mostrarHistorialPersona")
       .addSeparator()
+      .addItem("Generar 🔒 Panel de Supervisión María", "generarPanelSupervisionMaria")
       .addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos")
       .addItem("Proteger ⚙️ CONFIG ESTADOS (Solo María)", "protegerConfigEstados")
       .addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable")
@@ -1754,53 +1813,452 @@ function protegerConfigEstados() {
   ss.toast("⚙️ CONFIG ESTADOS protegida exclusivamente para María", "Protección Activa", 4);
 }
 
-// ─── 13. FLUJO DE APROBACIÓN REVISIÓN MARÍA ──────────────────────────────────
+// ─── 13. FLUJO DE APROBACIÓN REVISIÓN MARÍA & FILAS ESPEJO ──────────────────
 
 /**
- * Cuando María aprueba en 'REVISIÓN MARÍA' (o en pestaña de psicóloga con APROBADO):
- * La fila aparece automáticamente en la zona inferior de MATCHES con estado 'pendiente'.
+ * Crea o sincroniza la fila espejo en la pestaña de Psicóloga B cuando Psicóloga A propone un match cruzado.
+ */
+function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, city, pref, plan, obs) {
+  var sheetB = findPsychologistSheet(psycB);
+  if (!sheetB) {
+    Logger.log("AVISO: No se encontró la pestaña para Psicóloga B ('" + psycB + "').");
+    return;
+  }
+
+  var headersB = getSheetHeaders(sheetB);
+  var personAColB = headersB["PERSON A"] || headersB["PERSONA A"] || headersB["CLIENTE"] || 5;
+  var personBColB = headersB["PERSON B"] || headersB["PERSONA B"] || headersB["CANDIDATO"] || headersB["MATCH"] || 6;
+  var psycBColB = headersB["PSICÓLOGA DE B"] || headersB["PSICOLOGA DE B"] || headersB["PSICOLOGA B"] || 7;
+  var statusColB = headersB["STATUS"] || 9;
+  var obsColB = headersB["OBSERVACIONES"] || headersB["OBSERVACION"] || headersB["NOTAS"] || 8;
+
+  var lastRowB = sheetB.getLastRow();
+  var mirrorRow = null;
+
+  // Buscar si ya existe la fila espejo para este par
+  if (lastRowB > 1) {
+    var dataB = sheetB.getRange(2, 1, lastRowB - 1, sheetB.getLastColumn()).getValues();
+    for (var i = 0; i < dataB.length; i++) {
+      var rowNameA = (dataB[i][personAColB - 1] || "").toString().toLowerCase().trim();
+      var rowNameB = (dataB[i][personBColB - 1] || "").toString().toLowerCase().trim();
+      if (rowNameA === cellB.text.toLowerCase().trim() && rowNameB === cellA.text.toLowerCase().trim()) {
+        mirrorRow = i + 2;
+        break;
+      }
+    }
+  }
+
+  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+  var mirrorObs = "[ESPEJO] Propuesto por " + psycA + " (" + todayStr + ")" + (obs ? " | " + obs : "");
+
+  if (mirrorRow) {
+    // Actualizar fila espejo existente
+    if (statusColB) sheetB.getRange(mirrorRow, statusColB).setValue("REVISAR").setBackground("#D9D2E9");
+    if (obsColB) sheetB.getRange(mirrorRow, obsColB).setValue(mirrorObs);
+    Logger.log("🔄 Fila espejo actualizada en '" + sheetB.getName() + "' (Fila " + mirrorRow + ")");
+  } else {
+    // Insertar nueva fila espejo
+    appendPrioritySlotRow(sheetB, headersB, {
+      city: city,
+      pref: pref,
+      plan: plan,
+      personACell: cellB,
+      personBCell: cellA,
+      fecha: todayStr,
+      status: "REVISAR",
+      observaciones: mirrorObs
+    });
+
+    // Colocar psicóloga de B (que es Psicóloga A)
+    var newLastRow = sheetB.getLastRow();
+    if (psycBColB) {
+      sheetB.getRange(newLastRow, psycBColB).setValue(psycA).setBackground("#E8EAED");
+    }
+    if (statusColB) {
+      sheetB.getRange(newLastRow, statusColB).setBackground("#D9D2E9");
+    }
+    Logger.log("✅ Fila espejo creada con éxito en '" + sheetB.getName() + "' (Fila " + newLastRow + ")");
+    SpreadsheetApp.getActiveSpreadsheet().toast("Fila espejo generada en " + sheetB.getName() + " para " + cellB.text, "Fila Espejo", 4);
+  }
+}
+
+/**
+ * Sincroniza el match a la pestaña 'REVISIÓN MARÍA'.
+ */
+function syncToRevisionMaria(matchData) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var revSheet = ss.getSheetByName(CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA");
+  if (!revSheet) {
+    Logger.log("ERROR: No se encontró la pestaña 'REVISIÓN MARÍA'.");
+    return;
+  }
+
+  var headers = getSheetHeaders(revSheet);
+  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 1;
+  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 2;
+  var cityCol = headers["CITY"] || headers["CIUDAD"] || 3;
+  var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 4;
+  var planCol = headers["PLAN"] || headers["PLAN TIER"] || 5;
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 7;
+  var fechaCol = headers["FECHA"] || headers["FECHA PROPUESTA"] || 8;
+  var obsCol = headers["OBSERVACIONES"] || 9;
+  var origenTabCol = headers["ORIGEN"] || headers["PESTAÑA ORIGEN"] || 10;
+  var origenFilaCol = headers["FILA ORIGEN"] || 11;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 12;
+
+  var lastRow = revSheet.getLastRow();
+  var targetRow = null;
+
+  // Buscar si ya existe este match en REVISIÓN MARÍA
+  if (lastRow > 1) {
+    var data = revSheet.getRange(2, 1, lastRow - 1, revSheet.getLastColumn()).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var rA = (data[i][personACol - 1] || "").toString().toLowerCase().trim();
+      var rB = (data[i][personBCol - 1] || "").toString().toLowerCase().trim();
+      if (rA === matchData.personACell.text.toLowerCase().trim() && rB === matchData.personBCell.text.toLowerCase().trim()) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+  }
+
+  if (!targetRow) {
+    targetRow = lastRow + 1;
+  }
+
+  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+
+  // Escribir datos
+  if (psycACol) revSheet.getRange(targetRow, psycACol).setValue(matchData.psycA);
+  if (psycBCol) revSheet.getRange(targetRow, psycBCol).setValue(matchData.psycB);
+  if (cityCol) revSheet.getRange(targetRow, cityCol).setValue(matchData.city);
+  if (prefCol) revSheet.getRange(targetRow, prefCol).setValue(matchData.pref);
+  if (planCol) revSheet.getRange(targetRow, planCol).setValue(matchData.planA);
+
+  if (personACol) {
+    if (matchData.personACell.richText) revSheet.getRange(targetRow, personACol).setRichTextValue(matchData.personACell.richText);
+    else revSheet.getRange(targetRow, personACol).setValue(matchData.personACell.text);
+  }
+
+  if (personBCol) {
+    if (matchData.personBCell.richText) revSheet.getRange(targetRow, personBCol).setRichTextValue(matchData.personBCell.richText);
+    else revSheet.getRange(targetRow, personBCol).setValue(matchData.personBCell.text);
+  }
+
+  if (fechaCol) revSheet.getRange(targetRow, fechaCol).setValue(todayStr);
+  if (obsCol) revSheet.getRange(targetRow, obsCol).setValue(matchData.obs || "");
+  if (origenTabCol) revSheet.getRange(targetRow, origenTabCol).setValue(matchData.origenTab);
+  if (origenFilaCol) revSheet.getRange(targetRow, origenFilaCol).setValue(matchData.origenFila);
+
+  if (aprobarCol) {
+    var initialStatus = matchData.statusAprobacion || "PENDIENTE";
+    var bg = (initialStatus.indexOf("ESPERANDO") >= 0 ? "#FFF2CC" : "#CFE2F3");
+    revSheet.getRange(targetRow, aprobarCol).setValue(initialStatus).setBackground(bg);
+  }
+
+  Logger.log("✅ Match sincronizado a REVISIÓN MARÍA (Fila " + targetRow + "): " + matchData.personACell.text + " + " + matchData.personBCell.text);
+}
+
+/**
+ * Cuando María aprueba o rechaza en 'REVISIÓN MARÍA':
+ * - APROBADO: Inserta en MATCHES (zona inferior) y actualiza pestañas de psicólogas origen y espejo a APROBADO.
+ * - NOT APPROVED: Actualiza pestañas origen y espejo a NOT APPROVED y re-genera slots de reintento.
  */
 function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 11;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 12;
   if (col !== aprobarCol) return;
 
   var val = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim().toUpperCase();
-  if (val !== "APROBADO" && val !== "TRUE") return;
+  if (!val) return;
 
-  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 5;
-  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 6;
-  var cityCol = headers["CITY"] || headers["CIUDAD"] || 2;
-  var obsCol = headers["OBSERVACIONES"] || 8;
-  var psycCol = headers["PSICÓLOGA"] || headers["PSICOLOGA"] || 1;
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 7;
+  var psycACol = headers["PSICÓLOGA A"] || headers["PSICOLOGA A"] || 1;
+  var psycBCol = headers["PSICÓLOGA B"] || headers["PSICOLOGA B"] || 2;
+  var cityCol = headers["CITY"] || headers["CIUDAD"] || 3;
+  var obsCol = headers["OBSERVACIONES"] || 9;
+  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 13;
 
   var cellA = getCellData(sheet, row, personACol);
   var cellB = getCellData(sheet, row, personBCol);
+  var psycA = (sheet.getRange(row, psycACol).getValue() || "").toString().trim();
+  var psycB = (sheet.getRange(row, psycBCol).getValue() || "").toString().trim();
   var city = (sheet.getRange(row, cityCol).getValue() || "").toString().trim();
   var obs = (sheet.getRange(row, obsCol).getValue() || "").toString().trim();
-  var psyc = (sheet.getRange(row, psycCol).getValue() || "").toString().trim();
+  var notasMaria = notasMariaCol ? (sheet.getRange(row, notasMariaCol).getValue() || "").toString().trim() : "";
 
   if (!cellA || !cellA.text) return;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
-  if (!matchesSheet) {
-    Logger.log("ERROR: No se encontró la pestaña 'MATCHES'.");
-    return;
+
+  // ── CASO A: APROBADO POR MARÍA ───────────────────────────────────────────
+  if (val === "APROBADO" || val === "TRUE") {
+    var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
+    if (!matchesSheet) {
+      Logger.log("ERROR: No se encontró la pestaña 'MATCHES'.");
+      return;
+    }
+
+    withScriptLock(function() {
+      // 1. Insertar en zona inferior de MATCHES
+      insertMatchInLowerZone(matchesSheet, {
+        personACell: cellA,
+        personBCell: cellB,
+        city: city,
+        observaciones: (psycA ? "[" + psycA + (psycB && psycB !== psycA ? " ↔ " + psycB : "") + "] " : "") + (obs || "") + (notasMaria ? " | Nota María: " + notasMaria : "")
+      });
+
+      // 2. Actualizar estado a APROBADO en la pestaña de Psicóloga A
+      updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8");
+
+      // 3. Actualizar estado a APROBADO en la pestaña de Psicóloga B (si es distinta)
+      if (psycB && psycB !== psycA) {
+        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "APROBADO", "#B6D7A8");
+      }
+
+      // 4. Marcar verde en REVISIÓN MARÍA
+      sheet.getRange(row, aprobarCol).setBackground("#D9EAD3").setValue("APROBADO");
+      ss.toast("Match aprobado y enviado a MATCHES", "Aprobación Exitosa", 5);
+    });
   }
 
-  // Insertar en la zona inferior de MATCHES
-  withScriptLock(function() {
-    insertMatchInLowerZone(matchesSheet, {
-      personACell: cellA,
-      personBCell: cellB,
-      city: city,
-      observaciones: obs ? (psyc ? "[" + psyc + "] " : "") + obs : (psyc ? "Psicóloga: " + psyc : "")
-    });
+  // ── CASO B: NOT APPROVED POR MARÍA ───────────────────────────────────────
+  else if (val === "NOT APPROVED") {
+    withScriptLock(function() {
+      var motivoRechazo = notasMaria ? "Rechazado por María: " + notasMaria : "NOT APPROVED por María";
 
-    // Marcar como procesado en REVISIÓN MARÍA
-    sheet.getRange(row, aprobarCol).setBackground("#D9EAD3").setValue("APROBADO");
-  });
+      // 1. Actualizar estado a NOT APPROVED en pestaña de Psicóloga A y re-generar slot
+      updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC");
+      var sheetA = findPsychologistSheet(psycA);
+      if (sheetA) {
+        appendNewRetryRow(sheetA, getSheetHeaders(sheetA), {
+          city: city,
+          pref: "",
+          plan: "",
+          personACell: cellA,
+          personBCell: null,
+          fecha: "",
+          status: "Listo para match",
+          observaciones: motivoRechazo
+        });
+      }
+
+      // 2. Actualizar estado a NOT APPROVED en pestaña de Psicóloga B y re-generar slot
+      if (psycB && psycB !== psycA) {
+        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "NOT APPROVED", "#F4CCCC");
+        var sheetB = findPsychologistSheet(psycB);
+        if (sheetB) {
+          appendNewRetryRow(sheetB, getSheetHeaders(sheetB), {
+            city: city,
+            pref: "",
+            plan: "",
+            personACell: cellB,
+            personBCell: null,
+            fecha: "",
+            status: "Listo para match",
+            observaciones: motivoRechazo
+          });
+        }
+      }
+
+      // 3. Marcar rojo en REVISIÓN MARÍA
+      sheet.getRange(row, aprobarCol).setBackground("#F4CCCC").setValue("NOT APPROVED");
+      ss.toast("Match rechazado. Slots de reintento creados para ambas personas.", "Rechazo Procesado", 5);
+    });
+  }
+}
+
+/**
+ * Actualiza el estado y color de una fila en la pestaña de una psicóloga.
+ */
+function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgColor) {
+  var sheet = findPsychologistSheet(psycName);
+  if (!sheet) return;
+
+  var headers = getSheetHeaders(sheet);
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"] || 5;
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || headers["CANDIDATO"] || headers["MATCH"] || 6;
+  var statusCol = headers["STATUS"] || 9;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var rowA = (values[i][personACol - 1] || "").toString().toLowerCase().trim();
+    var rowB = (values[i][personBCol - 1] || "").toString().toLowerCase().trim();
+    if (rowA === nameA.toLowerCase().trim() && (rowB === nameB.toLowerCase().trim() || !nameB)) {
+      var targetRow = i + 2;
+      sheet.getRange(targetRow, statusCol).setValue(newStatus);
+      if (bgColor) sheet.getRange(targetRow, statusCol).setBackground(bgColor);
+      Logger.log("✅ Estado actualizado a '" + newStatus + "' en '" + sheet.getName() + "' (Fila " + targetRow + ")");
+      break;
+    }
+  }
+}
+
+// ─── 14. PESTAÑA PRIVADA 🔒 SUPERVISIÓN MARÍA (DASHBOARD OPERATIVO) ─────────
+
+/**
+ * Genera o actualiza la pestaña privada '🔒 SUPERVISIÓN MARÍA' con KPIs ejecutivos en tiempo real.
+ */
+function generarPanelSupervisionMaria() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = "🔒 SUPERVISIÓN MARÍA";
+  var sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  } else {
+    sheet.clear();
+  }
+
+  // 1. Configurar Encabezado Principal (Estilo Premium Wine Red)
+  sheet.getRange("A1:H1").merge()
+    .setValue("👑 DAILY LOVER — PANEL PRIVADO DE SUPERVISIÓN MARÍA")
+    .setFontWeight("bold")
+    .setFontSize(14)
+    .setBackground("#961500")
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center");
+
+  sheet.getRange("A2:H2").merge()
+    .setValue("Actualizado automáticamente: " + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm:ss") + " | Entorno: SSOT Matchmaking")
+    .setFontSize(9)
+    .setFontStyle("italic")
+    .setBackground("#1A1214")
+    .setFontColor("#9A8A8D")
+    .setHorizontalAlignment("center");
+
+  // 2. Calcular KPIs de Control Operativo
+  var revSheet = ss.getSheetByName(CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA");
+  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
+  var refundsSheet = ss.getSheetByName(CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES");
+
+  var pendingRevision = 0;
+  if (revSheet && revSheet.getLastRow() > 1) {
+    var rData = revSheet.getRange(2, 1, revSheet.getLastRow() - 1, revSheet.getLastColumn()).getValues();
+    var revHeaders = getSheetHeaders(revSheet);
+    var apCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 12;
+    for (var r = 0; r < rData.length; r++) {
+      var st = (rData[r][apCol - 1] || "").toString().toUpperCase();
+      if (st === "PENDIENTE" || st.indexOf("ESPERANDO") >= 0 || st.indexOf("APROBADO POR PSIC") >= 0) {
+        pendingRevision++;
+      }
+    }
+  }
+
+  var pendingServiceCalls = 0;
+  var scheduledDates = 0;
+  if (matchesSheet && matchesSheet.getLastRow() > 1) {
+    var mData = matchesSheet.getRange(2, 1, matchesSheet.getLastRow() - 1, matchesSheet.getLastColumn()).getValues();
+    var mHeaders = getSheetHeaders(matchesSheet);
+    var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 5;
+    var matchCol = mHeaders["MATCH"] || 13;
+    for (var m = 0; m < mData.length; m++) {
+      var diaVal = (mData[m][diaCol - 1] || "").toString().trim();
+      var mSt = (mData[m][matchCol - 1] || "").toString().toUpperCase();
+      if (!diaVal && (mSt === "PENDIENTE" || mSt.indexOf("AGENDANDO") >= 0 || mSt.indexOf("POR CONFIRMAR") >= 0)) {
+        pendingServiceCalls++;
+      } else if (diaVal || mSt.indexOf("CONFIRMADA") >= 0 || mSt.indexOf("DATE PROGRAMADO") >= 0) {
+        scheduledDates++;
+      }
+    }
+  }
+
+  var pendingRefunds = refundsSheet ? Math.max(0, refundsSheet.getLastRow() - 1) : 0;
+
+  // 3. Tarjetas KPI
+  var kpiHeaders = [
+    ["Matches por Revisar", "En Espera Servicio al Cliente", "Citas Agendadas / Activas", "Refunds Pendientes Lina"],
+    [pendingRevision, pendingServiceCalls, scheduledDates, pendingRefunds]
+  ];
+
+  sheet.getRange("A4:B4").merge().setValue(kpiHeaders[0][0]).setFontWeight("bold").setBackground("#351C75").setFontColor("#FFF").setHorizontalAlignment("center");
+  sheet.getRange("A5:B5").merge().setValue(kpiHeaders[1][0]).setFontSize(18).setFontWeight("bold").setBackground("#D9D2E9").setHorizontalAlignment("center");
+
+  sheet.getRange("C4:D4").merge().setValue(kpiHeaders[0][1]).setFontWeight("bold").setBackground("#7F6000").setFontColor("#FFF").setHorizontalAlignment("center");
+  sheet.getRange("C5:D5").merge().setValue(kpiHeaders[1][1]).setFontSize(18).setFontWeight("bold").setBackground("#FFF2CC").setHorizontalAlignment("center");
+
+  sheet.getRange("E4:F4").merge().setValue(kpiHeaders[0][2]).setFontWeight("bold").setBackground("#274E13").setFontColor("#FFF").setHorizontalAlignment("center");
+  sheet.getRange("E5:F5").merge().setValue(kpiHeaders[1][2]).setFontSize(18).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
+
+  sheet.getRange("G4:H4").merge().setValue(kpiHeaders[0][3]).setFontWeight("bold").setBackground("#783F04").setFontColor("#FFF").setHorizontalAlignment("center");
+  sheet.getRange("G5:H5").merge().setValue(kpiHeaders[1][3]).setFontSize(18).setFontWeight("bold").setBackground("#FCE5CD").setHorizontalAlignment("center");
+
+  // 4. Tabla de Rendimiento y Slots por Psicóloga
+  sheet.getRange("A7:H7").merge()
+    .setValue("📊 ACTIVIDAD Y CARGA OPERATIVA POR PSICÓLOGA")
+    .setFontWeight("bold")
+    .setBackground("#20124D")
+    .setFontColor("#FFFFFF");
+
+  var psycHeaders = ["Psicóloga", "Total Slots", "Listos Match", "Hechos", "Aprobados", "Trouble/Rechazos", "Refunds", "Eficiencia"];
+  for (var h = 0; h < psycHeaders.length; h++) {
+    sheet.getRange(8, h + 1).setValue(psycHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  }
+
+  var psycList = CONFIG.VALID_PSYCHOLOGISTS || ["JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"];
+  for (var p = 0; p < psycList.length; p++) {
+    var pName = psycList[p];
+    var pSheet = findPsychologistSheet(pName);
+    var totalSlots = 0, listos = 0, hechos = 0, aprobados = 0, trouble = 0, refunds = 0;
+
+    if (pSheet && pSheet.getLastRow() > 1) {
+      var pHeaders = getSheetHeaders(pSheet);
+      var stCol = pHeaders["STATUS"] || 9;
+      var pValues = pSheet.getRange(2, 1, pSheet.getLastRow() - 1, pSheet.getLastColumn()).getValues();
+      totalSlots = pValues.length;
+
+      for (var rowIdx = 0; rowIdx < pValues.length; rowIdx++) {
+        var sVal = (pValues[rowIdx][stCol - 1] || "").toString().toUpperCase();
+        if (sVal.indexOf("LISTO") >= 0 || sVal.indexOf("LLENAR") >= 0) listos++;
+        else if (sVal === "HECHO" || sVal === "HECHO POR MAPE") hechos++;
+        else if (sVal === "APROBADO") aprobados++;
+        else if (sVal.indexOf("TROUBLE") >= 0 || sVal.indexOf("NOT APPROVED") >= 0 || sVal.indexOf("DESCALIFICADO") >= 0) trouble++;
+        else if (sVal === "REFUND") refunds++;
+      }
+    }
+
+    var efec = totalSlots > 0 ? Math.round(((aprobados + hechos) / totalSlots) * 100) + "%" : "0%";
+    var curRow = 9 + p;
+    sheet.getRange(curRow, 1).setValue(pName).setFontWeight("bold");
+    sheet.getRange(curRow, 2).setValue(totalSlots).setHorizontalAlignment("center");
+    sheet.getRange(curRow, 3).setValue(listos).setHorizontalAlignment("center");
+    sheet.getRange(curRow, 4).setValue(hechos).setHorizontalAlignment("center");
+    sheet.getRange(curRow, 5).setValue(aprobados).setHorizontalAlignment("center");
+    sheet.getRange(curRow, 6).setValue(trouble).setHorizontalAlignment("center");
+    sheet.getRange(curRow, 7).setValue(refunds).setHorizontalAlignment("center");
+    sheet.getRange(curRow, 8).setValue(efec).setHorizontalAlignment("center");
+  }
+
+  // 5. Proteger pestaña exclusivamente para María
+  var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  for (var pr = 0; pr < protections.length; pr++) {
+    protections[pr].remove();
+  }
+
+  var protection = sheet.protect().setDescription("Protegido: Solo María");
+  var me = Session.getEffectiveUser();
+  protection.addEditor(me);
+  if (CONFIG.MARIA_EMAIL) {
+    try {
+      protection.addEditor(CONFIG.MARIA_EMAIL);
+    } catch (e) {}
+  }
+
+  var editors = protection.getEditors();
+  for (var ed = 0; ed < editors.length; ed++) {
+    var em = editors[ed].getEmail();
+    if (em !== CONFIG.MARIA_EMAIL && em !== me.getEmail()) {
+      protection.removeEditor(editors[ed]);
+    }
+  }
+
+  Logger.log("✅ Pestaña privada '🔒 SUPERVISIÓN MARÍA' generada y protegida con éxito.");
+  ss.toast("Panel de Supervisión de María generado y actualizado.", "Panel Listo", 5);
 }
 
 /**
