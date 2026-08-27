@@ -119,13 +119,16 @@ export default function IntakeClientes() {
           setFormData(prev => ({
             ...prev,
             person_a: data.name,
-            city: data.city || prev.city,
-            pref: data.pref || prev.pref,
-            plan_tier: data.plan_tier || prev.plan_tier,
+            crm_url: val,
+            psychologist_name: data.psychologist || prev.psychologist_name || 'SILVI',
+            city: data.city || prev.city || 'Bogotá',
+            pref: data.pref || prev.pref || 'hetero',
+            plan_tier: data.plan_tier || prev.plan_tier || '',
+            person_a_crm_id: data.crm_id || null
           }))
-          setResolveHint(`✅ Datos extraídos del CRM: ${data.name} (${data.city || 'Sin ciudad'}, ${data.pref.toUpperCase()}, ${data.plan_tier})`)
+          setResolveHint(`✅ Perfil extraído con éxito: ${data.name}`)
         } else {
-          setResolveHint('⚠️ Link detectado pero el cliente no está en base local aún.')
+          setResolveHint('⚠️ No se encontraron datos en CRM para este enlace. Por favor verifica el link.')
         }
       } catch (err) {
         setResolveHint('')
@@ -579,7 +582,7 @@ export default function IntakeClientes() {
         </div>
       )}
 
-      {/* Modal para Crear Cliente Nuevo (3 Slots) */}
+      {/* Modal para Crear Cliente Nuevo desde URL del CRM */}
       {showModal && (
         <div style={{
           position: 'fixed',
@@ -593,7 +596,7 @@ export default function IntakeClientes() {
           <div style={{
             background: 'var(--bg-card)',
             width: '100%',
-            maxWidth: 560,
+            maxWidth: 580,
             borderRadius: 12,
             border: '1px solid var(--border-color)',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
@@ -608,7 +611,7 @@ export default function IntakeClientes() {
               background: 'var(--bg-base)'
             }}>
               <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <UserPlus size={18} color="#B8324F" /> Registrar Cliente & Crear 3 Slots
+                <UserPlus size={18} color="#B8324F" /> Ingestar Cliente desde SmartMatchApp (CRM)
               </h2>
               <button
                 onClick={() => setShowModal(false)}
@@ -619,20 +622,20 @@ export default function IntakeClientes() {
             </div>
 
             <form onSubmit={handleCreateClient} style={{ padding: '20px 24px' }}>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Nombre Completo o Link del CRM (SmartMatchApp) *
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  🔗 Enlace del Perfil en SmartMatchApp (CRM) *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej: Valeria Linero o pega enlace https://dailylover.smartmatchapp.com/client/3923..."
-                  value={formData.person_a}
+                  placeholder="Pega el enlace https://dailylover.smartmatchapp.com/client/3923..."
+                  value={formData.crm_url || formData.person_a}
                   onChange={e => handleResolveInput(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: 6,
+                    padding: '10px 14px',
+                    borderRadius: 8,
                     border: resolveHint.startsWith('✅') ? '1px solid #10B981' : '1px solid var(--border-color)',
                     background: 'var(--bg-base)',
                     color: 'var(--text-primary)',
@@ -642,29 +645,72 @@ export default function IntakeClientes() {
                   }}
                 />
                 {resolving && (
-                  <div style={{ fontSize: 12, marginTop: 5, color: '#3B82F6', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <RefreshCw size={12} className="animate-spin" /> Extrayendo datos del CRM...
+                  <div style={{ fontSize: 12, marginTop: 6, color: '#3B82F6', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <RefreshCw size={14} className="animate-spin" /> Consultando webhook / CRM SmartMatchApp...
                   </div>
                 )}
                 {resolveHint && !resolving && (
                   <div style={{
                     fontSize: 12,
-                    marginTop: 6,
-                    padding: '6px 10px',
-                    borderRadius: 4,
-                    background: resolveHint.startsWith('✅') ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
-                    color: resolveHint.startsWith('✅') ? '#059669' : '#D97706',
-                    fontWeight: 500
+                    marginTop: 8,
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    background: resolveHint.startsWith('✅') ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                    color: resolveHint.startsWith('✅') ? '#10B981' : '#F59E0B',
+                    fontWeight: 600
                   }}>
                     {resolveHint}
                   </div>
                 )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
+              {/* Tarjeta de Datos Extraídos Automáticamente del CRM */}
+              {formData.person_a && formData.person_a !== formData.crm_url && (
+                <div style={{
+                  background: 'rgba(184, 50, 79, 0.06)',
+                  border: '1px solid rgba(184, 50, 79, 0.25)',
+                  borderRadius: 8,
+                  padding: '14px 16px',
+                  marginBottom: 16
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#B8324F', marginBottom: 8 }}>
+                    ✓ Datos Extraídos del CRM en Tiempo Real
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', fontSize: 13 }}>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Nombre del Cliente:</span>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{formData.person_a}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Psicóloga Responsable:</span>
+                      <div style={{ fontWeight: 700, color: '#A2C4C9' }}>{formData.psychologist_name || 'Sin asignar'}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Ciudad:</span>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>📍 {formData.city || 'Bogotá'}</div>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Preferencia:</span>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>🧭 {formData.pref?.toUpperCase() || 'HETERO'}</div>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Plan Oficial:</span>
+                      <div style={{ fontWeight: 700, color: '#B6D7A8' }}>
+                        💎 {formData.plan_tier || 'Pendiente Plan'} 
+                        <span className="badge badge-wine" style={{ marginLeft: 8, fontSize: 11 }}>
+                          {formData.plan_tier?.includes('VIP') ? '4 Slots' : formData.plan_tier?.includes('40k') ? '2 Slots' : '3 Slots'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Opción de confirmación / ajuste de Psicóloga solo si el CRM no la tenía asignada */}
+              {(!formData.psychologist_name || formData.psychologist_name === 'SILVI') && (
+                <div style={{ marginBottom: 14 }}>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Psicóloga Asignada *
+                    Confirmar Psicóloga Responsable
                   </label>
                   <select
                     value={formData.psychologist_name}
@@ -685,119 +731,20 @@ export default function IntakeClientes() {
                     ))}
                   </select>
                 </div>
+              )}
 
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Ciudad *
-                  </label>
-                  <select
-                    value={formData.city}
-                    onChange={e => setFormData({ ...formData, city: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                      outline: 'none'
-                    }}
-                  >
-                    {CITIES.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Preferencia *
-                  </label>
-                  <select
-                    value={formData.pref}
-                    onChange={e => setFormData({ ...formData, pref: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="hetero">HETERO</option>
-                    <option value="gay">GAY</option>
-                    <option value="lesbiana">LESBIANA</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Plan Oficial
-                  </label>
-                  <select
-                    value={formData.plan_tier}
-                    onChange={e => setFormData({ ...formData, plan_tier: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 13,
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="">(Sin plan — marcar en amarillo PENDIENTE PLAN)</option>
-                    <option value="Estándar 65k (2 citas)">Estándar 65k (3 slots)</option>
-                    <option value="VIP 195k">VIP 195k (4 slots)</option>
-                    <option value="Básico 40k">Básico 40k (2 slots)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.is_priority || false}
                     onChange={e => setFormData({ ...formData, is_priority: e.target.checked })}
-                    style={{ transform: 'scale(1.2)', cursor: 'pointer' }}
+                    style={{ accentColor: '#B8324F', width: 16, height: 16 }}
                   />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#B8324F' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: formData.is_priority ? '#B8324F' : 'var(--text-primary)' }}>
                     ⚡ Marcar como PROFILE PRIORITARIO (Personas Difíciles)
                   </span>
                 </label>
-              </div>
-
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Criterios Clínicos / Observaciones de Búsqueda
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Ej: Interesada en profesionales con afinidad deportiva, rango 28-35 años..."
-                  value={formData.observations}
-                  onChange={e => setFormData({ ...formData, observations: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-base)',
-                    color: 'var(--text-primary)',
-                    fontSize: 13,
-                    outline: 'none',
-                    resize: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -805,32 +752,36 @@ export default function IntakeClientes() {
                   type="button"
                   onClick={() => setShowModal(false)}
                   style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border-color)',
-                    color: 'var(--text-secondary)',
-                    borderRadius: 6,
                     padding: '8px 16px',
-                    fontSize: 13,
-                    cursor: 'pointer'
+                    borderRadius: 6,
+                    border: '1px solid var(--border-color)',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: 13
                   }}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || resolving || !formData.person_a}
                   style={{
-                    background: '#B8324F',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    borderRadius: 6,
                     padding: '8px 18px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: '#B8324F',
+                    color: '#fff',
+                    fontWeight: 700,
+                    cursor: (submitting || resolving || !formData.person_a) ? 'not-allowed' : 'pointer',
                     fontSize: 13,
-                    fontWeight: 600,
-                    cursor: submitting ? 'wait' : 'pointer'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    opacity: (submitting || resolving || !formData.person_a) ? 0.6 : 1
                   }}
                 >
-                  {submitting ? 'Creando slots...' : '✓ Registrar & Crear Slots'}
+                  {submitting ? 'Ingestando...' : '✓ Ingestar & Generar Slots'}
                 </button>
               </div>
             </form>
