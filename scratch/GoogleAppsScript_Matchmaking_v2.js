@@ -1465,6 +1465,147 @@ function buildCanonicalCrmUrl(crmId, fallbackUrl) {
  * 2. Compatibilidad de orientación / preferencia.
  * 3. Compatibilidad de ciudad.
  */
+function normalizeCityLocal(city) {
+  if (!city) return "";
+  var c = city.toString().toLowerCase().trim();
+  if (c.indexOf("bog") >= 0) return "Bogotá";
+  if (c.indexOf("med") >= 0 || c.indexOf("mde") >= 0) return "Medellín";
+  if (c.indexOf("cal") >= 0) return "Cali";
+  if (c.indexOf("barr") >= 0 || c.indexOf("baq") >= 0) return "Barranquilla";
+  if (c.indexOf("cart") >= 0 || c.indexOf("ctg") >= 0) return "Cartagena";
+  if (c.indexOf("per") >= 0) return "Pereira";
+  if (c.indexOf("buc") >= 0 || c.indexOf("bga") >= 0) return "Bucaramanga";
+  if (c.indexOf("man") >= 0) return "Manizales";
+  if (c.indexOf("san") >= 0 || c.indexOf("smr") >= 0) return "Santa Marta";
+  return city.toString().trim();
+}
+
+function normalizePrefLocal(pref) {
+  if (!pref) return "";
+  var p = pref.toString().toLowerCase().trim();
+  if (p.indexOf("gay") >= 0 || p.indexOf("homo") >= 0) return "gay";
+  if (p.indexOf("lesb") >= 0) return "lesb";
+  if (p.indexOf("bi") >= 0) return "bi";
+  if (p.indexOf("hetero") >= 0) return "hetero";
+  return p;
+}
+
+/**
+ * Busca los detalles completos de una persona (nombre, CRM ID, ciudad, preferencia/orientación, psicóloga)
+ * dentro del libro de cálculo (en PROFILES y en todas las pestañas de psicólogas).
+ * @param {Object} personCell - { text, link, crmId, richText }
+ * @returns {Object|null} - { name, crmId, city, pref, psychologist, source }
+ */
+function findPersonDetailsInWorkbook(personCell) {
+  if (!personCell || (!personCell.text && !personCell.link)) return null;
+
+  var targetName = (personCell.text || "").trim().toLowerCase();
+  var linkUrl = (personCell.richText && personCell.richText.getLinkUrl()) ? personCell.richText.getLinkUrl() : (personCell.link || "");
+  var targetCrmId = personCell.crmId || extractCrmIdFromUrl(linkUrl);
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Buscar en PROFILES (Donde residen todos los registros maestros)
+  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
+  if (profSheet) {
+    var pHeaders = getSheetHeaders(profSheet);
+    var nameCol = pHeaders["FULLNAME"] || pHeaders["FULL NAME"] || pHeaders["NOMBRE"] || pHeaders["PERSONA A"] || 2;
+    var cityCol = pHeaders["CITY"] || pHeaders["CIUDAD"] || 4;
+    var prefCol = pHeaders["PREF"] || pHeaders["PREFERENCIA"] || pHeaders["ORIENTACION"] || pHeaders["SEXO"] || 5;
+    var respCol = pHeaders["RESPONSABLE"] || pHeaders["PSICOLOGA"] || 6;
+
+    var lastRow = profSheet.getLastRow();
+    if (lastRow > 1) {
+      var rts = profSheet.getRange(2, nameCol, lastRow - 1, 1).getRichTextValues();
+      var data = profSheet.getRange(2, 1, lastRow - 1, profSheet.getLastColumn()).getValues();
+
+      for (var i = 0; i < data.length; i++) {
+        var rt = rts[i][0];
+        var rowText = rt ? rt.getText().trim() : (data[i][nameCol - 1] || "").toString().trim();
+        var rowLink = rt ? (rt.getLinkUrl() || "") : "";
+        var rowCrmId = extractCrmIdFromUrl(rowLink);
+
+        var isMatch = false;
+        if (targetCrmId && rowCrmId && targetCrmId === rowCrmId) {
+          isMatch = true;
+        } else if (targetName && rowText.toLowerCase() === targetName) {
+          isMatch = true;
+        }
+
+        if (isMatch) {
+          var foundCity = cityCol ? (data[i][cityCol - 1] || "").toString().trim() : "";
+          var foundPref = prefCol ? (data[i][prefCol - 1] || "").toString().trim() : "";
+          var foundPsyc = respCol ? (data[i][respCol - 1] || "").toString().trim() : "";
+          return {
+            name: rowText || personCell.text,
+            crmId: rowCrmId || targetCrmId,
+            city: foundCity,
+            pref: foundPref,
+            psychologist: normalizePsychologistName(foundPsyc),
+            source: "PROFILES"
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Buscar en las 10 pestañas de psicólogas (por si está como Persona A en otra pestaña)
+  var sheets = ss.getSheets();
+  for (var sIdx = 0; sIdx < sheets.length; sIdx++) {
+    var s = sheets[sIdx];
+    var sName = s.getName().trim().toUpperCase();
+    if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
+      var headers = getSheetHeaders(s);
+      var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"];
+      var cityCol = headers["CITY"] || headers["CIUDAD"];
+      var prefCol = headers["PREF"] || headers["PREFERENCIA"];
+      if (!personACol) continue;
+
+      var lastRow = Math.min(s.getLastRow(), 2000);
+      if (lastRow > 1) {
+        var rts = s.getRange(2, personACol, lastRow - 1, 1).getRichTextValues();
+        var data = s.getRange(2, 1, lastRow - 1, s.getLastColumn()).getValues();
+
+        for (var i = 0; i < data.length; i++) {
+          var rt = rts[i][0];
+          var rowText = rt ? rt.getText().trim() : (data[i][personACol - 1] || "").toString().trim();
+          var rowLink = rt ? (rt.getLinkUrl() || "") : "";
+          var rowCrmId = extractCrmIdFromUrl(rowLink);
+
+          var isMatch = false;
+          if (targetCrmId && rowCrmId && targetCrmId === rowCrmId) {
+            isMatch = true;
+          } else if (targetName && rowText.toLowerCase() === targetName) {
+            isMatch = true;
+          }
+
+          if (isMatch) {
+            var foundCity = cityCol ? (data[i][cityCol - 1] || "").toString().trim() : "";
+            var foundPref = prefCol ? (data[i][prefCol - 1] || "").toString().trim() : "";
+            var psycRaw = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
+            return {
+              name: rowText || personCell.text,
+              crmId: rowCrmId || targetCrmId,
+              city: foundCity,
+              pref: foundPref,
+              psychologist: normalizePsychologistName(psycRaw),
+              source: s.getName()
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Valida la compatibilidad entre Persona A y Persona B:
+ * 1. Cita previa completada juntos en el historial.
+ * 2. Compatibilidad de orientación / preferencia.
+ * 3. Compatibilidad de ciudad.
+ */
 function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
   var issues = [];
   var nameA = (cellA && cellA.text ? cellA.text : "").trim();
@@ -1491,18 +1632,20 @@ function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
     });
     if (response.getResponseCode() === 200) {
       var data = JSON.parse(response.getContentText());
-      if (data && data.issues && data.issues.length > 0) {
-        return { compatible: false, issues: data.issues };
+      if (data) {
+        if (data.issues && data.issues.length > 0) {
+          return { compatible: false, issues: data.issues };
+        } else if (data.compatible === true) {
+          return { compatible: true, issues: [] };
+        }
       }
     }
   } catch (err) {
-    Logger.log("Aviso al consultar check-compatibility en backend: " + err.message);
+    Logger.log("Aviso al consultar check-compatibility en backend: " + err.message + ". Ejecutando respaldo local en Sheet.");
   }
 
-  // 2. Validación local en el Sheet (como respaldo)
-  var cityCol = headers["CITY"] || headers["CIUDAD"];
-  var cityA = cityCol ? (sheet.getRange(row, cityCol).getValue() || "").toString().trim() : "";
-
+  // 2. Respaldo Local en el Sheet (Si el backend no respondió o falló)
+  // ── CHEQUEO 1: Cita previa realizada o match previo ──
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var histSheet = ss.getSheetByName("Corazoncito") || ss.getSheetByName("MATCHES");
   if (histSheet && nameA && nameB) {
@@ -1515,11 +1658,59 @@ function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
         var hStatus = (vals[i][9] || "").toString().trim().toUpperCase();
         if (((hA === nameA.toLowerCase() && hB === nameB.toLowerCase()) || 
              (hA === nameB.toLowerCase() && hB === nameA.toLowerCase())) &&
-            (hStatus.indexOf("DATE") >= 0 || hStatus.indexOf("REALIZAD") >= 0 || hStatus.indexOf("APROBAD") >= 0 || hStatus.indexOf("HECHO") >= 0)) {
-          issues.push("Cita previa existente en el historial del libro entre " + nameA + " y " + nameB);
+            (hStatus.indexOf("DATE") >= 0 || hStatus.indexOf("REALIZAD") >= 0 || hStatus.indexOf("APROBAD") >= 0 || hStatus.indexOf("HECHO") >= 0 || hStatus.indexOf("CONFIRMAD") >= 0)) {
+          issues.push("Cita previa existente: " + nameA + " y " + nameB + " ya tuvieron una cita o match registrado en el historial del libro.");
           break;
         }
       }
+    }
+  }
+
+  // Obtener datos locales de Persona A
+  var cityColA = headers["CITY"] || headers["CIUDAD"];
+  var prefColA = headers["PREF"] || headers["PREFERENCIA"];
+  var rawCityA = cityColA ? (sheet.getRange(row, cityColA).getValue() || "").toString().trim() : "";
+  var rawPrefA = prefColA ? (sheet.getRange(row, prefColA).getValue() || "").toString().trim() : "";
+
+  // Si Persona A no tiene city/pref en la fila actual, buscar en PROFILES
+  if (!rawCityA || !rawPrefA) {
+    var detailsA = findPersonDetailsInWorkbook(cellA);
+    if (detailsA) {
+      if (!rawCityA) rawCityA = detailsA.city;
+      if (!rawPrefA) rawPrefA = detailsA.pref;
+    }
+  }
+
+  // Obtener datos locales de Persona B buscando en PROFILES o en las pestañas de psicólogas
+  var detailsB = findPersonDetailsInWorkbook(cellB);
+  var rawCityB = detailsB ? detailsB.city : "";
+  var rawPrefB = detailsB ? detailsB.pref : "";
+
+  // Normalizar ciudades
+  var normCityA = normalizeCityLocal(rawCityA);
+  var normCityB = normalizeCityLocal(rawCityB);
+
+  // ── CHEQUEO 2: Comparación de Ciudad ──
+  if (normCityA && normCityB && normCityA.toLowerCase() !== normCityB.toLowerCase()) {
+    issues.push("Ciudades distintas: " + nameA + " está en " + normCityA + " y " + nameB + " está en " + normCityB + ".");
+  }
+
+  // Normalizar preferencias / orientación
+  var normPrefA = normalizePrefLocal(rawPrefA);
+  var normPrefB = normalizePrefLocal(rawPrefB);
+
+  // ── CHEQUEO 3: Comparación de Orientación / Preferencia ──
+  if (normPrefA && normPrefB) {
+    if (normPrefA === "hetero" && normPrefB === "gay") {
+      issues.push("Incompatibilidad de orientación: " + nameA + " es HETERO y " + nameB + " es GAY.");
+    } else if (normPrefA === "gay" && normPrefB === "hetero") {
+      issues.push("Incompatibilidad de orientación: " + nameA + " es GAY y " + nameB + " es HETERO.");
+    } else if (normPrefA === "lesb" && normPrefB === "hetero") {
+      issues.push("Incompatibilidad de orientación: " + nameA + " es LESBIANA y " + nameB + " es HETERO.");
+    } else if (normPrefA === "hetero" && normPrefB === "lesb") {
+      issues.push("Incompatibilidad de orientación: " + nameA + " es HETERO y " + nameB + " es LESBIANA.");
+    } else if (normPrefA === "gay" && normPrefB === "lesb") {
+      issues.push("Incompatibilidad de orientación: " + nameA + " es GAY y " + nameB + " es LESBIANA.");
     }
   }
 
@@ -1538,54 +1729,10 @@ function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
  */
 function findPsychologistForPersonA(personBCell, currentSheet) {
   if (!personBCell || (!personBCell.text && !personBCell.link)) return "";
-
-  var targetCrmId = personBCell.crmId || extractCrmIdFromUrl(personBCell.link);
-  var targetName = (personBCell.text || "").trim().toLowerCase();
-
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = ss.getSheets();
-
-  for (var i = 0; i < sheets.length; i++) {
-    var s = sheets[i];
-    var sName = s.getName().trim().toUpperCase();
-
-    // Solo inspeccionar pestañas de psicólogas activas
-    if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
-      var psycRaw = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
-      var psycName = normalizePsychologistName(psycRaw) || psycRaw;
-
-      var headers = getSheetHeaders(s);
-      var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"];
-      if (!personACol) continue;
-
-      var lastRow = getTrueLastRow(s, personACol);
-      if (lastRow < 2) continue;
-
-      var richValues = s.getRange(2, personACol, lastRow - 1, 1).getRichTextValues();
-
-      for (var r = 0; r < richValues.length; r++) {
-        var rt = richValues[r][0];
-        if (!rt) continue;
-
-        var cellText = rt.getText().trim();
-        if (!cellText) continue;
-
-        var cellLink = rt.getLinkUrl() || "";
-        var cellCrmId = extractCrmIdFromUrl(cellLink);
-
-        // 1. Comparar por CRM ID si está presente (evita homónimos)
-        if (targetCrmId && cellCrmId && targetCrmId === cellCrmId) {
-          return psycName;
-        }
-
-        // 2. Comparar por nombre normalizado
-        if (targetName && cellText.toLowerCase() === targetName) {
-          return psycName;
-        }
-      }
-    }
+  var details = findPersonDetailsInWorkbook(personBCell);
+  if (details && details.psychologist) {
+    return details.psychologist;
   }
-
   return "";
 }
 
@@ -3206,32 +3353,16 @@ function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, reject
  */
 function findPsychologistForPerson(personCell) {
   if (!personCell || !personCell.text) return "";
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES");
   
-  var targetName = personCell.text.toLowerCase().trim();
-  var targetCrmId = personCell.crmId || (personCell.richText ? extractCrmIdFromUrl(personCell.richText.getLinkUrl()) : "");
-
-  if (profSheet) {
-    var pHeaders = getSheetHeaders(profSheet);
-    var nameCol = pHeaders["FULLNAME"] || pHeaders["NOMBRE"] || 2;
-    var respCol = pHeaders["RESPONSABLE"] || pHeaders["PSICOLOGA"] || 4;
-    var lastRow = profSheet.getLastRow();
-
-    if (lastRow > 1) {
-      var values = profSheet.getRange(2, 1, lastRow - 1, profSheet.getLastColumn()).getValues();
-      for (var i = 0; i < values.length; i++) {
-        var rowName = (values[i][nameCol - 1] || "").toString().toLowerCase().trim();
-        var rowPsyc = (values[i][respCol - 1] || "").toString().trim();
-        if (rowName === targetName && rowPsyc) {
-          return normalizePsychologistName(rowPsyc);
-        }
-      }
-    }
+  // 1. Buscar en el libro de Sheets (PROFILES + pestañas de psicólogas)
+  var details = findPersonDetailsInWorkbook(personCell);
+  if (details && details.psychologist) {
+    return details.psychologist;
   }
 
-  // Fallback: Consultar al backend
-  var query = targetCrmId || targetName;
+  // 2. Fallback: Consultar al backend
+  var targetCrmId = personCell.crmId || (personCell.richText ? extractCrmIdFromUrl(personCell.richText.getLinkUrl()) : "");
+  var query = targetCrmId || personCell.text;
   var crm = fetchProfileFromBackend(query);
   if (crm && crm.found && crm.psychologist) {
     return normalizePsychologistName(crm.psychologist);
