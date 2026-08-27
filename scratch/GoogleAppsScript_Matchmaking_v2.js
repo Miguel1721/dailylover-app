@@ -33,6 +33,9 @@ var CONFIG = {
   REFUNDS_SHEET_NAME: "REFUNDS PENDIENTES",
   VUELVE_A_PAGAR_SHEET_NAME: "VUELVE A PAGAR",
   REVISION_MARIA_SHEET_NAME: "REVISIÓN MARÍA",
+  MATCHES_SHEET_NAME: "MATCHES",
+  CONFIG_ESTADOS_SHEET_NAME: "⚙️ CONFIG ESTADOS",
+  MARIA_EMAIL: "dailylover.maria@gmail.com",
   PRIORITY_SHEET_NAME: "PERSONAS DÍFICILES",
   PROFILES_SHEET_NAME: "PROFILES",
   TIMEZONE: "America/Bogota",
@@ -129,6 +132,15 @@ function onEditInstallable(e) {
   } else if (upperSheetName === CONFIG.PROFILES_SHEET_NAME || upperSheetName === "PROFILES") {
     Logger.log("Despachando a handleProfilesEdit...");
     handleProfilesEdit(sheet, row, col, e.value, e.oldValue);
+  } else if (upperSheetName === (CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA").toUpperCase() || upperSheetName === "REVISION MARIA") {
+    Logger.log("Despachando a handleRevisionMariaEdit...");
+    handleRevisionMariaEdit(sheet, row, col, e.value, e.oldValue);
+  } else if (upperSheetName === (CONFIG.MATCHES_SHEET_NAME || "MATCHES").toUpperCase()) {
+    Logger.log("Despachando a handleMatchesEdit...");
+    handleMatchesEdit(sheet, row, col, e.value, e.oldValue);
+  } else if (upperSheetName === (CONFIG.CONFIG_ESTADOS_SHEET_NAME || "⚙️ CONFIG ESTADOS").toUpperCase() || upperSheetName === "CONFIG ESTADOS") {
+    Logger.log("Despachando a handleConfigEstadosEdit...");
+    handleConfigEstadosEdit(sheet, row, col);
   } else {
     Logger.log("Pestaña '" + sheetName + "' no requiere procesamiento en disparador.");
   }
@@ -1551,10 +1563,500 @@ function onOpen(e) {
       .createMenu("🔎 Daily Lover")
       .addItem("Historial de persona", "mostrarHistorialPersona")
       .addSeparator()
+      .addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos")
+      .addItem("Proteger ⚙️ CONFIG ESTADOS (Solo María)", "protegerConfigEstados")
       .addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable")
       .addToUi();
   } catch (err) {
     Logger.log("No se pudo crear menú en onOpen: " + err);
+  }
+}
+
+// ─── 12. SISTEMA CENTRAL DE ESTADOS (⚙️ CONFIG ESTADOS) ─────────────────────
+
+/**
+ * Lee los estados agrupados por etapa desde '⚙️ CONFIG ESTADOS'.
+ */
+function getEstadosPorEtapa() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.CONFIG_ESTADOS_SHEET_NAME || "⚙️ CONFIG ESTADOS");
+  
+  var result = {
+    PSICOLOGA: [],
+    SERVICIO_CLIENTE: [],
+    RESULTADO_CITA: [],
+    REFUND: [],
+    COLOR_MAP: {}
+  };
+
+  if (!sheet) {
+    Logger.log("AVISO: No se encontró la pestaña '⚙️ CONFIG ESTADOS'. Usando estados por defecto.");
+    return result;
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return result;
+
+  var data = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
+  for (var i = 0; i < data.length; i++) {
+    var estado = (data[i][0] || "").toString().trim();
+    var color = (data[i][1] || "").toString().trim();
+    var etapa = (data[i][2] || "").toString().trim().toUpperCase();
+
+    if (!estado) continue;
+
+    if (color) {
+      result.COLOR_MAP[estado.toUpperCase()] = color;
+    }
+
+    if (etapa === "PSICOLOGA") {
+      result.PSICOLOGA.push(estado);
+    } else if (etapa === "SERVICIO_CLIENTE") {
+      result.SERVICIO_CLIENTE.push(estado);
+    } else if (etapa === "RESULTADO_CITA") {
+      result.RESULTADO_CITA.push(estado);
+    } else if (etapa === "REFUND") {
+      result.REFUND.push(estado);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Actualiza dinámicamente las validaciones de datos (desplegables) en todas las pestañas
+ * leyendo exclusivamente los estados configurados en '⚙️ CONFIG ESTADOS'.
+ */
+function actualizarDesplegablesDinamicos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var estadosData = getEstadosPorEtapa();
+
+  // 1. Regla para Etapa PSICOLOGA
+  var psycList = estadosData.PSICOLOGA.length > 0 ? estadosData.PSICOLOGA : [
+    "Llenar perfil", "Listo para match", "HECHO", "APROBADO", "NOT APPROVED", "DESCALIFICADO",
+    "NO HAY GENTE", "REVISAR", "TROUBLEMAKER", "HECHO POR MAPE", "REQUEST PROFILE UPDATE",
+    "PSIC. URG", "MUJER +50", "REFUND"
+  ];
+  var psycRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(psycList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // 2. Regla para Etapa SERVICIO_CLIENTE + RESULTADO_CITA (Pestaña MATCHES)
+  var matchesList = [].concat(estadosData.SERVICIO_CLIENTE, estadosData.RESULTADO_CITA);
+  if (matchesList.length === 0) {
+    matchesList = [
+      "pendiente", "agendando", "por confirmar", "esperar", "de viaje", "problemas personales",
+      "no contestan", "reprogramar", "esperar que salgan con su date", "TROUBLEMAKER",
+      "cita confirmada", "DATE PROGRAMADO", "cita realizada", "match", "MATCH DONE",
+      "no match (él rechazó)", "no match (ella rechazó)", "sin química (mutuo)"
+    ];
+  }
+  var matchesRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(matchesList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // 3. Regla para Etapa REFUND
+  var refundList = estadosData.REFUND.length > 0 ? estadosData.REFUND : [
+    "REFUND DONE", "REFUND PENDIENTE – NEQUI", "REFUND PENDIENTE – DATOS",
+    "REFUND PENDIENTE – STRIPE", "REFUND PARCIAL PENDIENTE", "PENDIENTE DE RESPUESTA CLIENTE", "CLIENTE QUIERE ESPERAR"
+  ];
+  var refundRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(refundList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // Aplicar a todas las pestañas de Psicólogas
+  var allSheets = ss.getSheets();
+  for (var i = 0; i < allSheets.length; i++) {
+    var s = allSheets[i];
+    var sName = s.getName().trim().toUpperCase();
+
+    if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
+      var headers = getSheetHeaders(s);
+      var statusCol = headers["STATUS"] || 9;
+      var maxRows = Math.min(s.getMaxRows(), 5000);
+      if (maxRows > 1) {
+        s.getRange(2, statusCol, maxRows - 1, 1).setDataValidation(psycRule);
+      }
+    } else if (sName === "MATCHES") {
+      var mHeaders = getSheetHeaders(s);
+      var matchCol = mHeaders["MATCH"] || 13;
+      var mMaxRows = Math.min(s.getMaxRows(), 5000);
+      if (mMaxRows > 1) {
+        s.getRange(2, matchCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
+      }
+    } else if (sName === (CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES").toUpperCase()) {
+      var rHeaders = getSheetHeaders(s);
+      var rStatusCol = rHeaders["STATUS"] || 7;
+      var rMaxRows = Math.min(s.getMaxRows(), 3000);
+      if (rMaxRows > 1) {
+        s.getRange(2, rStatusCol, rMaxRows - 1, 1).setDataValidation(refundRule);
+      }
+    } else if (sName === (CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA").toUpperCase() || sName === "REVISION MARIA") {
+      var revHeaders = getSheetHeaders(s);
+      var revCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 11;
+      var revMaxRows = Math.min(s.getMaxRows(), 3000);
+      if (revMaxRows > 1) {
+        s.getRange(2, revCol, revMaxRows - 1, 1).setDataValidation(psycRule);
+      }
+    }
+  }
+
+  Logger.log("✅ Validaciones de datos (desplegables) actualizadas dinámicamente desde ⚙️ CONFIG ESTADOS.");
+  ss.toast("Desplegables actualizados desde ⚙️ CONFIG ESTADOS", "Estados Actualizados", 4);
+}
+
+/**
+ * Trigger al editar ⚙️ CONFIG ESTADOS: Actualiza los desplegables de inmediato.
+ */
+function handleConfigEstadosEdit(sheet, row, col) {
+  Logger.log("Edición detectada en ⚙️ CONFIG ESTADOS (Fila " + row + ", Col " + col + "). Actualizando desplegables...");
+  actualizarDesplegablesDinamicos();
+}
+
+/**
+ * Protege la pestaña ⚙️ CONFIG ESTADOS para edición exclusiva de María.
+ */
+function protegerConfigEstados() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.CONFIG_ESTADOS_SHEET_NAME || "⚙️ CONFIG ESTADOS");
+  if (!sheet) return;
+
+  var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  for (var i = 0; i < protections.length; i++) {
+    protections[i].remove();
+  }
+
+  var protection = sheet.protect().setDescription("Protegido: Solo María");
+  var me = Session.getEffectiveUser();
+  protection.addEditor(me);
+  
+  if (CONFIG.MARIA_EMAIL) {
+    try {
+      protection.addEditor(CONFIG.MARIA_EMAIL);
+    } catch (e) {
+      Logger.log("No se pudo agregar email directo: " + e.message);
+    }
+  }
+
+  // Quitar al resto de editores excepto María y el creador
+  var editors = protection.getEditors();
+  for (var j = 0; j < editors.length; j++) {
+    var email = editors[j].getEmail();
+    if (email !== CONFIG.MARIA_EMAIL && email !== me.getEmail()) {
+      protection.removeEditor(editors[j]);
+    }
+  }
+
+  Logger.log("✅ Pestaña ⚙️ CONFIG ESTADOS protegida para " + CONFIG.MARIA_EMAIL);
+  ss.toast("⚙️ CONFIG ESTADOS protegida exclusivamente para María", "Protección Activa", 4);
+}
+
+// ─── 13. FLUJO DE APROBACIÓN REVISIÓN MARÍA ──────────────────────────────────
+
+/**
+ * Cuando María aprueba en 'REVISIÓN MARÍA' (o en pestaña de psicóloga con APROBADO):
+ * La fila aparece automáticamente en la zona inferior de MATCHES con estado 'pendiente'.
+ */
+function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
+  var headers = getSheetHeaders(sheet);
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 11;
+  if (col !== aprobarCol) return;
+
+  var val = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim().toUpperCase();
+  if (val !== "APROBADO" && val !== "TRUE") return;
+
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 5;
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"] || 6;
+  var cityCol = headers["CITY"] || headers["CIUDAD"] || 2;
+  var obsCol = headers["OBSERVACIONES"] || 8;
+  var psycCol = headers["PSICÓLOGA"] || headers["PSICOLOGA"] || 1;
+
+  var cellA = getCellData(sheet, row, personACol);
+  var cellB = getCellData(sheet, row, personBCol);
+  var city = (sheet.getRange(row, cityCol).getValue() || "").toString().trim();
+  var obs = (sheet.getRange(row, obsCol).getValue() || "").toString().trim();
+  var psyc = (sheet.getRange(row, psycCol).getValue() || "").toString().trim();
+
+  if (!cellA || !cellA.text) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
+  if (!matchesSheet) {
+    Logger.log("ERROR: No se encontró la pestaña 'MATCHES'.");
+    return;
+  }
+
+  // Insertar en la zona inferior de MATCHES
+  withScriptLock(function() {
+    insertMatchInLowerZone(matchesSheet, {
+      personACell: cellA,
+      personBCell: cellB,
+      city: city,
+      observaciones: obs ? (psyc ? "[" + psyc + "] " : "") + obs : (psyc ? "Psicóloga: " + psyc : "")
+    });
+
+    // Marcar como procesado en REVISIÓN MARÍA
+    sheet.getRange(row, aprobarCol).setBackground("#D9EAD3").setValue("APROBADO");
+  });
+}
+
+/**
+ * Inserta un match en la zona inferior de MATCHES (sin fecha, estado inicial 'pendiente').
+ */
+function insertMatchInLowerZone(matchesSheet, matchData) {
+  var headers = getSheetHeaders(matchesSheet);
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
+  var diaCol = headers["DÍA"] || headers["DIA"] || 5;
+  var cityCol = headers["CIUDAD"] || headers["CITY"] || 7;
+  var matchCol = headers["MATCH"] || 13;
+  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 12;
+
+  var lastRow = matchesSheet.getLastRow();
+  var targetRow = lastRow + 1;
+
+  // 1. Escribir Persona A
+  var cellA = matchData.personACell;
+  if (cellA.richText) {
+    matchesSheet.getRange(targetRow, personACol).setRichTextValue(cellA.richText);
+  } else {
+    matchesSheet.getRange(targetRow, personACol).setValue(cellA.text);
+  }
+
+  // 2. Escribir Persona B
+  var cellB = matchData.personBCell;
+  if (cellB) {
+    if (cellB.richText) {
+      matchesSheet.getRange(targetRow, personBCol).setRichTextValue(cellB.richText);
+    } else {
+      matchesSheet.getRange(targetRow, personBCol).setValue(cellB.text);
+    }
+  }
+
+  // 3. Ciudad
+  if (cityCol && matchData.city) {
+    matchesSheet.getRange(targetRow, cityCol).setValue(matchData.city);
+  }
+
+  // 4. Observaciones
+  if (obsCol && matchData.observaciones) {
+    matchesSheet.getRange(targetRow, obsCol).setValue(matchData.observaciones);
+  }
+
+  // 5. Estado inicial: 'pendiente' (Color #FFF2CC)
+  if (matchCol) {
+    matchesSheet.getRange(targetRow, matchCol)
+      .setValue("pendiente")
+      .setBackground("#FFF2CC");
+  }
+
+  // Asegurar que DÍA quede vacío (zona inferior)
+  if (diaCol) {
+    matchesSheet.getRange(targetRow, diaCol).setValue("");
+  }
+
+  Logger.log("✅ Match insertado en zona inferior de MATCHES (Fila " + targetRow + "): " + cellA.text + " + " + (cellB ? cellB.text : "Por definir"));
+}
+
+// ─── 14. AUTOMATIZACIÓN DE PESTAÑA MATCHES (DOS ZONAS & RETORNO RECHAZOS) ───
+
+/**
+ * Trigger al editar la pestaña MATCHES:
+ * - Cambio de estado de Servicio al Cliente / Resultado de Cita.
+ * - Promoción a zona superior al confirmar/agendar fecha.
+ * - Regla de rechazo: Retorno automático a ambas psicólogas como nuevo slot.
+ * - Coloreado automático según fecha pasada / futura.
+ */
+function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
+  var headers = getSheetHeaders(sheet);
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
+  var diaCol = headers["DÍA"] || headers["DIA"] || 5;
+  var matchCol = headers["MATCH"] || 13;
+  var fechaRealCol = headers["FECHA CITA REAL"] || ensureRealDateColumn(sheet, headers);
+
+  var statusVal = (col === matchCol ? (newValue || "") : (sheet.getRange(row, matchCol).getValue() || "")).toString().trim();
+  var statusUpper = statusVal.toUpperCase();
+
+  // Asegurar color según ⚙️ CONFIG ESTADOS
+  var estadosData = getEstadosPorEtapa();
+  if (col === matchCol && statusVal && estadosData.COLOR_MAP[statusUpper]) {
+    sheet.getRange(row, matchCol).setBackground(estadosData.COLOR_MAP[statusUpper]);
+  }
+
+  // A. REGLA DE RECHAZO: Si alguno rechaza, el match muere y AMBOS vuelven como slot a sus psicólogas
+  var REJECTION_KEYWORDS = [
+    "NO MATCH", "RECHAZÓ", "RECHAZO", "SIN QUÍMICA", "SIN QUIMICA",
+    "TROUBLEMAKER", "DESCALIFICADO", "PROBLEMAS PERSONALES", "NO CONTESTAN"
+  ];
+  
+  var isRejection = false;
+  for (var k = 0; k < REJECTION_KEYWORDS.length; k++) {
+    if (statusUpper.indexOf(REJECTION_KEYWORDS[k]) >= 0) {
+      isRejection = true;
+      break;
+    }
+  }
+
+  if (col === matchCol && isRejection) {
+    var cellA = getCellData(sheet, row, personACol);
+    var cellB = getCellData(sheet, row, personBCol);
+
+    if (cellA && cellA.text) {
+      withScriptLock(function() {
+        returnCandidatesToPsychologists(sheet, row, cellA, cellB, statusVal);
+      });
+    }
+    return;
+  }
+
+  // B. PROMOCIÓN A ZONA SUPERIOR AL AGENDAR / CONFIRMAR CITA
+  var isScheduled = (statusUpper === "CITA CONFIRMADA" || statusUpper === "DATE PROGRAMADO");
+  var fechaRealVal = (col === fechaRealCol ? (newValue || "") : (sheet.getRange(row, fechaRealCol).getValue() || ""));
+
+  if ((col === matchCol && isScheduled) || (col === fechaRealCol && fechaRealVal)) {
+    // Si la fecha real se ingresó o el estado pasó a confirmada, colorear fecha
+    if (fechaRealCol) {
+      var dVal = sheet.getRange(row, fechaRealCol).getValue();
+      updateMatchesRowColor(sheet, row, dVal, statusUpper);
+    }
+  }
+}
+
+/**
+ * Asegura la existencia de la columna 'FECHA CITA REAL' en MATCHES (Columna R / 18).
+ */
+function ensureRealDateColumn(sheet, headers) {
+  if (headers["FECHA CITA REAL"]) return headers["FECHA CITA REAL"];
+  var targetCol = 18;
+  sheet.getRange(1, targetCol).setValue("FECHA CITA REAL").setFontWeight("bold").setBackground("#D9D2E9");
+  headers["FECHA CITA REAL"] = targetCol;
+  return targetCol;
+}
+
+/**
+ * Retorna a Persona A y Persona B a sus respectivas pestañas de psicóloga como slots nuevos.
+ */
+function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, rejectionReason) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+  var noteMsg = "[RETORNO MATCHES] " + rejectionReason + " (" + todayStr + ")";
+
+  // 1. Retornar Persona A a su psicóloga
+  var psycA = findPsychologistForPerson(cellA);
+  var sheetPsycA = psycA ? findPsychologistSheet(psycA) : null;
+
+  if (sheetPsycA) {
+    var hA = getSheetHeaders(sheetPsycA);
+    appendPrioritySlotRow(sheetPsycA, hA, {
+      city: "",
+      pref: "",
+      plan: "",
+      personACell: cellA,
+      slotIndex: 1,
+      totalSlots: 1,
+      observaciones: noteMsg,
+      status: "Listo para match"
+    });
+    Logger.log("✅ Persona A (" + cellA.text + ") retornada a 'MATCHES " + psycA + "'");
+  }
+
+  // 2. Retornar Persona B a su psicóloga (si existe)
+  if (cellB && cellB.text && cellB.text.toLowerCase() !== "por definir") {
+    var psycB = findPsychologistForPerson(cellB);
+    var sheetPsycB = psycB ? findPsychologistSheet(psycB) : null;
+
+    if (sheetPsycB) {
+      var hB = getSheetHeaders(sheetPsycB);
+      appendPrioritySlotRow(sheetPsycB, hB, {
+        city: "",
+        pref: "",
+        plan: "",
+        personACell: cellB,
+        slotIndex: 1,
+        totalSlots: 1,
+        observaciones: noteMsg,
+        status: "Listo para match"
+      });
+      Logger.log("✅ Persona B (" + cellB.text + ") retornada a 'MATCHES " + psycB + "'");
+    }
+  }
+
+  // Marcar en MATCHES que el retorno fue completado
+  matchesSheet.getRange(row, 1, 1, matchesSheet.getLastColumn()).setBackground("#F4CCCC");
+  SpreadsheetApp.getActiveSpreadsheet().toast("Match cerrado. Ambas personas retornadas a sus psicólogas.", "Rechazo Procesado", 5);
+}
+
+/**
+ * Busca la psicóloga asignada a una persona consultando PROFILES o el backend.
+ */
+function findPsychologistForPerson(personCell) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES");
+  
+  var targetName = personCell.text.toLowerCase().trim();
+  var targetCrmId = personCell.crmId || (personCell.richText ? extractCrmIdFromUrl(personCell.richText.getLinkUrl()) : "");
+
+  if (profSheet) {
+    var pHeaders = getSheetHeaders(profSheet);
+    var nameCol = pHeaders["FULLNAME"] || pHeaders["NOMBRE"] || 2;
+    var respCol = pHeaders["RESPONSABLE"] || pHeaders["PSICOLOGA"] || 4;
+    var lastRow = profSheet.getLastRow();
+
+    if (lastRow > 1) {
+      var values = profSheet.getRange(2, 1, lastRow - 1, profSheet.getLastColumn()).getValues();
+      for (var i = 0; i < values.length; i++) {
+        var rowName = (values[i][nameCol - 1] || "").toString().toLowerCase().trim();
+        var rowPsyc = (values[i][respCol - 1] || "").toString().trim();
+        if (rowName === targetName && rowPsyc) {
+          return normalizePsychologistName(rowPsyc);
+        }
+      }
+    }
+  }
+
+  // Fallback: Consultar al backend
+  var query = targetCrmId || targetName;
+  var crm = fetchProfileFromBackend(query);
+  if (crm && crm.found && crm.psychologist) {
+    return normalizePsychologistName(crm.psychologist);
+  }
+
+  return "SILVI"; // Default seguro si no se encuentra
+}
+
+/**
+ * Colorea la fila de MATCHES según si la cita ya pasó, es hoy o es futura.
+ */
+function updateMatchesRowColor(sheet, row, dateVal, statusUpper) {
+  if (!dateVal) return;
+
+  var dateObj = (dateVal instanceof Date) ? dateVal : new Date(dateVal);
+  if (isNaN(dateObj.getTime())) return;
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  var checkDate = new Date(dateObj);
+  checkDate.setHours(0, 0, 0, 0);
+
+  var bgColor = null;
+  if (checkDate.getTime() < today.getTime()) {
+    // Cita ya pasó (Gris suave)
+    bgColor = "#F3F3F3";
+  } else if (checkDate.getTime() === today.getTime()) {
+    // Cita de hoy (Amarillo suave)
+    bgColor = "#FFF2CC";
+  } else {
+    // Cita futura (Azul suave)
+    bgColor = "#CFE2F3";
+  }
+
+  if (bgColor) {
+    sheet.getRange(row, 1, 1, 8).setBackground(bgColor);
   }
 }
 
