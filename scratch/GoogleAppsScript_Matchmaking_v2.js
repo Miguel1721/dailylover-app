@@ -1071,18 +1071,28 @@ function appendPrioritySlotRow(sheet, headers, data) {
     setCellData(sheet, newRow, headers["PERSONA A"], data.personACell);
   }
 
-  if (headers["PERSON B"]) sheet.getRange(newRow, headers["PERSON B"]).setValue("");
-  if (headers["PERSONA B"]) sheet.getRange(newRow, headers["PERSONA B"]).setValue("");
-
-  if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue("");
-
-  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
-  if (headers["STATUS"]) {
-    sheet.getRange(newRow, headers["STATUS"]).setValue("Listo para match");
+  var personBCol = headers["PERSON B"] || headers["PERSONA B"];
+  if (personBCol) {
+    if (data.personBCell) {
+      setCellData(sheet, newRow, personBCol, data.personBCell);
+    } else {
+      sheet.getRange(newRow, personBCol).setValue("");
+    }
   }
 
-  var priorityTag = "[PRIORITARIO Slot " + data.slotIndex + "/" + data.totalSlots + "]";
-  var finalObs = priorityTag + (data.observaciones ? " " + data.observaciones : "");
+  if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue(data.psychologistB || "");
+
+  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue(data.fecha || "");
+  if (headers["STATUS"]) {
+    var initialStatus = data.status || "Listo para match";
+    var statusRange = sheet.getRange(newRow, headers["STATUS"]).setValue(initialStatus);
+    if (data.status === "REVISAR") {
+      statusRange.setBackground("#D9D2E9");
+    }
+  }
+
+  var priorityTag = data.slotIndex ? ("[PRIORITARIO Slot " + data.slotIndex + "/" + data.totalSlots + "]") : "";
+  var finalObs = (priorityTag ? priorityTag + " " : "") + (data.observaciones ? data.observaciones : "");
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(finalObs);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(finalObs);
 
