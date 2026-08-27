@@ -1614,18 +1614,32 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
 
 /**
  * Crea el menú '🔎 Daily Lover' en la barra superior al abrir la hoja de cálculo.
+ * Solo muestra opciones exclusivas de administración a María (CONFIG.MARIA_EMAIL).
  */
 function onOpen(e) {
   try {
-    SpreadsheetApp.getUi()
-      .createMenu("🔎 Daily Lover")
-      .addItem("Historial de persona", "mostrarHistorialPersona")
-      .addSeparator()
-      .addItem("Generar 🔒 Panel de Supervisión María", "generarPanelSupervisionMaria")
-      .addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos")
-      .addItem("Proteger ⚙️ CONFIG ESTADOS (Solo María)", "protegerConfigEstados")
-      .addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable")
-      .addToUi();
+    var menu = SpreadsheetApp.getUi().createMenu("🔎 Daily Lover");
+    menu.addItem("Historial de persona", "mostrarHistorialPersona");
+    menu.addSeparator();
+
+    // Verificar si la persona que tiene el archivo abierto es María
+    var currentUserEmail = "";
+    try {
+      currentUserEmail = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
+    } catch (userErr) {}
+    
+    var mariaEmail = (CONFIG.MARIA_EMAIL || "").toLowerCase().trim();
+
+    // Solo mostrar 'Generar 🔒 Panel de Supervisión María' y 'Proteger CONFIG ESTADOS' a María
+    if (currentUserEmail && mariaEmail && currentUserEmail === mariaEmail) {
+      menu.addItem("Generar 🔒 Panel de Supervisión María", "generarPanelSupervisionMaria");
+      menu.addItem("Proteger ⚙️ CONFIG ESTADOS (Solo María)", "protegerConfigEstados");
+      menu.addSeparator();
+    }
+
+    menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
+    menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
+    menu.addToUi();
   } catch (err) {
     Logger.log("No se pudo crear menú en onOpen: " + err);
   }
@@ -1789,8 +1803,6 @@ function protegerConfigEstados() {
   }
 
   var protection = sheet.protect().setDescription("Protegido: Solo María");
-  var me = Session.getEffectiveUser();
-  protection.addEditor(me);
   
   if (CONFIG.MARIA_EMAIL) {
     try {
@@ -1800,16 +1812,16 @@ function protegerConfigEstados() {
     }
   }
 
-  // Quitar al resto de editores excepto María y el creador
+  // Quitar a TODOS los demás editores excepto María
   var editors = protection.getEditors();
   for (var j = 0; j < editors.length; j++) {
     var email = editors[j].getEmail();
-    if (email !== CONFIG.MARIA_EMAIL && email !== me.getEmail()) {
+    if (email !== CONFIG.MARIA_EMAIL) {
       protection.removeEditor(editors[j]);
     }
   }
 
-  Logger.log("✅ Pestaña ⚙️ CONFIG ESTADOS protegida para " + CONFIG.MARIA_EMAIL);
+  Logger.log("✅ Pestaña ⚙️ CONFIG ESTADOS protegida exclusivamente para " + CONFIG.MARIA_EMAIL);
   ss.toast("⚙️ CONFIG ESTADOS protegida exclusivamente para María", "Protección Activa", 4);
 }
 
@@ -2181,9 +2193,24 @@ function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgCo
 
 /**
  * Genera o actualiza la pestaña privada '🔒 SUPERVISIÓN MARÍA' con KPIs ejecutivos en tiempo real.
+ * Solo puede ser ejecutada por María (CONFIG.MARIA_EMAIL).
  */
 function generarPanelSupervisionMaria() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var mariaEmail = (CONFIG.MARIA_EMAIL || "").toLowerCase().trim();
+
+  // Control de Acceso Estricto: Si no es María quien ejecuta, denegar acceso inmediatamente
+  var activeEmail = "";
+  try {
+    activeEmail = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
+  } catch (e) {}
+
+  if (activeEmail && mariaEmail && activeEmail !== mariaEmail) {
+    SpreadsheetApp.getActiveSpreadsheet().toast("⛔ Acceso denegado: Esta función es de uso exclusivo para María.", "No Autorizado", 6);
+    Logger.log("⛔ INTENTO NO AUTORIZADO de generar panel de María por: " + activeEmail);
+    return;
+  }
+
   var sheetName = "🔒 SUPERVISIÓN MARÍA";
   var sheet = ss.getSheetByName(sheetName);
 
@@ -2312,30 +2339,32 @@ function generarPanelSupervisionMaria() {
     sheet.getRange(curRow, 8).setValue(efec).setHorizontalAlignment("center");
   }
 
-  // 5. Proteger pestaña exclusivamente para María
+  // 5. Proteger pestaña exclusivamente para María (NUNCA agregar a quien ejecuta la función)
   var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
   for (var pr = 0; pr < protections.length; pr++) {
     protections[pr].remove();
   }
 
-  var protection = sheet.protect().setDescription("Protegido: Solo María");
-  var me = Session.getEffectiveUser();
-  protection.addEditor(me);
+  var protection = sheet.protect().setDescription("Panel de Supervisión - Exclusivo María");
+  
   if (CONFIG.MARIA_EMAIL) {
     try {
       protection.addEditor(CONFIG.MARIA_EMAIL);
-    } catch (e) {}
+    } catch (e) {
+      Logger.log("No se pudo agregar email directo: " + e.message);
+    }
   }
 
+  // Quitar a TODOS los demás editores excepto María
   var editors = protection.getEditors();
   for (var ed = 0; ed < editors.length; ed++) {
     var em = editors[ed].getEmail();
-    if (em !== CONFIG.MARIA_EMAIL && em !== me.getEmail()) {
+    if (em !== CONFIG.MARIA_EMAIL) {
       protection.removeEditor(editors[ed]);
     }
   }
 
-  Logger.log("✅ Pestaña privada '🔒 SUPERVISIÓN MARÍA' generada y protegida con éxito.");
+  Logger.log("✅ Pestaña privada '🔒 SUPERVISIÓN MARÍA' generada y protegida exclusivamente para " + CONFIG.MARIA_EMAIL);
   ss.toast("Panel de Supervisión de María generado y actualizado.", "Panel Listo", 5);
 }
 
