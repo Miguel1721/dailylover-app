@@ -1995,20 +1995,21 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         if count_dates > 0:
             issues.append(f"Cita previa existente: {name_a} y {name_b} ya tuvieron una cita registrada en el historial ({count_dates} cita/s).")
 
-    # Regla 2: Orientación / Preferencia
+    # Regla 2: Orientación / Preferencia (Comparación Simétrica)
     if prof_a and prof_b:
         pref_a = (prof_a.orientation or "").lower().strip()
         pref_b = (prof_b.orientation or "").lower().strip()
         gender_a = (prof_a.gender or "").lower().strip()
         gender_b = (prof_b.gender or "").lower().strip()
 
-        if pref_a == "hetero" and pref_b == "gay":
-            issues.append(f"Incompatibilidad de orientación: {name_a} es HETERO y {name_b} es GAY.")
-        elif pref_a == "gay" and pref_b == "hetero":
-            issues.append(f"Incompatibilidad de orientación: {name_a} es GAY y {name_b} es HETERO.")
-        elif pref_a == "lesbiana" and pref_b == "hetero":
-            issues.append(f"Incompatibilidad de orientación: {name_a} es LESBIANA y {name_b} es HETERO.")
-        elif gender_a and gender_b and pref_a == "hetero" and gender_a == gender_b:
+        norm_a = "gay" if ("gay" in pref_a or "homo" in pref_a) else ("lesb" if "lesb" in pref_a else ("bi" if "bi" in pref_a else ("hetero" if "hetero" in pref_a else pref_a)))
+        norm_b = "gay" if ("gay" in pref_b or "homo" in pref_b) else ("lesb" if "lesb" in pref_b else ("bi" if "bi" in pref_b else ("hetero" if "hetero" in pref_b else pref_b)))
+
+        if norm_a and norm_b and norm_a != norm_b and norm_a != "bi" and norm_b != "bi":
+            label_a = "LESBIANA" if norm_a == "lesb" else norm_a.upper()
+            label_b = "LESBIANA" if norm_b == "lesb" else norm_b.upper()
+            issues.append(f"Incompatibilidad de orientación: {name_a} es {label_a} y {name_b} es {label_b}.")
+        elif gender_a and gender_b and norm_a == "hetero" and norm_b == "hetero" and gender_a == gender_b:
             issues.append(f"Incompatibilidad de género para pareja hetero: Ambos perfiles tienen género '{gender_a}'.")
 
     # Regla 3: Ciudad

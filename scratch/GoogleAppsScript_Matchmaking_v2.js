@@ -1699,18 +1699,12 @@ function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
   var normPrefA = normalizePrefLocal(rawPrefA);
   var normPrefB = normalizePrefLocal(rawPrefB);
 
-  // ── CHEQUEO 3: Comparación de Orientación / Preferencia ──
+  // ── CHEQUEO 3: Comparación Simétrica de Orientación / Preferencia ──
   if (normPrefA && normPrefB) {
-    if (normPrefA === "hetero" && normPrefB === "gay") {
-      issues.push("Incompatibilidad de orientación: " + nameA + " es HETERO y " + nameB + " es GAY.");
-    } else if (normPrefA === "gay" && normPrefB === "hetero") {
-      issues.push("Incompatibilidad de orientación: " + nameA + " es GAY y " + nameB + " es HETERO.");
-    } else if (normPrefA === "lesb" && normPrefB === "hetero") {
-      issues.push("Incompatibilidad de orientación: " + nameA + " es LESBIANA y " + nameB + " es HETERO.");
-    } else if (normPrefA === "hetero" && normPrefB === "lesb") {
-      issues.push("Incompatibilidad de orientación: " + nameA + " es HETERO y " + nameB + " es LESBIANA.");
-    } else if (normPrefA === "gay" && normPrefB === "lesb") {
-      issues.push("Incompatibilidad de orientación: " + nameA + " es GAY y " + nameB + " es LESBIANA.");
+    if (normPrefA !== normPrefB && normPrefA !== "bi" && normPrefB !== "bi") {
+      var labelA = normPrefA === "lesb" ? "LESBIANA" : normPrefA.toUpperCase();
+      var labelB = normPrefB === "lesb" ? "LESBIANA" : normPrefB.toUpperCase();
+      issues.push("Incompatibilidad de orientación: " + nameA + " es " + labelA + " y " + nameB + " es " + labelB + ".");
     }
   }
 
