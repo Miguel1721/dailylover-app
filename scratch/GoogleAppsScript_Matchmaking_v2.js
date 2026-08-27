@@ -2219,7 +2219,7 @@ function generarPanelSupervisionMaria() {
   if (revSheet && revSheet.getLastRow() > 1) {
     var rData = revSheet.getRange(2, 1, revSheet.getLastRow() - 1, revSheet.getLastColumn()).getValues();
     var revHeaders = getSheetHeaders(revSheet);
-    var apCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 12;
+    var apCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 8;
     for (var r = 0; r < rData.length; r++) {
       var st = (rData[r][apCol - 1] || "").toString().toUpperCase();
       if (st === "PENDIENTE" || st.indexOf("ESPERANDO") >= 0 || st.indexOf("APROBADO POR PSIC") >= 0) {
