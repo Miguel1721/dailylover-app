@@ -572,6 +572,16 @@ function appendNewRetryRow(sheet, headers, data) {
 
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(data.observaciones);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(data.observaciones);
+
+  // Estampar Fecha de llegada automática (nunca se vuelve a tocar)
+  var llegadaCol = headers["FECHA DE LLEGADA"] || headers["FECHA LLEGADA"] || headers["LLEGADA"];
+  if (!llegadaCol) {
+    llegadaCol = ensureFechaLlegadaColumn(sheet, headers);
+  }
+  if (llegadaCol) {
+    var nowLlegadaStr = data.fechaLlegada || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+    sheet.getRange(newRow, llegadaCol).setValue(nowLlegadaStr);
+  }
 }
 
 // ─── 6. COPIAR A TROUBLE MATCHES (PRESERVA LINKS CRM) ────────────────────────
@@ -1112,6 +1122,16 @@ function appendPrioritySlotRow(sheet, headers, data) {
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(finalObs);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(finalObs);
 
+  // 4. Estampar Fecha de llegada automática (nunca se vuelve a tocar por otros flujos)
+  var llegadaCol = headers["FECHA DE LLEGADA"] || headers["FECHA LLEGADA"] || headers["LLEGADA"];
+  if (!llegadaCol) {
+    llegadaCol = ensureFechaLlegadaColumn(sheet, headers);
+  }
+  if (llegadaCol) {
+    var nowLlegadaStr = data.fechaLlegada || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+    sheet.getRange(newRow, llegadaCol).setValue(nowLlegadaStr);
+  }
+
   // Unificar toda la fila con el color prioritario #FFF2CC
   var lastCol = sheet.getLastColumn() || 11;
   sheet.getRange(newRow, 1, 1, lastCol).setBackground("#FFF2CC");
@@ -1155,6 +1175,11 @@ function normalizePsychologistName(rawName) {
   if (!rawName) return null;
   var trimmed = rawName.toString().trim();
   var upper = trimmed.toUpperCase();
+
+  // Si viene con el prefijo "MATCHES " (ej. "MATCHES PIA", "MATCHES SILVI")
+  if (upper.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0) {
+    upper = upper.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
+  }
 
   // 1. Coincidencia exacta en lista oficial
   for (var i = 0; i < CONFIG.VALID_PSYCHOLOGISTS.length; i++) {
@@ -1295,6 +1320,34 @@ function findPsychologistForPersonA(personBCell, currentSheet) {
   }
 
   return "";
+}
+
+/**
+ * Asegura la existencia de la columna 'Fecha de llegada' después de 'OBSERVACIONES'.
+ */
+function ensureFechaLlegadaColumn(sheet, headers) {
+  var existingCol = headers["FECHA DE LLEGADA"] || headers["FECHA LLEGADA"] || headers["LLEGADA"];
+  if (existingCol) return existingCol;
+
+  try {
+    var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACION"] || sheet.getLastColumn();
+    var targetCol = obsCol + 1;
+    
+    var headerVal = (sheet.getRange(1, targetCol).getValue() || "").toString().trim();
+    if (!headerVal || headerVal.toLowerCase().indexOf("columna") === 0) {
+      sheet.getRange(1, targetCol).setValue("Fecha de llegada").setFontWeight("bold").setBackground("#D9EAD3");
+      headers["FECHA DE LLEGADA"] = targetCol;
+      return targetCol;
+    } else {
+      sheet.insertColumnAfter(obsCol);
+      sheet.getRange(1, targetCol).setValue("Fecha de llegada").setFontWeight("bold").setBackground("#D9EAD3");
+      headers["FECHA DE LLEGADA"] = targetCol;
+      return targetCol;
+    }
+  } catch (e) {
+    Logger.log("Aviso al asegurar columna Fecha de llegada: " + e.message);
+    return null;
+  }
 }
 
 /**
@@ -1901,8 +1954,16 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
     }
   }
 
+  // Limpiar observaciones previas para no arrastrar tags de CRM o de fanning ([PRIORITARIO...], [PROFILES]...)
+  var cleanObs = (obs || "").replace(/\[PRIORITARIO[^\]]*\]/gi, "")
+                            .replace(/\[PROFILES\][^|]*/gi, "")
+                            .replace(/\[ESPEJO\][^|]*/gi, "")
+                            .replace(/^[\s|:-]+/, "")
+                            .trim();
+
   var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
-  var mirrorObs = "[ESPEJO] Propuesto por " + psycA + " (" + todayStr + ")" + (obs ? " | " + obs : "");
+  var displayPsycA = psycA || normalizePsychologistName(sheetA.getName()) || "PSICÓLOGA A";
+  var mirrorObs = "[ESPEJO] Propuesto por " + displayPsycA + " (" + todayStr + ")" + (cleanObs ? " | " + cleanObs : "");
 
   if (mirrorRow) {
     // Actualizar fila espejo existente
@@ -1917,7 +1978,9 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
       plan: plan,
       personACell: cellB,
       personBCell: cellA,
-      fecha: todayStr,
+      psychologistB: displayPsycA,
+      fecha: "",
+      fechaLlegada: todayStr,
       status: "REVISAR",
       observaciones: mirrorObs
     });
@@ -1925,7 +1988,7 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
     // Colocar psicóloga de B (que es Psicóloga A)
     var newLastRow = sheetB.getLastRow();
     if (psycBColB) {
-      sheetB.getRange(newLastRow, psycBColB).setValue(psycA).setBackground("#E8EAED");
+      sheetB.getRange(newLastRow, psycBColB).setValue(displayPsycA).setBackground("#E8EAED");
     }
     if (statusColB) {
       sheetB.getRange(newLastRow, statusColB).setBackground("#D9D2E9");
