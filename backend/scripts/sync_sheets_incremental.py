@@ -127,7 +127,7 @@ def get_slots_count(plan_name: str) -> int:
         return 3
     elif plan_name == "Básico 40k":
         return 2
-    return 2  # Default reserva cuando está pendiente plan
+    return 0  # Si no hay plan conocido, NO se crea ningún slot (0 slots) en paridad exacta con el Sheet
 
 async def sync_incremental():
     logger.info(f"Iniciando sincronización incremental desde Google Sheet ID: {SHEET_ID}")
@@ -252,17 +252,17 @@ async def sync_incremental():
                 """), {"name": raw_name})
                 if res_slots.scalar() == 0:
                     num_slots = get_slots_count(plan)
-                    initial_status = "PENDIENTE" if plan else "PENDIENTE PLAN"
-                    for s in range(1, num_slots + 1):
-                        await db.execute(text("""
-                            INSERT INTO operational_matches 
-                            (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, person_a_crm_id, created_at, updated_at)
-                            VALUES (:city, :pref, :plan, :pA, :psyc, :slot, :st, :cid, NOW(), NOW())
-                        """), {
-                            "city": city, "pref": pref, "plan": plan, "pA": raw_name,
-                            "psyc": psyc, "slot": s, "st": initial_status, "cid": crm_id
-                        })
-                    new_matches_count += num_slots
+                    if num_slots > 0:
+                        for s in range(1, num_slots + 1):
+                            await db.execute(text("""
+                                INSERT INTO operational_matches 
+                                (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, person_a_crm_id, created_at, updated_at)
+                                VALUES (:city, :pref, :plan, :pA, :psyc, :slot, 'PENDIENTE', :cid, NOW(), NOW())
+                            """), {
+                                "city": city, "pref": pref, "plan": plan, "pA": raw_name,
+                                "psyc": psyc, "slot": s, "cid": crm_id
+                            })
+                        new_matches_count += num_slots
 
             await db.commit()
 
