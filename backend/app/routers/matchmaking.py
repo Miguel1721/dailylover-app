@@ -119,16 +119,59 @@ def normalize_city(raw_city: Optional[str]) -> str:
     if not raw_city:
         return ""
     c = str(raw_city).strip()
-    if not c or c in (",", "2 Dates", "Todo El Mundo"):
+    if not c:
+        return ""
+    c_lower = c.lower()
+    # Descartar ruidos, textos de estado, encabezados o comentarios de slots
+    if any(noise in c_lower for noise in [
+        "slot", "exist", "hist", "jenn", "silvi", "ana", "steffy", "sofi", "aleja", "pia", "manu", "mape",
+        "none", "null", "nan", ",", "2 dates", "todo el mundo", "refound", "refund", "true", "false", "status", "revisar"
+    ]):
         return ""
     mapping = {
-        "bgota": "Bogotá", "bogota": "Bogotá", "medellin": "Medellín",
+        "bgota": "Bogotá", "bogota": "Bogotá", "bog": "Bogotá",
+        "medellin": "Medellín", "med": "Medellín",
         "baq": "Barranquilla", "bquilla": "Barranquilla", "quilla": "Barranquilla",
         "bmanga": "Bucaramanga", "buc": "Bucaramanga", "buca": "Bucaramanga",
-        "ctg": "Cartagena", "mad": "Madrid", "mia": "Miami", "cdmx": "CDMX",
-        "peira": "Pereira", "ibag": "Ibagué", "caqu": "Caquetá"
+        "ctg": "Cartagena", "cartagena": "Cartagena",
+        "mad": "Madrid", "madrid": "Madrid",
+        "mia": "Miami", "miami": "Miami",
+        "cdmx": "CDMX", "mexico": "CDMX", "méxico": "CDMX",
+        "peira": "Pereira", "pereira": "Pereira",
+        "ibag": "Ibagué", "ibague": "Ibagué", "cali": "Cali", "caqu": "Caquetá"
     }
-    return mapping.get(c.lower(), c.title())
+    # Si viene con texto extra como 'Bogotá 28 años'
+    for k, v in mapping.items():
+        if k in c_lower:
+            return v
+    return c.title()
+
+
+def is_valid_person_name(val: Optional[str]) -> bool:
+    """
+    Valida si una cadena corresponde a un nombre real de persona.
+    Descarta fechas, notas clínicas, estados ('PIDIO REFOUND', 'SLOTS...', etc.).
+    """
+    if not val:
+        return False
+    s = str(val).strip()
+    if not s or len(s) < 3:
+        return False
+    # Descartar fechas ISO o formatos de fecha
+    if re.match(r'^\d{4}-\d{2}-\d{2}', s) or re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
+        return False
+    s_upper = s.upper()
+    invalid_keywords = [
+        "PIDIO REFOUND", "REFOUND", "REFUND", "SLOT", "SLOTS", "HISTÓRICO", "HISTORICO",
+        "NAME", "NOMBRE", "PERSONA A", "PERSONA B", "STATUS", "NO TIENE",
+        "DESCALIFICADO", "TROUBLE", "SIN GENTE", "TRUE", "FALSE", "VERDADERO", "NO MATCH"
+    ]
+    if any(k in s_upper for k in invalid_keywords):
+        return False
+    # Debe contener caracteres alfabéticos
+    if not re.search(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]', s):
+        return False
+    return True
 
 
 # ─── SCHEMAS ──────────────────────────────────────────────────────────────────
@@ -253,6 +296,10 @@ async def get_my_matches(
     matches = []
     for r in rows:
         d = dict(r._mapping)
+        pA_name = d.get("person_a")
+        if not is_valid_person_name(pA_name):
+            continue
+
         is_approved = bool(d.get("approved_by_maria"))
         
         final_city = d.get("city") or ""
@@ -272,7 +319,7 @@ async def get_my_matches(
             "city": normalize_city(final_city),
             "pref": normalize_pref(final_pref),
             "plan_tier": normalize_plan(final_plan),
-            "person_a": d.get("person_a"),
+            "person_a": pA_name,
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
@@ -283,7 +330,7 @@ async def get_my_matches(
             "approved_by_maria": is_approved,
             "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
             "observations": d.get("observations") or "",
-            "psychologist_name": d.get("psychologist_name"),
+            "psychologist_name": normalize_psychologist(d.get("psychologist_name")) or d.get("psychologist_name"),
             "slot_number": d.get("slot_number") or 1,
             "status_color": STATUS_COLORS.get(d.get("status"), "#FFF2CC"),
             "plan_color": PLAN_COLORS.get(final_plan, "#F3F3F3"),
@@ -450,10 +497,12 @@ async def get_intake_list(
 
     clients = []
     for r in rows:
+        if not is_valid_person_name(r.person_a):
+            continue
         clients.append({
             "person_a": r.person_a,
             "crm_id": r.crm_id or "",
-            "psychologist_name": r.psychologist_name,
+            "psychologist_name": normalize_psychologist(r.psychologist_name) or r.psychologist_name,
             "city": normalize_city(r.city),
             "pref": normalize_pref(r.pref),
             "plan_tier": normalize_plan(r.plan_tier),
@@ -1656,13 +1705,24 @@ def normalize_plan(raw_plan: Optional[str]) -> str:
     return ""
 
 
+ACTIVE_PSYCHOLOGISTS_SET = {
+    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU 1", "MANU 2", "MANU", "PIA"
+}
+
 def normalize_psychologist(raw_psyc: Optional[str]) -> str:
     """
     Normaliza el nombre de psicóloga a la lista oficial de 10 psicólogas activas.
+    Si no coincide con una psicóloga activa oficial (por ejemplo 'MARI PAZ', roles administrativos o texto legado),
+    retorna cadena vacía "" para evitar falsos positivos y aprobaciones cruzadas indebidas.
     """
     if not raw_psyc:
         return ""
     p = raw_psyc.upper().strip()
+    
+    # Exclusiones explícitas de valores que NO son psicólogas activas
+    if p in ["MARI PAZ", "MARIPAZ", "CARO", "LINA", "ADMIN", "SERVICIO AL CLIENTE", "CUSTOMER SERVICE", "GENERAL", "NO ASIGNADA"]:
+        return ""
+
     aliases = {
         "MAPE D": "MAPE D",
         "MAPE": "MAPE D",
@@ -1682,14 +1742,16 @@ def normalize_psychologist(raw_psyc: Optional[str]) -> str:
         "SOFIA": "SOFI",
         "SOFI": "SOFI",
         "ALEJA": "ALEJA",
-        "PIA": "PIA",
-        "ISABELLA": "ISA",
-        "ISA": "ISA"
+        "PIA": "PIA"
     }
     for k, v in aliases.items():
-        if k in p:
+        if k == p or k in p.split():
             return v
-    return p
+            
+    if p in ACTIVE_PSYCHOLOGISTS_SET:
+        return p
+        
+    return ""
 
 
 @router.post("/resolve-profile")
@@ -1949,16 +2011,31 @@ async def get_cross_approvals(
     res = await db.execute(text(query))
     rows = res.fetchall()
 
+    seen_match_ids = set()
     cross_list = []
     for r in rows:
         d = dict(r._mapping)
+        mid = d.get("id")
+        if mid in seen_match_ids:
+            continue
+            
+        pA_name = d.get("person_a")
+        pB_name = d.get("person_b")
+        
+        # Validar que los nombres de las personas sean reales (no fechas ni notas)
+        if not is_valid_person_name(pA_name) or not is_valid_person_name(pB_name):
+            continue
+
         p_b = normalize_psychologist(d.get("psyc_b"))
         p_a = normalize_psychologist(d.get("psyc_a"))
-        if p_b and p_b != p_a:
+        
+        # Debe tener Psicóloga A y B activas y distintas
+        if p_a and p_b and p_b != p_a:
+            seen_match_ids.add(mid)
             cross_list.append({
-                "id": d.get("id"),
-                "person_a": d.get("person_a"),
-                "person_b": d.get("person_b"),
+                "id": mid,
+                "person_a": pA_name,
+                "person_b": pB_name,
                 "psychologist_a": p_a,
                 "psychologist_b": p_b,
                 "city": normalize_city(d.get("city")),

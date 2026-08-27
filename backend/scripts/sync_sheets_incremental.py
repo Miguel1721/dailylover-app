@@ -47,20 +47,54 @@ def extract_crm_id_from_cell(cell) -> Optional[str]:
             return m_q.group(1)
     return None
 
+def is_valid_person_name(val: Any) -> bool:
+    if not val:
+        return False
+    s = str(val).strip()
+    if not s or len(s) < 3:
+        return False
+    if re.match(r'^\d{4}-\d{2}-\d{2}', s) or re.match(r'^\d{1,2}/\d{1,2}/\d{4}', s):
+        return False
+    s_upper = s.upper()
+    invalid_keywords = [
+        "PIDIO REFOUND", "REFUND", "SLOT", "SLOTS", "HISTÓRICO", "HISTORICO",
+        "NAME", "NOMBRE", "PERSONA A", "PERSONA B", "STATUS", "NO TIENE",
+        "DESCALIFICADO", "TROUBLE", "SIN GENTE", "TRUE", "FALSE", "VERDADERO"
+    ]
+    if any(k in s_upper for k in invalid_keywords):
+        return False
+    if not re.search(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]', s):
+        return False
+    return True
+
 def normalize_city(raw_city: Optional[str]) -> str:
     if not raw_city:
         return ""
     c = str(raw_city).strip()
-    if not c or c in (",", "2 Dates", "Todo El Mundo"):
+    if not c:
+        return ""
+    c_lower = c.lower()
+    if any(noise in c_lower for noise in [
+        "slot", "exist", "hist", "jenn", "silvi", "ana", "steffy", "sofi", "aleja", "pia", "manu", "mape",
+        "none", "null", "nan", ",", "2 dates", "todo el mundo", "refound", "refund", "true", "false", "status"
+    ]):
         return ""
     mapping = {
-        "bgota": "Bogotá", "bogota": "Bogotá", "medellin": "Medellín",
+        "bgota": "Bogotá", "bogota": "Bogotá", "bog": "Bogotá",
+        "medellin": "Medellín", "med": "Medellín",
         "baq": "Barranquilla", "bquilla": "Barranquilla", "quilla": "Barranquilla",
         "bmanga": "Bucaramanga", "buc": "Bucaramanga", "buca": "Bucaramanga",
-        "ctg": "Cartagena", "mad": "Madrid", "mia": "Miami", "cdmx": "CDMX",
-        "peira": "Pereira", "ibag": "Ibagué", "caqu": "Caquetá"
+        "ctg": "Cartagena", "cartagena": "Cartagena",
+        "mad": "Madrid", "madrid": "Madrid",
+        "mia": "Miami", "miami": "Miami",
+        "cdmx": "CDMX", "mexico": "CDMX", "méxico": "CDMX",
+        "peira": "Pereira", "pereira": "Pereira",
+        "ibag": "Ibagué", "ibague": "Ibagué", "cali": "Cali", "caqu": "Caquetá"
     }
-    return mapping.get(c.lower(), c.title())
+    for k, v in mapping.items():
+        if k in c_lower:
+            return v
+    return c.title()
 
 def normalize_pref(val: Optional[str]) -> str:
     if not val:
@@ -94,27 +128,40 @@ async def sync_incremental():
         new_matches_count = 0
         updated_crm_ids = 0
 
-        # 2. Ingesta de Perfiles desde PROFILES
+        # 2. Ingesta de Perfiles desde PROFILES (Estructura Copia final: No. | FullName | FECHA | Responsable | Ciudad y años | SLOTS CREADOS)
         if "PROFILES" in wb.sheetnames:
             ws = wb["PROFILES"]
             logger.info(f"Procesando pestaña PROFILES ({ws.max_row} filas)...")
             
+            # Detectar encabezados dinámicamente con fallback exacto a Copia Final
+            headers_map = {}
+            for c in range(1, ws.max_column + 1):
+                h_val = str(ws.cell(row=1, column=c).value or "").strip().upper()
+                if h_val:
+                    headers_map[h_val] = c
+            
+            col_name = headers_map.get("FULLNAME") or headers_map.get("NOMBRE") or 2
+            col_fecha = headers_map.get("FECHA") or 3
+            col_psyc = headers_map.get("RESPONSABLE") or headers_map.get("PSICOLOGA") or 4
+            col_city = headers_map.get("CIUDAD Y AÑOS") or headers_map.get("CIUDAD") or 5
+            col_slots = headers_map.get("SLOTS CREADOS") or headers_map.get("SLOTS") or 6
+
             for row_idx in range(2, ws.max_row + 1):
-                cell_name = ws.cell(row=row_idx, column=3) # Columna C: Nombre
+                cell_name = ws.cell(row=row_idx, column=col_name)
                 raw_name = str(cell_name.value or "").strip()
-                if not raw_name or raw_name.upper() in ["NAME", "NOMBRE", "PERSONA A"]:
+                
+                # Validación estricta de nombre de persona
+                if not is_valid_person_name(raw_name):
                     continue
                 
                 crm_id = extract_crm_id_from_cell(cell_name)
-                raw_psyc = str(ws.cell(row=row_idx, column=5).value or "").strip().upper() # Col E: Responsable
-                raw_city = str(ws.cell(row=row_idx, column=6).value or "").strip() # Col F: Ciudad
-                raw_pref = str(ws.cell(row=row_idx, column=7).value or "").strip() # Col G: Pref
-                raw_plan = str(ws.cell(row=row_idx, column=8).value or "").strip() # Col H: Plan
+                raw_psyc = str(ws.cell(row=row_idx, column=col_psyc).value or "").strip().upper()
+                raw_city = str(ws.cell(row=row_idx, column=col_city).value or "").strip()
                 
                 psyc = raw_psyc if raw_psyc in ACTIVE_PSYCHOLOGISTS else "SILVI"
                 city = (normalize_city(raw_city) or "")[:50]
-                pref = (normalize_pref(raw_pref) or "hetero")[:50]
-                plan = (raw_plan or "Estándar 65k (2 citas)").strip()[:50]
+                pref = "hetero"
+                plan = "Estándar 65k (2 citas)"
 
                 # Verificar si el cliente ya existe en users/profiles
                 res = await db.execute(text("""
