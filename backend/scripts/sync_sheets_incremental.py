@@ -108,6 +108,27 @@ def normalize_pref(val: Optional[str]) -> str:
         return "gay"
     return "hetero"
 
+def normalize_plan(raw_plan: Optional[str]) -> str:
+    if not raw_plan:
+        return ""
+    p = str(raw_plan).lower().strip()
+    if "vip" in p or "195k" in p or "295k" in p:
+        return "VIP 195k"
+    if "2 date" in p or "2 cita" in p or "standard" in p or "estandar" in p or "estándar" in p or "65k" in p or "98k" in p or "150k" in p or "premium" in p:
+        return "Estándar 65k (2 citas)"
+    if "1 date" in p or "1 cita" in p or "basic" in p or "basico" in p or "básico" in p or "40k" in p:
+        return "Básico 40k"
+    return ""
+
+def get_slots_count(plan_name: str) -> int:
+    if plan_name == "VIP 195k":
+        return 4
+    elif plan_name == "Estándar 65k (2 citas)":
+        return 3
+    elif plan_name == "Básico 40k":
+        return 2
+    return 2  # Default reserva cuando está pendiente plan
+
 async def sync_incremental():
     logger.info(f"Iniciando sincronización incremental desde Google Sheet ID: {SHEET_ID}")
     
@@ -123,6 +144,22 @@ async def sync_incremental():
 
     wb = openpyxl.load_workbook(io.BytesIO(content), data_only=False)
     
+    # Mapa de Planes y Preferencias desde la pestaña 'Clients plans' si existe en el Sheet
+    clients_plans_map = {}
+    if "Clients plans" in wb.sheetnames:
+        ws_cp = wb["Clients plans"]
+        for r in range(2, ws_cp.max_row + 1):
+            cp_name = str(ws_cp.cell(r, 2).value or "").strip().lower()
+            cp_plan = str(ws_cp.cell(r, 5).value or "").strip()
+            cp_city = str(ws_cp.cell(r, 6).value or "").strip()
+            cp_pref = str(ws_cp.cell(r, 7).value or "").strip()
+            if cp_name:
+                clients_plans_map[cp_name] = {
+                    "plan": normalize_plan(cp_plan),
+                    "city": normalize_city(cp_city),
+                    "pref": normalize_pref(cp_pref)
+                }
+
     async with AsyncSessionLocal() as db:
         new_clients_count = 0
         new_matches_count = 0
@@ -158,14 +195,21 @@ async def sync_incremental():
                 raw_psyc = str(ws.cell(row=row_idx, column=col_psyc).value or "").strip().upper()
                 raw_city = str(ws.cell(row=row_idx, column=col_city).value or "").strip()
                 
-                psyc = raw_psyc if raw_psyc in ACTIVE_PSYCHOLOGISTS else "SILVI"
-                city = (normalize_city(raw_city) or "")[:50]
-                pref = "hetero"
-                plan = "Estándar 65k (2 citas)"
+                # REGLA: Si la psicóloga no es una de las 10 oficiales, NO asignar a SILVI silenciosamente.
+                # Dejar vacío "" para revisión manual.
+                psyc = raw_psyc if raw_psyc in ACTIVE_PSYCHOLOGISTS else ""
+                
+                # Buscar Plan y Preferencia en mapa de 'Clients plans' si existe; de lo contrario dejar vacío ""
+                cp_data = clients_plans_map.get(raw_name.lower(), {})
+                city = (normalize_city(raw_city) or cp_data.get("city") or "")[:50]
+                pref = cp_data.get("pref") or ""
+                plan = cp_data.get("plan") or ""
 
                 # Verificar si el cliente ya existe en users/profiles
                 res = await db.execute(text("""
-                    SELECT u.id, u.crm_id FROM users u
+                    SELECT u.id, u.crm_id, p.responsable, p.plan_tier, p.orientation, p.city 
+                    FROM users u
+                    LEFT JOIN profiles p ON p.user_id = u.id
                     WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:name))
                     LIMIT 1
                 """), {"name": raw_name})
@@ -176,6 +220,15 @@ async def sync_incremental():
                     if crm_id and existing_crm != crm_id:
                         await db.execute(text("UPDATE users SET crm_id = :cid WHERE id = :uid"), {"cid": crm_id, "uid": uid})
                         updated_crm_ids += 1
+                    # Usar datos existentes de perfil si en el sheet estaban vacíos
+                    if not plan and user_row.plan_tier:
+                        plan = user_row.plan_tier
+                    if not pref and user_row.orientation:
+                        pref = user_row.orientation
+                    if not city and user_row.city:
+                        city = user_row.city
+                    if not psyc and user_row.responsable:
+                        psyc = user_row.responsable
                 else:
                     # Crear usuario y perfil nuevo
                     placeholder_phone = f"GEN_{row_idx}_{int(datetime.utcnow().timestamp())}"
@@ -198,16 +251,18 @@ async def sync_incremental():
                     WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:name))
                 """), {"name": raw_name})
                 if res_slots.scalar() == 0:
-                    for s in [1, 2, 3]:
+                    num_slots = get_slots_count(plan)
+                    initial_status = "PENDIENTE" if plan else "PENDIENTE PLAN"
+                    for s in range(1, num_slots + 1):
                         await db.execute(text("""
                             INSERT INTO operational_matches 
                             (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, person_a_crm_id, created_at, updated_at)
-                            VALUES (:city, :pref, :plan, :pA, :psyc, :slot, 'PENDIENTE', :cid, NOW(), NOW())
+                            VALUES (:city, :pref, :plan, :pA, :psyc, :slot, :st, :cid, NOW(), NOW())
                         """), {
                             "city": city, "pref": pref, "plan": plan, "pA": raw_name,
-                            "psyc": psyc, "slot": s, "cid": crm_id
+                            "psyc": psyc, "slot": s, "st": initial_status, "cid": crm_id
                         })
-                    new_matches_count += 3
+                    new_matches_count += num_slots
 
             await db.commit()
 
