@@ -744,26 +744,53 @@ export default function Matching() {
                           </span>
                         </td>
                         <td>
-                          <button
-                            className="btn btn-sm"
-                            style={{ background: '#2e7d32', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`${API}/api/v1/matchmaking/matches/${m.id}/approve-cross`, {
-                                  method: 'POST',
-                                  headers: { 'Authorization': `Bearer ${token}` }
-                                });
-                                if (res.ok) {
-                                  alert('✓ Propuesta validada por Psicóloga B. Pasa a cola de aprobación de María.');
-                                  fetchCrossApprovals();
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              className="btn btn-sm"
+                              style={{ background: '#2e7d32', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                              onClick={async () => {
+                                const obsB = window.prompt(`Observaciones de validación para ${m.person_b} (opcional):`, "")
+                                try {
+                                  const res = await fetch(`${API}/api/v1/matchmaking/matches/${m.id}/approve-cross`, {
+                                    method: 'POST',
+                                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ observations_b: obsB || "" })
+                                  });
+                                  if (res.ok) {
+                                    alert('✓ Propuesta validada por Psicóloga B. Pasa a cola de aprobación de María.');
+                                    fetchCrossApprovals();
+                                  }
+                                } catch(e) {
+                                  console.error(e);
                                 }
-                              } catch(e) {
-                                console.error(e);
-                              }
-                            }}
-                          >
-                            ✓ Aprobar como Psyc B
-                          </button>
+                              }}
+                            >
+                              ✓ Aprobar
+                            </button>
+                            <button
+                              className="btn btn-sm"
+                              style={{ background: '#c62828', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
+                              onClick={async () => {
+                                const reason = window.prompt(`Motivo de rechazo de propuesta para ${m.person_b} (se creará reintento para ${m.person_a} en ${m.psychologist_a}):`, "")
+                                if (reason === null) return;
+                                try {
+                                  const res = await fetch(`${API}/api/v1/matchmaking/matches/${m.id}/reject-cross`, {
+                                    method: 'POST',
+                                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ rejection_reason: reason || "No compatible" })
+                                  });
+                                  if (res.ok) {
+                                    alert(`❌ Propuesta rechazada. Se creó automáticamente una nueva fila para ${m.person_a} en la cola de ${m.psychologist_a}.`);
+                                    fetchCrossApprovals();
+                                  }
+                                } catch(e) {
+                                  console.error(e);
+                                }
+                              }}
+                            >
+                              ✕ Rechazar
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

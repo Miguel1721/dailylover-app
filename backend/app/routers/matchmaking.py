@@ -64,6 +64,8 @@ STATUS_COLORS = {
     "EN PAUSA INDEFINIDA": "#B4A7D6",
     "CITA COMPLETADA": "#6AA84F",
     "EN ESPERA": "#D9D2E9",
+    "RECHAZADA POR PSICÓLOGA B": "#F4CCCC",
+    "RECHAZADO POR PSICÓLOGA B": "#F4CCCC",
 }
 
 ALLOWED_STATUSES = [
@@ -71,7 +73,8 @@ ALLOWED_STATUSES = [
     "REFUND", "REFUND DONE", "DESCALIFICADO", "NO HAY GENTE", "REVISAR",
     "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
     "Urgente", "Listo para match", "REQUEST PROFILE UPDATE",
-    "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA"
+    "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA",
+    "RECHAZADA POR PSICÓLOGA B", "RECHAZADO POR PSICÓLOGA B"
 ]
 
 def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
@@ -551,8 +554,36 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
     params = {"id": match_id}
 
     if payload.person_b is not None:
-        updates.append("person_b = :pb")
-        params["pb"] = payload.person_b.strip()
+        pb_clean = payload.person_b.strip()
+        if match_row.person_b and not pb_clean:
+            raise HTTPException(status_code=400, detail="Prohibido borrar Persona B una vez asignada.")
+
+        if pb_clean:
+            if "http" in pb_clean or "smartmatchapp" in pb_clean or "client/" in pb_clean:
+                extracted_cid = None
+                m = re.search(r"(?:client|profile|view)[/=#!]+(\d+)", pb_clean, re.IGNORECASE) or re.search(r"[?&]id=(\d+)", pb_clean, re.IGNORECASE)
+                if m:
+                    extracted_cid = m.group(1)
+
+                resolved_user = None
+                if extracted_cid:
+                    u_res = await db.execute(text("SELECT u.name, p.responsable FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.crm_id = :cid LIMIT 1"), {"cid": extracted_cid})
+                    resolved_user = u_res.fetchone()
+
+                if resolved_user and resolved_user.name:
+                    updates.append("person_b = :pb")
+                    params["pb"] = resolved_user.name
+                    if resolved_user.responsable:
+                        clean_pb_psyc = normalize_psychologist(resolved_user.responsable)
+                        if clean_pb_psyc:
+                            updates.append("psychologist_b = :pb_psyc")
+                            params["pb_psyc"] = clean_pb_psyc
+                else:
+                    updates.append("person_b = :pb")
+                    params["pb"] = pb_clean
+            else:
+                updates.append("person_b = :pb")
+                params["pb"] = pb_clean
 
     if payload.status is not None:
         st_clean = payload.status.strip()
@@ -576,9 +607,9 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
             VALUES (:name, :mid, 'MARKED_HECHO', 'Psicóloga marcó el match como HECHO (enviado a revisión)', NOW())
         """), {"name": match_row.person_a, "mid": match_id})
 
-    # 2. Flujo SSOT v2: Si pasa a NOT APPROVED o TROUBLEMAKER:
+    # 2. Flujo SSOT v2: Si pasa a NOT APPROVED, TROUBLEMAKER o RECHAZADA POR PSICÓLOGA B:
     # La fila original queda INTACTA con su status y se genera una nueva fila de reintento para Persona A
-    if payload.status in ("NOT APPROVED", "TROUBLEMAKER"):
+    if payload.status in ("NOT APPROVED", "TROUBLEMAKER", "RECHAZADA POR PSICÓLOGA B", "RECHAZADO POR PSICÓLOGA B"):
         curr_res = await db.execute(text("""
             SELECT city, pref, plan_tier, person_a, psychologist_name, person_a_crm_id,
                    (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM operational_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))) AS next_slot
@@ -2051,9 +2082,18 @@ async def get_cross_approvals(
     return {"cross_matches": cross_list, "total": len(cross_list)}
 
 
+class ApproveCrossMatchRequest(BaseModel):
+    observations_b: Optional[str] = None
+
+class RejectCrossMatchRequest(BaseModel):
+    rejection_reason: Optional[str] = None
+    psychologist_b: Optional[str] = None
+
+
 @router.post("/matches/{match_id}/approve-cross")
 async def approve_cross_match_by_psyc_b(
     match_id: int,
+    payload: Optional[ApproveCrossMatchRequest] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -2069,7 +2109,10 @@ async def approve_cross_match_by_psyc_b(
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
-    updated_obs = (match_row.observations or "") + " [Doble aprobación confirmada por Psicóloga B]"
+    b_obs = payload.observations_b.strip() if payload and payload.observations_b else ""
+    note = f" [Obs. Psicóloga B: {b_obs}]" if b_obs else " [Doble aprobación confirmada por Psicóloga B]"
+    updated_obs = (match_row.observations or "") + note
+    
     await db.execute(text("""
         UPDATE operational_matches
         SET status = 'APROBADO POR PSICÓLOGAS', observations = :obs, updated_at = NOW()
@@ -2078,6 +2121,67 @@ async def approve_cross_match_by_psyc_b(
     await db.commit()
 
     return {"status": "success", "message": f"Match {match_id} validado por Psicóloga B. Ahora está listo para la aprobación final de María."}
+
+
+@router.post("/matches/{match_id}/reject-cross")
+async def reject_cross_match_by_psyc_b(
+    match_id: int,
+    payload: Optional[RejectCrossMatchRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    La Psicóloga B rechaza la propuesta de match enviada por la Psicóloga A.
+    1. Marca el match como 'RECHAZADA POR PSICÓLOGA B'.
+    2. Crea automáticamente una nueva fila para Persona A en el pool de Psicóloga A ('Listo para match').
+    """
+    exist_res = await db.execute(text("""
+        SELECT id, person_a, person_b, psychologist_name, city, pref, plan_tier, person_a_crm_id, observations
+        FROM operational_matches
+        WHERE id = :id
+    """), {"id": match_id})
+    match_row = exist_res.fetchone()
+    if not match_row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    reason = payload.rejection_reason.strip() if payload and payload.rejection_reason else "Rechazado sin comentarios"
+    updated_obs = (match_row.observations or "") + f" [Rechazado por Psicóloga B: {reason}]"
+
+    # 1. Marcar como RECHAZADA POR PSICÓLOGA B
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'RECHAZADA POR PSICÓLOGA B', observations = :obs, updated_at = NOW()
+        WHERE id = :id
+    """), {"id": match_id, "obs": updated_obs})
+
+    # 2. Crear nueva fila de reintento para Persona A en el pool de Psicóloga A
+    next_slot_res = await db.execute(text("""
+        SELECT COALESCE(MAX(slot_number), 0) + 1 AS next_slot
+        FROM operational_matches
+        WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))
+    """), {"pa": match_row.person_a})
+    next_slot = next_slot_res.scalar() or 1
+
+    retry_obs = f"Reintento automático tras propuesta rechazada por Psicóloga B ({reason})"
+    await db.execute(text("""
+        INSERT INTO operational_matches
+        (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, created_at, updated_at)
+        VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, 'Listo para match', :obs, :cid, NOW(), NOW())
+    """), {
+        "city": match_row.city,
+        "pref": match_row.pref,
+        "plan": match_row.plan_tier,
+        "person_a": match_row.person_a,
+        "psyc": match_row.psychologist_name,
+        "slot": next_slot,
+        "obs": retry_obs,
+        "cid": match_row.person_a_crm_id
+    })
+
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Propuesta {match_id} rechazada. Se creó automáticamente una nueva fila para {match_row.person_a} en la cola de {match_row.psychologist_name}."
+    }
 
 
 

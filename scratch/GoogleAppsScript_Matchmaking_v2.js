@@ -157,34 +157,93 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
 
   var currentPsyc = normalizePsychologistName(sheet.getName());
 
-  // ── A. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B ──────────────
-  if (personBCol && col === personBCol) {
-    var personBCell = getCellData(sheet, row, personBCol);
-    if (!psycBCol) {
-      psycBCol = ensurePsycBColumn(sheet, headers, personBCol);
+  // ── 0. REGLA: PROHIBIR BORRAR PERSONA A O PERSONA B YA EXISTENTES ─────────
+  if ((personACol && col === personACol) || (personBCol && col === personBCol)) {
+    var rawEdit = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim();
+    if (oldValue && oldValue.toString().trim() !== "" && (!rawEdit || rawEdit === "")) {
+      sheet.getRange(row, col).setValue(oldValue);
+      SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Prohibido borrar datos de Persona A / Persona B ya registradas.", "Operación Inválida", 5);
+      return;
     }
-    if (psycBCol) {
-      if (personBCell && personBCell.text) {
-        var ownerPsyc = findPsychologistForPerson(personBCell);
-        if (ownerPsyc) {
-          if (ownerPsyc === currentPsyc) {
-            sheet.getRange(row, psycBCol).setValue(ownerPsyc + " (Interno)").setBackground(null);
-          } else {
-            sheet.getRange(row, psycBCol).setValue(ownerPsyc).setBackground("#E8EAED");
-          }
-          Logger.log("✅ Psicóloga de B detectada automáticamente: '" + ownerPsyc + "'");
-        } else {
-          sheet.getRange(row, psycBCol).setValue("").setBackground("#FFF2CC");
-          Logger.log("⚠️ No se encontró psicóloga para Persona B ('" + personBCell.text + "')");
+  }
+
+  // ── A. EDICIÓN DE PERSONA A (SOLO URL CRM) ────────────────────────────────
+  if (personACol && col === personACol) {
+    var rawValA = (newValue || sheet.getRange(row, personACol).getValue() || "").toString().trim();
+    if (rawValA) {
+      var isUrlA = rawValA.indexOf("http") >= 0 || rawValA.indexOf("smartmatchapp") >= 0 || rawValA.indexOf("client/") >= 0 || rawValA.indexOf("profile/") >= 0;
+      var cellA = getCellData(sheet, row, personACol);
+      var hasLinkA = cellA && cellA.richText && cellA.richText.getLinkUrl();
+
+      if (!isUrlA && !hasLinkA) {
+        sheet.getRange(row, personACol).setBackground("#F4CCCC").setNote("⚠️ Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
+        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ En Persona A solo se permite pegar el enlace de SmartMatchApp.", "Formato Inválido", 6);
+        return;
+      }
+
+      if (isUrlA) {
+        var crmA = fetchProfileFromBackend(rawValA);
+        if (crmA && crmA.found && crmA.name) {
+          var richA = SpreadsheetApp.newRichTextValue().setText(crmA.name).setLinkUrl(rawValA).build();
+          sheet.getRange(row, personACol).setRichTextValue(richA).setBackground(null).clearNote();
         }
-      } else {
-        sheet.getRange(row, psycBCol).setValue("").setBackground(null);
       }
     }
     return;
   }
 
-  // ── B. EDICIÓN DE STATUS ──────────────────────────────────────────────────
+  // ── B. CRUCE AUTOMÁTICO DE PSICÓLOGA DE B AL EDITAR PERSON B (SOLO URL CRM) 
+  if (personBCol && col === personBCol) {
+    var rawValB = (newValue || sheet.getRange(row, personBCol).getValue() || "").toString().trim();
+    if (rawValB) {
+      var isUrlB = rawValB.indexOf("http") >= 0 || rawValB.indexOf("smartmatchapp") >= 0 || rawValB.indexOf("client/") >= 0 || rawValB.indexOf("profile/") >= 0;
+      var cellB = getCellData(sheet, row, personBCol);
+      var hasLinkB = cellB && cellB.richText && cellB.richText.getLinkUrl();
+
+      // Rechazar texto plano sin URL
+      if (!isUrlB && !hasLinkB) {
+        sheet.getRange(row, personBCol).setBackground("#F4CCCC").setNote("⚠️ Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
+        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ En Persona B solo se permite pegar el enlace de SmartMatchApp, no texto libre.", "Formato Inválido", 6);
+        if (psycBCol) sheet.getRange(row, psycBCol).setValue("").setBackground(null);
+        return;
+      }
+
+      var personBCell = cellB;
+      if (isUrlB) {
+        var crmB = fetchProfileFromBackend(rawValB);
+        if (crmB && crmB.found && crmB.name) {
+          var richB = SpreadsheetApp.newRichTextValue().setText(crmB.name).setLinkUrl(rawValB).build();
+          sheet.getRange(row, personBCol).setRichTextValue(richB).setBackground(null).clearNote();
+          personBCell = { text: crmB.name, richText: richB, formula: "", crmId: crmB.crm_id };
+        }
+      }
+
+      if (!psycBCol) {
+        psycBCol = ensurePsycBColumn(sheet, headers, personBCol);
+      }
+      if (psycBCol) {
+        if (personBCell && personBCell.text) {
+          var ownerPsyc = findPsychologistForPerson(personBCell);
+          if (ownerPsyc) {
+            if (ownerPsyc === currentPsyc) {
+              sheet.getRange(row, psycBCol).setValue(ownerPsyc + " (Interno)").setBackground(null);
+            } else {
+              sheet.getRange(row, psycBCol).setValue(ownerPsyc).setBackground("#E8EAED");
+            }
+            Logger.log("✅ Psicóloga de B detectada automáticamente: '" + ownerPsyc + "'");
+          } else {
+            sheet.getRange(row, psycBCol).setValue("").setBackground("#FFF2CC");
+            Logger.log("⚠️ No se encontró psicóloga para Persona B ('" + personBCell.text + "')");
+          }
+        } else {
+          sheet.getRange(row, psycBCol).setValue("").setBackground(null);
+        }
+      }
+    }
+    return;
+  }
+
+  // ── C. EDICIÓN DE STATUS ──────────────────────────────────────────────────
   if (!statusCol || col !== statusCol) return;
 
   var statusVal = (newValue || sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase();
@@ -303,6 +362,56 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
             observaciones: "Reintento automático tras " + statusVal + (personBName ? " (ex: " + personBName + ")" : "")
           });
         });
+      }
+    }
+  }
+
+  // ── E.2 RECHAZADA POR PSICÓLOGA B: Reintento automático en pestaña de Psicóloga A ─
+  if (statusVal === "RECHAZADA POR PSICÓLOGA B" || statusVal === "RECHAZADO POR PSICÓLOGA B") {
+    if (personACell && personBCell) {
+      var cacheKey = "cross_rejected_" + sheet.getName() + "_" + row;
+      var cache = CacheService.getScriptCache();
+      if (!cache.get(cacheKey)) {
+        cache.put(cacheKey, "true", 45); // Deduplicación 45s
+
+        withScriptLock(function() {
+          // 1. Identificar la psicóloga dueña de la Persona A original (que en la fila espejo está en Persona B)
+          var originalPsycA = psycBCol ? sheet.getRange(row, psycBCol).getValue().toString().replace(/\(.*\)/, "").trim() : "";
+          if (!originalPsycA) originalPsycA = findPsychologistForPerson(personBCell);
+          
+          var sheetPsycA = findPsychologistSheet(originalPsycA);
+          if (sheetPsycA) {
+            var headersA = getSheetHeaders(sheetPsycA);
+            var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+            
+            // Extraer notas de rechazo de Psicóloga B si escribió alguna
+            var motivoRechazo = (obs || "").replace(/\[Obs\.[^\]]*\]:[^|\n]*/gi, "").replace(/^[\s|:-]+/, "").trim();
+            var retryObs = "Reintento automático tras rechazo de propuesta por " + currentPsyc + (motivoRechazo ? " (Motivo: " + motivoRechazo + ")" : "");
+            
+            // 2. Crear nueva fila para Persona A en la pestaña de Psicóloga A
+            appendNewRetryRow(sheetPsycA, headersA, {
+              city: city,
+              pref: pref,
+              plan: plan,
+              personACell: personBCell, // Persona A original
+              personBCell: null,
+              fecha: "",
+              fechaLlegada: todayStr,
+              status: "Listo para match",
+              observaciones: retryObs
+            });
+            Logger.log("✅ Nueva fila de reintento creada en '" + sheetPsycA.getName() + "' tras rechazo de " + currentPsyc);
+          }
+
+          // 3. Actualizar REVISIÓN MARÍA si existía el registro
+          updateStatusInRevisionMaria(personBCell.text, personACell.text, "RECHAZADA POR PSICÓLOGA B", "#F4CCCC");
+
+          // 4. Bloquear la fila espejo rechazada en la pestaña de Psicóloga B
+          if (statusCol) sheet.getRange(row, statusCol).setBackground("#F4CCCC");
+          bloquearFilaPsicologa(sheet, row, "Fila Espejo Rechazada por " + currentPsyc + " (Solo editable por María)");
+        });
+
+        SpreadsheetApp.getActiveSpreadsheet().toast("❌ Propuesta rechazada. Se creó una nueva fila para " + personBName + " en la pestaña de " + (originalPsycA || "Psicóloga A") + ".", "Propuesta Rechazada", 6);
       }
     }
   }
@@ -1034,6 +1143,7 @@ function handlePersonasDificilesEdit(sheet, row, col, newValue, oldValue) {
         pref: pref || "",
         plan: rawPlan,
         personACell: personACell,
+        isPriority: true,
         slotIndex: i,
         totalSlots: numSlots,
         observaciones: obs
@@ -1117,7 +1227,7 @@ function appendPrioritySlotRow(sheet, headers, data) {
     }
   }
 
-  var priorityTag = data.slotIndex ? ("[PRIORITARIO Slot " + data.slotIndex + "/" + data.totalSlots + "]") : "";
+  var priorityTag = (data.isPriority && data.slotIndex) ? ("[PRIORITARIO Slot " + data.slotIndex + "/" + data.totalSlots + "]") : "";
   var finalObs = (priorityTag ? priorityTag + " " : "") + (data.observaciones ? data.observaciones : "");
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(finalObs);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(finalObs);
@@ -1490,6 +1600,16 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     Logger.log("Columna SLOTS CREADOS no existía. Creada en Columna " + slotsCol);
   }
 
+  // ── 0. REGLA: PROHIBIR BORRAR PERSONA A EN PROFILES ─────────────────────
+  if (col === fullNameCol) {
+    var rawEdit = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim();
+    if (oldValue && oldValue.toString().trim() !== "" && (!rawEdit || rawEdit === "")) {
+      sheet.getRange(row, col).setValue(oldValue);
+      SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Prohibido borrar Persona A ya registrada.", "Operación Inválida", 5);
+      return;
+    }
+  }
+
   var personACell = getCellData(sheet, row, fullNameCol);
   var personAName = personACell ? personACell.text.trim() : "";
   Logger.log("FullName (Col " + fullNameCol + "): '" + personAName + "' (RichText Link: " + (personACell && personACell.richText ? personACell.richText.getLinkUrl() : "none") + ")");
@@ -1499,11 +1619,21 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     return;
   }
 
+  // Validar que Persona A sea una URL del CRM
+  var isUrlA = personAName.indexOf("http") >= 0 || personAName.indexOf("smartmatchapp") >= 0 || personAName.indexOf("client/") >= 0 || personAName.indexOf("profile/") >= 0;
+  var hasLinkA = personACell && personACell.richText && personACell.richText.getLinkUrl();
+
+  if (!isUrlA && !hasLinkA) {
+    sheet.getRange(row, fullNameCol).setBackground("#F4CCCC").setNote("⚠️ Solo se permite pegar el enlace del perfil en SmartMatchApp, no texto libre.");
+    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ En PROFILES solo se permite pegar el enlace de SmartMatchApp.", "Formato Inválido", 6);
+    return;
+  }
+
   var cellPsycVal = (sheet.getRange(row, respCol).getValue() || "").toString().trim();
   var rawPsyc = (newValue && col === respCol ? newValue : cellPsycVal).toString().trim();
 
   // 0. SI PEGARON UNA URL EN FULLNAME, RESOLVER AUTOMÁTICAMENTE NOMBRE, LINK Y PSICÓLOGA
-  if (personAName.indexOf("http") >= 0 || personAName.indexOf("smartmatchapp") >= 0) {
+  if (isUrlA) {
     var rawUrl = personAName;
     var crmProfile = fetchProfileFromBackend(rawUrl);
     if (crmProfile && crmProfile.found && crmProfile.name) {
@@ -1511,7 +1641,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
         .setText(crmProfile.name)
         .setLinkUrl(rawUrl)
         .build();
-      sheet.getRange(row, fullNameCol).setRichTextValue(richText);
+      sheet.getRange(row, fullNameCol).setRichTextValue(richText).setBackground(null).clearNote();
       personAName = crmProfile.name;
       personACell = { text: crmProfile.name, richText: richText, formula: "", crmId: crmProfile.crm_id };
       Logger.log("✅ URL resuelta a Nombre: '" + crmProfile.name + "' con Link");
@@ -1671,7 +1801,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
         personACell: personACell,
         slotIndex: i,
         totalSlots: numSlots,
-        observaciones: "[PROFILES] Sincronizado desde CRM"
+        observaciones: ""
       });
       Logger.log("Slot " + i + "/" + numSlots + " insertado en '" + psycSheet.getName() + "'");
     }
@@ -1963,12 +2093,21 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
 
   var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
   var displayPsycA = psycA || normalizePsychologistName(sheetA.getName()) || "PSICÓLOGA A";
-  var mirrorObs = "[ESPEJO] Propuesto por " + displayPsycA + " (" + todayStr + ")" + (cleanObs ? " | " + cleanObs : "");
+  var mirrorObs = cleanObs ? ("[Obs. " + displayPsycA + "]: " + cleanObs) : ("[Propuesto por " + displayPsycA + " (" + todayStr + ")]");
 
   if (mirrorRow) {
     // Actualizar fila espejo existente
     if (statusColB) sheetB.getRange(mirrorRow, statusColB).setValue("REVISAR").setBackground("#D9D2E9");
-    if (obsColB) sheetB.getRange(mirrorRow, obsColB).setValue(mirrorObs);
+    if (obsColB) {
+      var currentObsB = (sheetB.getRange(mirrorRow, obsColB).getValue() || "").toString().trim();
+      var bTag = "[Obs. " + psycB + "]";
+      if (currentObsB && currentObsB.indexOf(bTag) >= 0) {
+        var cleanPartB = currentObsB.substring(currentObsB.indexOf(bTag));
+        sheetB.getRange(mirrorRow, obsColB).setValue(mirrorObs + "\n" + cleanPartB);
+      } else {
+        sheetB.getRange(mirrorRow, obsColB).setValue(mirrorObs);
+      }
+    }
     Logger.log("🔄 Fila espejo actualizada en '" + sheetB.getName() + "' (Fila " + mirrorRow + ")");
   } else {
     // Insertar nueva fila espejo
@@ -2109,6 +2248,38 @@ function syncToRevisionMaria(matchData) {
   }
 
   Logger.log("✅ Match sincronizado a REVISIÓN MARÍA (Fila " + targetRow + "): " + matchData.personACell.text + " + " + matchData.personBCell.text);
+}
+
+/**
+ * Actualiza el estado de un match en REVISIÓN MARÍA por nombre canónico de pareja.
+ */
+function updateStatusInRevisionMaria(nameA, nameB, newStatus, bgColor) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var revSheet = ss.getSheetByName(CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA");
+  if (!revSheet) return;
+
+  var headers = getSheetHeaders(revSheet);
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 2;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 8;
+
+  var lastRow = revSheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  var targetPairKey = getCanonicalPairId(nameA, nameB);
+  var data = revSheet.getRange(2, 1, lastRow - 1, revSheet.getLastColumn()).getValues();
+
+  for (var i = 0; i < data.length; i++) {
+    var rA = (data[i][personACol - 1] || "").toString();
+    var rB = (data[i][personBCol - 1] || "").toString();
+    if (getCanonicalPairId(rA, rB) === targetPairKey) {
+      var row = i + 2;
+      revSheet.getRange(row, aprobarCol).setValue(newStatus);
+      if (bgColor) revSheet.getRange(row, aprobarCol).setBackground(bgColor);
+      Logger.log("✅ Estado actualizado en REVISIÓN MARÍA (Fila " + row + ") -> " + newStatus);
+      break;
+    }
+  }
 }
 
 /**
