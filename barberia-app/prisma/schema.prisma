@@ -28,6 +28,7 @@ model Tenant {
   commissions       Commission[]
   expenses          Expense[]
   expenseCategories ExpenseCategory[]
+  advances          BarberAdvance[]
   settings          Settings?
 
   @@map("tenants")
@@ -75,6 +76,7 @@ model Barber {
   appointments           Appointment[]
   sales                  Sale[]
   commissions            Commission[]
+  advances               BarberAdvance[]
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -91,6 +93,7 @@ model Service {
   price           Float
   durationMinutes Int      @default(30)
   category        String   @default("BARBERIA") // "BARBERIA" (Hombres) | "PELUQUERIA" (Mujeres)
+  commissionRate  Float?   // ej. 0.70 para 70% de comisión del servicio
   isActive        Boolean  @default(true)
   saleItems       SaleItem[]
   appointmentServices AppointmentService[]
@@ -248,6 +251,31 @@ model Commission {
   createdAt        DateTime @default(now())
 
   @@map("commissions")
+}
+
+// ─── Préstamos / Vales de barberos ──────────────────────────────────────────────
+model BarberAdvance {
+  id           String        @id @default(cuid())
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  barberId     String
+  barber       Barber        @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  amount       Float
+  reason       String?
+  status       AdvanceStatus @default(PENDING) // PENDING | DEDUCTED | CANCELLED
+  date         DateTime      @default(now())
+  paidAt       DateTime?
+  settlementId String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("barber_advances")
+}
+
+enum AdvanceStatus {
+  PENDING
+  DEDUCTED
+  CANCELLED
 }
 
 // ─── Gastos ───────────────────────────────────────────────────────────────────────

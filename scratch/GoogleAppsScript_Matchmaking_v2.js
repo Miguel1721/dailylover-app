@@ -2085,7 +2085,7 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
     }
 
     withScriptLock(function() {
-      // 1. Insertar en zona inferior de MATCHES
+      // 1. Insertar en zona inferior de MATCHES (con estado inicial 'pendiente' en gris)
       var combinedObs = "[" + psycA + (psycB && psycB !== psycA ? " ↔ " + psycB : "") + "] " + (obsA ? "Obs A: " + obsA : "") + (obsB && obsB !== obsA ? " | Obs B: " + obsB : "") + (notasMaria ? " | Nota María: " + notasMaria : "");
       insertMatchInLowerZone(matchesSheet, {
         personACell: cellA,
@@ -2094,19 +2094,19 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
         observaciones: combinedObs
       });
 
-      // 2. Actualizar estado a APROBADO en la pestaña de Psicóloga A
+      // 2. Actualizar estado a APROBADO en la pestaña de Psicóloga A y BLOQUEAR la fila
       if (psycA) {
-        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8");
+        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8", true);
       }
 
-      // 3. Actualizar estado a APROBADO en la pestaña de Psicóloga B (si es distinta)
+      // 3. Actualizar estado a APROBADO en la pestaña de Psicóloga B y BLOQUEAR la fila
       if (psycB && psycB !== psycA) {
-        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "APROBADO", "#B6D7A8");
+        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "APROBADO", "#B6D7A8", true);
       }
 
       // 4. Marcar verde en REVISIÓN MARÍA
       sheet.getRange(row, aprobarCol).setBackground("#D9EAD3").setValue("APROBADO");
-      ss.toast("Match aprobado y enviado a MATCHES", "Aprobación Exitosa", 5);
+      ss.toast("Match aprobado, enviado a MATCHES y bloqueado para psicólogas.", "Aprobación Exitosa", 5);
     });
   }
 
@@ -2117,7 +2117,7 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 
       // 1. Actualizar estado a NOT APPROVED en pestaña de Psicóloga A y re-generar slot
       if (psycA) {
-        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC");
+        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC", false);
         var sheetA = findPsychologistSheet(psycA);
         if (sheetA) {
           appendNewRetryRow(sheetA, getSheetHeaders(sheetA), {
@@ -2135,7 +2135,7 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 
       // 2. Actualizar estado a NOT APPROVED en pestaña de Psicóloga B y re-generar slot
       if (psycB && psycB !== psycA) {
-        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "NOT APPROVED", "#F4CCCC");
+        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "NOT APPROVED", "#F4CCCC", false);
         var sheetB = findPsychologistSheet(psycB);
         if (sheetB) {
           appendNewRetryRow(sheetB, getSheetHeaders(sheetB), {
@@ -2156,12 +2156,68 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
       ss.toast("Match rechazado. Slots de reintento creados para ambas personas.", "Rechazo Procesado", 5);
     });
   }
+
+  // ── CASO C: REFUND DIRECTO ORDENADO POR MARÍA ────────────────────────────
+  else if (val === "REFUND" || val === "REFUND POR MARÍA" || val === "REFUND PENDIENTE") {
+    withScriptLock(function() {
+      var motivoRefund = notasMaria ? "Refund ordenado por María: " + notasMaria : "Refund ordenado por María";
+
+      // 1. Enviar a la cola de Lina (REFUNDS PENDIENTES)
+      syncToRefundsQueue(origenA || "REVISIÓN MARÍA", row, {
+        personACell: cellA,
+        plan: "",
+        observaciones: motivoRefund
+      });
+
+      // 2. Actualizar estado a REFUND en pestaña de Psicóloga A
+      if (psycA) {
+        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "REFUND", "#EA9999", false);
+      }
+
+      // 3. Actualizar estado a REFUND en pestaña de Psicóloga B (si es distinta)
+      if (psycB && psycB !== psycA) {
+        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "REFUND", "#EA9999", false);
+      }
+
+      // 4. Marcar en REVISIÓN MARÍA
+      sheet.getRange(row, aprobarCol).setBackground("#EA9999").setValue("REFUND");
+      ss.toast("Match marcado como Refund por María y enrutado a REFUNDS PENDIENTES.", "Refund Procesado", 5);
+    });
+  }
 }
 
 /**
- * Actualiza el estado y color de una fila en la pestaña de una psicóloga.
+ * Bloquea la fila en la pestaña de la psicóloga mientras el match está en manos de Servicio al Cliente.
  */
-function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgColor) {
+function bloquearFilaPsicologa(sheet, row) {
+  if (!sheet || row < 2) return;
+  try {
+    var numCols = Math.max(sheet.getLastColumn(), 15);
+    var range = sheet.getRange(row, 1, 1, numCols);
+    var protection = range.protect().setDescription("Fila Bloqueada: En gestión de Servicio al Cliente");
+    
+    // Permitir edición a María
+    if (CONFIG.MARIA_EMAIL) {
+      try { protection.addEditor(CONFIG.MARIA_EMAIL); } catch (e) {}
+    }
+    
+    var editors = protection.getEditors();
+    for (var i = 0; i < editors.length; i++) {
+      var email = editors[i].getEmail();
+      if (email !== CONFIG.MARIA_EMAIL) {
+        protection.removeEditor(editors[i]);
+      }
+    }
+    Logger.log("🔒 Fila " + row + " en '" + sheet.getName() + "' bloqueada para psicóloga.");
+  } catch (err) {
+    Logger.log("Aviso al bloquear fila: " + err.message);
+  }
+}
+
+/**
+ * Actualiza el estado y color de una fila en la pestaña de una psicóloga, con opción de bloqueo.
+ */
+function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgColor, lockRow) {
   var sheet = findPsychologistSheet(psycName);
   if (!sheet) return;
 
@@ -2183,7 +2239,8 @@ function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgCo
       var row = i + 2;
       sheet.getRange(row, statusCol).setValue(newStatus);
       if (bgColor) sheet.getRange(row, statusCol).setBackground(bgColor);
-      Logger.log("✅ Estado actualizado en '" + sheet.getName() + "' (Fila " + row + ") -> " + newStatus);
+      if (lockRow) bloquearFilaPsicologa(sheet, row);
+      Logger.log("✅ Estado actualizado en '" + sheet.getName() + "' (Fila " + row + ") -> " + newStatus + (lockRow ? " [BLOQUEADA]" : ""));
       break;
     }
   }
@@ -2411,11 +2468,11 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
     matchesSheet.getRange(targetRow, obsCol).setValue(matchData.observaciones);
   }
 
-  // 5. Estado inicial: 'pendiente' (Color #FFF2CC)
+  // 5. Estado inicial: 'pendiente' (Gris oficial #E8EAED)
   if (matchCol) {
     matchesSheet.getRange(targetRow, matchCol)
       .setValue("pendiente")
-      .setBackground("#FFF2CC");
+      .setBackground("#E8EAED");
   }
 
   // Asegurar que DÍA quede vacío (zona inferior)
@@ -2832,32 +2889,11 @@ function getHistorialSidebarHtml(initialQuery) {
 '      html += \'</div>\';' +
 '      html += \'<div class="card">\';' +
 '      html += \'  <div class="card-title"><span>👥 Candidatos Presentados</span><span class="badge badge-gray">\' + (data.matches ? data.matches.length : 0) + \'</span></div>\';' +
-'      if (!data.matches || data.matches.length === 0) {' +
-'        html += \'  <div class="empty-state">No tiene candidatos previos registrados.</div>\';' +
-'      } else {' +
-'        for (var i = 0; i < data.matches.length; i++) {' +
-'          var m = data.matches[i];' +
-'          var badgeClass = "badge-gray";' +
-'          var stUpper = (m.status || "").toUpperCase();' +
-'          if (stUpper === "APROBADO" || stUpper === "MATCH DONE") badgeClass = "badge-green";' +
-'          else if (stUpper === "HECHO" || stUpper === "HECHO POR MAPE") badgeClass = "badge-blue";' +
-'          else if (stUpper.indexOf("LISTO") >= 0 || stUpper.indexOf("PENDIENTE") >= 0) badgeClass = "badge-yellow";' +
-'          else if (stUpper.indexOf("TROUBLE") >= 0 || stUpper.indexOf("NOT APPROVED") >= 0) badgeClass = "badge-wine";' +
-'          html += \'  <div class="match-item">\';' +
-'          html += \'    <div class="match-header">\';' +
-'          html += \'      <span class="match-name">\' + escapeHtml(m.candidate_name) + \'</span>\';' +
-'          html += \'      <span class="badge \' + badgeClass + \'">\' + escapeHtml(m.status) + \'</span>\';' +
-'          html += \'    </div>\';' +
-'          html += \'    <div class="match-meta">📅 \' + (m.fecha || "Sin fecha") + \' &bull; 👩‍⚕️ \' + (m.psychologist || "General") + (m.role ? " &bull; Rol: " + m.role : "") + \'</div>\';' +
-'          if (m.feedback) {' +
-'            html += \'    <div class="match-feedback">💬 <b>Feedback:</b> \' + escapeHtml(m.feedback) + \'</div>\';' +
-'          }' +
-'          if (m.observations) {' +
-'            html += \'    <div class="match-obs">📝 \' + escapeHtml(m.observations) + \'</div>\';' +
-'          }' +
-'          html += \'  </div>\';' +
-'        }' +
-'      }' +
+'      html += \'  <div style="display:flex; gap:6px; margin-bottom:10px;">\';' +
+'      html += \'    <button id="btn-all" onclick="filterMatches(false)" style="flex:1; padding:6px 8px; font-size:11px; font-weight:700; border-radius:6px; border:1px solid #961500; background:#961500; color:#fff; cursor:pointer;">Todos (\' + (data.matches ? data.matches.length : 0) + \')</button>\';' +
+'      html += \'    <button id="btn-trouble" onclick="filterMatches(true)" style="flex:1; padding:6px 8px; font-size:11px; font-weight:700; border-radius:6px; border:1px solid rgba(255,107,53,0.4); background:rgba(255,107,53,0.15); color:#ff8a80; cursor:pointer;">⚠️ Solo Rechazos (\' + (data.trouble_count || 0) + \')</button>\';' +
+'      html += \'  </div>\';' +
+'      html += \'  <div id="matches-list-container"></div>\';' +
 '      html += \'</div>\';' +
 '      if (data.bio_notes || data.difficult_notes) {' +
 '        html += \'<div class="card">\';' +
@@ -2867,6 +2903,63 @@ function getHistorialSidebarHtml(initialQuery) {
 '        html += \'</div>\';' +
 '      }' +
 '      area.innerHTML = html;' +
+'      window.__currentMatches = data.matches || [];' +
+'      renderMatchesList(false);' +
+'    }' +
+'    function isRejectionStatus(st) {' +
+'      var s = (st || "").toUpperCase();' +
+'      return (s.indexOf("TROUBLE") >= 0 || s.indexOf("NOT APPROVED") >= 0 || s.indexOf("RECHAZ") >= 0 || s.indexOf("NO MATCH") >= 0 || s.indexOf("SIN QUÍMICA") >= 0 || s.indexOf("SIN QUIMICA") >= 0 || s.indexOf("DESCALIFICADO") >= 0 || s.indexOf("REFUND") >= 0);' +
+'    }' +
+'    function filterMatches(onlyTrouble) {' +
+'      var btnAll = document.getElementById("btn-all");' +
+'      var btnTrouble = document.getElementById("btn-trouble");' +
+'      if (btnAll && btnTrouble) {' +
+'        if (onlyTrouble) {' +
+'          btnAll.style.background = "#1A1214"; btnAll.style.color = "#9A8A8D"; btnAll.style.borderColor = "rgba(150,21,0,0.3)";' +
+'          btnTrouble.style.background = "#FF6B35"; btnTrouble.style.color = "#fff"; btnTrouble.style.borderColor = "#FF6B35";' +
+'        } else {' +
+'          btnAll.style.background = "#961500"; btnAll.style.color = "#fff"; btnAll.style.borderColor = "#961500";' +
+'          btnTrouble.style.background = "rgba(255,107,53,0.15)"; btnTrouble.style.color = "#ff8a80"; btnTrouble.style.borderColor = "rgba(255,107,53,0.4)";' +
+'        }' +
+'      }' +
+'      renderMatchesList(onlyTrouble);' +
+'    }' +
+'    function renderMatchesList(onlyTrouble) {' +
+'      var container = document.getElementById("matches-list-container");' +
+'      if (!container) return;' +
+'      var matches = window.__currentMatches || [];' +
+'      var filtered = onlyTrouble ? matches.filter(function(m) { return isRejectionStatus(m.status); }) : matches;' +
+'      if (filtered.length === 0) {' +
+'        container.innerHTML = \'<div class="empty-state">\' + (onlyTrouble ? \'No registra rechazos ni troublemakers.\' : \'No tiene candidatos previos.\') + \'</div>\';' +
+'        return;' +
+'      }' +
+'      var out = "";' +
+'      if (onlyTrouble) {' +
+'        out += \'<div style="background:rgba(255,107,53,0.12); border:1px solid #FF6B35; color:#ff8a80; padding:8px 10px; border-radius:6px; margin-bottom:10px; font-size:11px; font-weight:700;">⚠️ Esta persona registra \' + filtered.length + \' rechazos / cancelaciones</div>\';' +
+'      }' +
+'      for (var i = 0; i < filtered.length; i++) {' +
+'        var m = filtered[i];' +
+'        var badgeClass = "badge-gray";' +
+'        var stUpper = (m.status || "").toUpperCase();' +
+'        if (stUpper === "APROBADO" || stUpper === "MATCH DONE") badgeClass = "badge-green";' +
+'        else if (stUpper === "HECHO" || stUpper === "HECHO POR MAPE") badgeClass = "badge-blue";' +
+'        else if (stUpper.indexOf("LISTO") >= 0 || stUpper.indexOf("PENDIENTE") >= 0) badgeClass = "badge-yellow";' +
+'        else if (isRejectionStatus(stUpper)) badgeClass = "badge-wine";' +
+'        out += \'<div class="match-item">\';' +
+'        out += \'  <div class="match-header">\';' +
+'        out += \'    <span class="match-name">\' + escapeHtml(m.candidate_name) + \'</span>\';' +
+'        out += \'    <span class="badge \' + badgeClass + \'">\' + escapeHtml(m.status) + \'</span>\';' +
+'        out += \'  </div>\';' +
+'        out += \'  <div class="match-meta">📅 \' + (m.fecha || "Sin fecha") + \' &bull; 👩‍⚕️ \' + (m.psychologist || "General") + (m.role ? " &bull; Rol: " + m.role : "") + \'</div>\';' +
+'        if (m.feedback) {' +
+'          out += \'  <div class="match-feedback">💬 <b>Feedback:</b> \' + escapeHtml(m.feedback) + \'</div>\';' +
+'        }' +
+'        if (m.observations) {' +
+'          out += \'  <div class="match-obs">📝 \' + escapeHtml(m.observations) + \'</div>\';' +
+'        }' +
+'        out += \'</div>\';' +
+'      }' +
+'      container.innerHTML = out;' +
 '    }' +
 '    function renderError(err) {' +
 '      document.getElementById("content-area").innerHTML = \'<div class="error-msg">Error: \' + escapeHtml(err.message || err) + \'</div>\';' +

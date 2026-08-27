@@ -436,35 +436,46 @@ function ServicesManager() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-dark-400 text-sm">Todos los servicios son editables. Cambia nombre, precio y duración en cualquier momento.</p>
+        <p className="text-dark-400 text-sm">Todos los servicios son editables. Cambia nombre, precio, categoría, comisión y duración en cualquier momento.</p>
         <button id="btn-new-service" onClick={() => { setEditSvc(null); setShowModal(true) }} className="btn-primary">
           <Scissors size={14} /> Nuevo servicio
         </button>
       </div>
       <div className="table-container">
         <table className="table">
-          <thead><tr><th>Servicio</th><th>Precio</th><th>Duración</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Servicio</th><th>Categoría</th><th>Precio</th><th>Comisión</th><th>Duración</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={5} className="text-center py-8 text-dark-500">Cargando...</td></tr> :
-              services.map(s => (
-                <tr key={s.id} className={!s.isActive ? 'opacity-50' : ''}>
-                  <td>
-                    <div className="font-medium text-white">{s.name}</div>
-                    {s.description && <div className="text-xs text-dark-500 mt-0.5 max-w-xs line-clamp-1">{s.description}</div>}
-                  </td>
-                  <td className="text-gold-400 font-semibold">{fmt(s.price)}</td>
-                  <td className="text-dark-400">{s.durationMinutes} min</td>
-                  <td><span className={s.isActive ? 'badge badge-green' : 'badge badge-gray'}>{s.isActive ? 'Activo' : 'Inactivo'}</span></td>
-                  <td>
-                    <div className="flex gap-2">
-                      <button id={`btn-edit-svc-${s.id}`} onClick={() => { setEditSvc(s); setShowModal(true) }} className="btn-secondary btn-sm">Editar</button>
-                      <button onClick={() => toggleActive(s)} className={`btn-sm ${s.isActive ? 'btn-danger' : 'btn-success'}`}>
-                        {s.isActive ? 'Desactivar' : 'Activar'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+            {loading ? <tr><td colSpan={7} className="text-center py-8 text-dark-500">Cargando...</td></tr> :
+              services.map(s => {
+                const catLabel = s.category === 'PELUQUERIA' ? 'Peluquería (Mujeres)' : s.category === 'TODOS' ? 'Ambos (Unisex)' : 'Barbería (Hombres)'
+                const catBadge = s.category === 'PELUQUERIA' ? 'badge-purple' : s.category === 'TODOS' ? 'badge-blue' : 'badge-gold'
+                const comm = s.commissionRate !== null && s.commissionRate !== undefined ? `${Math.round(s.commissionRate * 100)}%` : 'Base (60%)'
+                return (
+                  <tr key={s.id} className={!s.isActive ? 'opacity-50' : ''}>
+                    <td>
+                      <div className="font-medium text-white">{s.name}</div>
+                      {s.description && <div className="text-xs text-dark-500 mt-0.5 max-w-xs line-clamp-1">{s.description}</div>}
+                    </td>
+                    <td>
+                      <span className={`badge ${catBadge} text-xs font-semibold`}>
+                        {catLabel}
+                      </span>
+                    </td>
+                    <td className="text-gold-400 font-semibold">{fmt(s.price)}</td>
+                    <td className="text-white font-medium text-sm">{comm}</td>
+                    <td className="text-dark-400">{s.durationMinutes} min</td>
+                    <td><span className={s.isActive ? 'badge badge-green' : 'badge badge-gray'}>{s.isActive ? 'Activo' : 'Inactivo'}</span></td>
+                    <td>
+                      <div className="flex gap-2">
+                        <button id={`btn-edit-svc-${s.id}`} onClick={() => { setEditSvc(s); setShowModal(true) }} className="btn-secondary btn-sm">Editar</button>
+                        <button onClick={() => toggleActive(s)} className={`btn-sm ${s.isActive ? 'btn-danger' : 'btn-success'}`}>
+                          {s.isActive ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })
             }
           </tbody>
         </table>
@@ -475,25 +486,66 @@ function ServicesManager() {
 }
 
 function ServiceModal({ service, onClose, onSave }) {
-  const [form, setForm] = useState(service || { name: '', description: '', price: '', durationMinutes: 30 })
+  const [form, setForm] = useState(service ? {
+    name: service.name || '',
+    description: service.description || '',
+    price: service.price || '',
+    durationMinutes: service.durationMinutes || 30,
+    category: service.category || 'BARBERIA',
+    commissionRate: service.commissionRate !== null && service.commissionRate !== undefined ? Math.round(service.commissionRate * 100) : '',
+  } : {
+    name: '',
+    description: '',
+    price: '',
+    durationMinutes: 30,
+    category: 'BARBERIA',
+    commissionRate: '',
+  })
   const [loading, setLoading] = useState(false)
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     const url = service ? `/api/services/${service.id}` : '/api/services'
-    const res = await fetch(url, { method: service ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, price: Number(form.price), durationMinutes: Number(form.durationMinutes) }) })
+    const commRateValue = form.commissionRate !== '' && form.commissionRate !== null ? Number(form.commissionRate) / 100 : null
+    const res = await fetch(url, {
+      method: service ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...form,
+        price: Number(form.price),
+        durationMinutes: Number(form.durationMinutes),
+        category: form.category,
+        commissionRate: commRateValue,
+      })
+    })
     setLoading(false)
     if (res.ok) { toast.success(service ? 'Servicio actualizado' : 'Servicio creado'); onSave() }
     else { const d = await res.json(); toast.error(d.error || 'Error') }
   }
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
+      <div className="modal max-w-lg">
         <div className="modal-header"><h3 className="section-title">{service ? 'Editar Servicio' : 'Nuevo Servicio'}</h3><button onClick={onClose} className="btn-ghost p-2">✕</button></div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body space-y-4">
-            <div><label className="input-label">Nombre *</label><input className="input" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} required /></div>
-            <div><label className="input-label">Descripción</label><textarea className="input resize-none" rows={2} value={form.description || ''} onChange={e => setForm(f => ({...f, description: e.target.value}))} /></div>
+            <div><label className="input-label">Nombre del servicio *</label><input className="input" value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))} required placeholder="Ej: Cejas con henna" /></div>
+            <div><label className="input-label">Descripción</label><textarea className="input resize-none" rows={2} value={form.description || ''} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Descripción opcional del servicio" /></div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="input-label">Categoría / Público *</label>
+                <select className="select w-full" value={form.category} onChange={e => setForm(f => ({...f, category: e.target.value}))}>
+                  <option value="BARBERIA">Barbería (Solo Hombres)</option>
+                  <option value="PELUQUERIA">Peluquería (Solo Mujeres)</option>
+                  <option value="TODOS">Ambos / Unisex (Aparece en ambas)</option>
+                </select>
+              </div>
+              <div>
+                <label className="input-label">Comisión personalizada (%)</label>
+                <input type="number" min="0" max="100" className="input" value={form.commissionRate} onChange={e => setForm(f => ({...f, commissionRate: e.target.value}))} placeholder="Ej: 70 (dejar vacío si usa base)" />
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div><label className="input-label">Precio (COP) *</label><input type="number" min="0" className="input" value={form.price} onChange={e => setForm(f => ({...f, price: e.target.value}))} required /></div>
               <div><label className="input-label">Duración (min) *</label><input type="number" min="5" className="input" value={form.durationMinutes} onChange={e => setForm(f => ({...f, durationMinutes: e.target.value}))} required /></div>

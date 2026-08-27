@@ -11,7 +11,7 @@ const SALE_INCLUDE = {
   items: {
     include: {
       service: {
-        select: { id: true, name: true, price: true, durationMinutes: true },
+        select: { id: true, name: true, price: true, durationMinutes: true, commissionRate: true },
       },
       product: {
         select: { id: true, name: true, salePrice: true, costPrice: true },
@@ -122,7 +122,7 @@ export async function POST(request) {
     const settings = await prisma.settings.findUnique({ where: { tenantId } }).catch(() => null)
     const globalServiceRate = settings?.commissionRateService ?? 0.60
     const globalProductRate = settings?.commissionRateProduct ?? 0.20
-    const serviceCommissionRate = barber.commissionRateService ?? globalServiceRate
+    const barberServiceRate = barber.commissionRateService ?? globalServiceRate
     const productCommissionRate = barber.commissionRateProduct ?? globalProductRate
 
     if (appointmentId) {
@@ -134,13 +134,26 @@ export async function POST(request) {
     }
 
     const serviceItems = items.filter((i) => i.itemType === 'SERVICE')
+    let serviceTotal = 0
+    let serviceCommissionTotal = 0
+
     for (const item of serviceItems) {
       const service = await prisma.service.findFirst({ where: { id: item.serviceId, tenantId } })
       if (!service) return NextResponse.json({ error: `Servicio no encontrado: ${item.serviceId}` }, { status: 404 })
       if (!service.isActive) return NextResponse.json({ error: `Servicio inactivo: ${service.name}` }, { status: 400 })
+
+      const qty = item.quantity ?? 1
+      const itemTotal = item.unitPrice * qty
+      serviceTotal += itemTotal
+
+      const itemRate = service.commissionRate ?? barberServiceRate
+      serviceCommissionTotal += itemTotal * itemRate
     }
 
     const productItems = items.filter((i) => i.itemType === 'PRODUCT')
+    let productTotal = 0
+    let productCommissionTotal = 0
+
     for (const item of productItems) {
       const product = await prisma.product.findFirst({ where: { id: item.productId, tenantId } })
       if (!product) return NextResponse.json({ error: `Producto no encontrado: ${item.productId}` }, { status: 404 })
@@ -152,13 +165,16 @@ export async function POST(request) {
           { status: 400 }
         )
       }
+
+      const itemTotal = item.unitPrice * qty
+      productTotal += itemTotal
+      productCommissionTotal += itemTotal * productCommissionRate
     }
 
     const subtotal = items.reduce((acc, item) => acc + item.unitPrice * (item.quantity ?? 1), 0)
     const total = Math.max(0, subtotal - discount)
-
-    const serviceTotal = serviceItems.reduce((acc, item) => acc + item.unitPrice * (item.quantity ?? 1), 0)
-    const productTotal = productItems.reduce((acc, item) => acc + item.unitPrice * (item.quantity ?? 1), 0)
+    const totalCommissionAmount = serviceCommissionTotal + productCommissionTotal
+    const effectiveCommissionRate = (serviceTotal + productTotal) > 0 ? (totalCommissionAmount / (serviceTotal + productTotal)) : barberServiceRate
 
     const sale = await prisma.$transaction(async (tx) => {
       const newSale = await tx.sale.create({
@@ -187,17 +203,13 @@ export async function POST(request) {
       await tx.saleItem.createMany({ data: saleItemsData })
 
       if (serviceTotal > 0 || productTotal > 0) {
-        const serviceCommission = serviceTotal * serviceCommissionRate
-        const productCommission = productTotal * productCommissionRate
-        const totalCommissionAmount = serviceCommission + productCommission
-
         await tx.commission.create({
           data: {
             tenantId,
             barberId,
             saleId: newSale.id,
             serviceTotal: serviceTotal + productTotal,
-            commissionRate: serviceCommissionRate,
+            commissionRate: effectiveCommissionRate,
             commissionAmount: totalCommissionAmount,
           },
         })

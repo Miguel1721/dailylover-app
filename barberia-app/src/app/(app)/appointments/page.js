@@ -268,7 +268,14 @@ function NewAppointmentModal({ barbers, onClose, onSave }) {
   useEffect(() => {
     if (form.barberId && form.date) {
       fetch(`/api/appointments/available-slots?barberId=${form.barberId}&date=${form.date}`)
-        .then(r => r.json()).then(d => setAvailableSlots(d.slots || []))
+        .then(r => r.json())
+        .then(d => {
+          const slots = d.availableSlots || d.slots || d.data?.availableSlots || (Array.isArray(d) ? d : [])
+          setAvailableSlots(slots)
+        })
+        .catch(() => setAvailableSlots([]))
+    } else {
+      setAvailableSlots([])
     }
   }, [form.barberId, form.date])
 

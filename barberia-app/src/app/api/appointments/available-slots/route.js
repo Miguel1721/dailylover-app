@@ -59,6 +59,8 @@ export async function GET(request) {
 
     return NextResponse.json({
       success: true,
+      slots: availableSlots,
+      availableSlots,
       data: {
         barberId: barber.id,
         barberName: barber.name,

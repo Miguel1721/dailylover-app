@@ -55,8 +55,8 @@ STATUS_COLORS = {
     "REVISAR POR SI TOCA OTRO MATCH": "#B4A7D6",
     "MATCH DONE": "#6AA84F",
     "RESUELTO": "#D9EAD3",
-    "Pendiente": "#FFF2CC",
-    "PENDIENTE": "#FFF2CC",
+    "Pendiente": "#E8EAED",
+    "PENDIENTE": "#E8EAED",
     "Urgente": "#E06666",
     "Listo para match": "#FFE599",
     "REQUEST PROFILE UPDATE": "#C9DAF8",
@@ -166,6 +166,15 @@ class UpdateCalendarDateRequest(BaseModel):
 
 class ResolveProfileRequest(BaseModel):
     url_or_query: str
+
+class RejectMatchRequest(BaseModel):
+    reason: Optional[str] = "Rechazado"
+
+class ManualRefundRequest(BaseModel):
+    person_name: str
+    psychologist_name: Optional[str] = "General"
+    plan_tier: Optional[str] = ""
+    reason: Optional[str] = "Solicitud de refund vía Servicio al Cliente / WhatsApp"
 
 
 # ─── 1. PANTALLA 1: MIS MATCHES (VISTA PSICÓLOGA) ────────────────────────────
@@ -727,6 +736,81 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
         pass
 
     return {"status": "success", "match_id": match_id, "message": f"Match {match_id} aprobado exitosamente por María Paula (fila actualizada in-situ)."}
+
+
+@router.post("/matches/{match_id}/refund-by-maria")
+async def refund_match_by_maria(
+    match_id: int,
+    payload: Optional[RejectMatchRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ACCIÓN DIRECTA DE MARÍA: Refund de un match directo desde la cola de revisión.
+    1. Marca status = 'REFUND', approved_by_maria = false, updated_at = now().
+    2. Registra en person_history para Persona A y Persona B.
+    3. Enruta a la cola de Lina (REFUNDS PENDIENTES).
+    """
+    exist_res = await db.execute(text("""
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id
+        FROM operational_matches
+        WHERE id = :id
+    """), {"id": match_id})
+    match_row = exist_res.fetchone()
+
+    if not match_row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    reason = (payload.reason if payload and payload.reason else "Refund directo ordenado por María").strip()
+
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'REFUND', observations = :obs, updated_at = NOW()
+        WHERE id = :id
+    """), {"id": match_id, "obs": f"[REFUND MARÍA] {reason}"})
+
+    pA = match_row.person_a
+    pB = match_row.person_b or "Candidato B"
+    det = f"Match marcado para REFUND por María ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}). Motivo: {reason}"
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'REFUND', :d, NOW())"), {"n": pA, "mid": match_id, "d": det})
+    if pB and pB != "Candidato B":
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'REFUND', :d, NOW())"), {"n": pB, "mid": match_id, "d": det})
+
+    await db.commit()
+    return {"status": "success", "match_id": match_id, "message": f"Match {match_id} marcado como REFUND por María y enrutado a Lina."}
+
+
+@router.post("/refunds/manual")
+async def create_manual_refund(
+    payload: ManualRefundRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Permite a cualquier miembro de Servicio al Cliente registrar un refund manualmente en la cola de Lina.
+    """
+    clean_name = payload.person_name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=400, detail="Nombre del cliente requerido")
+
+    psyc = payload.psychologist_name.strip() if payload.psychologist_name else "General"
+    plan = payload.plan_tier.strip() if payload.plan_tier else ""
+    reason = payload.reason.strip() if payload.reason else "Solicitud de refund vía Servicio al Cliente / WhatsApp"
+
+    # Insertar en operational_matches con status REFUND
+    insert_res = await db.execute(text("""
+        INSERT INTO operational_matches (person_a, psychologist_name, plan_tier, status, observations, created_at, updated_at)
+        VALUES (:pa, :psyc, :plan, 'REFUND', :obs, NOW(), NOW())
+        RETURNING id
+    """), {"pa": clean_name, "psyc": psyc, "plan": plan, "obs": f"[SERVICIO AL CLIENTE] {reason}"})
+    new_id = insert_res.scalar()
+
+    # Registrar en person_history
+    await db.execute(text("""
+        INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+        VALUES (:n, :mid, 'REFUND_REQUESTED', :d, NOW())
+    """), {"n": clean_name, "mid": new_id, "d": f"Solicitud de refund ingresada por Servicio al Cliente. Motivo: {reason}"})
+
+    await db.commit()
+    return {"status": "success", "match_id": new_id, "message": f"Solicitud de refund para {clean_name} registrada en la cola de Lina."}
 
 
 # ─── 2B. COLA DE REFUNDS (LINA - SERVICIO AL CLIENTE) ───────────────────────

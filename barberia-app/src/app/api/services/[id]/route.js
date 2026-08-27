@@ -38,7 +38,7 @@ export async function PUT(request, { params }) {
     if (!existing) return NextResponse.json({ error: 'Servicio no encontrado' }, { status: 404 })
 
     const body = await request.json()
-    const { name, description, price, durationMinutes, category, isActive } = body
+    const { name, description, price, durationMinutes, category, isActive, commissionRate } = body
 
     const data = {}
     if (name !== undefined) {
@@ -53,6 +53,9 @@ export async function PUT(request, { params }) {
     if (durationMinutes !== undefined) data.durationMinutes = durationMinutes
     if (category !== undefined) data.category = category
     if (isActive !== undefined) data.isActive = isActive
+    if (commissionRate !== undefined) {
+      data.commissionRate = commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : null
+    }
 
     const service = await prisma.service.update({ where: { id }, data })
 

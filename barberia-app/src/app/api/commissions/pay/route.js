@@ -35,27 +35,46 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Debe proporcionar commissionIds[] o (startDate + endDate)' }, { status: 400 })
     }
 
-    const matching = await prisma.commission.findMany({
+    const matchingCommissions = await prisma.commission.findMany({
       where,
-      select: { id: true },
+      select: { id: true, barberId: true, commissionAmount: true },
     })
 
-    if (matching.length === 0) {
+    if (matchingCommissions.length === 0) {
       return NextResponse.json({ message: 'No se encontraron comisiones pendientes que coincidan', updated: 0 })
     }
 
+    // Marcar comisiones como pagadas
     const result = await prisma.commission.updateMany({
       where,
       data: { isPaid: true, paidAt },
     })
 
+    // Descontar vales/préstamos pendientes del barbero o de los barberos incluidos
+    const barberIdsToDeduct = barberId
+      ? [barberId]
+      : Array.from(new Set(matchingCommissions.map(c => c.barberId)))
+
+    const advancesResult = await prisma.barberAdvance.updateMany({
+      where: {
+        tenantId,
+        barberId: { in: barberIdsToDeduct },
+        status: 'PENDING',
+      },
+      data: {
+        status: 'DEDUCTED',
+        paidAt,
+      },
+    })
+
     return NextResponse.json({
-      message: `${result.count} comisión(es) marcada(s) como pagada(s)`,
-      updated: result.count,
+      message: `${result.count} comisión(es) liquidada(s) y ${advancesResult.count} vale(s) descontado(s)`,
+      updatedCommissions: result.count,
+      deductedAdvances: advancesResult.count,
       paidAt,
     })
   } catch (error) {
     console.error('[POST /api/commissions/pay]', error)
-    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+    return NextResponse.json({ error: 'Error interno del servidor', details: error.message }, { status: 500 })
   }
 }

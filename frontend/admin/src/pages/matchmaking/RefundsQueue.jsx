@@ -13,6 +13,42 @@ export default function RefundsQueue() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('REFUND') // 'REFUND' (Pendientes) o 'REFUND DONE' (Procesados)
   const [processingId, setProcessingId] = useState(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [newRefund, setNewRefund] = useState({
+    person_name: '',
+    psychologist_name: 'General',
+    plan_tier: '',
+    reason: ''
+  })
+  const [submittingManual, setSubmittingManual] = useState(false)
+
+  const handleCreateManualRefund = async (e) => {
+    e.preventDefault()
+    if (!newRefund.person_name.trim()) {
+      alert('Por favor ingrese el nombre de la persona.')
+      return
+    }
+    setSubmittingManual(true)
+    try {
+      const res = await fetch('/api/v1/matchmaking/refunds/manual', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(newRefund)
+      })
+      if (!res.ok) throw new Error('Error al registrar refund manual')
+      setShowAddModal(false)
+      setNewRefund({ person_name: '', psychologist_name: 'General', plan_tier: '', reason: '' })
+      fetchRefunds()
+      alert('✓ Solicitud de refund registrada exitosamente en la cola de Lina.')
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setSubmittingManual(false)
+    }
+  }
 
   const fetchRefunds = async () => {
     setLoading(true)
@@ -72,24 +108,45 @@ export default function RefundsQueue() {
           </p>
         </div>
 
-        <button
-          onClick={fetchRefunds}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 14px',
-            borderRadius: 6,
-            border: '1px solid var(--border-color)',
-            background: 'var(--bg-card)',
-            color: 'var(--text-primary)',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer'
-          }}
-        >
-          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refrescar
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => setShowAddModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 6,
+              border: 'none',
+              background: '#961500',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            + Registrar Refund (Servicio al Cliente)
+          </button>
+
+          <button
+            onClick={fetchRefunds}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refrescar
+          </button>
+        </div>
       </div>
 
       {/* Barra de Filtros */}
@@ -270,6 +327,128 @@ export default function RefundsQueue() {
           </tbody>
         </table>
       </div>
+
+      {/* Modal Registrar Refund Manual */}
+      {showAddModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            borderRadius: 12,
+            border: '1px solid var(--border-color)',
+            width: '100%',
+            maxWidth: 500,
+            padding: 24,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+          }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 16px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Wallet size={20} color="#B8324F" /> Registrar Solicitud de Refund
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
+              Ingresa los datos del cliente para enrutar el reembolso directamente a la cola de revisión de Lina.
+            </p>
+
+            <form onSubmit={handleCreateManualRefund} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Nombre Completo del Cliente *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Laura Gómez"
+                  value={newRefund.person_name}
+                  onChange={e => setNewRefund({ ...newRefund, person_name: e.target.value })}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 13
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                    Psicóloga Responsable
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: SILVI, JENN..."
+                    value={newRefund.psychologist_name}
+                    onChange={e => setNewRefund({ ...newRefund, psychologist_name: e.target.value })}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 6,
+                      background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)', fontSize: 13
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                    Plan / Tier
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: VIP, 65k, 40k"
+                    value={newRefund.plan_tier}
+                    onChange={e => setNewRefund({ ...newRefund, plan_tier: e.target.value })}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 6,
+                      background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)', fontSize: 13
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Motivo / Observación de Servicio al Cliente *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Ej: Solicitud vía WhatsApp por inconformidad o problemas personales."
+                  value={newRefund.reason}
+                  onChange={e => setNewRefund({ ...newRefund, reason: e.target.value })}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 13, resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  style={{
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border-color)',
+                    background: 'var(--bg-base)', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingManual}
+                  style={{
+                    padding: '8px 16px', borderRadius: 6, border: 'none',
+                    background: '#961500', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  {submittingManual ? 'Enviando...' : 'Enviar a Cola de Lina'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

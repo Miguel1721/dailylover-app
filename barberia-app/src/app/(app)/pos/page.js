@@ -58,6 +58,7 @@ function POSContent() {
             itemId: s.service.id,
             name: s.service.name,
             price: s.service.price,
+            commissionRate: s.service.commissionRate ?? 0.60,
             qty: 1,
           }))
           setCart(serviceItems)
@@ -71,7 +72,15 @@ function POSContent() {
     if (existing) {
       setCart(cart.map(i => i.id === existing.id ? {...i, qty: i.qty + 1} : i))
     } else {
-      setCart([...cart, { id: `svc-${svc.id}`, type: 'service', itemId: svc.id, name: svc.name, price: svc.price, qty: 1 }])
+      setCart([...cart, {
+        id: `svc-${svc.id}`,
+        type: 'service',
+        itemId: svc.id,
+        name: svc.name,
+        price: svc.price,
+        commissionRate: svc.commissionRate ?? 0.60,
+        qty: 1
+      }])
     }
   }
 
@@ -94,8 +103,13 @@ function POSContent() {
   const subtotal = cart.reduce((sum, i) => sum + i.price * i.qty, 0)
   const discountAmount = Math.min(discount, subtotal)
   const total = subtotal - discountAmount
-  const serviceTotal = cart.filter(i => i.type === 'service').reduce((s, i) => s + i.price * i.qty, 0)
-  const commission = serviceTotal * 0.60
+  const commission = cart.reduce((sum, item) => {
+    if (item.type === 'service') {
+      const rate = item.commissionRate ?? 0.60
+      return sum + (item.price * item.qty * rate)
+    }
+    return sum
+  }, 0)
 
   const handleCheckout = async () => {
     if (!selectedBarber) { toast.error('Selecciona un barbero / estilista'); return }
@@ -167,9 +181,37 @@ function POSContent() {
     return <ReceiptView receipt={receipt} onNew={() => setReceipt(null)} />
   }
 
+  const getServiceSubcategory = (svc) => {
+    const name = (svc.name || '').toLowerCase()
+    if (
+      name.includes('uña') || name.includes('manos') || name.includes('pies') ||
+      name.includes('manicure') || name.includes('pedicure') || name.includes('acrílico') ||
+      name.includes('poly gel') || name.includes('press-on') || name.includes('ruber') ||
+      name.includes('diping') || name.includes('decoración') || name.includes('piedrería') ||
+      name.includes('ojo de gato') || name.includes('limpieza')
+    ) {
+      return 'NAILS'
+    }
+    if (
+      name.includes('ceja') || name.includes('bigote') || name.includes('bozo') ||
+      name.includes('henna') || name.includes('mascarilla') || name.includes('facial')
+    ) {
+      return 'FACE'
+    }
+    if (name.includes('barba')) {
+      return 'BEARD'
+    }
+    return 'HAIR'
+  }
+
   const filteredServices = services.filter(s => {
+    const sub = getServiceSubcategory(s)
     if (serviceCategory === 'ALL') return true
-    return (s.category || 'BARBERIA') === serviceCategory
+    if (serviceCategory === 'BARBERIA') return (s.category || 'BARBERIA') === 'BARBERIA' && sub !== 'NAILS'
+    if (serviceCategory === 'HAIR_WOMEN') return (s.category === 'PELUQUERIA' || s.category === 'TODOS') && sub === 'HAIR'
+    if (serviceCategory === 'NAILS') return sub === 'NAILS'
+    if (serviceCategory === 'FACE') return sub === 'FACE'
+    return true
   })
 
   return (
@@ -240,24 +282,36 @@ function POSContent() {
               </div>
 
               {tab === 'services' && (
-                <div className="flex gap-1 bg-dark-900 p-1 rounded-xl border border-dark-700 text-xs">
+                <div className="flex flex-wrap gap-1 bg-dark-900 p-1 rounded-xl border border-dark-700 text-xs">
                   <button
                     onClick={() => setServiceCategory('ALL')}
-                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${serviceCategory === 'ALL' ? 'bg-gold-500 text-black shadow' : 'text-dark-400 hover:text-white'}`}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${serviceCategory === 'ALL' ? 'bg-gold-500 text-black shadow' : 'text-dark-400 hover:text-white'}`}
                   >
                     Todos
                   </button>
                   <button
                     onClick={() => setServiceCategory('BARBERIA')}
-                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${serviceCategory === 'BARBERIA' ? 'bg-gold-500 text-black shadow' : 'text-dark-400 hover:text-white'}`}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${serviceCategory === 'BARBERIA' ? 'bg-gold-500 text-black shadow' : 'text-dark-400 hover:text-white'}`}
                   >
                     💈 Barbería
                   </button>
                   <button
-                    onClick={() => setServiceCategory('PELUQUERIA')}
-                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${serviceCategory === 'PELUQUERIA' ? 'bg-purple-600 text-white shadow' : 'text-dark-400 hover:text-white'}`}
+                    onClick={() => setServiceCategory('HAIR_WOMEN')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${serviceCategory === 'HAIR_WOMEN' ? 'bg-pink-600 text-white shadow' : 'text-dark-400 hover:text-white'}`}
                   >
-                    💅 Peluquería
+                    💇‍♀️ Cabello
+                  </button>
+                  <button
+                    onClick={() => setServiceCategory('NAILS')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${serviceCategory === 'NAILS' ? 'bg-purple-600 text-white shadow' : 'text-dark-400 hover:text-white'}`}
+                  >
+                    💅 Manos & Pies
+                  </button>
+                  <button
+                    onClick={() => setServiceCategory('FACE')}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${serviceCategory === 'FACE' ? 'bg-blue-600 text-white shadow' : 'text-dark-400 hover:text-white'}`}
+                  >
+                    ✨ Cejas & Rostro
                   </button>
                 </div>
               )}
@@ -268,6 +322,7 @@ function POSContent() {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pb-2">
                 {filteredServices.map(s => {
                   const isWomenSvc = (s.category || 'BARBERIA') === 'PELUQUERIA'
+                  const isSeventyPct = s.commissionRate === 0.70
                   return (
                     <button key={s.id} id={`svc-${s.id}`} onClick={() => addService(s)}
                             className={`card !p-3.5 flex flex-col justify-between text-left transition-all active:scale-95 cursor-pointer min-h-[90px] ${
@@ -276,7 +331,13 @@ function POSContent() {
                       <div>
                         <div className="flex items-center justify-between gap-1 mb-0.5">
                           <span className="text-sm font-semibold text-white truncate">{s.name}</span>
-                          {isWomenSvc && <Sparkles size={12} className="text-purple-400 shrink-0" />}
+                          {isSeventyPct ? (
+                            <span className="text-[10px] bg-purple-900/80 text-purple-200 border border-purple-500/50 px-1.5 py-0.5 rounded-full font-bold shrink-0">
+                              70%
+                            </span>
+                          ) : isWomenSvc && (
+                            <Sparkles size={12} className="text-purple-400 shrink-0" />
+                          )}
                         </div>
                         {s.description && <div className="text-[11px] text-dark-500 mb-2 line-clamp-1">{s.description}</div>}
                       </div>
@@ -333,7 +394,12 @@ function POSContent() {
                         {item.type === 'service' ? 'S' : 'P'}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs text-white truncate font-medium">{item.name}</div>
+                        <div className="text-xs text-white truncate font-medium flex items-center gap-1">
+                          {item.name}
+                          {item.commissionRate === 0.70 && (
+                            <span className="text-[9px] bg-purple-900/80 text-purple-200 px-1 rounded font-bold">70%</span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-dark-500">{fmt(item.price)} c/u</div>
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
@@ -379,7 +445,7 @@ function POSContent() {
                     <span className="text-gold-400">{fmt(total)}</span>
                   </div>
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-dark-500">Comisión (60%)</span>
+                    <span className="text-dark-500">Comisión Profesional</span>
                     <span className="text-emerald-400">{fmt(commission)}</span>
                   </div>
                 </div>

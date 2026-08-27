@@ -958,6 +958,31 @@ export default function Matching() {
                       >
                         <XCircle size={14} /> Rechazar
                       </button>
+
+                      <button
+                        className="btn btn-sm"
+                        style={{ flex: 1, background: 'rgba(234, 153, 153, 0.25)', color: '#ff8a80', border: '1px solid rgba(234, 153, 153, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 700 }}
+                        onClick={async () => {
+                          const reason = prompt(`Motivo de Refund directo para este match (${personA.cleanName}):`, "Cliente difícil / Reembolso ordenado por María");
+                          if (!reason) return;
+                          try {
+                            const res = await fetch(`${API}/api/v1/matchmaking/matches/${m.id}/refund-by-maria`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                              body: JSON.stringify({ reason })
+                            });
+                            if (res.ok) {
+                              alert('✓ Match marcado como REFUND por María y enrutado a la cola de Lina.');
+                              fetchMatches();
+                            } else {
+                              const errData = await res.json();
+                              alert(`Error: ${errData.detail || 'No se pudo procesar el refund'}`);
+                            }
+                          } catch(e) { console.error(e); }
+                        }}
+                      >
+                        <Wallet size={14} /> Refund
+                      </button>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>

@@ -60,10 +60,22 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=frontend_net"
-      - 'traefik.http.routers.barberia-app.rule=Host(`barberclub.com.co`) || Host(`www.barberclub.com.co`)'
-      - "traefik.http.routers.barberia-app.entrypoints=web,websecure"
-      - "traefik.http.routers.barberia-app.tls.certresolver=myresolver"
-      - "traefik.http.services.barberia-app.loadbalancer.server.port=3500"
+      # HTTPS Router
+      - 'traefik.http.routers.barberia-app-secure.rule=Host(`barberclub.com.co`) || Host(`www.barberclub.com.co`)'
+      - "traefik.http.routers.barberia-app-secure.entrypoints=websecure"
+      - "traefik.http.routers.barberia-app-secure.tls=true"
+      - "traefik.http.routers.barberia-app-secure.tls.certresolver=myresolver"
+      - "traefik.http.routers.barberia-app-secure.service=barberia-app-svc"
+      # HTTP -> HTTPS Redirect Router
+      - 'traefik.http.routers.barberia-app-http.rule=Host(`barberclub.com.co`) || Host(`www.barberclub.com.co`)'
+      - "traefik.http.routers.barberia-app-http.entrypoints=web"
+      - "traefik.http.routers.barberia-app-http.middlewares=barberia-redirect-to-https"
+      - "traefik.http.routers.barberia-app-http.service=barberia-app-svc"
+      # Service definition
+      - "traefik.http.services.barberia-app-svc.loadbalancer.server.port=3500"
+      # Middleware definition for HTTP -> HTTPS redirect
+      - "traefik.http.middlewares.barberia-redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.barberia-redirect-to-https.redirectscheme.permanent=true"
     ports:
       - "3500:3500"
     healthcheck:

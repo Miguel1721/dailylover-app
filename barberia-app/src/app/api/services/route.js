@@ -43,7 +43,7 @@ export async function POST(request) {
 
     const tenantId = session.user.tenantId
     const body = await request.json()
-    const { name, description, price, durationMinutes, category } = body
+    const { name, description, price, durationMinutes, category, commissionRate } = body
 
     if (!name || name.trim() === '') {
       return NextResponse.json({ error: 'El nombre del servicio es requerido' }, { status: 400 })
@@ -60,6 +60,7 @@ export async function POST(request) {
         price,
         durationMinutes: durationMinutes ?? 30,
         category: category || 'BARBERIA',
+        commissionRate: commissionRate !== undefined && commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : null,
       },
     })
 

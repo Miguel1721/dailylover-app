@@ -101,6 +101,16 @@ function PersonHistoryModal({ queryTarget, onClose }) {
       })
   }, [queryTarget, token])
 
+  const [filterTroubleOnly, setFilterTroubleOnly] = useState(false)
+
+  const isRejectionStatus = (st) => {
+    const s = (st || '').toUpperCase()
+    return s.includes('TROUBLE') || s.includes('NOT APPROVED') || s.includes('RECHAZ') || s.includes('NO MATCH') || s.includes('SIN QUÍMICA') || s.includes('SIN QUIMICA') || s.includes('DESCALIFICADO') || s.includes('REFUND')
+  }
+
+  const matchesList = data?.matches || []
+  const filteredMatches = filterTroubleOnly ? matchesList.filter(m => isRejectionStatus(m.status)) : matchesList
+
   if (!queryTarget) return null
 
   return (
@@ -200,12 +210,45 @@ function PersonHistoryModal({ queryTarget, onClose }) {
 
               {/* Matches List */}
               <div style={{ marginBottom: 16 }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                  Historial de Matches Anteriores
-                </h3>
-                {data.matches?.length === 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 700, margin: 0, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                    Historial de Matches Anteriores ({data.matches?.length || 0})
+                  </h3>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => setFilterTroubleOnly(false)}
+                      style={{
+                        padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, cursor: 'pointer',
+                        border: !filterTroubleOnly ? '1px solid #961500' : '1px solid var(--border-color)',
+                        background: !filterTroubleOnly ? '#961500' : 'var(--bg-base)',
+                        color: !filterTroubleOnly ? '#fff' : 'var(--text-secondary)'
+                      }}
+                    >
+                      Todos ({data.matches?.length || 0})
+                    </button>
+                    <button
+                      onClick={() => setFilterTroubleOnly(true)}
+                      style={{
+                        padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, cursor: 'pointer',
+                        border: filterTroubleOnly ? '1px solid #FF6B35' : '1px solid rgba(255,107,53,0.3)',
+                        background: filterTroubleOnly ? '#FF6B35' : 'rgba(255,107,53,0.12)',
+                        color: filterTroubleOnly ? '#fff' : '#ff8a80'
+                      }}
+                    >
+                      ⚠️ Solo Rechazos ({data.trouble_count || data.rejections_count || 0})
+                    </button>
+                  </div>
+                </div>
+
+                {filterTroubleOnly && (
+                  <div style={{ background: 'rgba(255,107,53,0.12)', border: '1px solid #FF6B35', color: '#ff8a80', padding: '8px 12px', borderRadius: 6, marginBottom: 10, fontSize: 12, fontWeight: 700 }}>
+                    ⚠️ Esta persona registra {filteredMatches.length} rechazos / salidas en el sistema.
+                  </div>
+                )}
+
+                {filteredMatches.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 12, background: 'var(--bg-base)', borderRadius: 6 }}>
-                    No registra otros matches en el sistema.
+                    {filterTroubleOnly ? 'No registra rechazos ni troublemakers.' : 'No registra otros matches en el sistema.'}
                   </div>
                 ) : (
                   <div style={{ border: '1px solid var(--border-color)', borderRadius: 6, overflow: 'hidden' }}>
@@ -219,7 +262,7 @@ function PersonHistoryModal({ queryTarget, onClose }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {data.matches?.map((m) => (
+                        {filteredMatches.map((m) => (
                           <tr key={m.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                             <td style={{ padding: '6px 10px', fontWeight: 600 }}>
                               {m.person_a} × {m.person_b || '(Vacío)'}

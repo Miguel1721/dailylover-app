@@ -22,6 +22,7 @@ export default function TenantPublicBookingPage({ params }) {
 
   // Modo activo: 'BARBERIA' (Hombres) o 'PELUQUERIA' (Mujeres)
   const [activeCategory, setActiveCategory] = useState('BARBERIA')
+  const [subCategory, setSubCategory] = useState('ALL')
 
   // Catálogos
   const [services, setServices] = useState([])
@@ -51,12 +52,16 @@ export default function TenantPublicBookingPage({ params }) {
 
   const getServiceImage = (id, name = '') => {
     const nid = (id + ' ' + name).toLowerCase()
+    if (nid.includes('uñas') || nid.includes('manos') || nid.includes('pies') || nid.includes('manicure') || nid.includes('pedicure') || nid.includes('acrílico') || nid.includes('poly gel') || nid.includes('press-on') || nid.includes('ruber') || nid.includes('diping') || nid.includes('decoración') || nid.includes('piedrería') || nid.includes('ojo de gato')) {
+      return 'https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&w=400&q=80'
+    }
     if (nid.includes('keratina')) return 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=400&q=80'
     if (nid.includes('planchado') || nid.includes('cepillado')) return 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=400&q=80'
-    if (nid.includes('grafilado') || nid.includes('recto') || nid.includes('corte en v') || nid.includes('otros cortes')) return 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=400&q=80'
+    if (nid.includes('grafilado') || nid.includes('recto') || nid.includes('corte en v') || nid.includes('otros cortes') || nid.includes('puntas dama') || nid.includes('despuntar')) return 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=400&q=80'
+    if (nid.includes('cejas') || nid.includes('henna')) return 'https://images.unsplash.com/photo-1512864084360-7c0c4d0a0845?auto=format&fit=crop&w=400&q=80'
+    if (nid.includes('bigote') || nid.includes('bozo')) return 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=400&q=80'
     if (nid.includes('premium')) return 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=400&q=80'
     if (nid.includes('barba')) return 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=400&q=80'
-    if (nid.includes('cejas')) return 'https://images.unsplash.com/photo-1512864084360-7c0c4d0a0845?auto=format&fit=crop&w=400&q=80'
     return 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=400&q=80'
   }
 
@@ -118,6 +123,7 @@ export default function TenantPublicBookingPage({ params }) {
 
   const toggleCategoryMode = (cat) => {
     setActiveCategory(cat)
+    setSubCategory('ALL')
     setSelectedServices([])
     setSelectedBarber(null)
     setSelectedDate('')
@@ -211,11 +217,57 @@ export default function TenantPublicBookingPage({ params }) {
     return list
   }
 
-  // Filtrado por categoría
-  const filteredServices = services.filter(s => {
+  // Clasificador de subcategoría
+  const getServiceSubcategory = (svc) => {
+    const name = (svc.name || '').toLowerCase()
+    if (
+      name.includes('uña') || name.includes('manos') || name.includes('pies') ||
+      name.includes('manicure') || name.includes('pedicure') || name.includes('acrílico') ||
+      name.includes('poly gel') || name.includes('press-on') || name.includes('ruber') ||
+      name.includes('diping') || name.includes('decoración') || name.includes('piedrería') ||
+      name.includes('ojo de gato') || name.includes('limpieza')
+    ) {
+      return 'NAILS'
+    }
+    if (
+      name.includes('ceja') || name.includes('bigote') || name.includes('bozo') ||
+      name.includes('henna') || name.includes('mascarilla') || name.includes('facial')
+    ) {
+      return 'FACE'
+    }
+    if (name.includes('barba')) {
+      return 'BEARD'
+    }
+    return 'HAIR'
+  }
+
+  // Filtrado por categoría y subcategoría
+  const mainCategoryServices = services.filter(s => {
     const cat = s.category || 'BARBERIA'
-    return cat === activeCategory
+    return cat === activeCategory || cat === 'TODOS' || cat === 'AMBOS'
   })
+
+  const filteredServices = mainCategoryServices.filter(s => {
+    if (subCategory === 'ALL') return true
+    return getServiceSubcategory(s) === subCategory
+  })
+
+  const womenSubcategories = [
+    { id: 'ALL', label: 'Todos', icon: '✨' },
+    { id: 'HAIR', label: 'Cabello & Peluquería', icon: '💇‍♀️' },
+    { id: 'NAILS', label: 'Manos & Pies (Uñas)', icon: '💅' },
+    { id: 'FACE', label: 'Cejas & Rostro', icon: '✨' },
+  ]
+
+  const menSubcategories = [
+    { id: 'ALL', label: 'Todos', icon: '💈' },
+    { id: 'HAIR', label: 'Cortes & Cabello', icon: '✂️' },
+    { id: 'BEARD', label: 'Barba & Afeitado', icon: '🪒' },
+    { id: 'FACE', label: 'Cejas & Cuidado Facial', icon: '✨' },
+    { id: 'NAILS', label: 'Manos & Pies', icon: '💅' },
+  ]
+
+  const currentSubcategories = isWomen ? womenSubcategories : menSubcategories
 
   const filteredBarbers = barbers.filter(b => {
     const cat = b.category || 'BARBERIA'
@@ -380,11 +432,49 @@ export default function TenantPublicBookingPage({ params }) {
         {/* PASO 1: SERVICIOS */}
         {step === 1 && (
           <div className="space-y-4 sm:space-y-6">
-            <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-0.5">
-                {isWomen ? 'Servicios de Peluquería & Estética' : 'Servicios de Barbería'}
-              </h2>
-              <p className="text-dark-400 text-xs sm:text-sm">Puedes seleccionar varios servicios para tu cita.</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white mb-0.5">
+                  {isWomen ? 'Servicios de Peluquería & Estética' : 'Servicios de Barbería'}
+                </h2>
+                <p className="text-dark-400 text-xs sm:text-sm">Selecciona uno o más servicios separados por especialidad.</p>
+              </div>
+            </div>
+
+            {/* ── BARRA DE SUBCATEGORÍAS / FILTROS RÁPIDOS ── */}
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar pb-1">
+              {currentSubcategories.map((sc) => {
+                const isActive = subCategory === sc.id
+                const count = sc.id === 'ALL'
+                  ? mainCategoryServices.length
+                  : mainCategoryServices.filter(s => getServiceSubcategory(s) === sc.id).length
+                if (count === 0 && sc.id !== 'ALL') return null
+                return (
+                  <button
+                    key={sc.id}
+                    onClick={() => setSubCategory(sc.id)}
+                    className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap transition-all duration-300 cursor-pointer ${
+                      isActive
+                        ? isWomen
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-600/30 scale-[1.02]'
+                          : 'bg-gradient-gold text-black shadow-lg shadow-gold-500/20 scale-[1.02]'
+                        : isWomen
+                          ? 'bg-[#180e2b] text-purple-200/80 hover:text-white border border-purple-900/40 hover:border-purple-700/60'
+                          : 'bg-dark-900 text-dark-400 hover:text-white border border-dark-800 hover:border-dark-700'
+                    }`}
+                  >
+                    <span>{sc.icon}</span>
+                    <span>{sc.label}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      isActive
+                        ? isWomen ? 'bg-purple-900/80 text-white' : 'bg-dark-950 text-gold-400'
+                        : isWomen ? 'bg-purple-950 text-purple-400' : 'bg-dark-800 text-dark-500'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
