@@ -141,6 +141,9 @@ function onEditInstallable(e) {
   } else if (upperSheetName === (CONFIG.CONFIG_ESTADOS_SHEET_NAME || "⚙️ CONFIG ESTADOS").toUpperCase() || upperSheetName === "CONFIG ESTADOS") {
     Logger.log("Despachando a handleConfigEstadosEdit...");
     handleConfigEstadosEdit(sheet, row, col);
+  } else if (upperSheetName === "CITAS ACEPTADAS" || upperSheetName === "CITAS CONFIRMADAS") {
+    Logger.log("Despachando a handleCitasAceptadasEdit...");
+    handleCitasAceptadasEdit(sheet, row, col, e.value, e.oldValue);
   } else {
     Logger.log("Pestaña '" + sheetName + "' no requiere procesamiento en disparador.");
   }
@@ -2267,6 +2270,17 @@ function actualizarDesplegablesDinamicos() {
     .setAllowInvalid(true)
     .build();
 
+  // 5. Regla para LUGAR / RESTAURANTES (Desde pestaña ⚙️ RESTAURANTES)
+  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+  var venueRule = null;
+  if (restSheet) {
+    var rLast = Math.max(2, restSheet.getLastRow());
+    venueRule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
+      .setAllowInvalid(false)
+      .build();
+  }
+
   // Aplicar a todas las pestañas
   var allSheets = ss.getSheets();
   for (var i = 0; i < allSheets.length; i++) {
@@ -2293,10 +2307,25 @@ function actualizarDesplegablesDinamicos() {
       }
     } else if (sName === "MATCHES") {
       var mHeaders = getSheetHeaders(s);
-      var matchCol = mHeaders["MATCH"] || 13;
+      var matchCol = mHeaders["MATCH"] || mHeaders["ESTADO TOTAL"] || 13;
+      var mStatusACol = mHeaders["ESTADO PERSONA A"] || mHeaders["STATUS PERSONA A"] || mHeaders["STATUS A"];
+      var mStatusBCol = mHeaders["ESTADO PERSONA B"] || mHeaders["STATUS PERSONA B"] || mHeaders["STATUS B"];
+      var mLugarCol = mHeaders["LUGAR"] || 6;
       var mMaxRows = Math.min(s.getMaxRows(), 5000);
       if (mMaxRows > 1) {
-        s.getRange(2, matchCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
+        if (matchCol) s.getRange(2, matchCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
+        if (mStatusACol) s.getRange(2, mStatusACol, mMaxRows - 1, 1).setDataValidation(matchesRule);
+        if (mStatusBCol) s.getRange(2, mStatusBCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
+        if (mLugarCol && venueRule) s.getRange(2, mLugarCol, mMaxRows - 1, 1).setDataValidation(venueRule);
+      }
+    } else if (sName === "CITAS ACEPTADAS" || sName === "CITAS CONFIRMADAS") {
+      var cHeaders = getSheetHeaders(s);
+      var cStatusCol = cHeaders["ESTADO CITA"] || cHeaders["STATUS"] || 8;
+      var cLugarCol = cHeaders["LUGAR"] || 5;
+      var cMaxRows = Math.min(s.getMaxRows(), 3000);
+      if (cMaxRows > 1) {
+        if (cStatusCol) s.getRange(2, cStatusCol, cMaxRows - 1, 1).setDataValidation(matchesRule);
+        if (cLugarCol && venueRule) s.getRange(2, cLugarCol, cMaxRows - 1, 1).setDataValidation(venueRule);
       }
     } else if (sName === (CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES").toUpperCase() || sName === "REFUNDS PENDIENTES") {
       var rHeaders = getSheetHeaders(s);
@@ -3242,14 +3271,201 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
   }
 
   // B. PROMOCIÓN A ZONA SUPERIOR AL AGENDAR / CONFIRMAR CITA
-  var isScheduled = (statusUpper === "CITA CONFIRMADA" || statusUpper === "DATE PROGRAMADO");
+  var isScheduled = (statusUpper === "CITA CONFIRMADA" || statusUpper === "DATE PROGRAMADO" || statusUpper === "AGENDANDO" || statusUpper === "POR CONFIRMAR");
   var fechaRealVal = (col === fechaRealCol ? (newValue || "") : (sheet.getRange(row, fechaRealCol).getValue() || ""));
+  var diaVal = (col === diaCol ? (newValue || "") : (sheet.getRange(row, diaCol).getValue() || ""));
+  var lugarCol = headers["LUGAR"] || 6;
 
-  if ((col === matchCol && isScheduled) || (col === fechaRealCol && fechaRealVal)) {
+  if ((col === matchCol && isScheduled) || (col === fechaRealCol && fechaRealVal) || (col === diaCol && diaVal) || (col === lugarCol)) {
     // Si la fecha real se ingresó o el estado pasó a confirmada, colorear fecha
     if (fechaRealCol) {
-      var dVal = sheet.getRange(row, fechaRealCol).getValue();
+      var dVal = sheet.getRange(row, fechaRealCol).getValue() || diaVal;
       updateMatchesRowColor(sheet, row, dVal, statusUpper);
+    }
+    // Sincronizar automáticamente con la pestaña piloto 'Citas Aceptadas'
+    try {
+      syncMatchToCitasAceptadas(sheet, row);
+    } catch (citasErr) {
+      Logger.log("Aviso al sincronizar con Citas Aceptadas: " + citasErr.message);
+    }
+  }
+}
+
+/**
+ * Trigger al editar la pestaña 'Citas Aceptadas' (Piloto sincronizado bidireccionalmente con MATCHES):
+ * - Sincroniza cambios de fecha, reprogramación, lugar y estado hacia MATCHES.
+ */
+function handleCitasAceptadasEdit(sheet, row, col, newValue, oldValue) {
+  if (row <= 1) return;
+
+  var headers = getSheetHeaders(sheet);
+  var personACol = headers["PERSONA A"] || 3;
+  var personBCol = headers["PERSONA B"] || 4;
+  var fechaRealCol = headers["FECHA CITA REAL"] || 2;
+  var lugarCol = headers["LUGAR"] || 5;
+  var diaCol = headers["DÍA / HORA"] || headers["DIA / HORA"] || headers["DÍA"] || 7;
+  var statusCol = headers["ESTADO CITA"] || headers["STATUS"] || 8;
+  var reprogCol = headers["REPROGRAMAR / NUEVA FECHA"] || headers["REPROGRAMAR"] || 9;
+
+  var nameA = (sheet.getRange(row, personACol).getValue() || "").toString().trim();
+  var nameB = (sheet.getRange(row, personBCol).getValue() || "").toString().trim();
+  if (!nameA || !nameB) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+  if (!matchesSheet) return;
+
+  var mHeaders = getSheetHeaders(matchesSheet);
+  var mPersonACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 3;
+  var mPersonBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 4;
+  var mDiaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 5;
+  var mLugarCol = mHeaders["LUGAR"] || 6;
+  var mMatchCol = mHeaders["MATCH"] || 13;
+  var mFechaRealCol = mHeaders["FECHA CITA REAL"] || 18;
+  var mReprogCol = mHeaders["¿REPROGRAMAR?"] || mHeaders["REPROGRAMAR"] || 17;
+
+  // Buscar fila correspondiente en MATCHES
+  var mLastRow = matchesSheet.getLastRow();
+  if (mLastRow <= 1) return;
+
+  var mData = matchesSheet.getRange(2, 1, mLastRow - 1, Math.max(mPersonACol, mPersonBCol, mDiaCol, mLugarCol, mMatchCol, mFechaRealCol, mReprogCol)).getValues();
+  var targetMRow = -1;
+
+  for (var i = 0; i < mData.length; i++) {
+    var mA = (mData[i][mPersonACol - 1] || "").toString().trim().toLowerCase();
+    var mB = (mData[i][mPersonBCol - 1] || "").toString().trim().toLowerCase();
+    if ((mA === nameA.toLowerCase() && mB === nameB.toLowerCase()) || (mA === nameB.toLowerCase() && mB === nameA.toLowerCase())) {
+      targetMRow = i + 2;
+      break;
+    }
+  }
+
+  if (targetMRow > 1) {
+    // Si se editó la fecha reprogramada
+    if (col === reprogCol && newValue) {
+      sheet.getRange(row, fechaRealCol).setValue(newValue);
+      sheet.getRange(row, diaCol).setValue(newValue);
+      sheet.getRange(row, statusCol).setValue("Reprogramada").setBackground("#F9CB9C");
+      
+      matchesSheet.getRange(targetMRow, mDiaCol).setValue(newValue);
+      if (mFechaRealCol) matchesSheet.getRange(targetMRow, mFechaRealCol).setValue(newValue);
+      if (mReprogCol) matchesSheet.getRange(targetMRow, mReprogCol).setValue("SÍ (" + newValue + ")");
+      if (mMatchCol) matchesSheet.getRange(targetMRow, mMatchCol).setValue("Reprogramada").setBackground("#F9CB9C");
+      
+      ss.toast("Cita reprogramada para " + newValue + " y sincronizada en MATCHES.", "Reprogramación Exitosa", 5);
+    }
+    // Si se editó la fecha real o día directamente
+    else if (col === fechaRealCol || col === diaCol) {
+      var dateVal = sheet.getRange(row, col).getValue();
+      matchesSheet.getRange(targetMRow, mDiaCol).setValue(dateVal);
+      if (mFechaRealCol) matchesSheet.getRange(targetMRow, mFechaRealCol).setValue(dateVal);
+      ss.toast("Fecha sincronizada con MATCHES.", "Sincronización", 4);
+    }
+    // Si se editó el lugar
+    else if (col === lugarCol) {
+      var lugarVal = sheet.getRange(row, lugarCol).getValue();
+      if (mLugarCol) matchesSheet.getRange(targetMRow, mLugarCol).setValue(lugarVal);
+      ss.toast("Lugar sincronizado con MATCHES.", "Sincronización", 4);
+    }
+    // Si se editó el estado
+    else if (col === statusCol) {
+      var stVal = sheet.getRange(row, statusCol).getValue();
+      if (mMatchCol) matchesSheet.getRange(targetMRow, mMatchCol).setValue(stVal);
+    }
+  }
+}
+
+/**
+ * Sincroniza un match confirmado / agendado desde MATCHES hacia la pestaña 'Citas Aceptadas'.
+ */
+function syncMatchToCitasAceptadas(matchesSheet, row) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var citasSheet = ss.getSheetByName("Citas Aceptadas") || ss.getSheetByName("CITAS ACEPTADAS");
+  if (!citasSheet) return;
+
+  var mHeaders = getSheetHeaders(matchesSheet);
+  var personACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 3;
+  var personBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 4;
+  var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 5;
+  var lugarCol = mHeaders["LUGAR"] || 6;
+  var cityCol = mHeaders["CIUDAD"] || mHeaders["CITY"] || 7;
+  var matchCol = mHeaders["MATCH"] || 13;
+  var fechaRealCol = mHeaders["FECHA CITA REAL"] || 18;
+
+  var cellA = getCellData(matchesSheet, row, personACol);
+  var cellB = getCellData(matchesSheet, row, personBCol);
+  if (!cellA || !cellA.text) return;
+
+  var diaVal = (diaCol ? matchesSheet.getRange(row, diaCol).getValue() : "") || "";
+  var lugarVal = (lugarCol ? matchesSheet.getRange(row, lugarCol).getValue() : "") || "";
+  var cityVal = (cityCol ? matchesSheet.getRange(row, cityCol).getValue() : "") || "";
+  var statusVal = (matchCol ? matchesSheet.getRange(row, matchCol).getValue() : "") || "Cita Confirmada";
+  var fechaRealVal = (fechaRealCol ? matchesSheet.getRange(row, fechaRealCol).getValue() : "") || diaVal;
+
+  var cHeaders = getSheetHeaders(citasSheet);
+  var cPersonACol = cHeaders["PERSONA A"] || 3;
+  var cPersonBCol = cHeaders["PERSONA B"] || 4;
+  var cFechaRealCol = cHeaders["FECHA CITA REAL"] || 2;
+  var cLugarCol = cHeaders["LUGAR"] || 5;
+  var cCityCol = cHeaders["CIUDAD"] || 6;
+  var cDiaCol = cHeaders["DÍA / HORA"] || 7;
+  var cStatusCol = cHeaders["ESTADO CITA"] || 8;
+
+  // Buscar si ya existe en Citas Aceptadas
+  var cLastRow = citasSheet.getLastRow();
+  var foundRow = -1;
+
+  if (cLastRow > 1) {
+    var cData = citasSheet.getRange(2, 1, cLastRow - 1, Math.max(cPersonACol, cPersonBCol)).getValues();
+    for (var i = 0; i < cData.length; i++) {
+      var cA = (cData[i][cPersonACol - 1] || "").toString().trim().toLowerCase();
+      var cB = (cData[i][cPersonBCol - 1] || "").toString().trim().toLowerCase();
+      if ((cA === cellA.text.toLowerCase() && cB === (cellB ? cellB.text.toLowerCase() : "")) ||
+          (cA === (cellB ? cellB.text.toLowerCase() : "") && cB === cellA.text.toLowerCase())) {
+        foundRow = i + 2;
+        break;
+      }
+    }
+  }
+
+  if (foundRow > 1) {
+    if (cFechaRealCol && fechaRealVal) citasSheet.getRange(foundRow, cFechaRealCol).setValue(fechaRealVal);
+    if (cLugarCol && lugarVal) citasSheet.getRange(foundRow, cLugarCol).setValue(lugarVal);
+    if (cCityCol && cityVal) citasSheet.getRange(foundRow, cCityCol).setValue(cityVal);
+    if (cDiaCol && diaVal) citasSheet.getRange(foundRow, cDiaCol).setValue(diaVal);
+    if (cStatusCol && statusVal) citasSheet.getRange(foundRow, cStatusCol).setValue(statusVal);
+  } else {
+    var newRowIdx = Math.max(2, cLastRow + 1);
+    var matchIdStr = "DL-" + (1000 + newRowIdx);
+    
+    citasSheet.getRange(newRowIdx, 1).setValue(matchIdStr);
+    if (cFechaRealCol) citasSheet.getRange(newRowIdx, cFechaRealCol).setValue(fechaRealVal);
+    if (cellA.richText) {
+      citasSheet.getRange(newRowIdx, cPersonACol).setRichTextValue(cellA.richText);
+    } else {
+      citasSheet.getRange(newRowIdx, cPersonACol).setValue(cellA.text);
+    }
+    if (cellB) {
+      if (cellB.richText) {
+        citasSheet.getRange(newRowIdx, cPersonBCol).setRichTextValue(cellB.richText);
+      } else {
+        citasSheet.getRange(newRowIdx, cPersonBCol).setValue(cellB.text);
+      }
+    }
+    if (cLugarCol) citasSheet.getRange(newRowIdx, cLugarCol).setValue(lugarVal);
+    if (cCityCol) citasSheet.getRange(newRowIdx, cCityCol).setValue(cityVal);
+    if (cDiaCol) citasSheet.getRange(newRowIdx, cDiaCol).setValue(diaVal);
+    if (cStatusCol) citasSheet.getRange(newRowIdx, cStatusCol).setValue(statusVal);
+
+    // Asegurar dropdown de restaurante
+    var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+    if (restSheet && cLugarCol) {
+      var rLast = Math.max(2, restSheet.getLastRow());
+      var venueRule = SpreadsheetApp.newDataValidation()
+        .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
+        .setAllowInvalid(false)
+        .build();
+      citasSheet.getRange(newRowIdx, cLugarCol).setDataValidation(venueRule);
     }
   }
 }

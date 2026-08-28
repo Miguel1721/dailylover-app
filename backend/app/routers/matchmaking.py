@@ -2325,5 +2325,96 @@ async def reject_cross_match_by_psyc_b(
     }
 
 
+# ─── 13. CATÁLOGO DE RESTAURANTES (⚙️ RESTAURANTES) Y CITAS ACEPTADAS ────────
+
+OFFICIAL_VENUES = [
+    "80 Sillas", "Amalfi", "Amarti", "Antigua Contemporánea", "Astoria", "Astrosoda", "Attic & Keller",
+    "Bandido Bistro", "Bárbaro Cocina Primitiva (Poblado)", "Black Bear", "Brera", "Cacio & Pepe",
+    "Café Bar Universal", "Café Cultor", "Café Dragón", "Café Moreno", "Café Otraparte", "Café Zorba",
+    "Cantina La 15", "Casa", "Cassette Salitre", "Cecilia 93", "Cecilia Chapinero", "Cecilia Usaquén",
+    "Celestina", "Central Cevichería Salitre", "Cossette 109", "Criterión", "Cuzco", "Da Quei Matti Cedritos",
+    "El Chato", "El Francés", "Gamberro", "Harry Sasson", "Ideal", "Juana La Loca", "La Brasserie",
+    "La Cabrera", "La Causa (Poblado)", "La Fabbrica", "Libertario 70", "Libertario 79", "Libertario 85",
+    "Libertario 93", "Libertario 109", "Libertario 122", "Libertario Chapinero", "Libertario Usaquén 119",
+    "Local by Rausch", "Luna", "Mala Flor", "Marzzano", "Misia", "Nezia", "Nueve", "Oficial", "Osaka",
+    "Osaki 71", "Osaki 72", "Osaki 85", "Osaki 89", "Osaki 90", "Osaki 93", "Osaki 118", "Osaki Artisan",
+    "Osaki Bazar Chía", "Osaki Usaquén", "Parmessano Atlantis", "Pergamino 10B", "Pergamino Laureles",
+    "Pianta", "Piazza by Storia D'Amore", "Punto Baja", "Romeo", "Romero Arkadia", "Romero Laureles",
+    "Romero Poblado", "Santorini", "Segundo", "Semolina", "Sexy Seoul", "Siga", "Storia D'Amore", "Susurro",
+    "Tagliata", "The Winston", "Ushin Japanese Grill", "Veccina 85", "Voraz Laureles", "Voraz Poblado",
+    "Wok 93", "Otro"
+]
+
+@router.get("/venues")
+async def get_venues():
+    """
+    Retorna el catálogo oficial de restaurantes y lugares aliados (⚙️ RESTAURANTES).
+    """
+    return {
+        "venues": sorted(OFFICIAL_VENUES),
+        "total": len(OFFICIAL_VENUES)
+    }
+
+@router.get("/accepted-dates")
+async def get_accepted_dates(
+    city: Optional[str] = Query(None),
+    venue: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna la lista de 'Citas Aceptadas' (piloto en paralelo con MATCHES).
+    """
+    query = """
+        SELECT 
+            s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city,
+            s.reservation_name, s.reservation_confirmed, s.had_date, s.feedback, s.reschedule,
+            s.created_at, s.updated_at,
+            m.psychologist_name, m.status as match_status
+        FROM scheduled_dates s
+        LEFT JOIN operational_matches m ON m.id = s.match_id
+        WHERE 1=1
+    """
+    params = {}
+    if city and city.lower() not in ("all", "todas"):
+        query += " AND s.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+    if venue and venue.lower() not in ("all", "todos"):
+        query += " AND s.venue ILIKE :ven"
+        params["ven"] = f"%{venue.strip()}%"
+    if search:
+        query += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY s.updated_at DESC, s.id DESC"
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    items = []
+    for r in rows:
+        d = dict(r._mapping)
+        items.append({
+            "id": d.get("id"),
+            "match_id": d.get("match_id"),
+            "person_a": d.get("person_a"),
+            "person_b": d.get("person_b"),
+            "date_time": d.get("date_time") or "",
+            "venue": d.get("venue") or "",
+            "city": normalize_city(d.get("city")),
+            "psychologist_name": d.get("psychologist_name") or "",
+            "status": "Cita Confirmada" if d.get("had_date") is False and not d.get("reschedule") else ("Cita Realizada" if d.get("had_date") else ("Reprogramar" if d.get("reschedule") else "Agendada")),
+            "had_date": bool(d.get("had_date")),
+            "reschedule": bool(d.get("reschedule")),
+            "feedback": d.get("feedback") or ""
+        })
+
+    return {
+        "dates": items,
+        "total": len(items)
+    }
+
+
+
 
 

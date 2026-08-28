@@ -654,21 +654,23 @@ export default function Matching() {
           </div>
         )}
 
-        {/* ── SECCIÓN 2: CITAS AGENDADAS & CALENDARIO (ZONA SUPERIOR) ── */}
+        {/* ── SECCIÓN 2: CITAS ACEPTADAS (PILOTO) & CALENDARIO OPERATIVO ── */}
         {activeSection === 'scheduled' && (
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <h2 style={{ fontSize: 16, fontWeight: 700 }}>Citas Agendadas & Calendario Operativo</h2>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Citas con fecha real programada, sede de encuentro y seguimiento de resultado</p>
+                <h2 style={{ fontSize: 16, fontWeight: 700 }}>📅 Citas Aceptadas (Piloto) & Calendario</h2>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Sincronizado en paralelo con MATCHES y la pestaña 'Citas Aceptadas' del Google Sheet
+                </p>
               </div>
               <button className="btn btn-ghost btn-sm" onClick={fetchScheduled}>🔄 Actualizar</button>
             </div>
 
             {loading ? (
-              <div className="empty-state">Cargando citas agendadas...</div>
+              <div className="empty-state">Cargando citas aceptadas...</div>
             ) : scheduledMatches.length === 0 ? (
-              <div className="empty-state">No hay citas agendadas registradas aún.</div>
+              <div className="empty-state">No hay citas aceptadas registradas aún.</div>
             ) : (
               <div className="table-container">
                 <table>
@@ -682,7 +684,7 @@ export default function Matching() {
                       <th>Lugar / Sede</th>
                       <th>Psicóloga</th>
                       <th>Estado Cita</th>
-                      <th>Notas / Feedback</th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -709,7 +711,30 @@ export default function Matching() {
                           <td>📍 {m.venue_name}</td>
                           <td><span className="badge badge-gray">{m.psychologist_name}</span></td>
                           <td><span className="badge badge-green">✅ {m.stage}</span></td>
-                          <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 200 }}>{m.cs_notes || '—'}</td>
+                          <td>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', fontSize: 12 }}
+                              onClick={() => {
+                                const newDate = window.prompt(`Reprogramar cita entre ${m.person_a} y ${m.person_b}.\nIngrese la nueva fecha y hora:`, m.scheduled_date || '')
+                                if (newDate && newDate.trim() && newDate !== m.scheduled_date) {
+                                  fetch(`${API}/api/v1/matchmaking/calendar/${m.id}`, {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                    body: JSON.stringify({ date_time: newDate.trim(), reschedule: true })
+                                  })
+                                    .then(r => r.json())
+                                    .then(() => {
+                                      alert(`Cita reprogramada exitosamente para ${newDate}. Sincronizado en Citas Aceptadas y MATCHES.`)
+                                      fetchScheduled()
+                                    })
+                                    .catch(err => alert('Error al reprogramar cita: ' + err.message))
+                                }
+                              }}
+                            >
+                              🔄 Reprogramar
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
