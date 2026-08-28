@@ -2155,6 +2155,8 @@ function onOpen(e) {
 
     menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
+    menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
+    menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
     menu.addToUi();
   } catch (err) {
     Logger.log("No se pudo crear menú en onOpen: " + err);
@@ -2162,6 +2164,194 @@ function onOpen(e) {
 }
 
 // ─── 12. SISTEMA CENTRAL DE ESTADOS (⚙️ CONFIG ESTADOS) ─────────────────────
+
+/**
+ * Normaliza cualquier formato de fecha/hora de cita a formato ISO 'YYYY-MM-DD' o 'YYYY-MM-DD HH:mm'.
+ * Admite: '10.18', '10.24 7pm', '10.30 7:30 pm', '11.08 8:30pm', '2026-10-18', seriales numéricos de Sheets, etc.
+ */
+function parseDateToIsoLocal(val) {
+  if (!val) return "";
+  if (val instanceof Date) {
+    var yyyy = val.getFullYear();
+    var mm = ("0" + (val.getMonth() + 1)).slice(-2);
+    var dd = ("0" + val.getDate()).slice(-2);
+    var hours = val.getHours();
+    var mins = ("0" + val.getMinutes()).slice(-2);
+    if (hours === 0 && mins === "00") {
+      return yyyy + "-" + mm + "-" + dd;
+    }
+    return yyyy + "-" + mm + "-" + dd + " " + ("0" + hours).slice(-2) + ":" + mins;
+  }
+
+  var str = val.toString().trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str;
+  }
+
+  // Regex para MM.DD o MM/DD con hora opcional (e.g. '10.24 7pm', '10.30 7:30 pm')
+  var match = str.match(/^(\d{1,2})[./\-](\d{1,2})(?:\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?/i);
+  if (match) {
+    var month = parseInt(match[1], 10);
+    var day = parseInt(match[2], 10);
+    var hourRaw = match[3];
+    var minRaw = match[4] || "00";
+    var ampm = (match[5] || "").toLowerCase();
+
+    if (month > 12 && day <= 12) {
+      var tmp = month; month = day; day = tmp;
+    }
+
+    var year = 2026;
+    if (hourRaw) {
+      var hour = parseInt(hourRaw, 10);
+      if (ampm === "pm" && hour < 12) {
+        hour += 12;
+      } else if (ampm === "am" && hour == 12) {
+        hour = 0;
+      } else if (!ampm && hour >= 1 && hour <= 11) {
+        hour += 12; // Citas vespertinas por defecto en Colombia
+      }
+      return year + "-" + ("0" + month).slice(-2) + "-" + ("0" + day).slice(-2) + " " + ("0" + hour).slice(-2) + ":" + minRaw;
+    }
+
+    return year + "-" + ("0" + month).slice(-2) + "-" + ("0" + day).slice(-2);
+  }
+
+  return str;
+}
+
+/**
+ * Asegura la creación física y configuración de las 3 columnas de estado en MATCHES:
+ * - 'Estado Persona A' (Columna S / 19)
+ * - 'Estado Persona B' (Columna T / 20)
+ * - 'Estado Total' (Columna U / 21)
+ * Y aplica los menús desplegables de estados y el catálogo de ⚙️ RESTAURANTES en la columna LUGAR.
+ */
+function ensureMatchesColumnsAndDropdowns() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+  if (!sheet) return;
+
+  var headers = getSheetHeaders(sheet);
+
+  // 1. Asegurar 'Estado Persona A'
+  var colA = headers["ESTADO PERSONA A"] || headers["STATUS PERSONA A"];
+  if (!colA) {
+    colA = getNextAvailableColumn(sheet);
+    sheet.getRange(1, colA).setValue("Estado Persona A").setFontWeight("bold").setBackground("#D9EAD3");
+    headers["ESTADO PERSONA A"] = colA;
+  }
+
+  // 2. Asegurar 'Estado Persona B'
+  var colB = headers["ESTADO PERSONA B"] || headers["STATUS PERSONA B"];
+  if (!colB) {
+    colB = getNextAvailableColumn(sheet);
+    sheet.getRange(1, colB).setValue("Estado Persona B").setFontWeight("bold").setBackground("#D9EAD3");
+    headers["ESTADO PERSONA B"] = colB;
+  }
+
+  // 3. Asegurar 'Estado Total'
+  var colTotal = headers["ESTADO TOTAL"] || headers["STATUS TOTAL"] || headers["ESTADO CITA"];
+  if (!colTotal) {
+    colTotal = getNextAvailableColumn(sheet);
+    sheet.getRange(1, colTotal).setValue("Estado Total").setFontWeight("bold").setBackground("#D9D2E9");
+    headers["ESTADO TOTAL"] = colTotal;
+  }
+
+  // 4. Asegurar 'FECHA CITA REAL'
+  ensureRealDateColumn(sheet, headers);
+
+  // 5. Aplicar Desplegables de Estados
+  var estadosData = getEstadosPorEtapa();
+  var matchesList = [].concat(estadosData.SERVICIO_CLIENTE, estadosData.RESULTADO_CITA);
+  if (matchesList.length === 0) {
+    matchesList = [
+      "pendiente", "agendando", "por confirmar", "esperar", "de viaje", "problemas personales",
+      "no contestan", "reprogramar", "esperar que salgan con su date", "TROUBLEMAKER",
+      "cita confirmada", "DATE PROGRAMADO", "cita realizada", "match", "MATCH DONE",
+      "no match (él rechazó)", "no match (ella rechazó)", "sin química (mutuo)"
+    ];
+  }
+  var matchesRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(matchesList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  var maxRows = Math.min(sheet.getMaxRows(), 5000);
+  if (maxRows > 1) {
+    if (colA) sheet.getRange(2, colA, maxRows - 1, 1).setDataValidation(matchesRule);
+    if (colB) sheet.getRange(2, colB, maxRows - 1, 1).setDataValidation(matchesRule);
+    if (colTotal) sheet.getRange(2, colTotal, maxRows - 1, 1).setDataValidation(matchesRule);
+  }
+
+  // 6. Aplicar Desplegable de ⚙️ RESTAURANTES en la columna LUGAR
+  var lugarCol = headers["LUGAR"] || 6;
+  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+  if (restSheet && lugarCol && maxRows > 1) {
+    var rLast = Math.max(2, restSheet.getLastRow());
+    var venueRule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(2, lugarCol, maxRows - 1, 1).setDataValidation(venueRule);
+  }
+
+  Logger.log("✅ Columnas de estado y catálogo de RESTAURANTES asegurados en MATCHES.");
+}
+
+/**
+ * Obtiene la siguiente columna disponible en la fila 1 de una hoja.
+ */
+function getNextAvailableColumn(sheet) {
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return 1;
+  var row1Values = sheet.getRange(1, 1, 1, Math.min(lastCol + 10, sheet.getMaxColumns())).getValues()[0];
+  for (var c = 0; c < row1Values.length; c++) {
+    if (!row1Values[c] || row1Values[c].toString().trim() === "") {
+      return c + 1;
+    }
+  }
+  return lastCol + 1;
+}
+
+/**
+ * Sincroniza y limpia todas las fechas de la pestaña 'Citas Aceptadas'.
+ */
+function sincronizarTodasLasCitasAceptadas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Citas Aceptadas") || ss.getSheetByName("CITAS ACEPTADAS");
+  if (!sheet) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  var headers = getSheetHeaders(sheet);
+  var fechaCol = headers["FECHA CITA REAL"] || 2;
+  var diaCol = headers["DÍA / HORA"] || headers["DIA / HORA"] || headers["DÍA"] || 7;
+  var lugarCol = headers["LUGAR"] || 5;
+
+  var data = sheet.getRange(2, 1, lastRow - 1, Math.max(fechaCol, diaCol, lugarCol)).getValues();
+  for (var i = 0; i < data.length; i++) {
+    var rawDate = (data[i][fechaCol - 1] || data[i][diaCol - 1] || "").toString();
+    var cleanDate = parseDateToIsoLocal(rawDate);
+    if (cleanDate && cleanDate !== rawDate) {
+      sheet.getRange(i + 2, fechaCol).setValue(cleanDate);
+    }
+  }
+
+  // Asegurar regla de validación de restaurantes
+  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+  if (restSheet && lugarCol) {
+    var rLast = Math.max(2, restSheet.getLastRow());
+    var venueRule = SpreadsheetApp.newDataValidation()
+      .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(2, lugarCol, lastRow - 1, 1).setDataValidation(venueRule);
+  }
+
+  ss.toast("Se limpiaron y sincronizaron " + (lastRow - 1) + " fechas en 'Citas Aceptadas'.", "Sincronización Exitosa", 5);
+}
 
 /**
  * Lee los estados agrupados por etapa desde '⚙️ CONFIG ESTADOS'.
@@ -2221,6 +2411,14 @@ function getEstadosPorEtapa() {
  */
 function actualizarDesplegablesDinamicos() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 0. Asegurar columnas de estado y catálogo en MATCHES
+  try {
+    ensureMatchesColumnsAndDropdowns();
+  } catch (errM) {
+    Logger.log("Aviso al asegurar columnas en MATCHES: " + errM.message);
+  }
+
   var estadosData = getEstadosPorEtapa();
 
   // 1. Regla para Etapa PSICOLOGA
@@ -3219,16 +3417,21 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
   var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
   var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
   var diaCol = headers["DÍA"] || headers["DIA"] || 5;
-  var matchCol = headers["MATCH"] || 13;
+  var matchCol = headers["MATCH"] || headers["ESTADO TOTAL"] || 13;
+  var statusACol = headers["ESTADO PERSONA A"] || headers["STATUS PERSONA A"];
+  var statusBCol = headers["ESTADO PERSONA B"] || headers["STATUS PERSONA B"];
   var fechaRealCol = headers["FECHA CITA REAL"] || ensureRealDateColumn(sheet, headers);
 
   var statusVal = (col === matchCol ? (newValue || "") : (sheet.getRange(row, matchCol).getValue() || "")).toString().trim();
   var statusUpper = statusVal.toUpperCase();
 
-  // Asegurar color según ⚙️ CONFIG ESTADOS
+  // Asegurar color según ⚙️ CONFIG ESTADOS para cualquiera de las 3 columnas de estado
   var estadosData = getEstadosPorEtapa();
-  if (col === matchCol && statusVal && estadosData.COLOR_MAP[statusUpper]) {
-    sheet.getRange(row, matchCol).setBackground(estadosData.COLOR_MAP[statusUpper]);
+  if ((col === matchCol || col === statusACol || col === statusBCol) && newValue) {
+    var valUpper = (newValue || "").toString().trim().toUpperCase();
+    if (estadosData.COLOR_MAP[valUpper]) {
+      sheet.getRange(row, col).setBackground(estadosData.COLOR_MAP[valUpper]);
+    }
   }
 
   // A. REGLA DE RECHAZO TERMINAL: Si alguno rechaza, el match muere y AMBOS vuelven como slot a sus psicólogas
