@@ -359,7 +359,20 @@ async def get_my_matches(
             "status_color": STATUS_COLORS.get(d.get("status"), "#FFF2CC"),
             "plan_color": PLAN_COLORS.get(final_plan, "#F3F3F3"),
             "pref_color": PREF_COLORS.get(final_pref, "#CFE2F3"),
-            "is_locked": is_approved or is_cross_locked
+            "is_locked": is_approved or is_cross_locked,
+            "has_compatibility_alert": bool(
+                "COMPATIBILIDAD FORZADA" in (d.get("observations") or "").upper() or
+                "ALERTA COMPATIBILIDAD" in (d.get("observations") or "").upper() or
+                "INCOMPATIBILIDAD" in (d.get("observations") or "").upper()
+            ),
+            "is_overdue_15d": bool(
+                is_approved and d.get("approved_at") and 
+                (datetime.utcnow() - d.get("approved_at")).days >= 15
+            ),
+            "days_in_cs": (
+                (datetime.utcnow() - d.get("approved_at")).days 
+                if is_approved and d.get("approved_at") else 0
+            )
         })
 
     return {"matches": matches, "total": len(matches)}
@@ -2078,6 +2091,15 @@ async def get_matches_pending_service(
     matches = []
     for r in rows:
         d = dict(r._mapping)
+        created_dt = d.get("updated_at") or d.get("created_at")
+        days_pending = (datetime.utcnow() - created_dt).days if created_dt else 0
+        obs_text = d.get("observations") or ""
+        has_comp_alert = bool(
+            "COMPATIBILIDAD FORZADA" in obs_text.upper() or
+            "ALERTA COMPATIBILIDAD" in obs_text.upper() or
+            "INCOMPATIBILIDAD" in obs_text.upper()
+        )
+
         matches.append({
             "id": d.get("id"),
             "person_a": d.get("person_a"),
@@ -2090,8 +2112,11 @@ async def get_matches_pending_service(
             "cs_stage": d.get("cs_stage") or "pendiente",
             "confirmation_a": d.get("person_a_confirmation") or "Pendiente",
             "confirmation_b": d.get("person_b_confirmation") or "Pendiente",
-            "observations": d.get("observations") or "",
-            "date": d.get("updated_at").strftime("%Y-%m-%d") if d.get("updated_at") else ""
+            "observations": obs_text,
+            "date": d.get("updated_at").strftime("%Y-%m-%d") if d.get("updated_at") else "",
+            "days_pending": days_pending,
+            "is_overdue": days_pending >= 15,
+            "has_compatibility_alert": has_comp_alert
         })
 
     return {"matches": matches, "total": len(matches)}

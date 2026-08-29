@@ -2186,6 +2186,7 @@ function onOpen(e) {
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
+    menu.addItem("⏰ Verificar Alertas de 15 Días (CS y Psicólogas)", "actualizarAlertas15DiasMatches");
     menu.addToUi();
   } catch (err) {
     Logger.log("No se pudo crear menú en onOpen: " + err);
@@ -3445,9 +3446,27 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
     matchesSheet.getRange(targetRow, cityCol).setValue(matchData.city);
   }
 
-  // 4. Observaciones
-  if (obsCol && matchData.observaciones) {
-    matchesSheet.getRange(targetRow, obsCol).setValue(matchData.observaciones);
+  // 4. Observaciones & Alerta de Compatibilidad para Servicio al Cliente
+  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+  var obsText = matchData.observaciones || "";
+  var hasCompAlert = (obsText.indexOf("Compatibilidad Forzada") >= 0 || obsText.indexOf("ALERTA COMPATIBILIDAD") >= 0 || obsText.indexOf("INCOMPATIBILIDAD") >= 0);
+
+  // Agregar tag de fecha de ingreso para trazabilidad de 15 días si no existe
+  if (obsText.indexOf("[Ingreso CS:") === -1) {
+    obsText = (obsText ? obsText + " " : "") + "[Ingreso CS: " + todayStr + "]";
+  }
+
+  if (obsCol) {
+    matchesSheet.getRange(targetRow, obsCol).setValue(obsText);
+  }
+
+  // Si hubo incompatibilidad forzada, marcar visualmente la fila para Customer Service
+  if (hasCompAlert) {
+    var compTag = "⚠️ ALERTA COMPATIBILIDAD FORZADA: " + obsText;
+    matchesSheet.getRange(targetRow, personACol).setNote(compTag).setBackground("#FFF2CC");
+    if (personBCol && cellB) {
+      matchesSheet.getRange(targetRow, personBCol).setNote(compTag).setBackground("#FFF2CC");
+    }
   }
 
   // 5. Estado inicial: 'pendiente' (Gris oficial #E8EAED)
@@ -3462,7 +3481,125 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
     matchesSheet.getRange(targetRow, diaCol).setValue("");
   }
 
-  Logger.log("✅ Match insertado en zona inferior de MATCHES (Fila " + targetRow + "): " + cellA.text + " + " + (cellB ? cellB.text : "Por definir"));
+  Logger.log("✅ Match insertado en zona inferior de MATCHES (Fila " + targetRow + "): " + cellA.text + " + " + (cellB ? cellB.text : "Por definir") + (hasCompAlert ? " [CON ALERTA DE COMPATIBILIDAD]" : ""));
+}
+
+/**
+ * Notifica a la psicóloga de origen que su match lleva más de 15 días en Customer Service sin cita agendada.
+ */
+function notifyPsychologistOverdue(nameA, nameB, diffDays, entryDate) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var allSheets = ss.getSheets();
+  var entryStr = Utilities.formatDate(entryDate, CONFIG.TIMEZONE, "yyyy-MM-dd");
+  var alertNote = "⏰ ALERTA SERVICIO AL CLIENTE: El match con " + (nameB || "candidato") + " lleva " + diffDays + " días en CS sin agendar cita (aprobado el " + entryStr + ").";
+
+  for (var s = 0; s < allSheets.length; s++) {
+    var curSheet = allSheets[s];
+    var curName = curSheet.getName().trim().toUpperCase();
+    if (curName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && curName !== "MATCHES" && curName !== "MATCHES COMPLETED") {
+      var headers = getSheetHeaders(curSheet);
+      var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"] || 4;
+      var statusCol = headers["STATUS"] || 10;
+      var lastRow = curSheet.getLastRow();
+      if (lastRow > 1) {
+        var vals = curSheet.getRange(2, personACol, lastRow - 1, 1).getValues();
+        for (var r = 0; r < vals.length; r++) {
+          var pName = (vals[r][0] || "").toString().trim();
+          if (pName.toLowerCase() === nameA.toLowerCase()) {
+            curSheet.getRange(r + 2, statusCol).setNote(alertNote);
+            break;
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Verifica la zona inferior de MATCHES e identifica matches con más de 15 días
+ * pendientes de agendar en Servicio al Cliente.
+ * Aplica alerta visual (resaltado rojo suave #F4CCCC + Nota explicativa)
+ * tanto en MATCHES para Customer Service como en las pestañas de las psicólogas de origen.
+ */
+function actualizarAlertas15DiasMatches() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+  if (!matchesSheet) return;
+
+  var lastRow = matchesSheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  var headers = getSheetHeaders(matchesSheet);
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
+  var diaCol = headers["DÍA"] || headers["DIA"] || 5;
+  var matchCol = headers["MATCH"] || headers["ESTADO TOTAL"] || 13;
+  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 12;
+  var fechaRealCol = headers["FECHA CITA REAL"] || 18;
+
+  var maxCheckCol = Math.max(personACol, personBCol, diaCol, matchCol, obsCol, fechaRealCol);
+  var data = matchesSheet.getRange(2, 1, lastRow - 1, maxCheckCol).getValues();
+  var today = new Date();
+  var overdueCount = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var rowIdx = i + 2;
+    var nameA = (data[i][personACol - 1] || "").toString().trim();
+    var nameB = (data[i][personBCol - 1] || "").toString().trim();
+    var diaVal = (data[i][diaCol - 1] || "").toString().trim();
+    var fechaRealVal = (fechaRealCol && data[i][fechaRealCol - 1] ? data[i][fechaRealCol - 1].toString().trim() : "");
+    var statusVal = (data[i][matchCol - 1] || "").toString().trim().toUpperCase();
+    var obsVal = (data[i][obsCol - 1] || "").toString().trim();
+
+    // Solo evaluar zona inferior (sin fecha agendada y en seguimiento de CS)
+    var isScheduled = (diaVal !== "" || fechaRealVal !== "" || statusVal === "CITA CONFIRMADA" || statusVal === "DATE PROGRAMADO" || statusVal === "CITA REALIZADA");
+    if (!nameA || isScheduled) continue;
+
+    // Detectar fecha de ingreso a CS
+    var entryDate = null;
+    var dateMatch = obsVal.match(/\[(?:Ingreso CS|Fecha):\s*(\d{4}-\d{2}-\d{2})\]/i);
+    if (dateMatch) {
+      entryDate = new Date(dateMatch[1]);
+    } else {
+      try {
+        var note = matchesSheet.getRange(rowIdx, personACol).getNote() || "";
+        var noteDateMatch = note.match(/(\d{4}-\d{2}-\d{2})/);
+        if (noteDateMatch) {
+          entryDate = new Date(noteDateMatch[1]);
+        }
+      } catch (ne) {}
+    }
+
+    // Si no tiene fecha explícita, buscar en PROFILES o asumir fecha de entrevista
+    if (!entryDate || isNaN(entryDate.getTime())) {
+      var cellAData = getCellData(matchesSheet, rowIdx, personACol);
+      var detailsA = findPersonDetailsInWorkbook(cellAData);
+      if (detailsA && detailsA.date) {
+        entryDate = new Date(detailsA.date);
+      }
+    }
+
+    if (entryDate && !isNaN(entryDate.getTime())) {
+      var diffDays = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 15) {
+        overdueCount++;
+        var alertNote = "🚨 ALERTA SERVICIO AL CLIENTE: Este match lleva " + diffDays + " días en CS sin agendar cita (>15 días desde " + Utilities.formatDate(entryDate, CONFIG.TIMEZONE, "yyyy-MM-dd") + ").";
+        matchesSheet.getRange(rowIdx, matchCol).setBackground("#F4CCCC");
+        matchesSheet.getRange(rowIdx, personACol).setNote(alertNote);
+
+        try {
+          notifyPsychologistOverdue(nameA, nameB, diffDays, entryDate);
+        } catch (pe) {
+          Logger.log("Aviso al notificar retraso a psicóloga: " + pe.message);
+        }
+      }
+    }
+  }
+
+  Logger.log("✅ Verificación de 15 días en MATCHES completada. Matches vencidos encontrados: " + overdueCount);
+  if (overdueCount > 0) {
+    ss.toast("Se encontraron " + overdueCount + " matches con >15 días sin agendar en CS.", "Alerta de Retraso", 6);
+  }
 }
 
 // ─── 14. AUTOMATIZACIÓN DE PESTAÑA MATCHES (DOS ZONAS & RETORNO RECHAZOS) ───

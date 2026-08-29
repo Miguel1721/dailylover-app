@@ -619,13 +619,20 @@ export default function Matching() {
                       <th>Ciudad</th>
                       <th>Plan</th>
                       <th>Estado SC</th>
-                      <th>Observaciones</th>
+                      <th>Tiempo en CS</th>
+                      <th>Observaciones & Alertas</th>
                       <th>Fecha Aprob.</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pendingServiceMatches.map(m => (
-                      <tr key={m.id}>
+                      <tr 
+                        key={m.id}
+                        style={{
+                          background: m.is_overdue ? 'rgba(239, 68, 68, 0.08)' : 'transparent',
+                          borderLeft: m.is_overdue ? '3px solid #EF4444' : 'none'
+                        }}
+                      >
                         <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{m.id}</td>
                         <td>
                           <div style={{ fontWeight: 700, color: 'var(--color-primary)' }}>{m.person_a}</div>
@@ -643,7 +650,39 @@ export default function Matching() {
                             ⏳ {m.cs_stage || 'pendiente'}
                           </span>
                         </td>
-                        <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 220 }}>{m.observations || '—'}</td>
+                        <td>
+                          {m.is_overdue ? (
+                            <span 
+                              className="badge badge-red" 
+                              style={{ fontWeight: 800, padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              title="Este match lleva más de 15 días en Servicio al Cliente sin agendar cita"
+                            >
+                              🚨 {m.days_pending} días (&gt;15d)
+                            </span>
+                          ) : (
+                            <span className="badge badge-gray" style={{ fontSize: 12 }}>
+                              ⏱️ {m.days_pending || 0} {m.days_pending === 1 ? 'día' : 'días'}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 260 }}>
+                          {m.has_compatibility_alert && (
+                            <div style={{
+                              background: 'rgba(245, 158, 11, 0.15)',
+                              color: '#F59E0B',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              borderRadius: 4,
+                              padding: '2px 6px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              marginBottom: 4,
+                              display: 'inline-block'
+                            }}>
+                              ⚠️ Alerta Compatibilidad Forzada
+                            </div>
+                          )}
+                          <div>{m.observations || '—'}</div>
+                        </td>
                         <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.date || '—'}</td>
                       </tr>
                     ))}
@@ -881,6 +920,42 @@ export default function Matching() {
                       }}
                     >
                       <div>
+                        {/* Alertas de Servicio al Cliente & Compatibilidad */}
+                        {m.is_overdue_15d && (
+                          <div style={{
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            color: '#EF4444',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: 8,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            marginBottom: 10,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6
+                          }}>
+                            🚨 Alerta CS: Lleva {m.days_in_cs || 15}+ días en Servicio al Cliente sin agendar cita
+                          </div>
+                        )}
+                        {m.has_compatibility_alert && (
+                          <div style={{
+                            background: 'rgba(245, 158, 11, 0.15)',
+                            color: '#F59E0B',
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            borderRadius: 8,
+                            padding: '6px 10px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            marginBottom: 10,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6
+                          }}>
+                            ⚠️ Alerta: Incompatibilidad forzada al asignar
+                          </div>
+                        )}
+
                         {/* Top Bar: Match Score & Status */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(150,21,0,0.15)', padding: '4px 10px', borderRadius: 20 }}>
