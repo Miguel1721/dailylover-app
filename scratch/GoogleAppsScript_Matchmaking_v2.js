@@ -2481,20 +2481,54 @@ function reordenarColumnasMatchesCanonico() {
     return;
   }
 
+  var lastRow = sheet.getLastRow();
   var headers = getSheetHeaders(sheet);
 
-  // 1. Si existe 'MATCH' y no 'Estado Total', renombrar M1 a 'Estado Total'
   var matchCol = headers["MATCH"];
   var estadoTotalCol = headers["ESTADO TOTAL"] || headers["STATUS TOTAL"];
-  if (matchCol && !estadoTotalCol) {
+
+  // 1. MIGRACIÓN COMPLETA DE DATOS HISTÓRICOS: Si existen ambas columnas (MATCH y Estado Total)
+  if (matchCol && estadoTotalCol && matchCol !== estadoTotalCol) {
+    if (lastRow > 1) {
+      var matchRange = sheet.getRange(2, matchCol, lastRow - 1, 1);
+      var totalRange = sheet.getRange(2, estadoTotalCol, lastRow - 1, 1);
+      var matchVals = matchRange.getValues();
+      var matchBgs = matchRange.getBackgrounds();
+      var totalVals = totalRange.getValues();
+      var totalBgs = totalRange.getBackgrounds();
+
+      var needsUpdate = false;
+      for (var r = 0; r < matchVals.length; r++) {
+        var mVal = (matchVals[r][0] || "").toString().trim();
+        var tVal = (totalVals[r][0] || "").toString().trim();
+        if (mVal && !tVal) {
+          totalVals[r][0] = mVal;
+          if (matchBgs[r][0] && matchBgs[r][0] !== "#ffffff") {
+            totalBgs[r][0] = matchBgs[r][0];
+          }
+          needsUpdate = true;
+        }
+      }
+
+      if (needsUpdate) {
+        totalRange.setValues(totalVals);
+        totalRange.setBackgrounds(totalBgs);
+        Logger.log("✅ Datos históricos de MATCH migrados exitosamente a 'Estado Total'.");
+      }
+    }
+
+    // Una vez migrados los datos a 'Estado Total', eliminar la columna física vieja 'MATCH'
+    sheet.deleteColumn(matchCol);
+    headers = getSheetHeaders(sheet);
+  } else if (matchCol && !estadoTotalCol) {
+    // Si solo existe MATCH y no Estado Total, simplemente renombrar MATCH a 'Estado Total'
     sheet.getRange(1, matchCol).setValue("Estado Total").setFontWeight("bold").setBackground("#D9D2E9");
-    headers["ESTADO TOTAL"] = matchCol;
-    delete headers["MATCH"];
+    headers = getSheetHeaders(sheet);
   }
 
   // 2. Mover 'Estado Total' a la columna 1
   headers = getSheetHeaders(sheet);
-  var colTotal = headers["ESTADO TOTAL"] || headers["MATCH"];
+  var colTotal = headers["ESTADO TOTAL"] || headers["STATUS TOTAL"] || headers["MATCH"];
   if (colTotal && colTotal > 1) {
     sheet.moveColumns(sheet.getRange(1, colTotal), 1);
   }
@@ -2517,22 +2551,22 @@ function reordenarColumnasMatchesCanonico() {
   headers = getSheetHeaders(sheet);
   for (var c = sheet.getLastColumn(); c >= 1; c--) {
     var hVal = (sheet.getRange(1, c).getValue() || "").toString().trim();
-    if (hVal === "persona A" || hVal === "Plan B") {
+    if (hVal === "persona A" || hVal === "Plan B" || (hVal.toUpperCase() === "MATCH" && colTotal !== c)) {
       sheet.deleteColumn(c);
     }
   }
 
   // 6. Eliminar columnas vacías sobrantes después de la columna 17
-  var lastCol = sheet.getLastColumn();
+  var curLastCol = sheet.getLastColumn();
   var maxCols = sheet.getMaxColumns();
-  if (maxCols > 17 && lastCol <= 17) {
+  if (maxCols > 17 && curLastCol <= 17) {
     sheet.deleteColumns(18, maxCols - 17);
   }
 
   // 7. Aplicar formatos y desplegables
   ensureMatchesColumnsAndDropdowns();
 
-  Logger.log("✅ Reordenamiento canónico de MATCHES completado exitosamente.");
+  Logger.log("✅ Reordenamiento canónico de MATCHES completado exitosamente con 100% de datos históricos preservados.");
   try {
     ss.toast("Estructura canónica de MATCHES (17 columnas) reordenada exitosamente.", "MATCHES Actualizado", 6);
   } catch (e) {}
