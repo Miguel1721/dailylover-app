@@ -792,7 +792,7 @@ async def get_users(
                 "religion": r.religion or "No especificada",
                 "love_language": r.love_language or "No especificado",
                 "bio_notes": r.bio_notes or "",
-                "responsable": r.responsable or "SILVI",
+                "responsable": r.responsable or "",
                 "estatura": r.estatura or "No especificada",
                 "plan_tier": r.plan_tier or "Estándar",
                 "motivacion": r.motivacion or "Conexión profunda",
@@ -834,7 +834,7 @@ async def get_users(
                     "has_profile": True,
                     "city": r.city or "Bogotá",
                     "occupation": "Cliente Histórico Matchmaking",
-                    "responsable": r.responsable or "SILVI",
+                    "responsable": r.responsable or "",
                     "motivacion": "conexion_profunda",
                     "age": 28,
                     "profile": {
@@ -1194,7 +1194,9 @@ async def assign_matchmaker(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("clientes", "edit"))
 ):
-    matchmaker = data.get("matchmaker") or data.get("responsable") or "SILVI"
+    matchmaker = (data.get("matchmaker") or data.get("responsable") or "").strip()
+    if not matchmaker:
+        raise HTTPException(status_code=400, detail="Debe especificar la psicóloga responsable")
     await db.execute(text("""
         UPDATE profiles SET responsable = :m, updated_at = NOW() WHERE user_id = :uid
     """), {"m": matchmaker, "uid": user_id})
@@ -2442,13 +2444,18 @@ async def toggle_reminder(
 # ─── GESTIÓN DE DISPONIBILIDAD HORARIA POR PSICÓLOGA ───
 
 def clean_psychologist_name(name_raw: str) -> str:
-    if not name_raw: return "SILVI"
+    if not name_raw: return ""
     p = name_raw.strip().upper()
     if "SILVI" in p or "SILVIA" in p: return "SILVI"
     if "STEFF" in p or "STEPH" in p: return "STEFFY"
     if "MANU" in p: return "MANU"
-    if "PAULA" in p or "MAPE" in p: return "MAPE"
+    if "PAULA" in p or "MAPE" in p: return "MAPE D"
     if "ALEJA" in p: return "ALEJA"
+    if "JENN" in p: return "JENN"
+    if "ANA" in p: return "ANA"
+    if "SOFI" in p: return "SOFI"
+    if "PIA" in p: return "PIA"
+    if "ISA" in p: return "ISA"
     return p
 
 @router.get("/psychologist/availability")

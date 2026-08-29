@@ -85,7 +85,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 """), {"plan_tier": plan_name, "user_id": user_id})
 
                 # Registrar recordatorio / notificación interna para la psicóloga
-                responsable_name = (responsable or "SILVI").replace("MATCHES ", "")
+                responsable_name = (responsable or "").replace("MATCHES ", "").strip() or "REVISIÓN MANUAL"
                 obs_note = f"🔔 [PAGO AUTOMÁTICO STRIPE] {user_name} renovó/adquirió plan {plan_name}. Plan anterior: {old_plan or 'Sin plan'}."
                 
                 await db.execute(text("""
@@ -297,8 +297,8 @@ async def process_webhook_payload(event_type: str, data: dict):
                     await db.commit()
                     logger.info(f"Cliente procesado exitosamente vía Webhook: CRM ID {crm_id} - {name} (User ID: {user_id})")
 
-            # 2. EVENTOS DE MATCH (match.created, match.updated, match_added, match_group_changed, intro.created)
-            elif any(k in event_type.lower() for k in ["match", "intro", "cita", "added", "group"]):
+            # 2. EVENTOS DE MATCH (match.created, match.updated, match_added, match_group_changed, intro.created, date.scheduled)
+            elif any(k in event_type.lower() for k in ["match", "intro", "cita", "added", "group", "schedule", "date"]):
                 person_a = data.get("person_a") or data.get("client_a") or data.get("persona_a")
                 person_b = data.get("person_b") or data.get("client_b") or data.get("persona_b")
 
@@ -307,21 +307,48 @@ async def process_webhook_payload(event_type: str, data: dict):
                     client_info = data.get("client") if isinstance(data.get("client"), dict) else {}
                     match_info = data.get("match") if isinstance(data.get("match"), dict) else {}
                     
-                    p_a_name = client_info.get("name") or client_info.get("full_name")
-                    p_b_name = match_info.get("name") or match_info.get("full_name")
+                    p_a_name = client_info.get("name") or client_info.get("full_name") or client_info.get("nombre")
+                    p_b_name = match_info.get("name") or match_info.get("full_name") or match_info.get("nombre")
 
                     if p_a_name and p_b_name:
                         person_a, person_b = p_a_name, p_b_name
-                    elif client_info.get("id") in [3906, 3909] or match_info.get("id") in [3906, 3909] or data.get("id") in [2383, 2384]:
-                        person_a = "ZZZ Prueba Uno"
-                        person_b = "ZZZ Prueba Dos"
+                    elif p_a_name:
+                        person_a = p_a_name
+                    elif p_b_name:
+                        person_b = p_b_name
 
-                matchmaker = data.get("matchmaker") or data.get("psicologa") or "SILVI"
-                match_date = str(data.get("match_date") or data.get("date") or data.get("fecha") or "Por agendar")
+                # Buscar psicóloga explícita o asignar a revisión manual si no viene definida
+                matchmaker = (data.get("matchmaker") or data.get("psicologa") or data.get("responsable") or "").strip()
+                if not matchmaker and person_a:
+                    res_psyc = await db.execute(text("""
+                        SELECT p.responsable 
+                        FROM users u
+                        JOIN profiles p ON p.user_id = u.id
+                        WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:pA))
+                        LIMIT 1
+                    """), {"pA": person_a})
+                    row_psyc = res_psyc.fetchone()
+                    if row_psyc and row_psyc[0]:
+                        matchmaker = str(row_psyc[0]).replace("MATCHES ", "").strip()
+
+                notes = data.get("notes") or data.get("observations") or data.get("notas") or f"SmartMatchApp Event: {event_type}"
+                if not matchmaker:
+                    matchmaker = "REVISIÓN MANUAL"
+                    notes = f"{notes} [⚠️ Psicóloga no especificada en webhook - Asignación manual requerida]"
+
+                # Procesamiento de fecha confirmada
+                from app.services.google_sheets import parse_date_to_iso, append_match_to_sheet, sync_confirmed_date_to_matches
+
+                raw_date = data.get("match_date") or data.get("date") or data.get("fecha") or data.get("scheduled_date") or data.get("appointment_date")
+                parsed_iso_date = parse_date_to_iso(raw_date) if raw_date else None
+                match_date = parsed_iso_date or str(raw_date or "Por agendar")
                 
                 group_name = data.get("group", {}).get("name") if isinstance(data.get("group"), dict) else ""
                 status = str(group_name or data.get("status") or data.get("estado") or "PENDIENTE").upper()
-                notes = data.get("notes") or data.get("observations") or data.get("notas") or f"SmartMatchApp Event: {event_type}"
+                
+                has_confirmed_date = bool(parsed_iso_date and parsed_iso_date.lower() not in ("por agendar", "pendiente", ""))
+                if has_confirmed_date and status in ("PENDIENTE", ""):
+                    status = "CITA CONFIRMADA"
 
                 if person_a and person_b:
                     source_ref = f"webhook_match:{hashlib.md5(f'{person_a}|{person_b}|{match_date}'.encode()).hexdigest()[:16]}"
@@ -341,28 +368,79 @@ async def process_webhook_payload(event_type: str, data: dict):
                         "obs": notes,
                         "sref": source_ref
                     })
-                    await db.commit()
-                    logger.info(f"Match procesado exitosamente vía Webhook: {person_a} x {person_b} (Estado: {status})")
 
-                    # Sincronización a Google Sheet real en tiempo real (Protegida contra fallos)
-                    try:
-                        from app.services.google_sheets import append_match_to_sheet
-                        append_match_to_sheet(matchmaker, {
-                            "PERSON A": person_a,
-                            "PERSON B": person_b,
-                            "FECHA": match_date,
-                            "STATUS": status,
-                            "OBSERVACIONES": notes,
-                            "CITY": data.get("city") or data.get("ciudad"),
-                            "PAIS": data.get("country") or data.get("pais"),
-                            "PLAN": data.get("plan") or data.get("plan_tier"),
-                            "PREF": data.get("pref") or data.get("preferencia"),
-                            "CRM": data.get("crm"),
-                            "ID": data.get("id") or data.get("match_id"),
-                        })
-                        logger.info(f"Fila sincronizada a Google Sheet ({matchmaker}) para {person_a} x {person_b}")
-                    except Exception as sheet_err:
-                        logger.error(f"Error al intentar sincronizar a Google Sheet ({matchmaker}): {sheet_err}")
+                    # Si viene con fecha confirmada, actualizar en operational_matches y match_confirmations
+                    if has_confirmed_date:
+                        res_op = await db.execute(text("""
+                            SELECT id FROM operational_matches 
+                            WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:pA)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:pB)))
+                               OR (LOWER(TRIM(person_a)) = LOWER(TRIM(:pB)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:pA)))
+                            ORDER BY id DESC LIMIT 1
+                        """), {"pA": person_a, "pB": person_b})
+                        op_row = res_op.fetchone()
+
+                        if op_row:
+                            op_id = op_row[0]
+                            await db.execute(text("""
+                                UPDATE operational_matches 
+                                SET status = 'CITA CONFIRMADA', updated_at = NOW() 
+                                WHERE id = :id
+                            """), {"id": op_id})
+
+                            res_c = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid LIMIT 1"), {"mid": op_id})
+                            c_row = res_c.fetchone()
+                            if c_row:
+                                await db.execute(text("""
+                                    UPDATE match_confirmations
+                                    SET stage = 'cita confirmada', scheduled_date = :sdate, updated_at = NOW()
+                                    WHERE id = :cid
+                                """), {"cid": c_row[0], "sdate": parsed_iso_date})
+                            else:
+                                await db.execute(text("""
+                                    INSERT INTO match_confirmations (match_id, stage, scheduled_date, created_at, updated_at)
+                                    VALUES (:mid, 'cita confirmada', :sdate, NOW(), NOW())
+                                """), {"mid": op_id, "sdate": parsed_iso_date})
+
+                    await db.commit()
+                    logger.info(f"Match procesado exitosamente vía Webhook: {person_a} x {person_b} (Estado: {status}, Fecha: {match_date})")
+
+                    # Sincronización a Google Sheet en tiempo real
+                    # 1. Pestaña de la psicóloga
+                    if matchmaker and matchmaker != "REVISIÓN MANUAL":
+                        try:
+                            append_match_to_sheet(matchmaker, {
+                                "PERSON A": person_a,
+                                "PERSON B": person_b,
+                                "FECHA": parsed_iso_date or match_date,
+                                "STATUS": status,
+                                "OBSERVACIONES": notes,
+                                "CITY": data.get("city") or data.get("ciudad"),
+                                "PAIS": data.get("country") or data.get("pais"),
+                                "PLAN": data.get("plan") or data.get("plan_tier"),
+                                "PREF": data.get("pref") or data.get("preferencia"),
+                                "CRM": data.get("crm"),
+                                "ID": data.get("id") or data.get("match_id"),
+                            })
+                            logger.info(f"Fila sincronizada a Google Sheet ({matchmaker}) para {person_a} x {person_b}")
+                        except Exception as sheet_err:
+                            logger.error(f"Error al intentar sincronizar a Google Sheet ({matchmaker}): {sheet_err}")
+
+                    # 2. Si viene con fecha confirmada, escribirla en FECHA CITA REAL de MATCHES
+                    if has_confirmed_date:
+                        try:
+                            venue_val = data.get("venue") or data.get("lugar") or data.get("restaurant") or data.get("restaurante")
+                            city_val = data.get("city") or data.get("ciudad")
+                            sync_confirmed_date_to_matches(
+                                person_a=person_a,
+                                person_b=person_b,
+                                raw_date=parsed_iso_date or match_date,
+                                status="cita confirmada",
+                                venue=venue_val,
+                                city=city_val
+                            )
+                            logger.info(f"✅ FECHA CITA REAL sincronizada a pestaña MATCHES para {person_a} x {person_b}: {parsed_iso_date}")
+                        except Exception as matches_err:
+                            logger.error(f"Error al intentar sincronizar FECHA CITA REAL a MATCHES: {matches_err}")
 
 
 
