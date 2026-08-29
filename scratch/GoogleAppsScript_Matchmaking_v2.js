@@ -2279,9 +2279,9 @@ function ensureMatchesColumnsAndDropdowns() {
 
   var maxRows = Math.min(sheet.getMaxRows(), 5000);
   if (maxRows > 1) {
-    if (colA) sheet.getRange(2, colA, maxRows - 1, 1).setDataValidation(matchesRule);
-    if (colB) sheet.getRange(2, colB, maxRows - 1, 1).setDataValidation(matchesRule);
-    if (colTotal) sheet.getRange(2, colTotal, maxRows - 1, 1).setDataValidation(matchesRule);
+    if (colA) safeSetDataValidation(sheet.getRange(2, colA, maxRows - 1, 1), matchesRule);
+    if (colB) safeSetDataValidation(sheet.getRange(2, colB, maxRows - 1, 1), matchesRule);
+    if (colTotal) safeSetDataValidation(sheet.getRange(2, colTotal, maxRows - 1, 1), matchesRule);
   }
 
   // 6. Aplicar Desplegable de ⚙️ RESTAURANTES en la columna LUGAR
@@ -2293,10 +2293,24 @@ function ensureMatchesColumnsAndDropdowns() {
       .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
       .setAllowInvalid(false)
       .build();
-    sheet.getRange(2, lugarCol, maxRows - 1, 1).setDataValidation(venueRule);
+    safeSetDataValidation(sheet.getRange(2, lugarCol, maxRows - 1, 1), venueRule);
   }
 
   Logger.log("✅ Columnas de estado y catálogo de RESTAURANTES asegurados en MATCHES.");
+}
+
+/**
+ * Aplica validación de datos a un rango de celdas de forma segura.
+ * Si el rango pertenece a una Tabla Nativa de Sheets con tipo especificado (DROPDOWN/DATE/etc.),
+ * captura la excepción de Google Sheets sin interrumpir la ejecución del resto del script.
+ */
+function safeSetDataValidation(range, rule) {
+  if (!range || !rule) return;
+  try {
+    range.setDataValidation(rule);
+  } catch (err) {
+    Logger.log("Aviso: No se pudo aplicar setDataValidation en rango " + range.getA1Notation() + " (" + err.message + "). Posible columna con tipo de Tabla Nativa.");
+  }
 }
 
 /**
@@ -2492,16 +2506,16 @@ function actualizarDesplegablesDinamicos() {
       var statusBCol = headers["STATUS B"] || headers["STATUS PERSONA B"];
       var maxRows = Math.min(s.getMaxRows(), 5000);
       if (maxRows > 1) {
-        if (statusCol) s.getRange(2, statusCol, maxRows - 1, 1).setDataValidation(psycRule);
-        if (statusACol) s.getRange(2, statusACol, maxRows - 1, 1).setDataValidation(psycRule);
-        if (statusBCol) s.getRange(2, statusBCol, maxRows - 1, 1).setDataValidation(psycRule);
+        if (statusCol) safeSetDataValidation(s.getRange(2, statusCol, maxRows - 1, 1), psycRule);
+        if (statusACol) safeSetDataValidation(s.getRange(2, statusACol, maxRows - 1, 1), psycRule);
+        if (statusBCol) safeSetDataValidation(s.getRange(2, statusBCol, maxRows - 1, 1), psycRule);
       }
     } else if (sName === "PERSONAS DÍFICILES" || sName === "PERSONAS DIFICILES" || sName === (CONFIG.PRIORITY_SHEET_NAME || "").toUpperCase()) {
       var dHeaders = getSheetHeaders(s);
       var dStatusCol = dHeaders["STATUS"] || 8;
       var dMaxRows = Math.min(s.getMaxRows(), 3000);
       if (dMaxRows > 1) {
-        s.getRange(2, dStatusCol, dMaxRows - 1, 1).setDataValidation(difRule);
+        safeSetDataValidation(s.getRange(2, dStatusCol, dMaxRows - 1, 1), difRule);
       }
     } else if (sName === "MATCHES") {
       var mHeaders = getSheetHeaders(s);
@@ -2511,10 +2525,10 @@ function actualizarDesplegablesDinamicos() {
       var mLugarCol = mHeaders["LUGAR"] || 6;
       var mMaxRows = Math.min(s.getMaxRows(), 5000);
       if (mMaxRows > 1) {
-        if (matchCol) s.getRange(2, matchCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
-        if (mStatusACol) s.getRange(2, mStatusACol, mMaxRows - 1, 1).setDataValidation(matchesRule);
-        if (mStatusBCol) s.getRange(2, mStatusBCol, mMaxRows - 1, 1).setDataValidation(matchesRule);
-        if (mLugarCol && venueRule) s.getRange(2, mLugarCol, mMaxRows - 1, 1).setDataValidation(venueRule);
+        if (matchCol) safeSetDataValidation(s.getRange(2, matchCol, mMaxRows - 1, 1), matchesRule);
+        if (mStatusACol) safeSetDataValidation(s.getRange(2, mStatusACol, mMaxRows - 1, 1), matchesRule);
+        if (mStatusBCol) safeSetDataValidation(s.getRange(2, mStatusBCol, mMaxRows - 1, 1), matchesRule);
+        if (mLugarCol && venueRule) safeSetDataValidation(s.getRange(2, mLugarCol, mMaxRows - 1, 1), venueRule);
       }
     } else if (sName === "CITAS ACEPTADAS" || sName === "CITAS CONFIRMADAS") {
       var cHeaders = getSheetHeaders(s);
@@ -2522,22 +2536,22 @@ function actualizarDesplegablesDinamicos() {
       var cLugarCol = cHeaders["LUGAR"] || 5;
       var cMaxRows = Math.min(s.getMaxRows(), 3000);
       if (cMaxRows > 1) {
-        if (cStatusCol) s.getRange(2, cStatusCol, cMaxRows - 1, 1).setDataValidation(matchesRule);
-        if (cLugarCol && venueRule) s.getRange(2, cLugarCol, cMaxRows - 1, 1).setDataValidation(venueRule);
+        if (cStatusCol) safeSetDataValidation(s.getRange(2, cStatusCol, cMaxRows - 1, 1), matchesRule);
+        if (cLugarCol && venueRule) safeSetDataValidation(s.getRange(2, cLugarCol, cMaxRows - 1, 1), venueRule);
       }
     } else if (sName === (CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES").toUpperCase() || sName === "REFUNDS PENDIENTES") {
       var rHeaders = getSheetHeaders(s);
       var rStatusCol = rHeaders["ESTADO REFUND"] || rHeaders["ESTADO"] || rHeaders["STATUS"] || 7;
       var rMaxRows = Math.min(s.getMaxRows(), 3000);
       if (rMaxRows > 1) {
-        s.getRange(2, rStatusCol, rMaxRows - 1, 1).setDataValidation(refundRule);
+        safeSetDataValidation(s.getRange(2, rStatusCol, rMaxRows - 1, 1), refundRule);
       }
     } else if (sName === (CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA").toUpperCase() || sName === "REVISION MARIA") {
       var revHeaders = getSheetHeaders(s);
       var revCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 11;
       var revMaxRows = Math.min(s.getMaxRows(), 3000);
       if (revMaxRows > 1) {
-        s.getRange(2, revCol, revMaxRows - 1, 1).setDataValidation(psycRule);
+        safeSetDataValidation(s.getRange(2, revCol, revMaxRows - 1, 1), psycRule);
       }
     }
   }
