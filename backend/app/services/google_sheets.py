@@ -326,14 +326,17 @@ def sync_confirmed_date_to_matches(
 
         headers = [h.strip().upper() for h in hdr_rows[0]]
 
-        # Encontrar índices de columnas (0-based)
-        p_a_idx = next((i for i, h in enumerate(headers) if h in ["PERSONA A", "PERSON A", "CLIENTE"]), 2)
-        p_b_idx = next((i for i, h in enumerate(headers) if h in ["PERSONA B", "PERSON B", "CANDIDATO"]), 3)
-        fecha_real_idx = next((i for i, h in enumerate(headers) if h in ["FECHA CITA REAL", "FECHA REAL", "FECHA CITA"]), 17)
-        dia_idx = next((i for i, h in enumerate(headers) if h in ["DÍA", "DIA", "DÍA / HORA", "DIA / HORA"]), 4)
-        lugar_idx = next((i for i, h in enumerate(headers) if h in ["LUGAR", "VENUE", "RESTAURANTE"]), 5)
-        city_idx = next((i for i, h in enumerate(headers) if h in ["CIUDAD", "CITY"]), 6)
-        status_idx = next((i for i, h in enumerate(headers) if h in ["MATCH", "ESTADO TOTAL", "STATUS"]), 12)
+        # Encontrar índices de columnas (0-based) según nuevo orden canónico de MATCHES:
+        # Estado Total (0) | Estado Persona A (1) | Estado Persona B (2) | Persona A (3) | Persona B (4) | DÍA (5) | LUGAR (6) | CIUDAD (7) ... FECHA CITA REAL (16)
+        status_idx = next((i for i, h in enumerate(headers) if h in ["ESTADO TOTAL", "STATUS TOTAL", "MATCH", "STATUS"]), 0)
+        status_a_idx = next((i for i, h in enumerate(headers) if h in ["ESTADO PERSONA A", "STATUS PERSONA A"]), 1)
+        status_b_idx = next((i for i, h in enumerate(headers) if h in ["ESTADO PERSONA B", "STATUS PERSONA B"]), 2)
+        p_a_idx = next((i for i, h in enumerate(headers) if h in ["PERSONA A", "PERSON A", "CLIENTE"]), 3)
+        p_b_idx = next((i for i, h in enumerate(headers) if h in ["PERSONA B", "PERSON B", "CANDIDATO"]), 4)
+        dia_idx = next((i for i, h in enumerate(headers) if h in ["DÍA", "DIA", "DÍA / HORA", "DIA / HORA"]), 5)
+        lugar_idx = next((i for i, h in enumerate(headers) if h in ["LUGAR", "VENUE", "RESTAURANTE"]), 6)
+        city_idx = next((i for i, h in enumerate(headers) if h in ["CIUDAD", "CITY"]), 7)
+        fecha_real_idx = next((i for i, h in enumerate(headers) if h in ["FECHA CITA REAL", "FECHA REAL", "FECHA CITA"]), 16)
 
         # 2. Buscar si el match ya existe en MATCHES
         max_col_letter = chr(65 + len(headers) - 1) if len(headers) <= 26 else f"A{chr(65 + len(headers) - 27)}"

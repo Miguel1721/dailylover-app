@@ -1005,7 +1005,14 @@ function ejecutarPuestaAPuntoInicialAutomatico(force) {
     }
   }
 
-  // Instalar disparadores automáticos periódicos
+  // 3. Reordenamiento estructural canónico de MATCHES (17 columnas)
+  try {
+    reordenarColumnasMatchesCanonico();
+  } catch (mErr) {
+    Logger.log("Aviso en reordenamiento de MATCHES: " + mErr.message);
+  }
+
+  // 4. Instalar disparadores automáticos periódicos
   try {
     instalarTriggerRevisionMaria();
     instalarTriggerAlertas15DiasMatches();
@@ -2392,6 +2399,7 @@ function onOpen(e) {
     menu.addSeparator();
     menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
+    menu.addItem("⚙️ Reordenar Columnas MATCHES (17 Canónicas)", "reordenarColumnasMatchesCanonico");
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
     menu.addToUi();
@@ -2458,10 +2466,80 @@ function parseDateToIsoLocal(val) {
 }
 
 /**
- * Asegura la creación física y configuración de las 3 columnas de estado en MATCHES:
- * - 'Estado Persona A' (Columna S / 19)
- * - 'Estado Persona B' (Columna T / 20)
- * - 'Estado Total' (Columna U / 21)
+ * ─── REORDENAMIENTO CANÓNICO DE PESTAÑA MATCHES (17 COLUMNAS) ────────────────
+ * Realiza el movimiento real de dimensiones de columnas en Google Sheets.
+ * Orden final exacto:
+ * 1. Estado Total | 2. Estado Persona A | 3. Estado Persona B | 4. Persona A | 5. Persona B
+ * 6. DÍA | 7. LUGAR | 8. CIUDAD | 9. RESERVA | 10. CONFIRMACIÓN | 11. DIA ANTES | 12. HOY
+ * 13. PRESUPUESTO | 14. ELLA | 15. ÉL | 16. ¿REPROGRAMAR? | 17. FECHA CITA REAL
+ */
+function reordenarColumnasMatchesCanonico() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+  if (!sheet) {
+    Logger.log("ERROR: No se encontró la pestaña 'MATCHES'.");
+    return;
+  }
+
+  var headers = getSheetHeaders(sheet);
+
+  // 1. Si existe 'MATCH' y no 'Estado Total', renombrar M1 a 'Estado Total'
+  var matchCol = headers["MATCH"];
+  var estadoTotalCol = headers["ESTADO TOTAL"] || headers["STATUS TOTAL"];
+  if (matchCol && !estadoTotalCol) {
+    sheet.getRange(1, matchCol).setValue("Estado Total").setFontWeight("bold").setBackground("#D9D2E9");
+    headers["ESTADO TOTAL"] = matchCol;
+    delete headers["MATCH"];
+  }
+
+  // 2. Mover 'Estado Total' a la columna 1
+  headers = getSheetHeaders(sheet);
+  var colTotal = headers["ESTADO TOTAL"] || headers["MATCH"];
+  if (colTotal && colTotal > 1) {
+    sheet.moveColumns(sheet.getRange(1, colTotal), 1);
+  }
+
+  // 3. Mover 'Estado Persona A' a la columna 2
+  headers = getSheetHeaders(sheet);
+  var colA = headers["ESTADO PERSONA A"] || headers["STATUS PERSONA A"];
+  if (colA && colA > 2) {
+    sheet.moveColumns(sheet.getRange(1, colA), 2);
+  }
+
+  // 4. Mover 'Estado Persona B' a la columna 3
+  headers = getSheetHeaders(sheet);
+  var colB = headers["ESTADO PERSONA B"] || headers["STATUS PERSONA B"];
+  if (colB && colB > 3) {
+    sheet.moveColumns(sheet.getRange(1, colB), 3);
+  }
+
+  // 5. Eliminar columnas viejas 'persona A' y 'Plan B' si aún existen
+  headers = getSheetHeaders(sheet);
+  for (var c = sheet.getLastColumn(); c >= 1; c--) {
+    var hVal = (sheet.getRange(1, c).getValue() || "").toString().trim();
+    if (hVal === "persona A" || hVal === "Plan B") {
+      sheet.deleteColumn(c);
+    }
+  }
+
+  // 6. Eliminar columnas vacías sobrantes después de la columna 17
+  var lastCol = sheet.getLastColumn();
+  var maxCols = sheet.getMaxColumns();
+  if (maxCols > 17 && lastCol <= 17) {
+    sheet.deleteColumns(18, maxCols - 17);
+  }
+
+  // 7. Aplicar formatos y desplegables
+  ensureMatchesColumnsAndDropdowns();
+
+  Logger.log("✅ Reordenamiento canónico de MATCHES completado exitosamente.");
+  try {
+    ss.toast("Estructura canónica de MATCHES (17 columnas) reordenada exitosamente.", "MATCHES Actualizado", 6);
+  } catch (e) {}
+}
+
+/**
+ * Asegura la creación física y configuración de las 3 columnas de estado en MATCHES
  * Y aplica los menús desplegables de estados y el catálogo de ⚙️ RESTAURANTES en la columna LUGAR.
  */
 function ensureMatchesColumnsAndDropdowns() {
@@ -2522,7 +2600,7 @@ function ensureMatchesColumnsAndDropdowns() {
   }
 
   // 6. Aplicar Desplegable de ⚙️ RESTAURANTES en la columna LUGAR
-  var lugarCol = headers["LUGAR"] || 6;
+  var lugarCol = headers["LUGAR"] || 7;
   var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
   if (restSheet && lugarCol && maxRows > 1) {
     var rLast = Math.max(2, restSheet.getLastRow());
@@ -2772,10 +2850,10 @@ function actualizarDesplegablesDinamicos() {
         }
       } else if (sName === "MATCHES") {
         var mHeaders = getSheetHeaders(s);
-        var matchCol = mHeaders["MATCH"] || mHeaders["ESTADO TOTAL"] || 13;
-        var mStatusACol = mHeaders["ESTADO PERSONA A"] || mHeaders["STATUS PERSONA A"] || mHeaders["STATUS A"];
-        var mStatusBCol = mHeaders["ESTADO PERSONA B"] || mHeaders["STATUS PERSONA B"] || mHeaders["STATUS B"];
-        var mLugarCol = mHeaders["LUGAR"] || 6;
+        var matchCol = mHeaders["ESTADO TOTAL"] || mHeaders["MATCH"] || 1;
+        var mStatusACol = mHeaders["ESTADO PERSONA A"] || mHeaders["STATUS PERSONA A"] || mHeaders["STATUS A"] || 2;
+        var mStatusBCol = mHeaders["ESTADO PERSONA B"] || mHeaders["STATUS PERSONA B"] || mHeaders["STATUS B"] || 3;
+        var mLugarCol = mHeaders["LUGAR"] || 7;
         var mMaxRows = Math.min(s.getMaxRows(), 5000);
         if (mMaxRows > 1) {
           if (matchCol) safeSetDataValidation(s.getRange(2, matchCol, mMaxRows - 1, 1), matchesRule);
@@ -3506,9 +3584,8 @@ function generarPanelSupervisionMaria() {
   var scheduledDates = 0;
   if (matchesSheet && matchesSheet.getLastRow() > 1) {
     var mData = matchesSheet.getRange(2, 1, matchesSheet.getLastRow() - 1, matchesSheet.getLastColumn()).getValues();
-    var mHeaders = getSheetHeaders(matchesSheet);
-    var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 5;
-    var matchCol = mHeaders["MATCH"] || 13;
+    var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 6;
+    var matchCol = mHeaders["ESTADO TOTAL"] || mHeaders["MATCH"] || 1;
     for (var m = 0; m < mData.length; m++) {
       var diaVal = (mData[m][diaCol - 1] || "").toString().trim();
       var mSt = (mData[m][matchCol - 1] || "").toString().toUpperCase();
@@ -3620,12 +3697,16 @@ function generarPanelSupervisionMaria() {
  */
 function insertMatchInLowerZone(matchesSheet, matchData) {
   var headers = getSheetHeaders(matchesSheet);
-  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
-  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
-  var diaCol = headers["DÍA"] || headers["DIA"] || 5;
-  var cityCol = headers["CIUDAD"] || headers["CITY"] || 7;
-  var matchCol = headers["MATCH"] || 13;
-  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 12;
+  var matchCol = headers["ESTADO TOTAL"] || headers["MATCH"] || 1;
+  var statusACol = headers["ESTADO PERSONA A"] || 2;
+  var statusBCol = headers["ESTADO PERSONA B"] || 3;
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 4;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+  var diaCol = headers["DÍA"] || headers["DIA"] || 6;
+  var lugarCol = headers["LUGAR"] || 7;
+  var cityCol = headers["CIUDAD"] || headers["CITY"] || 8;
+  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+  var fechaRealCol = headers["FECHA CITA REAL"] || 17;
 
   var lastRow = matchesSheet.getLastRow();
   var targetRow = lastRow + 1;
@@ -3737,12 +3818,16 @@ function actualizarAlertas15DiasMatches() {
   if (lastRow <= 1) return;
 
   var headers = getSheetHeaders(matchesSheet);
-  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
-  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
-  var diaCol = headers["DÍA"] || headers["DIA"] || 5;
-  var matchCol = headers["MATCH"] || headers["ESTADO TOTAL"] || 13;
-  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 12;
-  var fechaRealCol = headers["FECHA CITA REAL"] || 18;
+  var matchCol = headers["ESTADO TOTAL"] || headers["MATCH"] || 1;
+  var statusACol = headers["ESTADO PERSONA A"] || 2;
+  var statusBCol = headers["ESTADO PERSONA B"] || 3;
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 4;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+  var diaCol = headers["DÍA"] || headers["DIA"] || 6;
+  var lugarCol = headers["LUGAR"] || 7;
+  var cityCol = headers["CIUDAD"] || headers["CITY"] || 8;
+  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+  var fechaRealCol = headers["FECHA CITA REAL"] || 17;
 
   var maxCheckCol = Math.max(personACol, personBCol, diaCol, matchCol, obsCol, fechaRealCol);
   var data = matchesSheet.getRange(2, 1, lastRow - 1, maxCheckCol).getValues();
@@ -3820,13 +3905,15 @@ function actualizarAlertas15DiasMatches() {
  */
 function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
-  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 3;
-  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 4;
-  var diaCol = headers["DÍA"] || headers["DIA"] || 5;
-  var matchCol = headers["MATCH"] || headers["ESTADO TOTAL"] || 13;
-  var statusACol = headers["ESTADO PERSONA A"] || headers["STATUS PERSONA A"];
-  var statusBCol = headers["ESTADO PERSONA B"] || headers["STATUS PERSONA B"];
-  var fechaRealCol = headers["FECHA CITA REAL"] || ensureRealDateColumn(sheet, headers);
+  var matchCol = headers["ESTADO TOTAL"] || headers["MATCH"] || 1;
+  var statusACol = headers["ESTADO PERSONA A"] || 2;
+  var statusBCol = headers["ESTADO PERSONA B"] || 3;
+  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 4;
+  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+  var diaCol = headers["DÍA"] || headers["DIA"] || 6;
+  var lugarCol = headers["LUGAR"] || 7;
+  var cityCol = headers["CIUDAD"] || headers["CITY"] || 8;
+  var fechaRealCol = headers["FECHA CITA REAL"] || 17;
 
   var statusVal = (col === matchCol ? (newValue || "") : (sheet.getRange(row, matchCol).getValue() || "")).toString().trim();
   var statusUpper = statusVal.toUpperCase();
@@ -3925,13 +4012,13 @@ function handleCitasAceptadasEdit(sheet, row, col, newValue, oldValue) {
   if (!matchesSheet) return;
 
   var mHeaders = getSheetHeaders(matchesSheet);
-  var mPersonACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 3;
-  var mPersonBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 4;
-  var mDiaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 5;
-  var mLugarCol = mHeaders["LUGAR"] || 6;
-  var mMatchCol = mHeaders["MATCH"] || 13;
-  var mFechaRealCol = mHeaders["FECHA CITA REAL"] || 18;
-  var mReprogCol = mHeaders["¿REPROGRAMAR?"] || mHeaders["REPROGRAMAR"] || 17;
+  var mMatchCol = mHeaders["ESTADO TOTAL"] || mHeaders["MATCH"] || 1;
+  var mPersonACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 4;
+  var mPersonBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 5;
+  var mDiaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 6;
+  var mLugarCol = mHeaders["LUGAR"] || 7;
+  var mFechaRealCol = mHeaders["FECHA CITA REAL"] || 17;
+  var mReprogCol = mHeaders["¿REPROGRAMAR?"] || mHeaders["REPROGRAMAR"] || 16;
 
   // Buscar fila correspondiente en MATCHES
   var mLastRow = matchesSheet.getLastRow();
@@ -3993,13 +4080,13 @@ function syncMatchToCitasAceptadas(matchesSheet, row) {
   if (!citasSheet) return;
 
   var mHeaders = getSheetHeaders(matchesSheet);
-  var personACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 3;
-  var personBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 4;
-  var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 5;
-  var lugarCol = mHeaders["LUGAR"] || 6;
-  var cityCol = mHeaders["CIUDAD"] || mHeaders["CITY"] || 7;
-  var matchCol = mHeaders["MATCH"] || 13;
-  var fechaRealCol = mHeaders["FECHA CITA REAL"] || 18;
+  var matchCol = mHeaders["ESTADO TOTAL"] || mHeaders["MATCH"] || 1;
+  var personACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 4;
+  var personBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 5;
+  var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 6;
+  var lugarCol = mHeaders["LUGAR"] || 7;
+  var cityCol = mHeaders["CIUDAD"] || mHeaders["CITY"] || 8;
+  var fechaRealCol = mHeaders["FECHA CITA REAL"] || 17;
 
   var cellA = getCellData(matchesSheet, row, personACol);
   var cellB = getCellData(matchesSheet, row, personBCol);
