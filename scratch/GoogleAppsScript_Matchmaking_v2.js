@@ -863,6 +863,169 @@ function findPsychologistSheet(psycName) {
   return null;
 }
 
+// ─── 8B. PUESTA A PUNTO INICIAL AUTOMÁTICA & NORMALIZACIÓN DE 10 PESTAÑAS ───
+
+/**
+ * Normaliza una pestaña individual de psicóloga:
+ * 1. Congela la fila 1 (sheet.setFrozenRows(1)).
+ * 2. Lee los encabezados existentes de la fila 1 de forma segura.
+ * 3. Identifica qué columnas del set canónico faltan:
+ *    (ID | PAIS | CITY | PREF | PLAN | PERSON A | PERSON B | PSICÓLOGA DE B | FECHA | STATUS | OBSERVACIONES | Fecha de llegada)
+ * 4. Agrega a la derecha las columnas que falten sin alterar ni tocar las columnas ni datos existentes.
+ * 5. Si la hoja está vacía, inserta el set completo en la fila 1 y aplica negrita.
+ */
+function normalizarPestanaPsicologa(sheet) {
+  if (!sheet) return;
+
+  // 1. Congelar fila 1
+  try {
+    if (sheet.getFrozenRows() < 1) {
+      sheet.setFrozenRows(1);
+    }
+  } catch (fzErr) {
+    Logger.log("Aviso al congelar fila 1 en '" + sheet.getName() + "': " + fzErr);
+  }
+
+  var CANONICAL_COLS = [
+    "ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", 
+    "PERSON B", "PSICÓLOGA DE B", "FECHA", "STATUS", 
+    "OBSERVACIONES", "Fecha de llegada"
+  ];
+
+  var lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    sheet.getRange(1, 1, 1, CANONICAL_COLS.length).setValues([CANONICAL_COLS]);
+    sheet.getRange(1, 1, 1, CANONICAL_COLS.length).setFontWeight("bold");
+    Logger.log("✅ Set canónico completo escrito en pestaña vacía '" + sheet.getName() + "'");
+    return;
+  }
+
+  // 2. Leer encabezados existentes
+  var existingHeaders = [];
+  try {
+    var rawValues = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+    for (var i = 0; i < rawValues.length; i++) {
+      existingHeaders.push((rawValues[i] || "").toString().trim());
+    }
+  } catch (readErr) {
+    for (var c = 1; c <= lastCol; c++) {
+      try {
+        existingHeaders.push(sheet.getRange(1, c).getDisplayValue().trim());
+      } catch (cellErr) {
+        existingHeaders.push("");
+      }
+    }
+  }
+
+  var existingUpper = existingHeaders.map(function(h) {
+    return h.toUpperCase().replace(/\s+/g, " ").trim();
+  });
+
+  // Alias para detectar si la columna ya existe bajo alguna variante
+  var colAliases = {
+    "ID": ["ID", "NO.", "MATCH_ID"],
+    "PAIS": ["PAIS", "PAÍS", "COUNTRY"],
+    "CITY": ["CITY", "CIUDAD"],
+    "PREF": ["PREF", "PREFERENCIA", "ORIENTATION"],
+    "PLAN": ["PLAN", "PLAN_TIER", "PLAN TIER"],
+    "PERSON A": ["PERSON A", "PERSONA A", "PERSON_A", "CLIENTE"],
+    "PERSON B": ["PERSON B", "PERSONA B", "PERSON_B", "CANDIDATO"],
+    "PSICÓLOGA DE B": ["PSICÓLOGA DE B", "PSICOLOGA DE B", "PSICÓLOGA B", "PSICOLOGA B", "PSICOLOGA DE CANDIDATO"],
+    "FECHA": ["FECHA", "DATE", "FECHA CITA"],
+    "STATUS": ["STATUS", "ESTADO"],
+    "OBSERVACIONES": ["OBSERVACIONES", "OBS", "OBSERVATIONS", "NOTAS"],
+    "Fecha de llegada": ["FECHA DE LLEGADA", "FECHA LLEGADA", "LLEGADA", "DATE OF ARRIVAL"]
+  };
+
+  var colsToAdd = [];
+  for (var k = 0; k < CANONICAL_COLS.length; k++) {
+    var colName = CANONICAL_COLS[k];
+    var aliases = colAliases[colName] || [colName.toUpperCase()];
+    
+    var found = false;
+    for (var a = 0; a < aliases.length; a++) {
+      if (existingUpper.indexOf(aliases[a]) >= 0) {
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      colsToAdd.push(colName);
+    }
+  }
+
+  // 3. Insertar solo las columnas faltantes a la derecha
+  if (colsToAdd.length > 0) {
+    var startCol = lastCol + 1;
+    sheet.getRange(1, startCol, 1, colsToAdd.length).setValues([colsToAdd]);
+    sheet.getRange(1, startCol, 1, colsToAdd.length).setFontWeight("bold");
+    Logger.log("✅ Columnas agregadas a '" + sheet.getName() + "': " + colsToAdd.join(", "));
+  } else {
+    Logger.log("ℹ️ Pestaña '" + sheet.getName() + "' ya cuenta con todas las columnas canónicas.");
+  }
+}
+
+/**
+ * Puesta a punto inicial automática del archivo:
+ * Se ejecuta al abrir (onOpen) y utiliza PropertiesService para asegurar ejecución
+ * una sola vez por archivo/copia.
+ * Normaliza las 10 pestañas de psicólogas, congela fila 1 e instala los triggers automáticos.
+ */
+function ejecutarPuestaAPuntoInicialAutomatico(force) {
+  var props = PropertiesService.getDocumentProperties();
+  var isDone = props.getProperty("PUESTA_A_PUNTO_INICIAL_AUTOMATICA_V2");
+  
+  if (isDone && !force) {
+    Logger.log("ℹ️ Puesta a punto inicial ya completada previamente en este archivo.");
+    return;
+  }
+
+  Logger.log("🚀 INICIANDO PUESTA A PUNTO INICIAL AUTOMÁTICA...");
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var countNormalizadas = 0;
+
+  var psycList = CONFIG.VALID_PSYCHOLOGISTS || [
+    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"
+  ];
+
+  for (var i = 0; i < psycList.length; i++) {
+    var pSheet = findPsychologistSheet(psycList[i]);
+    if (pSheet) {
+      normalizarPestanaPsicologa(pSheet);
+      countNormalizadas++;
+    }
+  }
+
+  var allSheets = ss.getSheets();
+  for (var s = 0; s < allSheets.length; s++) {
+    var sName = allSheets[s].getName().trim().toUpperCase();
+    if (sName.indexOf("MATCHES ") === 0 && sName !== "MATCHES") {
+      normalizarPestanaPsicologa(allSheets[s]);
+    }
+  }
+
+  // Instalar disparadores automáticos periódicos
+  try {
+    instalarTriggerRevisionMaria();
+    instalarTriggerAlertas15DiasMatches();
+  } catch (trigErr) {
+    Logger.log("Aviso instalando triggers en puesta a punto: " + trigErr);
+  }
+
+  props.setProperty("PUESTA_A_PUNTO_INICIAL_AUTOMATICA_V2", "true");
+  props.setProperty("PUESTA_A_PUNTO_FECHA", new Date().toISOString());
+
+  Logger.log("✅ PUESTA A PUNTO INICIAL COMPLETADA EXITOSAMENTE (" + countNormalizadas + " pestañas procesadas).");
+  try {
+    ss.toast("Puesta a punto completada: " + countNormalizadas + " pestañas normalizadas y triggers instalados.", "Daily Lover Setup", 6);
+  } catch (tErr) {}
+}
+
+function ejecutarPuestaAPuntoInicialManual() {
+  ejecutarPuestaAPuntoInicialAutomatico(true);
+}
+
 /**
  * Extrae texto, RichTextValue y fórmula de una celda para preservar hipervínculos.
  */
@@ -1141,6 +1304,39 @@ function instalarTriggerRevisionMaria() {
     .create();
 
   Logger.log("✅ Disparador de REVISIÓN MARÍA configurado para ejecutarse cada 15 minutos.");
+}
+
+/**
+ * Instala el disparador periódico diario para verificar y actualizar las alertas de 15 días
+ * en MATCHES y en las pestañas de las psicólogas.
+ * Borra cualquier trigger previo de esta misma función para evitar duplicados.
+ */
+function instalarTriggerAlertas15DiasMatches() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "actualizarAlertas15DiasMatches") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  ScriptApp.newTrigger("actualizarAlertas15DiasMatches")
+    .timeBased()
+    .everyDays(1)
+    .atHour(6)
+    .create();
+
+  Logger.log("✅ Disparador de Alertas de 15 Días configurado para ejecutarse diariamente a las 6 AM.");
+}
+
+/**
+ * Instala todos los disparadores periódicos esenciales del sistema.
+ */
+function instalarTodosLosTriggers() {
+  instalarTriggerRevisionMaria();
+  instalarTriggerAlertas15DiasMatches();
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().toast("Disparadores automáticos instalados (Revisión María cada 15m, Alertas 15d diario).", "Triggers Configurados", 5);
+  } catch (e) {}
 }
 
 // ─── 9. PROFILE PRIORITARIO: PESTAÑA 'PERSONAS DÍFICILES' ───────────────────
@@ -2162,6 +2358,14 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
  */
 function onOpen(e) {
   try {
+    // 1. Puesta a punto inicial automática (se ejecuta una sola vez con bandera en PropertiesService)
+    try {
+      ejecutarPuestaAPuntoInicialAutomatico(false);
+    } catch (setupErr) {
+      Logger.log("Aviso en ejecución de puesta a punto inicial: " + setupErr);
+    }
+
+    // 2. Construcción de menú interactivo
     var menu = SpreadsheetApp.getUi().createMenu("🔎 Daily Lover");
     menu.addItem("Historial de persona", "mostrarHistorialPersona");
     menu.addSeparator();
@@ -2182,11 +2386,14 @@ function onOpen(e) {
       menu.addSeparator();
     }
 
+    menu.addItem("⚙️ Puesta a Punto Inicial (Estandarizar 10 Pestañas)", "ejecutarPuestaAPuntoInicialManual");
+    menu.addItem("⏰ Instalar Disparadores Automáticos (Triggers)", "instalarTodosLosTriggers");
+    menu.addItem("⏰ Verificar Alertas de 15 Días (CS y Psicólogas)", "actualizarAlertas15DiasMatches");
+    menu.addSeparator();
     menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
-    menu.addItem("⏰ Verificar Alertas de 15 Días (CS y Psicólogas)", "actualizarAlertas15DiasMatches");
     menu.addToUi();
   } catch (err) {
     Logger.log("No se pudo crear menú en onOpen: " + err);
