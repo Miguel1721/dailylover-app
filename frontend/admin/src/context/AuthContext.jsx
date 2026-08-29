@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('dl_token'))
   const [config, setConfig] = useState({ demo_mode: false })
   const [loading, setLoading] = useState(true)
+  const [previewRole, setPreviewRole] = useState(() => sessionStorage.getItem('dl_preview_role') || null)
 
   useEffect(() => {
     // Fetch configuration settings on load
@@ -22,9 +23,77 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [])
 
+  const handleSetPreviewRole = (role) => {
+    if (role) {
+      sessionStorage.setItem('dl_preview_role', role)
+      setPreviewRole(role)
+    } else {
+      sessionStorage.removeItem('dl_preview_role')
+      setPreviewRole(null)
+    }
+  }
+
+  const isOriginalAdmin = Boolean(
+    user && (
+      user.role === 'Admin' ||
+      user.role === 'Super Admin' ||
+      (user.role && user.role.toLowerCase().includes('admin')) ||
+      (user.email && (
+        user.email.toLowerCase().includes('admin') ||
+        user.email.toLowerCase().includes('maria') ||
+        user.email.toLowerCase().includes('miguel')
+      ))
+    )
+  )
+
+  const effectiveRole = previewRole || user?.role || ''
+
+  const effectiveUser = user ? {
+    ...user,
+    role: effectiveRole,
+    name: previewRole ? `${user.name} [Ver como: ${previewRole}]` : user.name,
+    isPreview: Boolean(previewRole)
+  } : null
+
   const hasPermission = (module, action) => {
     if (!user) return false
-    // If Admin or Super Admin, full access
+
+    // Si está activo el modo "Ver como" (Role preview)
+    if (previewRole) {
+      if (previewRole === 'María') {
+        return true // Acceso completo de supervisión
+      }
+      if (previewRole === 'Psicóloga') {
+        if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores'].includes(module)) {
+          return false
+        }
+        if (module === 'dashboard' && action === 'view') return true
+        if (module === 'clientes' && action === 'view') return true
+        if (module === 'matching' && action === 'view') return true
+        if (module === 'importar' && action === 'view') return true
+        return false
+      }
+      if (previewRole === 'Servicio al Cliente') {
+        if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos'].includes(module)) {
+          return false
+        }
+        if (module === 'dashboard' && action === 'view') return true
+        if (module === 'clientes' && action === 'view') return true
+        if (module === 'matching' && action === 'view') return true
+        return false
+      }
+      if (previewRole === 'Lina (Refunds)') {
+        if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'proveedores', 'importar', 'eventos', 'dashboard'].includes(module)) {
+          return false
+        }
+        if (module === 'clientes' && action === 'view') return true
+        if (module === 'matching' && action === 'view') return true
+        if (['ingresos', 'gastos', 'flujo_caja'].includes(module) && action === 'view') return true
+        return false
+      }
+    }
+
+    // Modo normal sin preview: If Admin or Super Admin, full access
     if (user.role === 'Admin' || user.role === 'Super Admin' || (user.role && user.role.toLowerCase().includes('admin'))) return true
     // Matching and Dashboard view allowed for psychologists/team members
     if (module === 'matching' && action === 'view') return true
@@ -55,6 +124,8 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('dl_token')
     localStorage.removeItem('dl_user')
+    sessionStorage.removeItem('dl_preview_role')
+    setPreviewRole(null)
     setToken(null)
     setUser(null)
   }
@@ -82,7 +153,21 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, config, loading, hasPermission, login, logout, refreshUser, setUser }}>
+    <AuthContext.Provider value={{
+      user: effectiveUser,
+      realUser: user,
+      token,
+      config,
+      loading,
+      hasPermission,
+      login,
+      logout,
+      refreshUser,
+      setUser,
+      isOriginalAdmin,
+      previewRole,
+      setPreviewRole: handleSetPreviewRole
+    }}>
       {children}
     </AuthContext.Provider>
   )

@@ -35,11 +35,14 @@ import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
 import MatchingManual from './pages/MatchingManual'
 import CmsEventos from './pages/CmsEventos'
 import CmsCiudades from './pages/CmsCiudades'
-import CmsBlindDate from './pages/CmsBlindDate'
 import MisMatches from './pages/matchmaking/MisMatches'
 import IntakeClientes from './pages/matchmaking/IntakeClientes'
 import RefundsQueue from './pages/matchmaking/RefundsQueue'
-import { Award, UserPlus, Globe, ShieldCheck, Headphones } from 'lucide-react'
+import AprobadosMaria from './pages/matchmaking/AprobadosMaria'
+import CitasAgendadas from './pages/matchmaking/CitasAgendadas'
+import AprobacionesCruzadas from './pages/matchmaking/AprobacionesCruzadas'
+import TodosLosMatches from './pages/matchmaking/TodosLosMatches'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye } from 'lucide-react'
 
 
 
@@ -202,7 +205,7 @@ function GlobalSearch() {
 }
 
 function Sidebar({ isOpen, onClose }) {
-  const { logout, user, config, hasPermission } = useAuth()
+  const { logout, user, config, hasPermission, previewRole, isOriginalAdmin } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -214,40 +217,36 @@ function Sidebar({ isOpen, onClose }) {
     if (onClose) onClose()
   }
 
-  const isAdmin = (user?.email && (user.email.toLowerCase().includes('maria') || user.email.toLowerCase().includes('admin'))) || (user?.role && (
-    user.role === 'Admin' || 
-    user.role === 'Super Admin' || 
-    user.role === 'SUPERADMIN' || 
-    user.role.toLowerCase().includes('admin') || 
-    user.role.toLowerCase().includes('director')
-  ))
+  const effectiveRole = user?.role || ''
+  const isMaria = effectiveRole === 'María' || (!previewRole && ((user?.email && (user.email.toLowerCase().includes('maria') || user.email.toLowerCase().includes('admin'))) || (user?.role && (user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'SUPERADMIN' || user.role.toLowerCase().includes('admin')))))
+  const isCs = effectiveRole === 'Servicio al Cliente'
+  const isPsyc = effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker')
+  const isLina = effectiveRole === 'Lina (Refunds)'
 
   // Groups and items configuration
   const coreItems = [
-    { to: '/', icon: Heart, label: 'Panel Clínico (Psicólogas)', module: 'dashboard', action: 'view', end: true },
-    ...(isAdmin ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
-    ...(isAdmin ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
-    { to: '/agenda', icon: Calendar, label: 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' },
+    ...(!isLina ? [{ to: '/', icon: Heart, label: 'Panel Clínico (Psicólogas)', module: 'dashboard', action: 'view', end: true }] : []),
+    ...(isMaria ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
+    ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
+    ...(!isLina ? [{ to: '/agenda', icon: Calendar, label: 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' }] : []),
     { to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' },
-    ...(isAdmin ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
-    { to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' },
+    ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
   ]
 
-
-
   const matchmakingItems = [
-    ...(isAdmin ? [{ to: '/matchmaking/intake', icon: Users, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
-    { to: '/matchmaking/mis-matches', icon: Heart, label: isAdmin ? 'Matches (Todas las Psicólogas)' : 'Mis Matches (Psicóloga)', module: 'matching', action: 'view' },
-    { to: '/matching', icon: ShieldCheck, label: 'Central de Matches & Aprobaciones', module: 'matching', action: 'view' },
-    ...(isAdmin ? [
-      { to: '/matchmaking/refunds', icon: Wallet, label: 'Cola de Refunds (Lina)', module: 'matching', action: 'view' },
-    ] : [])
+    ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'Matches (Todas las Psicólogas)' : 'Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: Headphones, label: 'Aprobados por María (CS)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: 'Citas Agendadas (Calendario)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/aprobaciones-cruzadas', icon: ShieldCheck, label: 'Aprobaciones Cruzadas (A ↔ B)', module: 'matching', action: 'view' }] : []),
+    { to: '/matchmaking/todos-los-matches', icon: Sparkles, label: 'Todos los Matches (Lookbook)', module: 'matching', action: 'view' },
+    ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: 'Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
   const cmsItems = [
     { to: '/cms/eventos', icon: Calendar, label: 'CMS Eventos', module: 'eventos', action: 'view' },
     { to: '/cms/ciudades', icon: Globe, label: 'CMS Ciudades', module: 'eventos', action: 'view' },
-    { to: '/cms/blind-date', icon: Shield, label: 'CMS Blind Date', module: 'eventos', action: 'view' },
   ]
 
   const personalItems = [
@@ -336,7 +335,7 @@ function Sidebar({ isOpen, onClose }) {
         ))}
 
         {showMatchmaking && renderNavGroup('Matchmaking Operativo', matchmakingItems)}
-        {renderNavGroup('CMS Visual (María Paula)', cmsItems)}
+        {isMaria && renderNavGroup('CMS Visual (María Paula)', cmsItems)}
         {showPersonal && renderNavGroup('Personal', personalItems)}
         {showFinance && renderNavGroup('Finanzas', financeItems)}
         {showSystem && renderNavGroup('Sistema', systemItems)}
@@ -394,7 +393,7 @@ function Sidebar({ isOpen, onClose }) {
 }
 
 function AppContent() {
-  const { token, user } = useAuth()
+  const { token, user, isOriginalAdmin, previewRole, setPreviewRole } = useAuth()
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -436,7 +435,7 @@ function AppContent() {
                   background: 'var(--bg-sidebar)',
                   flexShrink: 0
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <button
                       onClick={() => setSidebarOpen(true)}
                       className="mobile-menu-btn"
@@ -446,6 +445,66 @@ function AppContent() {
                       <Menu size={18} />
                     </button>
                     <GlobalSearch />
+
+                    {/* Selector 'Ver como' — visible EXCLUSIVAMENTE para la cuenta admin / de prueba */}
+                    {isOriginalAdmin && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        background: previewRole ? 'rgba(150, 21, 0, 0.18)' : 'rgba(255, 255, 255, 0.05)',
+                        border: `1px solid ${previewRole ? 'var(--color-primary)' : 'var(--border-color)'}`,
+                        borderRadius: 8,
+                        padding: '4px 10px',
+                        marginLeft: 12
+                      }}>
+                        <Eye size={14} style={{ color: previewRole ? 'var(--color-primary)' : 'var(--text-secondary)' }} />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: previewRole ? 'var(--color-primary)' : 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Ver como:
+                        </span>
+                        <select
+                          value={previewRole || 'Admin'}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPreviewRole(val === 'Admin' ? null : val);
+                          }}
+                          style={{
+                            background: 'var(--bg-card)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 6,
+                            padding: '3px 8px',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="Admin">Admin (Vista Completa)</option>
+                          <option value="Psicóloga">Psicóloga</option>
+                          <option value="María">María</option>
+                          <option value="Servicio al Cliente">Servicio al Cliente</option>
+                          <option value="Lina (Refunds)">Lina (Refunds)</option>
+                        </select>
+                        {previewRole && (
+                          <button
+                            onClick={() => setPreviewRole(null)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#ff6b6b',
+                              fontSize: 11,
+                              cursor: 'pointer',
+                              fontWeight: 700,
+                              padding: '2px 4px'
+                            }}
+                            title="Restablecer vista a Admin"
+                          >
+                            ✕ Salir
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={toggleTheme}
@@ -474,9 +533,7 @@ function AppContent() {
                       path="/" 
                       element={
                         <ProtectedRoute module="dashboard" action="view">
-                          {user?.role && (user.role.toLowerCase().includes('matchmaker') || user.role.toLowerCase().includes('psicolog')) 
-                            ? <MatchmakerDashboard /> 
-                            : <MatchmakerDashboard />}
+                          <MatchmakerDashboard />
                         </ProtectedRoute>
                       } 
                     />
@@ -489,20 +546,24 @@ function AppContent() {
                     <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
                     <Route path="/cms/eventos" element={<ProtectedRoute module="eventos" action="view"><CmsEventos /></ProtectedRoute>} />
                     <Route path="/cms/ciudades" element={<ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute>} />
-                    <Route path="/cms/blind-date" element={<ProtectedRoute module="eventos" action="view"><CmsBlindDate /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />
-                    <Route path="/matching" element={<ProtectedRoute module="matching" action="view"><Matching /></ProtectedRoute>} />
-                    <Route path="/matching-manual" element={<ProtectedRoute module="matching" action="view"><MatchingManual /></ProtectedRoute>} />
                     
-                    {/* Matchmaking Operativo (SSOT Excel Mirror) */}
+                    {/* 4 Páginas Independientes de Matchmaking Operativo */}
                     <Route path="/matchmaking/mis-matches" element={<ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute>} />
+                    <Route path="/matchmaking/aprobados-maria" element={<ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute>} />
+                    <Route path="/matchmaking/citas-agendadas" element={<ProtectedRoute module="matching" action="view"><CitasAgendadas /></ProtectedRoute>} />
+                    <Route path="/matchmaking/aprobaciones-cruzadas" element={<ProtectedRoute module="matching" action="view"><AprobacionesCruzadas /></ProtectedRoute>} />
+                    <Route path="/matchmaking/todos-los-matches" element={<ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute>} />
+                    
                     <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
                     <Route path="/matchmaking/refunds" element={<ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute>} />
+                    <Route path="/matching-manual" element={<ProtectedRoute module="matching" action="view"><MatchingManual /></ProtectedRoute>} />
 
-                    {/* Redirecciones de rutas unificadas en Central de Matching */}
-                    <Route path="/matchmaking/aprobacion" element={<Navigate to="/matching" replace />} />
-                    <Route path="/matchmaking/pendientes" element={<Navigate to="/matching" replace />} />
-                    <Route path="/matchmaking/calendario" element={<Navigate to="/matching" replace />} />
+                    {/* Redirecciones de compatibilidad */}
+                    <Route path="/matching" element={<Navigate to="/matchmaking/todos-los-matches" replace />} />
+                    <Route path="/matchmaking/aprobacion" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
+                    <Route path="/matchmaking/pendientes" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
+                    <Route path="/matchmaking/calendario" element={<Navigate to="/matchmaking/citas-agendadas" replace />} />
                     
                     {/* Personal */}
                     <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />
