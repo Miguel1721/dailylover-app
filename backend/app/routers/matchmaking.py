@@ -1837,13 +1837,25 @@ def normalize_psychologist(raw_psyc: Optional[str]) -> str:
     return ""
 
 
+@router.get("/resolve-profile")
 @router.post("/resolve-profile")
-async def resolve_profile(payload: ResolveProfileRequest, db: AsyncSession = Depends(get_db)):
+async def resolve_profile(
+    payload: Optional[ResolveProfileRequest] = None,
+    query: Optional[str] = None,
+    url_or_query: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Resuelve una URL de perfil del CRM SmartMatchApp, un CRM ID o un nombre.
     Extrae el ID numérico y busca el usuario y perfil correspondiente.
     """
-    raw_input = (payload.url_or_query or "").strip()
+    raw_input = ""
+    if payload and payload.url_or_query:
+        raw_input = payload.url_or_query.strip()
+    elif url_or_query:
+        raw_input = url_or_query.strip()
+    elif query:
+        raw_input = query.strip()
     if not raw_input:
         raise HTTPException(status_code=400, detail="Entrada vacía")
 
