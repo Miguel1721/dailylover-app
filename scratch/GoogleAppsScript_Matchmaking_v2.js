@@ -1184,7 +1184,9 @@ function reconstruirRevisionMaria() {
   var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
 
   var headers = [
-    "ID MATCH", "Persona A", "Origen pestaña (A)", "Observaciones (A)", "Persona B", "Origen pestaña (B)", "Observaciones (B)", "Aprobar", "NOTAS MARÍA"
+    "ID MATCH", "Persona A", "Origen pestaña (A)", "Observaciones (A)",
+    "Persona B", "Origen pestaña (B)", "Observaciones (B)",
+    "Aprobar", "Aprobación María", "NOTAS MARÍA"
   ];
 
   if (!revisionSheet) {
@@ -1192,7 +1194,16 @@ function reconstruirRevisionMaria() {
     revisionSheet.setTabColor("#D5A6BD");
   }
 
-  // Asegurar encabezados
+  // 1. Limpieza de columnas huérfanas (eliminar cualquier columna más allá de las 10 canónicas)
+  if (revisionSheet.getLastColumn() > headers.length) {
+    try {
+      revisionSheet.deleteColumns(headers.length + 1, revisionSheet.getLastColumn() - headers.length);
+    } catch (e) {
+      Logger.log("Aviso al eliminar columnas sobrantes en REVISIÓN MARÍA: " + e.message);
+    }
+  }
+
+  // 2. Asegurar encabezados canónicos
   revisionSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   revisionSheet.getRange(1, 1, 1, headers.length)
     .setFontWeight("bold")
@@ -1200,10 +1211,13 @@ function reconstruirRevisionMaria() {
     .setFontColor("#000000");
   revisionSheet.setFrozenRows(1);
 
-  // Limpiar contenido anterior
+  // 3. Limpiar contenido anterior
   var lastRow = revisionSheet.getLastRow();
   if (lastRow > 1) {
     revisionSheet.getRange(2, 1, lastRow - 1, headers.length).clear({ contentsOnly: true });
+    try {
+      revisionSheet.getRange(2, 9, lastRow - 1, 1).clearDataValidations();
+    } catch (ve) {}
   }
 
   var allSheets = ss.getSheets();
@@ -1264,12 +1278,13 @@ function reconstruirRevisionMaria() {
           var isCross = (psycB && psycB !== psycName);
           var origenTabB = isCross ? "MATCHES " + psycB : curName;
           var obsB = isCross ? "[Pendiente de revisión]" : obsVal;
-          var aprobarInitial = isCross ? "ESPERANDO APROBACIÓN DE " + psycB : "APROBADO POR PSICÓLOGA (LISTO PARA MARÍA)";
+          var aprobarInitial = isCross ? "ESPERANDO APROBACIÓN DE " + psycB : "APROBADO POR AMBAS PSICÓLOGAS";
 
           var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
 
+          // 10 columnas: ID MATCH, Persona A, Origen A, Obs A, Persona B, Origen B, Obs B, Aprobar, Aprobación María (Checkbox: false), NOTAS MARÍA
           collectedRows.push([
-            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, ""
+            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, false, ""
           ]);
 
           collectedRichTextsA.push(richTextA);
@@ -1297,9 +1312,27 @@ function reconstruirRevisionMaria() {
 
     rangeA.setRichTextValues(richColA);
     rangeB.setRichTextValues(richColB);
+
+    // Configurar Checkbox real en Col 9 (Aprobación María)
+    var checkboxRange = revisionSheet.getRange(2, 9, collectedRows.length, 1);
+    var checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+    checkboxRange.setDataValidation(checkboxRule);
+
+    // Formateo visual condicional según estado de validación
+    for (var k = 0; k < collectedRows.length; k++) {
+      var apState = collectedRows[k][7];
+      var rowNum = k + 2;
+      if (apState === "APROBADO POR AMBAS PSICÓLOGAS") {
+        revisionSheet.getRange(rowNum, 8).setBackground("#D9EAD3");
+        revisionSheet.getRange(rowNum, 9).setBackground("#D9EAD3"); // Checkbox habilitado para María
+      } else {
+        revisionSheet.getRange(rowNum, 8).setBackground("#FFF2CC");
+        revisionSheet.getRange(rowNum, 9).setBackground("#E8EAED"); // Checkbox deshabilitado (esperando psicóloga B)
+      }
+    }
   }
 
-  Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas en batch.");
+  Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas en batch (10 columnas canónicas).");
   ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos.", "Revisión Lista", 5);
 }
 
@@ -3218,8 +3251,8 @@ function crearOActualizarFilaEspejo(sheetA, rowA, psycA, psycB, cellA, cellB, ci
 
 /**
  * Sincroniza el match a la pestaña 'REVISIÓN MARÍA'.
- * Estructura exacta de 9 columnas:
- * ID MATCH | Persona A | Origen pestaña (A) | Observaciones (A) | Persona B | Origen pestaña (B) | Observaciones (B) | Aprobar | NOTAS MARÍA
+ * Estructura exacta de 10 columnas canónicas:
+ * ID MATCH | Persona A | Origen pestaña (A) | Observaciones (A) | Persona B | Origen pestaña (B) | Observaciones (B) | Aprobar | Aprobación María | NOTAS MARÍA
  */
 function syncToRevisionMaria(matchData) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3237,8 +3270,9 @@ function syncToRevisionMaria(matchData) {
   var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
   var origenBCol = headers["ORIGEN PESTAÑA (B)"] || headers["ORIGEN (B)"] || headers["ORIGEN PESTAÑA B"] || 6;
   var obsBCol = headers["OBSERVACIONES (B)"] || headers["OBSERVACION (B)"] || headers["OBSERVACIONES B"] || 7;
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 8;
-  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 9;
+  var aprobarCol = headers["APROBAR"] || 8;
+  var checkboxCol = headers["APROBACIÓN MARÍA"] || headers["APROBACION MARIA"] || headers["APROBADO POR MARÍA"] || 9;
+  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 10;
 
   var lastRow = revSheet.getLastRow();
   var targetRow = null;
@@ -3260,7 +3294,6 @@ function syncToRevisionMaria(matchData) {
     }
   }
 
-  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
   var isCrossMatch = (matchData.psycA && matchData.psycB && matchData.psycA !== matchData.psycB);
 
   // Si YA EXISTÍA la fila en REVISIÓN MARÍA (la segunda psicóloga aprobando su fila espejo)
@@ -3269,15 +3302,20 @@ function syncToRevisionMaria(matchData) {
     
     // Si la segunda psicóloga aprueba en su pestaña espejo
     if (isCrossMatch && (matchData.currentPsyc === matchData.psycB || prevStatus.indexOf("ESPERANDO") >= 0)) {
-      var fullApprovalStatus = "APROBADO POR AMBAS PSICÓLOGAS (LISTO PARA MARÍA)";
-      revSheet.getRange(targetRow, aprobarCol).setValue(fullApprovalStatus).setBackground("#CFE2F3");
+      var fullApprovalStatus = "APROBADO POR AMBAS PSICÓLOGAS";
+      revSheet.getRange(targetRow, aprobarCol).setValue(fullApprovalStatus).setBackground("#D9EAD3");
       
+      // Habilitar checkbox para María
+      if (checkboxCol) {
+        revSheet.getRange(targetRow, checkboxCol).setBackground("#D9EAD3").setValue(false);
+      }
+
       // Actualizar Origen B y Observaciones B con los datos de Psicóloga B
       if (origenBCol) revSheet.getRange(targetRow, origenBCol).setValue(matchData.origenTab);
       if (obsBCol) revSheet.getRange(targetRow, obsBCol).setValue(matchData.obs || "[Aprobado por " + matchData.psycB + "]");
 
       Logger.log("🎉 Match de doble aprobación completado en REVISIÓN MARÍA (Fila " + targetRow + ")");
-      SpreadsheetApp.getActiveSpreadsheet().toast("Doble aprobación completada para " + matchData.personACell.text + " ↔ " + matchData.personBCell.text, "Listo para María", 5);
+      SpreadsheetApp.getActiveSpreadsheet().toast("Doble aprobación completada para " + matchData.personACell.text + " ↔ " + matchData.personBCell.text + ". Checkbox habilitado para María.", "Listo para María", 5);
       return;
     }
   }
@@ -3313,17 +3351,26 @@ function syncToRevisionMaria(matchData) {
 
   if (aprobarCol) {
     var initialStatus = "";
-    var bg = "#CFE2F3";
+    var bg = "#D9EAD3";
+    var chkBg = "#D9EAD3";
     
     if (isCrossMatch) {
       initialStatus = "ESPERANDO APROBACIÓN DE " + matchData.psycB;
       bg = "#FFF2CC";
+      chkBg = "#E8EAED"; // Checkbox deshabilitado visualmente
     } else {
-      initialStatus = "APROBADO POR PSICÓLOGA (LISTO PARA MARÍA)";
-      bg = "#CFE2F3";
+      initialStatus = "APROBADO POR AMBAS PSICÓLOGAS";
+      bg = "#D9EAD3";
+      chkBg = "#D9EAD3"; // Checkbox habilitado
     }
     
     revSheet.getRange(targetRow, aprobarCol).setValue(initialStatus).setBackground(bg);
+    if (checkboxCol) {
+      var chkCell = revSheet.getRange(targetRow, checkboxCol);
+      chkCell.setValue(false).setBackground(chkBg);
+      var chkRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+      chkCell.setDataValidation(chkRule);
+    }
   }
 
   Logger.log("✅ Match sincronizado a REVISIÓN MARÍA (Fila " + targetRow + "): " + matchData.personACell.text + " + " + matchData.personBCell.text);
@@ -3340,7 +3387,8 @@ function updateStatusInRevisionMaria(nameA, nameB, newStatus, bgColor) {
   var headers = getSheetHeaders(revSheet);
   var personACol = headers["PERSONA A"] || headers["PERSON A"] || 2;
   var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 8;
+  var aprobarCol = headers["APROBAR"] || 8;
+  var checkboxCol = headers["APROBACIÓN MARÍA"] || headers["APROBACION MARIA"] || 9;
 
   var lastRow = revSheet.getLastRow();
   if (lastRow <= 1) return;
@@ -3355,6 +3403,16 @@ function updateStatusInRevisionMaria(nameA, nameB, newStatus, bgColor) {
       var row = i + 2;
       revSheet.getRange(row, aprobarCol).setValue(newStatus);
       if (bgColor) revSheet.getRange(row, aprobarCol).setBackground(bgColor);
+
+      if (checkboxCol) {
+        if (newStatus === "APROBADO POR AMBAS PSICÓLOGAS") {
+          revSheet.getRange(row, checkboxCol).setBackground("#D9EAD3");
+        } else if (newStatus === "APROBADO") {
+          revSheet.getRange(row, checkboxCol).setBackground("#D9EAD3").setValue(true);
+        } else {
+          revSheet.getRange(row, checkboxCol).setBackground("#E8EAED").setValue(false);
+        }
+      }
       Logger.log("✅ Estado actualizado en REVISIÓN MARÍA (Fila " + row + ") -> " + newStatus);
       break;
     }
@@ -3362,18 +3420,18 @@ function updateStatusInRevisionMaria(nameA, nameB, newStatus, bgColor) {
 }
 
 /**
- * Cuando María edita la columna 'APROBAR' en 'REVISIÓN MARÍA':
- * - HARD BLOCKING: Si el match todavía dice 'ESPERANDO APROBACIÓN DE [B]', bloquea la acción y revierte la celda.
- * - APROBADO: Inserta en MATCHES (zona inferior) y actualiza pestañas de psicólogas origen y espejo a APROBADO.
- * - NOT APPROVED: Actualiza pestañas origen y espejo a NOT APPROVED y re-genera slots de reintento.
+ * Cuando María interactúa con 'REVISIÓN MARÍA':
+ * - Checkbox en Col 9 ('Aprobación María'): Habilitado ÚNICAMENTE si Col 8 dice 'APROBADO POR AMBAS PSICÓLOGAS'.
+ *   Al marcarlo (TRUE), inserta en MATCHES (zona inferior) y bloquea ambas filas en psicólogas.
+ * - Desplegable en Col 8 ('Aprobar'): Si selecciona 'NOT APPROVED', rechaza el match y genera slots de reintento.
  */
 function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
   var headers = getSheetHeaders(sheet);
-  var aprobarCol = headers["APROBAR"] || headers["STATUS"] || 8;
-  if (col !== aprobarCol) return;
+  var aprobarCol = headers["APROBAR"] || 8;
+  var checkboxCol = headers["APROBACIÓN MARÍA"] || headers["APROBACION MARIA"] || headers["APROBADO POR MARÍA"] || 9;
+  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 10;
 
-  var val = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim().toUpperCase();
-  if (!val) return;
+  if (col !== aprobarCol && col !== checkboxCol) return;
 
   var personACol = headers["PERSONA A"] || headers["PERSON A"] || 2;
   var origenACol = headers["ORIGEN PESTAÑA (A)"] || headers["ORIGEN (A)"] || headers["ORIGEN PESTAÑA A"] || 3;
@@ -3381,7 +3439,6 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
   var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
   var origenBCol = headers["ORIGEN PESTAÑA (B)"] || headers["ORIGEN (B)"] || headers["ORIGEN PESTAÑA B"] || 6;
   var obsBCol = headers["OBSERVACIONES (B)"] || headers["OBSERVACION (B)"] || headers["OBSERVACIONES B"] || 7;
-  var notasMariaCol = headers["NOTAS MARÍA"] || headers["NOTAS MARIA"] || 9;
 
   var cellA = getCellData(sheet, row, personACol);
   var cellB = getCellData(sheet, row, personBCol);
@@ -3398,139 +3455,141 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // ── 1. HARD BLOCKING: VALIDAR DOBLE APROBACIÓN PREVIA ────────────────────
-  var prevStatusVal = (oldValue || "").toString().trim().toUpperCase();
-  var isStillWaiting = (prevStatusVal.indexOf("ESPERANDO") >= 0);
+  // ── CASO 1: CHECKBOX DE MARÍA (COLUMNA 9) ──
+  if (col === checkboxCol) {
+    var checkVal = (newValue === true || newValue === "TRUE" || sheet.getRange(row, checkboxCol).getValue() === true);
+    var currentAprobar = (sheet.getRange(row, aprobarCol).getValue() || "").toString().trim().toUpperCase();
 
-  if ((val === "APROBADO" || val === "TRUE") && isStillWaiting && psycB && psycB !== psycA) {
-    // REVERTIR el intento de aprobación anticipada
-    var waitingText = "ESPERANDO APROBACIÓN DE " + psycB;
-    sheet.getRange(row, aprobarCol).setValue(waitingText).setBackground("#FFF2CC");
-    
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      "⚠️ BLOQUEADO: Este match aún espera la aprobación de la Psicóloga B (" + psycB + "). María solo puede aprobar cuando ambas psicólogas hayan marcado HECHO.",
-      "Aprobación Bloqueada",
-      8
-    );
-    Logger.log("⛔ INTENTO DE APROBACIÓN BLOQUEADO: El match " + cellA.text + " ↔ " + cellB.text + " aún espera aprobación de " + psycB);
-    return; // CORTE TOTAL
-  }
-
-  // ── CASO A: APROBADO POR MARÍA (Válido porque ambas psicólogas ya aprobaron) ──
-  if (val === "APROBADO" || val === "TRUE") {
-    var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
-    if (!matchesSheet) {
-      Logger.log("ERROR: No se encontró la pestaña 'MATCHES'.");
+    // Bloqueo duro: Si Aprobar NO dice exactamente 'APROBADO POR AMBAS PSICÓLOGAS' (o 'APROBADO'), revertir
+    if (checkVal && currentAprobar !== "APROBADO POR AMBAS PSICÓLOGAS" && currentAprobar !== "APROBADO") {
+      sheet.getRange(row, checkboxCol).setValue(false);
+      SpreadsheetApp.getActiveSpreadsheet().toast(
+        "⚠️ BLOQUEADO: El checkbox de aprobación final solo puede marcarse cuando el estado indique exactamente 'APROBADO POR AMBAS PSICÓLOGAS' (Actualmente: '" + currentAprobar + "').",
+        "Aprobación Bloqueada",
+        8
+      );
+      Logger.log("⛔ Checkbox bloqueado: Aprobar = '" + currentAprobar + "'");
       return;
     }
 
-    withScriptLock(function() {
-      // 1. Insertar en zona inferior de MATCHES (con estado inicial 'pendiente' en gris)
-      var combinedObs = "[" + psycA + (psycB && psycB !== psycA ? " ↔ " + psycB : "") + "] " + (obsA ? "Obs A: " + obsA : "") + (obsB && obsB !== obsA ? " | Obs B: " + obsB : "") + (notasMaria ? " | Nota María: " + notasMaria : "");
-      insertMatchInLowerZone(matchesSheet, {
-        personACell: cellA,
-        personBCell: cellB,
-        city: "",
-        observaciones: combinedObs
+    if (checkVal) {
+      var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES");
+      if (!matchesSheet) {
+        Logger.log("ERROR: No se encontró la pestaña 'MATCHES'.");
+        return;
+      }
+
+      withScriptLock(function() {
+        // 1. Insertar en zona inferior de MATCHES (con estado inicial 'pendiente' en gris)
+        var combinedObs = "[" + psycA + (psycB && psycB !== psycA ? " ↔ " + psycB : "") + "] " + (obsA ? "Obs A: " + obsA : "") + (obsB && obsB !== obsA ? " | Obs B: " + obsB : "") + (notasMaria ? " | Nota María: " + notasMaria : "");
+        insertMatchInLowerZone(matchesSheet, {
+          personACell: cellA,
+          personBCell: cellB,
+          city: "",
+          observaciones: combinedObs
+        });
+
+        // 2. Actualizar estado a APROBADO en la pestaña de Psicóloga A y BLOQUEAR la fila
+        if (psycA) {
+          updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8", true);
+        }
+
+        // 3. Actualizar estado a APROBADO en la pestaña de Psicóloga B y BLOQUEAR la fila
+        if (psycB && psycB !== psycA) {
+          updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "APROBADO", "#B6D7A8", true);
+        }
+
+        // 4. Marcar verde en REVISIÓN MARÍA
+        sheet.getRange(row, aprobarCol).setBackground("#D9EAD3").setValue("APROBADO");
+        sheet.getRange(row, checkboxCol).setBackground("#D9EAD3").setValue(true);
+        SpreadsheetApp.getActiveSpreadsheet().toast("✅ Match aprobado por María, transferido a MATCHES y bloqueado para psicólogas.", "Aprobación Exitosa", 5);
       });
-
-      // 2. Actualizar estado a APROBADO en la pestaña de Psicóloga A y BLOQUEAR la fila
-      if (psycA) {
-        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "APROBADO", "#B6D7A8", true);
-      }
-
-      // 3. Actualizar estado a APROBADO en la pestaña de Psicóloga B y BLOQUEAR la fila
-      if (psycB && psycB !== psycA) {
-        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "APROBADO", "#B6D7A8", true);
-      }
-
-      // 4. Marcar verde en REVISIÓN MARÍA
-      sheet.getRange(row, aprobarCol).setBackground("#D9EAD3").setValue("APROBADO");
-      ss.toast("Match aprobado, enviado a MATCHES y bloqueado para psicólogas.", "Aprobación Exitosa", 5);
-    });
+    }
+    return;
   }
 
-  // ── CASO B: NOT APPROVED POR MARÍA ───────────────────────────────────────
-  else if (val === "NOT APPROVED") {
-    withScriptLock(function() {
-      var motivoRechazo = notasMaria ? "Rechazado por María: " + notasMaria : "NOT APPROVED por María";
+  // ── CASO 2: DESPLEGABLE APROBAR (COLUMNA 8) ──
+  if (col === aprobarCol) {
+    var val = (newValue || sheet.getRange(row, col).getValue() || "").toString().trim().toUpperCase();
+    if (!val) return;
 
-      // 1. Actualizar estado a NOT APPROVED en pestaña de Psicóloga A y re-generar slot
-      if (psycA) {
-        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC", false);
-        var sheetA = findPsychologistSheet(psycA);
-        if (sheetA) {
-          appendNewRetryRow(sheetA, getSheetHeaders(sheetA), {
-            city: "",
-            pref: "",
-            plan: "",
-            personACell: cellA,
-            personBCell: null,
-            fecha: "",
-            status: "Listo para match",
-            observaciones: motivoRechazo
-          });
+    if (val === "NOT APPROVED") {
+      withScriptLock(function() {
+        var motivoRechazo = notasMaria ? "Rechazado por María: " + notasMaria : "NOT APPROVED por María";
+
+        // 1. Actualizar estado a NOT APPROVED en pestaña de Psicóloga A y re-generar slot
+        if (psycA) {
+          updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "NOT APPROVED", "#F4CCCC", false);
+          var sheetA = findPsychologistSheet(psycA);
+          if (sheetA) {
+            appendNewRetryRow(sheetA, getSheetHeaders(sheetA), {
+              city: "",
+              pref: "",
+              plan: "",
+              personACell: cellA,
+              personBCell: null,
+              fecha: "",
+              status: "Listo para match",
+              observaciones: motivoRechazo
+            });
+          }
         }
-      }
 
-      // 2. Actualizar estado a NOT APPROVED en pestaña de Psicóloga B y re-generar slot
-      if (psycB && psycB !== psycA) {
-        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "NOT APPROVED", "#F4CCCC", false);
-        var sheetB = findPsychologistSheet(psycB);
-        if (sheetB) {
-          appendNewRetryRow(sheetB, getSheetHeaders(sheetB), {
-            city: "",
-            pref: "",
-            plan: "",
-            personACell: cellB,
-            personBCell: null,
-            fecha: "",
-            status: "Listo para match",
-            observaciones: motivoRechazo
-          });
+        // 2. Actualizar estado a NOT APPROVED en pestaña de Psicóloga B y re-generar slot
+        if (psycB && psycB !== psycA) {
+          updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "NOT APPROVED", "#F4CCCC", false);
+          var sheetB = findPsychologistSheet(psycB);
+          if (sheetB) {
+            appendNewRetryRow(sheetB, getSheetHeaders(sheetB), {
+              city: "",
+              pref: "",
+              plan: "",
+              personACell: cellB,
+              personBCell: null,
+              fecha: "",
+              status: "Listo para match",
+              observaciones: motivoRechazo
+            });
+          }
         }
-      }
 
-      // 3. Marcar rojo en REVISIÓN MARÍA
-      sheet.getRange(row, aprobarCol).setBackground("#F4CCCC").setValue("NOT APPROVED");
-      ss.toast("Match rechazado. Slots de reintento creados para ambas personas.", "Rechazo Procesado", 5);
-    });
-  }
-
-  // ── CASO C: REFUND DIRECTO ORDENADO POR MARÍA ────────────────────────────
-  else if (val === "REFUND" || val === "REFUND POR MARÍA" || val === "REFUND PENDIENTE") {
-    withScriptLock(function() {
-      var motivoRefund = notasMaria ? "Refund ordenado por María: " + notasMaria : "Refund ordenado por María";
-
-      // 1. Enviar a la cola de Lina (REFUNDS PENDIENTES)
-      syncToRefundsQueue(origenA || "REVISIÓN MARÍA", row, {
-        personACell: cellA,
-        plan: "",
-        observaciones: motivoRefund
+        // 3. Marcar rojo en REVISIÓN MARÍA y desmarcar checkbox
+        sheet.getRange(row, aprobarCol).setBackground("#F4CCCC").setValue("NOT APPROVED");
+        sheet.getRange(row, checkboxCol).setBackground("#F4CCCC").setValue(false);
+        SpreadsheetApp.getActiveSpreadsheet().toast("❌ Match rechazado. Se crearon filas de reintento para ambas psicólogas.", "Propuesta Rechazada", 6);
       });
+    }
 
-      // 2. Actualizar estado a REFUND en pestaña de Psicóloga A
-      if (psycA) {
-        updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "REFUND", "#EA9999", false);
-      }
+    else if (val === "REFUND" || val === "REFUND POR MARÍA" || val === "REFUND PENDIENTE") {
+      withScriptLock(function() {
+        var motivoRefund = notasMaria ? "Refund ordenado por María: " + notasMaria : "Refund ordenado por María";
 
-      // 3. Actualizar estado a REFUND en pestaña de Psicóloga B (si es distinta)
-      if (psycB && psycB !== psycA) {
-        updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "REFUND", "#EA9999", false);
-      }
+        // 1. Enviar a la cola de Lina (REFUNDS PENDIENTES)
+        syncToRefundsQueue(origenA || "REVISIÓN MARÍA", row, {
+          personACell: cellA,
+          plan: "",
+          observaciones: motivoRefund
+        });
 
-      // 4. Marcar en REVISIÓN MARÍA
-      sheet.getRange(row, aprobarCol).setBackground("#EA9999").setValue("REFUND");
-      ss.toast("Match marcado como Refund por María y enrutado a REFUNDS PENDIENTES.", "Refund Procesado", 5);
-    });
+        // 2. Actualizar estado a REFUND en pestaña de Psicóloga A
+        if (psycA) {
+          updateStatusInPsychologistSheet(psycA, cellA.text, cellB.text, "REFUND", "#EA9999", false);
+        }
+
+        // 3. Actualizar estado a REFUND en pestaña de Psicóloga B (si es distinta)
+        if (psycB && psycB !== psycA) {
+          updateStatusInPsychologistSheet(psycB, cellB.text, cellA.text, "REFUND", "#EA9999", false);
+        }
+
+        // 4. Marcar en REVISIÓN MARÍA
+        sheet.getRange(row, aprobarCol).setBackground("#EA9999").setValue("REFUND");
+        sheet.getRange(row, checkboxCol).setBackground("#EA9999").setValue(false);
+        SpreadsheetApp.getActiveSpreadsheet().toast("Match marcado como Refund por María y enrutado a REFUNDS PENDIENTES.", "Refund Procesado", 5);
+      });
+    }
   }
 }
 
-/**
- * Aplica protección de rango nativa (Range.protect) sobre la celda de Persona A o Persona B
- * una vez que tiene su link de CRM asignado, impidiendo que pueda ser borrada o modificada
- * por la psicóloga (solo editable por María).
- */
 function protegerCeldaPersona(sheet, row, col, personName, role) {
   if (!sheet || row < 2 || !col) return;
   try {
@@ -4091,20 +4150,77 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
   var cityCol = headers["CIUDAD"] || headers["CITY"] || 8;
   var fechaRealCol = headers["FECHA CITA REAL"] || 17;
 
+  var estadosData = getEstadosPorEtapa();
+
+  // ── 1. SINCRONIZACIÓN AUTOMÁTICA: Estado Persona A == Estado Persona B -> Estado Total ──
+  if (col === statusACol || col === statusBCol) {
+    var valA = (col === statusACol ? (newValue || "") : (sheet.getRange(row, statusACol).getValue() || "")).toString().trim();
+    var valB = (col === statusBCol ? (newValue || "") : (sheet.getRange(row, statusBCol).getValue() || "")).toString().trim();
+
+    if (valA && valB && valA.toLowerCase() === valB.toLowerCase()) {
+      // Coinciden exactamente: actualizar Estado Total automáticamente
+      sheet.getRange(row, matchCol).setValue(valA);
+      Logger.log("✅ Estado Total actualizado automáticamente a '" + valA + "' por coincidencia exacta entre Persona A y Persona B.");
+
+      var valUpper = valA.toUpperCase();
+      if (estadosData.COLOR_MAP[valUpper]) {
+        sheet.getRange(row, matchCol).setBackground(estadosData.COLOR_MAP[valUpper]);
+        sheet.getRange(row, statusACol).setBackground(estadosData.COLOR_MAP[valUpper]);
+        sheet.getRange(row, statusBCol).setBackground(estadosData.COLOR_MAP[valUpper]);
+      }
+
+      // ── 2. DISPARO DE ÉXITO: Promover a zona superior y Citas Aceptadas si los 3 estados están alineados en éxito ──
+      // Estados oficiales de éxito de la etapa RESULTADO_CITA en ⚙️ CONFIG ESTADOS:
+      // - cita confirmada
+      // - DATE PROGRAMADO
+      // - cita realizada
+      // - match
+      // - MATCH DONE
+      var SUCCESS_STATES = [
+        "CITA CONFIRMADA", "DATE PROGRAMADO", "CITA REALIZADA", "MATCH", "MATCH DONE"
+      ];
+
+      var isSuccessAlignment = (SUCCESS_STATES.indexOf(valUpper) >= 0);
+      if (isSuccessAlignment) {
+        var diaVal = (sheet.getRange(row, diaCol).getValue() || "").toString().trim();
+        var fechaRealVal = fechaRealCol ? (sheet.getRange(row, fechaRealCol).getValue() || "").toString().trim() : "";
+
+        // Si no tiene fecha, asignar hoy / programada para habilitar zona superior
+        if (!fechaRealVal && !diaVal) {
+          var defaultDateStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+          if (fechaRealCol) sheet.getRange(row, fechaRealCol).setValue(defaultDateStr);
+          if (diaCol) sheet.getRange(row, diaCol).setValue(defaultDateStr);
+        }
+
+        var effectiveDate = fechaRealVal || diaVal || new Date();
+        updateMatchesRowColor(sheet, row, effectiveDate, valUpper);
+
+        try {
+          syncMatchToCitasAceptadas(sheet, row);
+          SpreadsheetApp.getActiveSpreadsheet().toast(
+            "✨ Estados alineados en '" + valA + "'. Match promovido a citas confirmadas y sincronizado a Citas Aceptadas.",
+            "Cita Confirmada",
+            6
+          );
+        } catch (syncErr) {
+          Logger.log("Aviso al sincronizar cita confirmada por alineación de estados: " + syncErr.message);
+        }
+      }
+    }
+  }
+
   var statusVal = (col === matchCol ? (newValue || "") : (sheet.getRange(row, matchCol).getValue() || "")).toString().trim();
   var statusUpper = statusVal.toUpperCase();
 
-  // Asegurar color según ⚙️ CONFIG ESTADOS para cualquiera de las 3 columnas de estado
-  var estadosData = getEstadosPorEtapa();
+  // Asegurar color según ⚙️ CONFIG ESTADOS para cualquiera de las 3 columnas de estado si se editan directamente
   if ((col === matchCol || col === statusACol || col === statusBCol) && newValue) {
-    var valUpper = (newValue || "").toString().trim().toUpperCase();
-    if (estadosData.COLOR_MAP[valUpper]) {
-      sheet.getRange(row, col).setBackground(estadosData.COLOR_MAP[valUpper]);
+    var editUpper = (newValue || "").toString().trim().toUpperCase();
+    if (estadosData.COLOR_MAP[editUpper]) {
+      sheet.getRange(row, col).setBackground(estadosData.COLOR_MAP[editUpper]);
     }
   }
 
   // A. REGLA DE RECHAZO TERMINAL: Si alguno rechaza, el match muere y AMBOS vuelven como slot a sus psicólogas
-  // NOTA: 'problemas personales', 'no contestan', 'esperar', 'de viaje', 'reprogramar' son estados normales de Servicio al Cliente, NUNCA son rechazos.
   var REJECTION_KEYWORDS = [
     "NO MATCH", "RECHAZÓ", "RECHAZO", "SIN QUÍMICA", "SIN QUIMICA",
     "TROUBLEMAKER", "DESCALIFICADO", "REFUND"
@@ -4118,7 +4234,6 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
     }
   }
 
-  // Salvaguarda explícita: Estados de seguimiento / espera de Servicio al Cliente NUNCA son rechazos
   if (statusUpper.indexOf("PROBLEMAS PERSONALES") >= 0 ||
       statusUpper.indexOf("NO CONTESTAN") >= 0 ||
       statusUpper.indexOf("ESPERAR") >= 0 ||
@@ -4146,15 +4261,12 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
   var isScheduled = (statusUpper === "CITA CONFIRMADA" || statusUpper === "DATE PROGRAMADO" || statusUpper === "AGENDANDO" || statusUpper === "POR CONFIRMAR");
   var fechaRealVal = (col === fechaRealCol ? (newValue || "") : (sheet.getRange(row, fechaRealCol).getValue() || ""));
   var diaVal = (col === diaCol ? (newValue || "") : (sheet.getRange(row, diaCol).getValue() || ""));
-  var lugarCol = headers["LUGAR"] || 6;
 
   if ((col === matchCol && isScheduled) || (col === fechaRealCol && fechaRealVal) || (col === diaCol && diaVal) || (col === lugarCol)) {
-    // Si la fecha real se ingresó o el estado pasó a confirmada, colorear fecha
     if (fechaRealCol) {
       var dVal = sheet.getRange(row, fechaRealCol).getValue() || diaVal;
       updateMatchesRowColor(sheet, row, dVal, statusUpper);
     }
-    // Sincronizar automáticamente con la pestaña piloto 'Citas Aceptadas'
     try {
       syncMatchToCitasAceptadas(sheet, row);
     } catch (citasErr) {

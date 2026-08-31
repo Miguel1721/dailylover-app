@@ -562,7 +562,7 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
     REGLA: Si approved_by_maria = true, la fila está 100% bloqueada contra edición.
     REGLA: El estado 'APROBADO' no es seleccionable.
     """
-    exist_res = await db.execute(text("SELECT id, person_a, approved_by_maria, status FROM operational_matches WHERE id = :id"), {"id": match_id})
+    exist_res = await db.execute(text("SELECT id, person_a, person_b, approved_by_maria, status, status_a, status_b FROM operational_matches WHERE id = :id"), {"id": match_id})
     match_row = exist_res.fetchone()
 
     if not match_row:
@@ -598,22 +598,9 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
                 resolved_user = None
                 if extracted_cid:
                     u_res = await db.execute(text("SELECT u.name, p.responsable FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.crm_id = :cid LIMIT 1"), {"cid": extracted_cid})
-                    resolved_user = u_res.fetchone()
-
-                if resolved_user and resolved_user.name:
-                    updates.append("person_b = :pb")
-                    params["pb"] = resolved_user.name
-                    if resolved_user.responsable:
-                        clean_pb_psyc = normalize_psychologist(resolved_user.responsable)
-                        if clean_pb_psyc:
-                            updates.append("psychologist_b = :pb_psyc")
-                            params["pb_psyc"] = clean_pb_psyc
-                else:
-                    updates.append("person_b = :pb")
-                    params["pb"] = pb_clean
-            else:
-                updates.append("person_b = :pb")
-                params["pb"] = pb_clean
+        effective_b = payload.person_b.strip()
+        updates.append("person_b = :pb")
+        params["pb"] = effective_b
 
     if payload.status is not None:
         st_clean = payload.status.strip()
@@ -639,6 +626,18 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
     if payload.status_b is not None:
         updates.append("status_b = :stb")
         params["stb"] = payload.status_b.strip()
+
+    # Regla: Si Estado Persona A y Estado Persona B coinciden exactamente, sincronizar Estado Total (status)
+    effective_sta = (payload.status_a.strip() if payload.status_a is not None else (match_row.status_a or "")).strip()
+    effective_stb = (payload.status_b.strip() if payload.status_b is not None else (match_row.status_b or "")).strip()
+
+    if effective_sta and effective_stb and effective_sta.lower() == effective_stb.lower() and not payload.status:
+        updates.append("status = :synced_st")
+        params["synced_st"] = effective_sta
+        
+        # Si es un estado de éxito de RESULTADO_CITA, promover a citas activas
+        if effective_sta.upper() in ("CITA CONFIRMADA", "DATE PROGRAMADO", "CITA REALIZADA", "MATCH", "MATCH DONE"):
+            updates.append("approved_by_maria = true")
 
     if payload.observations is not None:
         updates.append("observations = :obs")
