@@ -4169,8 +4169,8 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
         sheet.getRange(row, statusBCol).setBackground(estadosData.COLOR_MAP[valUpper]);
       }
 
-      // ── 2. DISPARO DE ÉXITO: Promover a zona superior y Citas Aceptadas si los 3 estados están alineados en éxito ──
-      // Estados oficiales de éxito de la etapa RESULTADO_CITA en ⚙️ CONFIG ESTADOS:
+      // ── 2. EVALUACIÓN DE ESTADOS DE ÉXITO (RESULTADO_CITA) ──
+      // Estados oficiales de éxito en ⚙️ CONFIG ESTADOS:
       // - cita confirmada
       // - DATE PROGRAMADO
       // - cita realizada
@@ -4185,25 +4185,40 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
         var diaVal = (sheet.getRange(row, diaCol).getValue() || "").toString().trim();
         var fechaRealVal = fechaRealCol ? (sheet.getRange(row, fechaRealCol).getValue() || "").toString().trim() : "";
 
-        // Si no tiene fecha, asignar hoy / programada para habilitar zona superior
+        // REGLA: Si NO tiene fecha puesta todavía, la fila ESPERA en la zona inferior (sin relleno de 'ahora')
         if (!fechaRealVal && !diaVal) {
-          var defaultDateStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
-          if (fechaRealCol) sheet.getRange(row, fechaRealCol).setValue(defaultDateStr);
-          if (diaCol) sheet.getRange(row, diaCol).setValue(defaultDateStr);
-        }
-
-        var effectiveDate = fechaRealVal || diaVal || new Date();
-        updateMatchesRowColor(sheet, row, effectiveDate, valUpper);
-
-        try {
-          syncMatchToCitasAceptadas(sheet, row);
+          if (fechaRealCol) {
+            sheet.getRange(row, fechaRealCol)
+              .setBackground("#FFF2CC")
+              .setNote("⚠️ CITA CONFIRMADA: Falta fecha real. Seleccione la fecha en el calendario interactivo para activar y promover la cita.");
+          }
+          var cellAInfo = personACol ? getCellData(sheet, row, personACol) : null;
+          var cellBInfo = personBCol ? getCellData(sheet, row, personBCol) : null;
+          var pNames = (cellAInfo ? cellAInfo.text : "Persona A") + " ↔ " + (cellBInfo ? cellBInfo.text : "Persona B");
           SpreadsheetApp.getActiveSpreadsheet().toast(
-            "✨ Estados alineados en '" + valA + "'. Match promovido a citas confirmadas y sincronizado a Citas Aceptadas.",
-            "Cita Confirmada",
-            6
+            "⚠️ Cita confirmada para " + pNames + ". Seleccione la FECHA CITA REAL en el calendario para activarla.",
+            "Falta Fecha Real",
+            7
           );
-        } catch (syncErr) {
-          Logger.log("Aviso al sincronizar cita confirmada por alineación de estados: " + syncErr.message);
+          Logger.log("⏳ Match en espera de fecha real para " + pNames);
+        } else {
+          // Si YA tiene fecha, limpiar advertencia amarilla, colorear y promover/sincronizar a Citas Aceptadas
+          if (fechaRealCol) {
+            sheet.getRange(row, fechaRealCol).setBackground(null).clearNote();
+          }
+          var effectiveDate = fechaRealVal || diaVal;
+          updateMatchesRowColor(sheet, row, effectiveDate, valUpper);
+
+          try {
+            syncMatchToCitasAceptadas(sheet, row);
+            SpreadsheetApp.getActiveSpreadsheet().toast(
+              "✨ Cita confirmada con fecha (" + effectiveDate + "). Match promovido y sincronizado a Citas Aceptadas.",
+              "Cita Confirmada",
+              6
+            );
+          } catch (syncErr) {
+            Logger.log("Aviso al sincronizar cita confirmada: " + syncErr.message);
+          }
         }
       }
     }
@@ -4257,27 +4272,33 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
     return;
   }
 
-  // B. PROMOCIÓN A ZONA SUPERIOR AL AGENDAR / CONFIRMAR CITA
-  var isScheduled = (statusUpper === "CITA CONFIRMADA" || statusUpper === "DATE PROGRAMADO" || statusUpper === "AGENDANDO" || statusUpper === "POR CONFIRMAR");
-  var fechaRealVal = (col === fechaRealCol ? (newValue || "") : (sheet.getRange(row, fechaRealCol).getValue() || ""));
-  var diaVal = (col === diaCol ? (newValue || "") : (sheet.getRange(row, diaCol).getValue() || ""));
+  // B. PROMOCIÓN A ZONA SUPERIOR AL ASIGNAR / EDITAR FECHA EN CALENDARIO
+  var isScheduled = (statusUpper === "CITA CONFIRMADA" || statusUpper === "DATE PROGRAMADO" || statusUpper === "CITA REALIZADA" || statusUpper === "MATCH" || statusUpper === "MATCH DONE" || statusUpper === "AGENDANDO" || statusUpper === "POR CONFIRMAR");
+  var fechaRealVal = (col === fechaRealCol ? (newValue || "") : (sheet.getRange(row, fechaRealCol).getValue() || "")).toString().trim();
+  var diaVal = (col === diaCol ? (newValue || "") : (sheet.getRange(row, diaCol).getValue() || "")).toString().trim();
 
-  if ((col === matchCol && isScheduled) || (col === fechaRealCol && fechaRealVal) || (col === diaCol && diaVal) || (col === lugarCol)) {
+  if ((col === fechaRealCol && fechaRealVal) || (col === diaCol && diaVal)) {
+    var effectiveDate = fechaRealVal || diaVal;
     if (fechaRealCol) {
-      var dVal = sheet.getRange(row, fechaRealCol).getValue() || diaVal;
-      updateMatchesRowColor(sheet, row, dVal, statusUpper);
+      sheet.getRange(row, fechaRealCol).setBackground(null).clearNote();
     }
-    try {
-      syncMatchToCitasAceptadas(sheet, row);
-    } catch (citasErr) {
-      Logger.log("Aviso al sincronizar con Citas Aceptadas: " + citasErr.message);
+    updateMatchesRowColor(sheet, row, effectiveDate, statusUpper);
+    
+    if (isScheduled) {
+      try {
+        syncMatchToCitasAceptadas(sheet, row);
+        SpreadsheetApp.getActiveSpreadsheet().toast("✅ Fecha asignada en calendario (" + effectiveDate + "). Cita sincronizada a Citas Aceptadas.", "Cita Activada", 5);
+      } catch (citasErr) {
+        Logger.log("Aviso al sincronizar con Citas Aceptadas: " + citasErr.message);
+      }
     }
   }
 }
 
 /**
- * Trigger al editar la pestaña 'Citas Aceptadas' (Piloto sincronizado bidireccionalmente con MATCHES):
+ * Trigger al editar la pestaña 'Citas Aceptadas' (Sincronizado bidireccionalmente con MATCHES):
  * - Sincroniza cambios de fecha, reprogramación, lugar y estado hacia MATCHES.
+ * - Reordena automáticamente la hoja por FECHA CITA REAL (de más próxima a más lejana).
  */
 function handleCitasAceptadasEdit(sheet, row, col, newValue, oldValue) {
   if (row <= 1) return;
@@ -4337,6 +4358,7 @@ function handleCitasAceptadasEdit(sheet, row, col, newValue, oldValue) {
       if (mMatchCol) matchesSheet.getRange(targetMRow, mMatchCol).setValue("Reprogramada").setBackground("#F9CB9C");
       
       ss.toast("Cita reprogramada para " + newValue + " y sincronizada en MATCHES.", "Reprogramación Exitosa", 5);
+      reordenarCitasAceptadas(sheet);
     }
     // Si se editó la fecha real o día directamente
     else if (col === fechaRealCol || col === diaCol) {
@@ -4344,6 +4366,7 @@ function handleCitasAceptadasEdit(sheet, row, col, newValue, oldValue) {
       matchesSheet.getRange(targetMRow, mDiaCol).setValue(dateVal);
       if (mFechaRealCol) matchesSheet.getRange(targetMRow, mFechaRealCol).setValue(dateVal);
       ss.toast("Fecha sincronizada con MATCHES.", "Sincronización", 4);
+      reordenarCitasAceptadas(sheet);
     }
     // Si se editó el lugar
     else if (col === lugarCol) {
@@ -4360,7 +4383,35 @@ function handleCitasAceptadasEdit(sheet, row, col, newValue, oldValue) {
 }
 
 /**
+ * Reordena automáticamente la pestaña 'Citas Aceptadas' por FECHA CITA REAL
+ * de forma ascendente (de más próxima a más lejana).
+ */
+function reordenarCitasAceptadas(citasSheet) {
+  if (!citasSheet) {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    citasSheet = ss.getSheetByName("Citas Aceptadas") || ss.getSheetByName("CITAS ACEPTADAS");
+  }
+  if (!citasSheet) return;
+
+  var lastRow = citasSheet.getLastRow();
+  var lastCol = citasSheet.getLastColumn();
+  if (lastRow <= 2 || lastCol < 2) return;
+
+  var cHeaders = getSheetHeaders(citasSheet);
+  var fechaCol = cHeaders["FECHA CITA REAL"] || 2;
+
+  try {
+    var rangeToSort = citasSheet.getRange(2, 1, lastRow - 1, lastCol);
+    rangeToSort.sort({ column: fechaCol, ascending: true });
+    Logger.log("✅ Pestaña 'Citas Aceptadas' ordenada automáticamente por FECHA CITA REAL (de más próxima a más lejana).");
+  } catch (sortErr) {
+    Logger.log("Aviso al ordenar Citas Aceptadas: " + sortErr.message);
+  }
+}
+
+/**
  * Sincroniza un match confirmado / agendado desde MATCHES hacia la pestaña 'Citas Aceptadas'.
+ * Al finalizar, reordena automáticamente la pestaña de forma cronológica.
  */
 function syncMatchToCitasAceptadas(matchesSheet, row) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -4373,7 +4424,7 @@ function syncMatchToCitasAceptadas(matchesSheet, row) {
   var personBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 5;
   var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 6;
   var lugarCol = mHeaders["LUGAR"] || 7;
-  var cityCol = mHeaders["CIUDAD"] || mHeaders["CITY"] || 8;
+  var cityCol = mHeaders["CIUDAD"] || headers["CITY"] || 8;
   var fechaRealCol = mHeaders["FECHA CITA REAL"] || 17;
 
   var cellA = getCellData(matchesSheet, row, personACol);
@@ -4452,16 +4503,32 @@ function syncMatchToCitasAceptadas(matchesSheet, row) {
       citasSheet.getRange(newRowIdx, cLugarCol).setDataValidation(venueRule);
     }
   }
+
+  // 🔄 REORDENAMIENTO AUTOMÁTICO: Ordenar por FECHA CITA REAL de más próxima a más lejana
+  reordenarCitasAceptadas(citasSheet);
 }
 
 /**
  * Asegura la existencia de la columna 'FECHA CITA REAL' en MATCHES (Columna R / 18).
  */
 function ensureRealDateColumn(sheet, headers) {
-  if (headers["FECHA CITA REAL"]) return headers["FECHA CITA REAL"];
-  var targetCol = 18;
-  sheet.getRange(1, targetCol).setValue("FECHA CITA REAL").setFontWeight("bold").setBackground("#D9D2E9");
-  headers["FECHA CITA REAL"] = targetCol;
+  var targetCol = headers["FECHA CITA REAL"] || 17;
+  if (!headers["FECHA CITA REAL"]) {
+    sheet.getRange(1, targetCol).setValue("FECHA CITA REAL").setFontWeight("bold").setBackground("#D9D2E9");
+    headers["FECHA CITA REAL"] = targetCol;
+  }
+
+  // Validación de selector de calendario nativo interactivo en Google Sheets
+  var dateRule = SpreadsheetApp.newDataValidation()
+    .requireDate()
+    .setAllowInvalid(true)
+    .setHelpText("Haga doble clic para seleccionar la fecha real en el calendario interactivo.")
+    .build();
+
+  var maxRows = Math.min(sheet.getMaxRows(), 5000);
+  if (maxRows > 1) {
+    safeSetDataValidation(sheet.getRange(2, targetCol, maxRows - 1, 1), dateRule);
+  }
   return targetCol;
 }
 

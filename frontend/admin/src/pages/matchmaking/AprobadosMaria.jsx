@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Headphones, Search, RefreshCw, CheckCircle, Clock, MapPin, User, AlertTriangle, PhoneCall, ExternalLink, Filter } from 'lucide-react'
+import { Headphones, Search, RefreshCw, CheckCircle, Clock, MapPin, User, AlertTriangle, PhoneCall, ExternalLink, Filter, X, Calendar as CalendarIcon } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
@@ -14,6 +14,161 @@ const CITIES = [
   'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
 ]
 
+const RESTAURANTS_LIST = [
+  'Mora Pastelería (Zona G)',
+  'Primi Restaurante (Zona T)',
+  'Cantina y Punto (Zona G)',
+  'Criterión (Zona G)',
+  'El Bandido Bistro (Zona G)',
+  'Harry Sasson (Zona G)',
+  'Osaka Cocina Nikkei (Zona G)',
+  'Café San Alberto (Usaquén)',
+  'Abasto (Usaquén)',
+  'Storia D’Amore (Zona T / Usaquén)',
+  'Matiz Restaurante (Chicó)',
+  'Otro lugar por definir'
+]
+
+function ScheduleModal({ match, onClose, onScheduled }) {
+  const defaultDate = new Date()
+  defaultDate.setDate(defaultDate.getDate() + 2)
+  defaultDate.setHours(19, 30, 0, 0)
+  const defaultDateStr = defaultDate.toISOString().slice(0, 16)
+
+  const [dateVal, setDateVal] = useState(defaultDateStr)
+  const [venueVal, setVenueVal] = useState(RESTAURANTS_LIST[0])
+  const [customVenue, setCustomVenue] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!dateVal) {
+      alert('Por favor selecciona la fecha y hora en el calendario.')
+      return
+    }
+
+    const effectiveVenue = venueVal === 'Otro lugar por definir' ? (customVenue || 'Por definir') : venueVal
+    setSubmitting(true)
+
+    try {
+      const formattedDate = dateVal.replace('T', ' ')
+      await onScheduled(match, formattedDate, effectiveVenue)
+      onClose()
+    } catch (err) {
+      alert(err.message || 'Error al agendar cita')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
+    }} onClick={onClose}>
+      <div style={{
+        background: '#1A1214', border: '1px solid var(--border-color)', borderRadius: 16,
+        padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CalendarIcon size={20} style={{ color: 'var(--color-primary)' }} />
+            Agendar Fecha Real de Cita
+          </h2>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ background: 'rgba(150,21,0,0.08)', borderRadius: 8, padding: '12px 16px', marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pareja Confirmada</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+            {match.person_a} <span style={{ color: 'var(--color-primary)' }}>×</span> {match.person_b}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+            📍 Ciudad: {match.city || 'Bogotá'}
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              📅 Fecha y Hora Real (Selector Interactivo de Calendario):
+            </label>
+            <input
+              type="datetime-local"
+              required
+              value={dateVal}
+              onChange={e => setDateVal(e.target.value)}
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8,
+                border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                color: 'var(--text-primary)', fontSize: 14, outline: 'none'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+              📍 Lugar / Restaurante Catálogo:
+            </label>
+            <select
+              value={venueVal}
+              onChange={e => setVenueVal(e.target.value)}
+              style={{
+                width: '100%', padding: '10px 14px', borderRadius: 8,
+                border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+              }}
+            >
+              {RESTAURANTS_LIST.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          {venueVal === 'Otro lugar por definir' && (
+            <div style={{ marginBottom: 20 }}>
+              <input
+                type="text"
+                placeholder="Especifica el nombre del restaurante o lugar..."
+                value={customVenue}
+                onChange={e => setCustomVenue(e.target.value)}
+                style={{
+                  width: '100%', padding: '10px 14px', borderRadius: 8,
+                  border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                  color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+                }}
+              />
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
+                background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer'
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                padding: '9px 20px', borderRadius: 8, border: 'none',
+                background: 'var(--color-primary)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+              }}
+            >
+              {submitting ? 'Guardando...' : 'Confirmar y Activar Cita'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function AprobadosMaria() {
   const { token } = useAuth()
   const [matches, setMatches] = useState([])
@@ -23,6 +178,7 @@ export default function AprobadosMaria() {
   const [searchTerm, setSearchTerm] = useState('')
   const [updatingId, setUpdatingId] = useState(null)
   const [notification, setNotification] = useState('')
+  const [scheduleModalMatch, setScheduleModalMatch] = useState(null)
 
   const fetchPendingService = useCallback(() => {
     setLoading(true)
@@ -76,39 +232,25 @@ export default function AprobadosMaria() {
     }
   }
 
-  const handleSchedulePrompt = async (match) => {
-    const defaultDate = new Date()
-    defaultDate.setDate(defaultDate.getDate() + 3)
-    const formattedDefault = defaultDate.toISOString().slice(0, 16)
-
-    const dateVal = window.prompt(`Ingresa fecha y hora confirmada para ${match.person_a} y ${match.person_b} (YYYY-MM-DD HH:mm):`, formattedDefault.replace('T', ' '))
-    if (!dateVal) return
-
-    const venueVal = window.prompt('Ingresa el lugar / restaurante:', match.venue || 'Restaurante sugerido')
-    if (!venueVal) return
-
-    try {
-      const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/schedule`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          scheduled_date: dateVal,
-          venue: venueVal
-        })
+  const handleScheduledConfirm = async (match, dateVal, venueVal) => {
+    const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/schedule`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        scheduled_date: dateVal,
+        venue: venueVal
       })
-      if (res.ok) {
-        alert('✓ Cita agendada exitosamente. Se ha promovido a la zona superior y al calendario de Citas Agendadas.')
-        fetchPendingService()
-      } else {
-        const err = await res.json()
-        alert(err.detail || 'Error al agendar cita')
-      }
-    } catch (e) {
-      console.error(e)
-      alert('Error al conectar con el servidor')
+    })
+    if (res.ok) {
+      setNotification(`✓ Cita agendada para ${dateVal} en ${venueVal}. Promovida a Citas Agendadas.`)
+      setTimeout(() => setNotification(''), 5000)
+      fetchPendingService()
+    } else {
+      const err = await res.json()
+      throw new Error(err.detail || 'Error al agendar cita')
     }
   }
 
@@ -122,7 +264,7 @@ export default function AprobadosMaria() {
             Aprobados por María (Servicio al Cliente)
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-            Zona de espera de llamadas de Servicio al Cliente. Matches con visto bueno clínico listos para contactar, coordinar y confirmar cita.
+            Zona de espera de llamadas de Servicio al Cliente. Matches con visto bueno clínico listos para contactar, coordinar y confirmar fecha real con el calendario.
           </p>
         </div>
 
@@ -148,24 +290,24 @@ export default function AprobadosMaria() {
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 10, padding: '16px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pendientes de Agendar</div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>{matches.length}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>En Espera de Contacto</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--color-primary)', marginTop: 4 }}>{matches.length}</div>
         </div>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #FFE599', borderRadius: 10, padding: '16px' }}>
-          <div style={{ fontSize: 11, color: '#7F6000', fontWeight: 700, textTransform: 'uppercase' }}>Por Confirmar / Agendando</div>
-          <div style={{ fontSize: 26, fontWeight: 800, color: '#D97706', marginTop: 4 }}>
-            {matches.filter(m => (m.status || '').toLowerCase().includes('agendando') || (m.status || '').toLowerCase().includes('confirmar')).length}
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #CFE2F3', borderRadius: 10, padding: '16px' }}>
+          <div style={{ fontSize: 11, color: '#1155CC', fontWeight: 700, textTransform: 'uppercase' }}>Agendando</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: '#1155CC', marginTop: 4 }}>
+            {matches.filter(m => m.status === 'agendando').length}
           </div>
         </div>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid #F9CB9C', borderRadius: 10, padding: '16px' }}>
-          <div style={{ fontSize: 11, color: '#783F04', fontWeight: 700, textTransform: 'uppercase' }}>En Pausa / Reprogramar</div>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid #FCE5CD', borderRadius: 10, padding: '16px' }}>
+          <div style={{ fontSize: 11, color: '#783F04', fontWeight: 700, textTransform: 'uppercase' }}>Por Confirmar</div>
           <div style={{ fontSize: 26, fontWeight: 800, color: '#D97706', marginTop: 4 }}>
-            {matches.filter(m => (m.status || '').toLowerCase().includes('reprogramar') || (m.status || '').toLowerCase().includes('viaje')).length}
+            {matches.filter(m => m.status === 'por confirmar').length}
           </div>
         </div>
       </div>
 
-      {/* Notification Banner */}
+      {/* Notification banner */}
       {notification && (
         <div style={{
           background: 'rgba(16, 185, 129, 0.15)',
@@ -187,18 +329,17 @@ export default function AprobadosMaria() {
 
       {/* Filters */}
       <div style={{
-        display: 'flex',
-        gap: 12,
-        alignItems: 'center',
         background: 'var(--bg-card)',
-        padding: '12px 18px',
-        borderRadius: 10,
         border: '1px solid var(--border-color)',
+        borderRadius: 10,
+        padding: '14px 18px',
         marginBottom: 20,
-        flexWrap: 'wrap'
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 12
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={14} style={{ color: 'var(--text-secondary)' }} />
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Psicóloga:</span>
           <select
             value={selectedPsyc}
@@ -238,7 +379,7 @@ export default function AprobadosMaria() {
           </select>
         </div>
 
-        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 240 }}>
           <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
@@ -262,11 +403,11 @@ export default function AprobadosMaria() {
       {/* Table */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div className="empty-state" style={{ padding: 40 }}>Cargando matches en espera de Servicio al Cliente...</div>
+          <div className="empty-state" style={{ padding: 40 }}>Cargando zona de espera...</div>
         ) : matches.length === 0 ? (
           <div className="empty-state" style={{ padding: 40 }}>
-            <Headphones size={36} style={{ color: 'var(--color-primary)', margin: '0 auto 12px', display: 'block' }} />
-            No hay matches pendientes de llamada bajo los filtros seleccionados.
+            <CheckCircle size={36} style={{ color: '#10B981', margin: '0 auto 12px', display: 'block' }} />
+            No hay llamadas pendientes de Servicio al Cliente.
           </div>
         ) : (
           <div className="table-container">
@@ -279,9 +420,9 @@ export default function AprobadosMaria() {
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Psicóloga</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Ciudad</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Plan</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Estado de Llamada</th>
+                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Estado Seguimiento</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Observaciones</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Acciones</th>
+                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Acción</th>
                 </tr>
               </thead>
               <tbody>
@@ -294,8 +435,8 @@ export default function AprobadosMaria() {
                     <td style={{ padding: '12px 16px', fontWeight: 700 }}>
                       <CrmPersonLink name={m.person_b} />
                     </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span className="badge badge-wine">{m.psychologist || 'SILVI'}</span>
+                    <td style={{ padding: '12px 16px', fontSize: 12 }}>
+                      <span className="badge badge-gray">{m.psychologist_name || '—'}</span>
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>📍 {m.city || 'Bogotá'}</td>
                     <td style={{ padding: '12px 16px' }}>
@@ -334,7 +475,7 @@ export default function AprobadosMaria() {
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <button
-                        onClick={() => handleSchedulePrompt(m)}
+                        onClick={() => setScheduleModalMatch(m)}
                         style={{
                           background: 'var(--color-primary)',
                           color: '#fff',
@@ -359,6 +500,14 @@ export default function AprobadosMaria() {
           </div>
         )}
       </div>
+
+      {scheduleModalMatch && (
+        <ScheduleModal
+          match={scheduleModalMatch}
+          onClose={() => setScheduleModalMatch(null)}
+          onScheduled={handleScheduledConfirm}
+        />
+      )}
     </div>
   )
 }
