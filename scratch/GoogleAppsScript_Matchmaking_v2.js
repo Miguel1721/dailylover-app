@@ -241,11 +241,22 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
         }
       }
 
-      // ── VALIDACIÓN DE COMPATIBILIDAD (Cita Previa, Preferencia, Ciudad) ──
+      // ── VALIDACIÓN DE COMPATIBILIDAD AMPLIADA (Orientación, Cita Previa, Edades, Estatura, Límites, Ciudad) ──
       var cellA = personACol ? getCellData(sheet, row, personACol) : null;
       if (cellA && cellA.text && personBCell && personBCell.text) {
         var compCheck = checkPairCompatibility(cellA, personBCell, sheet, row, headers);
-        if (!compCheck.compatible) {
+
+        // 1. Advertencias No Bloqueantes (Ciudad, Rango de Edad, Preferencias de Género/Orientación, Estatura, Límites)
+        if (compCheck.warnings && compCheck.warnings.length > 0) {
+          var warnNote = "ℹ️ AVISOS DE COMPATIBILIDAD:\n• " + compCheck.warnings.join("\n• ");
+          sheet.getRange(row, personBCol).setNote(warnNote);
+          SpreadsheetApp.getActiveSpreadsheet().toast("ℹ️ " + compCheck.warnings[0], "Aviso de Compatibilidad", 6);
+        } else {
+          sheet.getRange(row, personBCol).clearNote();
+        }
+
+        // 2. Bloqueo Duro con Modal "¿Forzar?": Solo para Orientación Real Incompatible o Cita Previa Repetida
+        if (!compCheck.compatible && compCheck.issues && compCheck.issues.length > 0) {
           var ui = SpreadsheetApp.getUi();
           var promptMsg = "⚠️ INCOMPATIBILIDAD DETECTADA EN ESTA PROPUESTA:\n\n" + 
                           compCheck.issues.map(function(iss) { return "• " + iss; }).join("\n") + 
@@ -1993,10 +2004,11 @@ function checkPairCompatibility(cellA, cellB, sheet, row, headers) {
         if (data.name_a && data.name_a !== nameA && nameA.indexOf("http") === 0) {
           nameA = data.name_a;
         }
+        var warns = data.warnings || [];
         if (data.issues && data.issues.length > 0) {
-          return { compatible: false, issues: data.issues, nameA: nameA, nameB: nameB };
-        } else if (data.compatible === true) {
-          return { compatible: true, issues: [], nameA: nameA, nameB: nameB };
+          return { compatible: false, issues: data.issues, warnings: warns, nameA: nameA, nameB: nameB };
+        } else {
+          return { compatible: true, issues: [], warnings: warns, nameA: nameA, nameB: nameB };
         }
       }
     }

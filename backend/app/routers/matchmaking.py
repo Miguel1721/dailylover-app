@@ -1968,14 +1968,14 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
     prof_a = None
     if payload.person_a_crm_id:
         res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable
             FROM users u LEFT JOIN profiles p ON p.user_id = u.id
             WHERE u.crm_id = :cid LIMIT 1
         """), {"cid": str(payload.person_a_crm_id)})
         prof_a = res.fetchone()
     if not prof_a and payload.person_a_name:
         res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable
             FROM users u LEFT JOIN profiles p ON p.user_id = u.id
             WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) LIMIT 1
         """), {"n": payload.person_a_name.strip()})
@@ -1991,14 +1991,14 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             
     if b_cid:
         res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable
             FROM users u LEFT JOIN profiles p ON p.user_id = u.id
             WHERE u.crm_id = :cid LIMIT 1
         """), {"cid": str(b_cid)})
         prof_b = res.fetchone()
     if not prof_b and payload.person_b_name:
         res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.responsable
+            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable
             FROM users u LEFT JOIN profiles p ON p.user_id = u.id
             WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) LIMIT 1
         """), {"n": payload.person_b_name.strip()})
@@ -2007,6 +2007,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
     name_a = prof_a.name if prof_a else (payload.person_a_name or "Persona A")
     name_b = prof_b.name if prof_b else (payload.person_b_name or "Persona B")
 
+    # ── 1. CHEQUEOS BLOQUEANTES (issues) ──
     # Regla 1: Cita previa realizada juntos
     if name_a and name_b:
         res_date = await db.execute(text("""
@@ -2019,30 +2020,103 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         if count_dates > 0:
             issues.append(f"Cita previa existente: {name_a} y {name_b} ya tuvieron una cita registrada en el historial ({count_dates} cita/s).")
 
-    # Regla 2: Orientación / Preferencia (Comparación Simétrica)
-    if prof_a and prof_b:
-        pref_a = (prof_a.orientation or "").lower().strip()
-        pref_b = (prof_b.orientation or "").lower().strip()
-        gender_a = (prof_a.gender or "").lower().strip()
-        gender_b = (prof_b.gender or "").lower().strip()
+    # Regla 2: Orientación / Género Real entre las dos personas
+    real_orient_a = (prof_a.orientation or "").lower().strip() if prof_a else ""
+    real_orient_b = (prof_b.orientation or "").lower().strip() if prof_b else ""
+    real_gender_a = (prof_a.gender or "").lower().strip() if prof_a else ""
+    real_gender_b = (prof_b.gender or "").lower().strip() if prof_b else ""
 
-        norm_a = "gay" if ("gay" in pref_a or "homo" in pref_a) else ("lesb" if "lesb" in pref_a else ("bi" if "bi" in pref_a else ("hetero" if "hetero" in pref_a else pref_a)))
-        norm_b = "gay" if ("gay" in pref_b or "homo" in pref_b) else ("lesb" if "lesb" in pref_b else ("bi" if "bi" in pref_b else ("hetero" if "hetero" in pref_b else pref_b)))
+    if prof_a and prof_b:
+        norm_a = "gay" if ("gay" in real_orient_a or "homo" in real_orient_a) else ("lesb" if "lesb" in real_orient_a else ("bi" if "bi" in real_orient_a else ("hetero" if "hetero" in real_orient_a else real_orient_a)))
+        norm_b = "gay" if ("gay" in real_orient_b or "homo" in real_orient_b) else ("lesb" if "lesb" in real_orient_b else ("bi" if "bi" in real_orient_b else ("hetero" if "hetero" in real_orient_b else real_orient_b)))
 
         if norm_a and norm_b and norm_a != norm_b and norm_a != "bi" and norm_b != "bi":
             label_a = "LESBIANA" if norm_a == "lesb" else norm_a.upper()
             label_b = "LESBIANA" if norm_b == "lesb" else norm_b.upper()
-            issues.append(f"Incompatibilidad de orientación: {name_a} es {label_a} y {name_b} es {label_b}.")
-        elif gender_a and gender_b and norm_a == "hetero" and norm_b == "hetero" and gender_a == gender_b:
-            issues.append(f"Incompatibilidad de género para pareja hetero: Ambos perfiles tienen género '{gender_a}'.")
+            issues.append(f"Incompatibilidad de orientación real: {name_a} es {label_a} y {name_b} es {label_b}.")
+        elif real_gender_a and real_gender_b and norm_a == "hetero" and norm_b == "hetero" and real_gender_a == real_gender_b:
+            issues.append(f"Incompatibilidad de género para pareja hetero: Ambos perfiles tienen género '{real_gender_a}'.")
 
-    # Regla 3: Ciudad (SOLO AVISO NO BLOQUEANTE)
+    # ── 2. CHEQUEOS AMPLIADOS (SOLO AVISOS / WARNINGS NO BLOQUEANTES) ──
     warnings = []
     if prof_a and prof_b:
+        # A. Ciudad distinta
         city_a = normalize_city(prof_a.city) if prof_a.city else ""
         city_b = normalize_city(prof_b.city) if prof_b.city else ""
         if city_a and city_b and city_a.lower() != city_b.lower():
             warnings.append(f"Ciudades distintas: {name_a} está en {city_a} y {name_b} está en {city_b}.")
+
+        sp_a = prof_a.search_preferences or {}
+        sp_b = prof_b.search_preferences or {}
+
+        # B. Género preferido vs Género real
+        pref_gen_a = (sp_a.get("preferred_gender") or "").strip()
+        pref_gen_b = (sp_b.get("preferred_gender") or "").strip()
+        if pref_gen_a and real_gender_b:
+            if "hombre" in pref_gen_a.lower() and "mujer" in real_gender_b and "mujer" not in pref_gen_a.lower():
+                warnings.append(f"Preferencia de género: {name_a} busca '{pref_gen_a}' pero {name_b} es '{prof_b.gender}'.")
+            elif "mujer" in pref_gen_a.lower() and "hombre" in real_gender_b and "hombre" not in pref_gen_a.lower():
+                warnings.append(f"Preferencia de género: {name_a} busca '{pref_gen_a}' pero {name_b} es '{prof_b.gender}'.")
+
+        if pref_gen_b and real_gender_a:
+            if "hombre" in pref_gen_b.lower() and "mujer" in real_gender_a and "mujer" not in pref_gen_b.lower():
+                warnings.append(f"Preferencia de género: {name_b} busca '{pref_gen_b}' pero {name_a} es '{prof_a.gender}'.")
+            elif "mujer" in pref_gen_b.lower() and "hombre" in real_gender_a and "hombre" not in pref_gen_b.lower():
+                warnings.append(f"Preferencia de género: {name_b} busca '{pref_gen_b}' pero {name_a} es '{prof_a.gender}'.")
+
+        # C. Orientación preferida vs Orientación real
+        pref_ori_a = (sp_a.get("preferred_orientation") or "").strip()
+        pref_ori_b = (sp_b.get("preferred_orientation") or "").strip()
+        if pref_ori_a and real_orient_b:
+            if "hetero" in pref_ori_a.lower() and "hetero" not in real_orient_b and "bi" not in real_orient_b:
+                warnings.append(f"Preferencia de orientación: {name_a} busca '{pref_ori_a}' pero {name_b} es '{prof_b.orientation}'.")
+        if pref_ori_b and real_orient_a:
+            if "hetero" in pref_ori_b.lower() and "hetero" not in real_orient_a and "bi" not in real_orient_a:
+                warnings.append(f"Preferencia de orientación: {name_b} busca '{pref_ori_b}' pero {name_a} es '{prof_a.orientation}'.")
+
+        # D. Rango de edad preferido vs Edad real
+        age_a = prof_a.age
+        age_b = prof_b.age
+        min_a, max_a = sp_a.get("min_age"), sp_a.get("max_age")
+        if age_b and (min_a or max_a):
+            if min_a and age_b < min_a:
+                warnings.append(f"Rango de edad: {name_b} tiene {age_b} años (menor al rango preferido por {name_a}: {min_a}-{max_a or '+'} años).")
+            elif max_a and age_b > max_a:
+                warnings.append(f"Rango de edad: {name_b} tiene {age_b} años (mayor al rango preferido por {name_a}: {min_a or '-'}-{max_a} años).")
+
+        min_b, max_b = sp_b.get("min_age"), sp_b.get("max_age")
+        if age_a and (min_b or max_b):
+            if min_b and age_a < min_b:
+                warnings.append(f"Rango de edad: {name_a} tiene {age_a} años (menor al rango preferido por {name_b}: {min_b}-{max_b or '+'} años).")
+            elif max_b and age_a > max_b:
+                warnings.append(f"Rango de edad: {name_a} tiene {age_a} años (mayor al rango preferido por {name_b}: {min_b or '-'}-{max_b} años).")
+
+        # E. Preferencia de estatura vs Estatura real
+        pref_h_a = (sp_a.get("preferred_height") or "").strip()
+        h_b = (prof_b.estatura or "").strip()
+        if pref_h_a and h_b:
+            m_pref = re.search(r'(\d{3})', pref_h_a)
+            m_real = re.search(r'(\d{3})', h_b)
+            if m_pref and m_real:
+                val_pref, val_real = int(m_pref.group(1)), int(m_real.group(1))
+                if ("any" in pref_h_a.lower() or "to" in pref_h_a.lower()) and val_real < val_pref:
+                    warnings.append(f"Estatura: {name_b} mide {val_real}cm (menor a la preferencia de {name_a}: {val_pref}cm+).")
+
+        # F. Límites No Negociables vs Red Flags
+        non_neg_a = set(t.lower() for t in (sp_a.get("non_negotiables") or []))
+        rf_b = set(t.lower() for t in (sp_b.get("red_flags") or []))
+        non_neg_b = set(t.lower() for t in (sp_b.get("non_negotiables") or []))
+        rf_a = set(t.lower() for t in (sp_a.get("red_flags") or []))
+
+        conflict_a_b = non_neg_a.intersection(rf_b)
+        if conflict_a_b:
+            tags_str = ", ".join(t.title() for t in conflict_a_b)
+            warnings.append(f"Conflicto de Límites: Red Flag de {name_b} coincide con Límite No Negociable de {name_a} ({tags_str}).")
+
+        conflict_b_a = non_neg_b.intersection(rf_a)
+        if conflict_b_a:
+            tags_str = ", ".join(t.title() for t in conflict_b_a)
+            warnings.append(f"Conflicto de Límites: Red Flag de {name_a} coincide con Límite No Negociable de {name_b} ({tags_str}).")
 
     return {
         "compatible": len(issues) == 0,
