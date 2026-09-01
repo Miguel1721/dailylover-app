@@ -2377,25 +2377,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var cleanPsyc = normalizePsychologistName(rawPsyc);
   Logger.log("Psicóloga normalizada: '" + cleanPsyc + "'");
 
-  // ── REGLA: MÁXIMO 1 CLIENTE ABIERTO POR PSICÓLOGA EN PROFILES (HACIA ADELANTE) ──
-  if (cleanPsyc && col === fullNameCol && newValue && newValue !== oldValue) {
-    var psycCheckSheet = findPsychologistSheet(cleanPsyc);
-    if (psycCheckSheet) {
-      var unclosedClient = getUnclosedClientForPsychologist(psycCheckSheet, personAName);
-      if (unclosedClient) {
-        var alertMsg = "⚠️ BLOQUEO DE CLIENTE ABIERTO:\n\n" +
-                       "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin cerrar: '" + unclosedClient + "'.\n\n" +
-                       "Cada psicóloga solo puede tener 1 cliente sin cerrar a la vez en PROFILES. " +
-                       "Debe agendar cita o cerrar el cliente actual (NO HAY GENTE, DESCALIFICADO, REFUND, etc.) antes de agregar uno nuevo.";
-        try {
-          SpreadsheetApp.getUi().alert("Límite de Cliente Abierto", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-        } catch (uiErr) {}
-        sheet.getRange(row, fullNameCol).setValue(oldValue || "").setBackground("#F4CCCC");
-        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Bloqueo: " + cleanPsyc + " ya tiene a '" + unclosedClient + "' sin cerrar.", "Cliente Pendiente", 8);
-        return;
-      }
-    }
-  }
+
 
   if (!cleanPsyc) {
     Logger.log("AVISO: Psicóloga no reconocida: '" + rawPsyc + "'. Marcando amarillo #FFF2CC");
@@ -2587,6 +2569,26 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
 
   var ciudad = crmProfile.city || "";
   var pref = crmProfile.pref || ""; // NUNCA default a "hetero"
+
+  // ── 7.5 REGLA BLOQUEANTE: MÁXIMO 1 CLIENTE ABIERTO POR PSICÓLOGA EN PROFILES ──
+  var unclosedClient = getUnclosedClientForPsychologist(psycSheet, personAName);
+  if (unclosedClient) {
+    Logger.log("🚨 BLOQUEO PROFILES: " + cleanPsyc + " ya tiene un cliente sin cerrar: '" + unclosedClient + "'");
+    sheet.getRange(row, slotsCol)
+      .setValue("BLOQUEADO: CLIENTE ABIERTO (" + unclosedClient + ")")
+      .setBackground("#F4CCCC")
+      .setNote("La psicóloga " + cleanPsyc + " ya tiene a '" + unclosedClient + "' abierto sin cerrar. Debe cerrar o agendar cita al cliente actual antes de generar slots nuevos.");
+    
+    var alertMsg = "⚠️ BLOQUEO DE CLIENTE ABIERTO:\n\n" +
+                   "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin cerrar: '" + unclosedClient + "'.\n\n" +
+                   "Cada psicóloga solo puede tener 1 cliente sin cerrar a la vez en PROFILES.\n" +
+                   "Debe agendar cita o cerrar el cliente actual (NO HAY GENTE, DESCALIFICADO, REFUND, etc.) antes de crear slots para '" + personAName + "'.";
+    try {
+      SpreadsheetApp.getUi().alert("Límite de Cliente Abierto", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+    } catch (uiErr) {}
+    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Bloqueo: " + cleanPsyc + " ya tiene a '" + unclosedClient + "' sin cerrar.", "Cliente Pendiente", 8);
+    return;
+  }
 
   // 8. GENERACIÓN DE SLOTS CON LOCK DE SEGURIDAD
   Logger.log("Iniciando creación de " + numSlots + " slots en pestaña '" + psycSheet.getName() + "' con ScriptLock...");
