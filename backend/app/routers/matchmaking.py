@@ -2462,9 +2462,27 @@ async def check_inactivity_alerts(
     1. Cierra filas abiertas anteriores en 'Listo para match' sin candidato como 'NO HAY GENTE'.
     2. Crea un nuevo slot de reactivación para su psicóloga asignada.
     """
-    # 1. Obtener clientes con última actividad mayor o igual a 15 días
+    # 1. Obtener clientes con última actividad mayor o igual a 15 días mediante CTE pre-agregada
     inactive_query = text("""
-        WITH user_activities AS (
+        WITH all_activities AS (
+            SELECT LOWER(TRIM(person_a)) AS person_name, MAX(created_at) AS max_act FROM operational_matches WHERE person_a IS NOT NULL GROUP BY LOWER(TRIM(person_a))
+            UNION ALL
+            SELECT LOWER(TRIM(person_b)) AS person_name, MAX(created_at) AS max_act FROM operational_matches WHERE person_b IS NOT NULL GROUP BY LOWER(TRIM(person_b))
+            UNION ALL
+            SELECT LOWER(TRIM(person_a)) AS person_name, MAX(created_at) AS max_act FROM scheduled_dates WHERE person_a IS NOT NULL GROUP BY LOWER(TRIM(person_a))
+            UNION ALL
+            SELECT LOWER(TRIM(person_b)) AS person_name, MAX(created_at) AS max_act FROM scheduled_dates WHERE person_b IS NOT NULL GROUP BY LOWER(TRIM(person_b))
+            UNION ALL
+            SELECT LOWER(TRIM(person_a)) AS person_name, MAX(created_at) AS max_act FROM historical_matches WHERE person_a IS NOT NULL GROUP BY LOWER(TRIM(person_a))
+            UNION ALL
+            SELECT LOWER(TRIM(person_b)) AS person_name, MAX(created_at) AS max_act FROM historical_matches WHERE person_b IS NOT NULL GROUP BY LOWER(TRIM(person_b))
+        ),
+        max_activity_per_person AS (
+            SELECT person_name, MAX(max_act) AS last_match_act
+            FROM all_activities
+            GROUP BY person_name
+        ),
+        user_activities AS (
             SELECT 
                 u.id AS user_id,
                 u.name,
@@ -2472,25 +2490,15 @@ async def check_inactivity_alerts(
                 p.responsable,
                 p.city,
                 p.plan_tier,
-                (
-                    SELECT MAX(act_date) FROM (
-                        SELECT u.created_at AS act_date
-                        UNION ALL
-                        SELECT MAX(om.created_at) FROM operational_matches om WHERE LOWER(TRIM(om.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(om.person_b)) = LOWER(TRIM(u.name))
-                        UNION ALL
-                        SELECT MAX(sd.created_at) FROM scheduled_dates sd WHERE LOWER(TRIM(sd.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(sd.person_b)) = LOWER(TRIM(u.name))
-                        UNION ALL
-                        SELECT MAX(hm.created_at) FROM historical_matches hm WHERE LOWER(TRIM(hm.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(hm.person_b)) = LOWER(TRIM(u.name))
-                    ) sub WHERE act_date IS NOT NULL
-                ) AS last_activity
+                COALESCE(m.last_match_act, u.created_at) AS last_activity,
+                EXTRACT(DAY FROM (NOW() - COALESCE(m.last_match_act, u.created_at)))::int AS diff_days
             FROM users u
             JOIN profiles p ON p.user_id = u.id
+            LEFT JOIN max_activity_per_person m ON m.person_name = LOWER(TRIM(u.name))
             WHERE u.name IS NOT NULL AND TRIM(u.name) != '' AND p.responsable IS NOT NULL AND TRIM(p.responsable) != ''
         )
-        SELECT user_id, name, crm_id, responsable, city, plan_tier, last_activity,
-               EXTRACT(DAY FROM (NOW() - last_activity))::int AS diff_days
-        FROM user_activities
-        WHERE last_activity IS NOT NULL AND last_activity <= NOW() - INTERVAL '15 days'
+        SELECT * FROM user_activities
+        WHERE last_activity IS NOT NULL AND diff_days >= 15
     """)
 
     res = await db.execute(inactive_query)
