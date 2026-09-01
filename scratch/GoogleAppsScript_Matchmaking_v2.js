@@ -2571,6 +2571,7 @@ function onOpen(e) {
     menu.addItem("⚙️ Puesta a Punto Inicial (Estandarizar 10 Pestañas)", "ejecutarPuestaAPuntoInicialManual");
     menu.addItem("⏰ Instalar Disparadores Automáticos (Triggers)", "instalarTodosLosTriggers");
     menu.addItem("⏰ Verificar Alertas de 15 Días (CS y Psicólogas)", "actualizarAlertas15DiasMatches");
+    menu.addItem("🚨 Verificar Inactividad 15+ Días en Clientes", "verificarInactividad15DiasClientes");
     menu.addSeparator();
     menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
@@ -4044,6 +4045,230 @@ function notifyPsychologistOverdue(nameA, nameB, diffDays, entryDate) {
  * Aplica alerta visual (resaltado rojo suave #F4CCCC + Nota explicativa)
  * tanto en MATCHES para Customer Service como en las pestañas de las psicólogas de origen.
  */
+
+/**
+ * 🚨 REGLA DE INACTIVIDAD 15+ DÍAS EN CLIENTES:
+ * - Evalúa a todos los clientes registrados en PROFILES (sin excluir estados de pausa/viaje/refund).
+ * - Cruza contra todas las fuentes: MATCHES, Citas Aceptadas, pestañas de psicóloga y PROFILES.
+ * - Si lleva 15 días o más sin que se le haya generado un match o cita:
+ *   1. Si tiene una fila abierta en su psicóloga en "Listo para match" sin candidato: la cierra como "NO HAY GENTE"
+ *      con nota explicativa de reemplazo.
+ *   2. Crea una fila nueva en la pestaña de su psicóloga responsable (PROFILES!Responsable) con estado "Listo para match".
+ *   3. Agrega la observación: "[INACTIVIDAD 15+ DÍAS] Sin match ni cita desde YYYY-MM-DD (X días sin actividad). Reactivación automática."
+ */
+function verificarInactividad15DiasClientes() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
+  if (!profSheet) {
+    Logger.log("ERROR: No se encontró la pestaña 'PROFILES'.");
+    return;
+  }
+
+  var pLastRow = profSheet.getLastRow();
+  if (pLastRow <= 1) return;
+
+  var pHeaders = getSheetHeaders(profSheet);
+  var nameCol = pHeaders["FULLNAME"] || pHeaders["NOMBRE"] || 2;
+  var fechaEntrevistaCol = pHeaders["FECHA DE ENTREVISTA"] || pHeaders["FECHA"] || 3;
+  var responsableCol = pHeaders["RESPONSABLE"] || pHeaders["PSICÓLOGA"] || 4;
+  var cityAgeCol = pHeaders["CIUDAD Y AÑOS"] || pHeaders["CIUDAD"] || 5;
+
+  var pData = profSheet.getRange(2, 1, pLastRow - 1, profSheet.getLastColumn()).getValues();
+  var pRts = profSheet.getRange(2, nameCol, pLastRow - 1, 1).getRichTextValues();
+
+  var today = new Date();
+  var todayStr = Utilities.formatDate(today, CONFIG.TIMEZONE, "yyyy-MM-dd");
+
+  // 1. Indexar las fechas más recientes de MATCHES y Citas Aceptadas para búsqueda rápida O(1)
+  var latestActivityMap = {}; // { normalized_name: Date }
+
+  // Indexar MATCHES
+  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+  if (matchesSheet && matchesSheet.getLastRow() > 1) {
+    var mHeaders = getSheetHeaders(matchesSheet);
+    var mPACol = mHeaders["PERSONA A"] || mHeaders["PERSON A"] || 4;
+    var mPBCol = mHeaders["PERSONA B"] || mHeaders["PERSON B"] || 5;
+    var mDiaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 6;
+    var mFechaRealCol = mHeaders["FECHA CITA REAL"] || 17;
+    var mObsCol = mHeaders["OBSERVACIONES"] || 13;
+
+    var mData = matchesSheet.getRange(2, 1, matchesSheet.getLastRow() - 1, Math.max(mPACol, mPBCol, mDiaCol, mFechaRealCol, mObsCol)).getValues();
+    for (var mi = 0; mi < mData.length; mi++) {
+      var pA = (mData[mi][mPACol - 1] || "").toString().trim().toLowerCase();
+      var pB = (mData[mi][mPBCol - 1] || "").toString().trim().toLowerCase();
+      var fReal = (mFechaRealCol && mData[mi][mFechaRealCol - 1] ? mData[mi][mFechaRealCol - 1] : "");
+      var fDia = (mData[mi][mDiaCol - 1] || "");
+      var mObs = (mData[mi][mObsCol - 1] || "").toString();
+
+      var mDate = null;
+      if (fReal instanceof Date) mDate = fReal;
+      else if (typeof fReal === "string" && fReal.match(/\d{4}-\d{2}-\d{2}/)) mDate = new Date(fReal);
+      else if (fDia instanceof Date) mDate = fDia;
+      else if (typeof fDia === "string" && fDia.match(/\d{4}-\d{2}-\d{2}/)) mDate = new Date(fDia);
+
+      var obsDateMatch = mObs.match(/\[(?:Ingreso CS|Fecha):\s*(\d{4}-\d{2}-\d{2})\]/i);
+      if (obsDateMatch) {
+        var obsD = new Date(obsDateMatch[1]);
+        if (!mDate || obsD > mDate) mDate = obsD;
+      }
+
+      if (mDate && !isNaN(mDate.getTime())) {
+        if (pA && (!latestActivityMap[pA] || mDate > latestActivityMap[pA])) latestActivityMap[pA] = mDate;
+        if (pB && (!latestActivityMap[pB] || mDate > latestActivityMap[pB])) latestActivityMap[pB] = mDate;
+      }
+    }
+  }
+
+  // Indexar Citas Aceptadas
+  var citasSheet = ss.getSheetByName("Citas Aceptadas") || ss.getSheetByName("CITAS ACEPTADAS");
+  if (citasSheet && citasSheet.getLastRow() > 1) {
+    var cHeaders = getSheetHeaders(citasSheet);
+    var cPACol = cHeaders["PERSONA A"] || 3;
+    var cPBCol = cHeaders["PERSONA B"] || 4;
+    var cFechaRealCol = cHeaders["FECHA CITA REAL"] || 2;
+
+    var cData = citasSheet.getRange(2, 1, citasSheet.getLastRow() - 1, Math.max(cPACol, cPBCol, cFechaRealCol)).getValues();
+    for (var ci = 0; ci < cData.length; ci++) {
+      var cpA = (cData[ci][cPACol - 1] || "").toString().trim().toLowerCase();
+      var cpB = (cData[ci][cPBCol - 1] || "").toString().trim().toLowerCase();
+      var cfReal = cData[ci][cFechaRealCol - 1];
+
+      var cDate = null;
+      if (cfReal instanceof Date) cDate = cfReal;
+      else if (typeof cfReal === "string" && cfReal.match(/\d{4}-\d{2}-\d{2}/)) cDate = new Date(cfReal);
+
+      if (cDate && !isNaN(cDate.getTime())) {
+        if (cpA && (!latestActivityMap[cpA] || cDate > latestActivityMap[cpA])) latestActivityMap[cpA] = cDate;
+        if (cpB && (!latestActivityMap[cpB] || cDate > latestActivityMap[cpB])) latestActivityMap[cpB] = cDate;
+      }
+    }
+  }
+
+  // Indexar pestañas de psicólogas (FECHA de cada slot)
+  var allSheets = ss.getSheets();
+  for (var si = 0; si < allSheets.length; si++) {
+    var sh = allSheets[si];
+    var sNameUpper = sh.getName().trim().toUpperCase();
+    if (sNameUpper.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sNameUpper !== "MATCHES" && sh.getLastRow() > 1) {
+      var sHeaders = getSheetHeaders(sh);
+      var spACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
+      var spBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"];
+      var sFechaCol = sHeaders["FECHA"] || 9;
+      if (!spACol) continue;
+
+      var sData = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(spACol, spBCol || 1, sFechaCol || 1)).getValues();
+      for (var sRow = 0; sRow < sData.length; sRow++) {
+        var saName = (sData[sRow][spACol - 1] || "").toString().trim().toLowerCase();
+        var sbName = spBCol ? (sData[sRow][spBCol - 1] || "").toString().trim().toLowerCase() : "";
+        var sfVal = sFechaCol ? sData[sRow][sFechaCol - 1] : "";
+
+        var sDate = null;
+        if (sfVal instanceof Date) sDate = sfVal;
+        else if (typeof sfVal === "string" && sfVal.match(/\d{4}-\d{2}-\d{2}/)) sDate = new Date(sfVal);
+
+        if (sDate && !isNaN(sDate.getTime())) {
+          if (saName && (!latestActivityMap[saName] || sDate > latestActivityMap[saName])) latestActivityMap[saName] = sDate;
+          if (sbName && (!latestActivityMap[sbName] || sDate > latestActivityMap[sbName])) latestActivityMap[sbName] = sDate;
+        }
+      }
+    }
+  }
+
+  var processedCount = 0;
+  var reactivatedCount = 0;
+
+  // 2. Evaluar cada cliente en PROFILES
+  for (var pi = 0; pi < pData.length; pi++) {
+    var pRowIdx = pi + 2;
+    var rawName = (pData[pi][nameCol - 1] || "").toString().trim();
+    if (!rawName) continue;
+
+    var normName = rawName.toLowerCase();
+    var rawResp = (pData[pi][responsableCol - 1] || "").toString().trim();
+    var psycTarget = normalizePsychologistName(rawResp);
+    if (!psycTarget) continue; // Si no tiene psicóloga asignada, no se puede crear slot
+
+    var rawFechaEntrevista = pData[pi][fechaEntrevistaCol - 1];
+    var fEntrevista = null;
+    if (rawFechaEntrevista instanceof Date) fEntrevista = rawFechaEntrevista;
+    else if (typeof rawFechaEntrevista === "string" && rawFechaEntrevista.match(/\d{4}-\d{2}-\d{2}/)) fEntrevista = new Date(rawFechaEntrevista);
+
+    // Fecha más reciente unificada
+    var maxDate = latestActivityMap[normName] || fEntrevista;
+    if (!maxDate || isNaN(maxDate.getTime())) continue;
+
+    var diffDays = Math.floor((today.getTime() - maxDate.getTime()) / (1000 * 60 * 60 * 24));
+    processedCount++;
+
+    if (diffDays >= 15) {
+      var sheetPsyc = findPsychologistSheet(psycTarget);
+      if (!sheetPsyc) continue;
+
+      var psycHeaders = getSheetHeaders(sheetPsyc);
+      var paCol = psycHeaders["PERSON A"] || psycHeaders["PERSONA A"] || psycHeaders["CLIENTE"];
+      var pbCol = psycHeaders["PERSON B"] || psycHeaders["PERSONA B"] || 7;
+      var pStatusCol = psycHeaders["STATUS"] || psycHeaders["ESTADO"] || 10;
+      var pObsCol = psycHeaders["OBSERVACIONES"] || 11;
+      var pFechaCol = psycHeaders["FECHA"] || 9;
+
+      var lastRowPsyc = sheetPsyc.getLastRow();
+
+      // ── PASO A: Cerrar fila vieja abierta en 'Listo para match' sin candidato ──
+      if (lastRowPsyc > 1) {
+        var psycData = sheetPsyc.getRange(2, 1, lastRowPsyc - 1, Math.max(paCol, pbCol, pStatusCol, pObsCol)).getValues();
+        for (var pr = 0; pr < psycData.length; pr++) {
+          var currA = (psycData[pr][paCol - 1] || "").toString().trim().toLowerCase();
+          var currB = (psycData[pr][pbCol - 1] || "").toString().trim();
+          var currSt = (psycData[pr][pStatusCol - 1] || "").toString().trim().toUpperCase();
+
+          if (currA === normName && (!currB || currB.toLowerCase() === "por definir") &&
+              (currSt === "LISTO PARA MATCH" || currSt === "EN BÚSQUEDA" || currSt === "EN BUSQUEDA" || currSt === "ESPERANDO...")) {
+            var closeRowIdx = pr + 2;
+            sheetPsyc.getRange(closeRowIdx, pStatusCol).setValue("NO HAY GENTE").setBackground("#F4CCCC");
+            sheetPsyc.getRange(closeRowIdx, paCol).setNote("[CERRADO POR INACTIVIDAD] Slot cerrado automáticamente tras " + diffDays + " días sin candidato (" + todayStr + ") y reemplazado por nuevo slot de reactivación.");
+            Logger.log("🔒 Fila " + closeRowIdx + " cerrada como 'NO HAY GENTE' para " + rawName + " en 'MATCHES " + psycTarget + "'");
+          }
+        }
+      }
+
+      // ── PASO B: Crear nueva fila de reactivación por inactividad de 15+ días ──
+      var rtVal = pRts[pi][0];
+      var cellAObj = {
+        text: rawName,
+        richText: rtVal,
+        link: rtVal ? (rtVal.getLinkUrl() || "") : ""
+      };
+
+      var cityAge = (pData[pi][cityAgeCol - 1] || "").toString().trim();
+      var maxDateStr = Utilities.formatDate(maxDate, CONFIG.TIMEZONE, "yyyy-MM-dd");
+      var obsText = "[INACTIVIDAD 15+ DÍAS] Sin match ni cita desde " + maxDateStr + " (" + diffDays + " días sin actividad). Reactivación automática.";
+
+      appendNewRetryRow(sheetPsyc, psycHeaders, {
+        city: cityAge,
+        pref: "",
+        plan: "",
+        personACell: cellAObj,
+        personBCell: null,
+        fecha: todayStr,
+        status: "Listo para match",
+        observaciones: obsText
+      });
+
+      // Actualizar mapa de actividad a HOY para no duplicar en re-evaluaciones
+      latestActivityMap[normName] = today;
+      reactivatedCount++;
+      Logger.log("🚨 Reactivación generada para " + rawName + " en 'MATCHES " + psycTarget + "' (Inactivo hace " + diffDays + " días).");
+    }
+  }
+
+  Logger.log("✅ Verificación de inactividad de 15 días completada. Evaluados: " + processedCount + " | Reactivados: " + reactivatedCount);
+  if (reactivatedCount > 0) {
+    ss.toast("Se crearon " + reactivatedCount + " filas de reactivación por inactividad de 15+ días en las psicólogas.", "Inactividad 15+ Días", 7);
+  } else {
+    ss.toast("Todos los clientes evaluados tienen actividad reciente (<15 días).", "Inactividad Verificada", 5);
+  }
+}
+
 function actualizarAlertas15DiasMatches() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
