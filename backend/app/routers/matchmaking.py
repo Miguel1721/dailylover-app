@@ -2462,93 +2462,98 @@ async def check_inactivity_alerts(
     1. Cierra filas abiertas anteriores en 'Listo para match' sin candidato como 'NO HAY GENTE'.
     2. Crea un nuevo slot de reactivación para su psicóloga asignada.
     """
-    # 1. Obtener todos los clientes con su psicóloga asignada
-    users_res = await db.execute(text("""
-        SELECT u.id, u.name, u.crm_id, u.created_at, p.responsable, p.city, p.plan_tier
-        FROM users u
-        LEFT JOIN profiles p ON p.user_id = u.id
-        WHERE u.name IS NOT NULL AND TRIM(u.name) != ''
-    """))
-    users = users_res.fetchall()
+    # 1. Obtener clientes con última actividad mayor o igual a 15 días
+    inactive_query = text("""
+        WITH user_activities AS (
+            SELECT 
+                u.id AS user_id,
+                u.name,
+                u.crm_id,
+                p.responsable,
+                p.city,
+                p.plan_tier,
+                GREATEST(
+                    COALESCE(u.created_at, NOW() - INTERVAL '30 days'),
+                    (SELECT MAX(om.created_at) FROM operational_matches om WHERE LOWER(TRIM(om.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(om.person_b)) = LOWER(TRIM(u.name))),
+                    (SELECT MAX(sd.created_at) FROM scheduled_dates sd WHERE LOWER(TRIM(sd.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(sd.person_b)) = LOWER(TRIM(u.name))),
+                    (SELECT MAX(hm.created_at) FROM historical_matches hm WHERE LOWER(TRIM(hm.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(hm.person_b)) = LOWER(TRIM(u.name)))
+                ) AS last_activity
+            FROM users u
+            JOIN profiles p ON p.user_id = u.id
+            WHERE u.name IS NOT NULL AND TRIM(u.name) != '' AND p.responsable IS NOT NULL AND TRIM(p.responsable) != ''
+        )
+        SELECT user_id, name, crm_id, responsable, city, plan_tier, last_activity,
+               EXTRACT(DAY FROM (NOW() - last_activity))::int AS diff_days
+        FROM user_activities
+        WHERE last_activity <= NOW() - INTERVAL '15 days'
+    """)
+
+    res = await db.execute(inactive_query)
+    inactive_users = res.fetchall()
 
     reactivated_count = 0
     closed_old_count = 0
 
-    for u in users:
+    for u in inactive_users:
         u_name = u.name.strip()
         psyc = normalize_psychologist(u.responsable)
         if not psyc:
             continue
 
-        # 2. Obtener fecha de última actividad (máximo entre operational_matches, scheduled_dates, historical_matches y u.created_at)
-        act_res = await db.execute(text("""
-            SELECT GREATEST(
-                :u_created,
-                (SELECT MAX(created_at) FROM operational_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:uname))),
-                (SELECT MAX(created_at) FROM scheduled_dates WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:uname))),
-                (SELECT MAX(created_at) FROM historical_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:uname)))
-            ) AS max_act
-        """), {"uname": u_name, "u_created": u.created_at or datetime.utcnow()})
+        diff_days = u.diff_days or 15
+        max_act_str = u.last_activity.strftime('%Y-%m-%d') if u.last_activity else "hace >15 días"
+
+        # 2. Cerrar slots viejos abiertos sin candidato
+        old_slots_res = await db.execute(text("""
+            UPDATE operational_matches
+            SET status = 'NO HAY GENTE',
+                observations = COALESCE(observations, '') || ' [CERRADO POR INACTIVIDAD] Slot cerrado automáticamente tras 15+ días sin candidato.',
+                updated_at = NOW()
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname))
+              AND (person_b IS NULL OR TRIM(person_b) = '' OR LOWER(TRIM(person_b)) = 'por definir')
+              AND status IN ('Listo para match', 'En búsqueda', 'Esperando...')
+            RETURNING id
+        """), {"uname": u_name})
         
-        row_act = act_res.fetchone()
-        max_act = row_act.max_act if row_act and row_act.max_act else u.created_at
+        closed_slots = old_slots_res.fetchall()
+        closed_old_count += len(closed_slots)
 
-        if not max_act:
-            continue
+        # 3. Crear nuevo slot de reactivación
+        next_slot_res = await db.execute(text("""
+            SELECT COALESCE(MAX(slot_number), 0) + 1 AS next_slot
+            FROM operational_matches
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname))
+        """), {"uname": u_name})
+        next_slot = next_slot_res.scalar() or 1
 
-        diff_days = (datetime.utcnow() - max_act).days
-        if diff_days >= 15:
-            # 3. Cerrar slots viejos abiertos sin candidato
-            old_slots_res = await db.execute(text("""
-                UPDATE operational_matches
-                SET status = 'NO HAY GENTE',
-                    observations = COALESCE(observations, '') || ' [CERRADO POR INACTIVIDAD] Slot cerrado automáticamente tras 15+ días sin candidato.',
-                    updated_at = NOW()
-                WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname))
-                  AND (person_b IS NULL OR TRIM(person_b) = '' OR LOWER(TRIM(person_b)) = 'por definir')
-                  AND status IN ('Listo para match', 'En búsqueda', 'Esperando...')
-                RETURNING id
-            """), {"uname": u_name})
-            
-            closed_slots = old_slots_res.fetchall()
-            closed_old_count += len(closed_slots)
+        obs_inactivity = f"[INACTIVIDAD 15+ DÍAS] Sin match ni cita desde {max_act_str} ({diff_days} días sin actividad). Reactivación automática."
 
-            # 4. Crear nuevo slot de reactivación
-            next_slot_res = await db.execute(text("""
-                SELECT COALESCE(MAX(slot_number), 0) + 1 AS next_slot
-                FROM operational_matches
-                WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:uname))
-            """), {"uname": u_name})
-            next_slot = next_slot_res.scalar() or 1
+        await db.execute(text("""
+            INSERT INTO operational_matches
+            (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, is_priority, created_at, updated_at)
+            VALUES (:city, '', :plan, :person_a, :psyc, :slot, 'Listo para match', :obs, :cid, true, NOW(), NOW())
+        """), {
+            "city": u.city or "Bogotá",
+            "plan": u.plan_tier or "Estándar",
+            "person_a": u_name,
+            "psyc": psyc,
+            "slot": next_slot,
+            "obs": obs_inactivity,
+            "cid": u.crm_id or ""
+        })
 
-            obs_inactivity = f"[INACTIVIDAD 15+ DÍAS] Sin match ni cita desde {max_act.strftime('%Y-%m-%d')} ({diff_days} días sin actividad). Reactivación automática."
+        await db.execute(text("""
+            INSERT INTO person_history (person_name, event_type, details, created_at)
+            VALUES (:name, 'INACTIVITY_REACTIVATION', :det, NOW())
+        """), {"name": u_name, "det": obs_inactivity})
 
-            await db.execute(text("""
-                INSERT INTO operational_matches
-                (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, is_priority, created_at, updated_at)
-                VALUES (:city, '', :plan, :person_a, :psyc, :slot, 'Listo para match', :obs, :cid, true, NOW(), NOW())
-            """), {
-                "city": u.city or "Bogotá",
-                "plan": u.plan_tier or "Estándar",
-                "person_a": u_name,
-                "psyc": psyc,
-                "slot": next_slot,
-                "obs": obs_inactivity,
-                "cid": u.crm_id or ""
-            })
-
-            await db.execute(text("""
-                INSERT INTO person_history (person_name, event_type, details, created_at)
-                VALUES (:name, 'INACTIVITY_REACTIVATION', :det, NOW())
-            """), {"name": u_name, "det": obs_inactivity})
-
-            reactivated_count += 1
+        reactivated_count += 1
 
     await db.commit()
 
     return {
         "status": "success",
-        "evaluated_clients": len(users),
+        "inactive_clients_found": len(inactive_users),
         "reactivated_clients": reactivated_count,
         "closed_old_slots": closed_old_count
     }
