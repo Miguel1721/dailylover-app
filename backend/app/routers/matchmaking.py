@@ -2472,11 +2472,16 @@ async def check_inactivity_alerts(
                 p.responsable,
                 p.city,
                 p.plan_tier,
-                GREATEST(
-                    COALESCE(u.created_at, NOW() - INTERVAL '30 days'),
-                    (SELECT MAX(om.created_at) FROM operational_matches om WHERE LOWER(TRIM(om.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(om.person_b)) = LOWER(TRIM(u.name))),
-                    (SELECT MAX(sd.created_at) FROM scheduled_dates sd WHERE LOWER(TRIM(sd.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(sd.person_b)) = LOWER(TRIM(u.name))),
-                    (SELECT MAX(hm.created_at) FROM historical_matches hm WHERE LOWER(TRIM(hm.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(hm.person_b)) = LOWER(TRIM(u.name)))
+                (
+                    SELECT MAX(act_date) FROM (
+                        SELECT u.created_at AS act_date
+                        UNION ALL
+                        SELECT MAX(om.created_at) FROM operational_matches om WHERE LOWER(TRIM(om.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(om.person_b)) = LOWER(TRIM(u.name))
+                        UNION ALL
+                        SELECT MAX(sd.created_at) FROM scheduled_dates sd WHERE LOWER(TRIM(sd.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(sd.person_b)) = LOWER(TRIM(u.name))
+                        UNION ALL
+                        SELECT MAX(hm.created_at) FROM historical_matches hm WHERE LOWER(TRIM(hm.person_a)) = LOWER(TRIM(u.name)) OR LOWER(TRIM(hm.person_b)) = LOWER(TRIM(u.name))
+                    ) sub WHERE act_date IS NOT NULL
                 ) AS last_activity
             FROM users u
             JOIN profiles p ON p.user_id = u.id
@@ -2485,7 +2490,7 @@ async def check_inactivity_alerts(
         SELECT user_id, name, crm_id, responsable, city, plan_tier, last_activity,
                EXTRACT(DAY FROM (NOW() - last_activity))::int AS diff_days
         FROM user_activities
-        WHERE last_activity <= NOW() - INTERVAL '15 days'
+        WHERE last_activity IS NOT NULL AND last_activity <= NOW() - INTERVAL '15 days'
     """)
 
     res = await db.execute(inactive_query)
