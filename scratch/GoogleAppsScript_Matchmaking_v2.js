@@ -1638,7 +1638,8 @@ function appendPrioritySlotRow(sheet, headers, data) {
 
   if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue(data.psychologistB || "");
 
-  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue(data.fecha || "");
+  var fechaToSet = data.fecha || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue(fechaToSet);
   if (headers["STATUS"]) {
     var initialStatus = data.status || "Listo para match";
     var statusRange = sheet.getRange(newRow, headers["STATUS"]).setValue(initialStatus);
@@ -2376,6 +2377,26 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var cleanPsyc = normalizePsychologistName(rawPsyc);
   Logger.log("Psicóloga normalizada: '" + cleanPsyc + "'");
 
+  // ── REGLA: MÁXIMO 1 CLIENTE ABIERTO POR PSICÓLOGA EN PROFILES (HACIA ADELANTE) ──
+  if (cleanPsyc && col === fullNameCol && newValue && newValue !== oldValue) {
+    var psycCheckSheet = findPsychologistSheet(cleanPsyc);
+    if (psycCheckSheet) {
+      var unclosedClient = getUnclosedClientForPsychologist(psycCheckSheet, personAName);
+      if (unclosedClient) {
+        var alertMsg = "⚠️ BLOQUEO DE CLIENTE ABIERTO:\n\n" +
+                       "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin cerrar: '" + unclosedClient + "'.\n\n" +
+                       "Cada psicóloga solo puede tener 1 cliente sin cerrar a la vez en PROFILES. " +
+                       "Debe agendar cita o cerrar el cliente actual (NO HAY GENTE, DESCALIFICADO, REFUND, etc.) antes de agregar uno nuevo.";
+        try {
+          SpreadsheetApp.getUi().alert("Límite de Cliente Abierto", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+        } catch (uiErr) {}
+        sheet.getRange(row, fullNameCol).setValue(oldValue || "").setBackground("#F4CCCC");
+        SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Bloqueo: " + cleanPsyc + " ya tiene a '" + unclosedClient + "' sin cerrar.", "Cliente Pendiente", 8);
+        return;
+      }
+    }
+  }
+
   if (!cleanPsyc) {
     Logger.log("AVISO: Psicóloga no reconocida: '" + rawPsyc + "'. Marcando amarillo #FFF2CC");
     sheet.getRange(row, respCol)
@@ -2578,6 +2599,12 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     }
 
     var psycHeaders = getSheetHeaders(psycSheet);
+    var fechaEntrevistaVal = fechaCol ? (sheet.getRange(row, fechaCol).getValue() || "") : "";
+    if (!fechaEntrevistaVal) {
+      fechaEntrevistaVal = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+      if (fechaCol) sheet.getRange(row, fechaCol).setValue(fechaEntrevistaVal);
+    }
+
     for (var i = 1; i <= numSlots; i++) {
       appendPrioritySlotRow(psycSheet, psycHeaders, {
         city: ciudad,
@@ -2586,9 +2613,10 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
         personACell: personACell,
         slotIndex: i,
         totalSlots: numSlots,
+        fecha: fechaEntrevistaVal,
         observaciones: ""
       });
-      Logger.log("Slot " + i + "/" + numSlots + " insertado en '" + psycSheet.getName() + "'");
+      Logger.log("Slot " + i + "/" + numSlots + " insertado en '" + psycSheet.getName() + "' con FECHA: " + fechaEntrevistaVal);
     }
 
     // 9. MARCAR COMO COMPLETADO EN PROFILES (Verde oficial #D9EAD3)
@@ -5258,3 +5286,65 @@ function getHistorialSidebarHtml(initialQuery) {
 
 
 
+
+
+/**
+ * Verifica si la psicóloga ya tiene un cliente abierto sin cerrar en su pestaña.
+ * Un cliente está "Cerrado" si tiene cita agendada en MATCHES o status terminal (NO HAY GENTE, DESCALIFICADO, etc.).
+ */
+function getUnclosedClientForPsychologist(psycSheet, currentClientName) {
+  var headers = getSheetHeaders(psycSheet);
+  var personACol = headers["PERSON A"] || headers["PERSONA A"] || 6;
+  var statusCol = headers["STATUS"] || 10;
+  var obsCol = headers["OBSERVACIONES"] || 11;
+  var llegadaCol = headers["FECHA DE LLEGADA"] || headers["FECHA LLEGADA"] || 12;
+
+  var lastRow = getTrueLastRow(psycSheet, personACol);
+  if (lastRow <= 1) return null;
+
+  var data = psycSheet.getRange(2, 1, lastRow - 1, Math.max(personACol, statusCol, obsCol, llegadaCol || 1)).getValues();
+  var clientsMap = {}; // name -> list of statuses
+
+  var TERMINAL_STATUSES = [
+    "NO HAY GENTE", "DESCALIFICADO", "REFUND", "PAUSADO", "RETIRADO", "NO MATCH",
+    "CITA CONFIRMADA", "DATE PROGRAMADO", "CITA REALIZADA", "MATCH DONE", "MATCH"
+  ];
+
+  for (var i = 0; i < data.length; i++) {
+    var pName = (data[i][personACol - 1] || "").toString().trim();
+    if (!pName || (currentClientName && pName.toLowerCase() === currentClientName.toLowerCase())) continue;
+
+    var st = (data[i][statusCol - 1] || "").toString().trim().toUpperCase();
+    var obs = (data[i][obsCol - 1] || "").toString().trim();
+    var isAuto = (obs.indexOf("[ESPEJO]") >= 0 || obs.indexOf("[RECHAZO]") >= 0 || obs.indexOf("[INACTIVIDAD]") >= 0 || obs.indexOf("[REACTIVACIÓN]") >= 0 || obs.indexOf("[REFUND]") >= 0);
+
+    // No contar filas automáticas para el bloqueo de clientes propios
+    if (isAuto) continue;
+
+    if (!clientsMap[pName]) {
+      clientsMap[pName] = [];
+    }
+    clientsMap[pName].push(st);
+  }
+
+  // Evaluar cada cliente: si NINGUNO de sus slots tiene estado terminal, está "abierto"
+  for (var name in clientsMap) {
+    var statuses = clientsMap[name];
+    var isClosed = false;
+    for (var s = 0; s < statuses.length; s++) {
+      var curSt = statuses[s];
+      for (var t = 0; t < TERMINAL_STATUSES.length; t++) {
+        if (curSt.indexOf(TERMINAL_STATUSES[t]) >= 0) {
+          isClosed = true;
+          break;
+        }
+      }
+      if (isClosed) break;
+    }
+    if (!isClosed) {
+      return name; // Retorna el primer cliente abierto
+    }
+  }
+
+  return null;
+}

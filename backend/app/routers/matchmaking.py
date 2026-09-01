@@ -2648,6 +2648,80 @@ async def check_inactivity_alerts(
     }
 
 
+# ─── 13. CATÁLOGO Y FILTRADO MULTI-CONDICIÓN DE RESTAURANTES ────────────────
+
+@router.get("/restaurants")
+async def get_restaurants(
+    city: Optional[str] = Query(None, description="Ciudad del restaurante"),
+    day: Optional[str] = Query(None, description="Día disponible (Lun, Mar, Mié, Jue, Vie, Sáb, Dom)"),
+    time: Optional[str] = Query(None, description="Hora de la cita (ej. 19:00)"),
+    budget_category: Optional[str] = Query(None, description="Categoría de presupuesto: Menos de 100k, 100k-200k, 200k-300k, Más de 300k"),
+    search: Optional[str] = Query(None, description="Búsqueda por nombre o tipo de comida"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna restaurantes filtrados simultáneamente por las 4 condiciones canónicas:
+    1. Ciudad (lista)
+    2. Día disponible (Lun-Dom)
+    3. Hora de la cita
+    4. Categoría de Presupuesto (Menos de 100k, 100k-200k, 200k-300k, Más de 300k)
+    """
+    query = "SELECT * FROM restaurants WHERE 1=1"
+    params = {}
+
+    if city and city.lower() not in ("all", "todas", "todos"):
+        query += " AND LOWER(city) = LOWER(:city)"
+        params["city"] = city.strip()
+
+    if budget_category and budget_category.lower() not in ("all", "todos", "todas"):
+        query += " AND LOWER(budget_category) = LOWER(:bcat)"
+        params["bcat"] = budget_category.strip()
+
+    if day and day.lower() not in ("all", "todos", "todas"):
+        clean_day = day.strip()
+        query += " AND (available_days ILIKE :day_like OR available_days ILIKE '%todos%')"
+        params["day_like"] = f"%{clean_day}%"
+
+    if search:
+        query += " AND (name ILIKE :srch OR food_type ILIKE :srch OR zone ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY city ASC, price_num_cop ASC, name ASC"
+
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    restaurants = []
+    for r in rows:
+        d = dict(r._mapping)
+        restaurants.append({
+            "id": d.get("id"),
+            "name": d.get("name"),
+            "city": d.get("city"),
+            "food_type": d.get("food_type"),
+            "price_range_raw": d.get("price_range_raw"),
+            "price_num_cop": d.get("price_num_cop"),
+            "budget_category": d.get("budget_category"),
+            "available_days": d.get("available_days"),
+            "hours_raw": d.get("hours_raw"),
+            "zone": d.get("zone"),
+            "detailed_location": d.get("detailed_location"),
+            "accepts_reservations": d.get("accepts_reservations")
+        })
+
+    return {
+        "restaurants": restaurants,
+        "total": len(restaurants),
+        "applied_filters": {
+            "city": city,
+            "day": day,
+            "time": time,
+            "budget_category": budget_category
+        }
+    }
+
+
+
 
 
 
