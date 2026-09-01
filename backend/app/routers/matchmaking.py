@@ -2036,16 +2036,18 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         elif gender_a and gender_b and norm_a == "hetero" and norm_b == "hetero" and gender_a == gender_b:
             issues.append(f"Incompatibilidad de género para pareja hetero: Ambos perfiles tienen género '{gender_a}'.")
 
-    # Regla 3: Ciudad
+    # Regla 3: Ciudad (SOLO AVISO NO BLOQUEANTE)
+    warnings = []
     if prof_a and prof_b:
         city_a = normalize_city(prof_a.city) if prof_a.city else ""
         city_b = normalize_city(prof_b.city) if prof_b.city else ""
         if city_a and city_b and city_a.lower() != city_b.lower():
-            issues.append(f"Ciudades distintas: {name_a} está en {city_a} y {name_b} está en {city_b}.")
+            warnings.append(f"Ciudades distintas: {name_a} está en {city_a} y {name_b} está en {city_b}.")
 
     return {
         "compatible": len(issues) == 0,
         "issues": issues,
+        "warnings": warnings,
         "name_a": name_a,
         "name_b": name_b,
         "city_a": prof_a.city if prof_a else "",
