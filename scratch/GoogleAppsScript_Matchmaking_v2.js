@@ -1256,168 +1256,194 @@ function getTrueLastRow(sheet, checkColIndex) {
  * ID MATCH | Persona A | Origen pestaña (A) | Observaciones (A) | Persona B | Origen pestaña (B) | Observaciones (B) | Aprobar | NOTAS MARÍA
  */
 function reconstruirRevisionMaria() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheetName = CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA";
-  var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return;
+    
+    var sheetName = CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA";
+    var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
 
-  var headers = [
-    "ID MATCH", "Persona A", "Origen pestaña (A)", "Observaciones (A)",
-    "Persona B", "Origen pestaña (B)", "Observaciones (B)",
-    "Aprobar", "Aprobación María", "NOTAS MARÍA"
-  ];
+    var headers = [
+      "ID MATCH", "Persona A", "Origen pestaña (A)", "Observaciones (A)",
+      "Persona B", "Origen pestaña (B)", "Observaciones (B)",
+      "Aprobar", "Aprobación María", "NOTAS MARÍA"
+    ];
 
-  if (!revisionSheet) {
-    revisionSheet = ss.insertSheet(sheetName);
-    revisionSheet.setTabColor("#D5A6BD");
-  }
-
-  // 1. Limpieza de columnas huérfanas (eliminar cualquier columna más allá de las 10 canónicas)
-  if (revisionSheet.getLastColumn() > headers.length) {
-    try {
-      revisionSheet.deleteColumns(headers.length + 1, revisionSheet.getLastColumn() - headers.length);
-    } catch (e) {
-      Logger.log("Aviso al eliminar columnas sobrantes en REVISIÓN MARÍA: " + e.message);
+    if (!revisionSheet) {
+      revisionSheet = ss.insertSheet(sheetName);
+      revisionSheet.setTabColor("#D5A6BD");
     }
-  }
 
-  // 2. Asegurar encabezados canónicos
-  revisionSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  revisionSheet.getRange(1, 1, 1, headers.length)
-    .setFontWeight("bold")
-    .setBackground("#D5A6BD")
-    .setFontColor("#000000");
-  revisionSheet.setFrozenRows(1);
+    // Asegurar que la hoja tenga exactamente al menos 10 columnas
+    if (revisionSheet.getMaxColumns() < headers.length) {
+      revisionSheet.insertColumnsAfter(revisionSheet.getMaxColumns(), headers.length - revisionSheet.getMaxColumns());
+    } else if (revisionSheet.getMaxColumns() > headers.length) {
+      try {
+        revisionSheet.deleteColumns(headers.length + 1, revisionSheet.getMaxColumns() - headers.length);
+      } catch (e) {}
+    }
 
-  // 3. Limpiar contenido anterior
-  var lastRow = revisionSheet.getLastRow();
-  if (lastRow > 1) {
-    revisionSheet.getRange(2, 1, lastRow - 1, headers.length).clear({ contentsOnly: true });
-    try {
-      revisionSheet.getRange(2, 9, lastRow - 1, 1).clearDataValidations();
-    } catch (ve) {}
-  }
+    // Asegurar encabezados canónicos
+    revisionSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    revisionSheet.getRange(1, 1, 1, headers.length)
+      .setFontWeight("bold")
+      .setBackground("#D5A6BD")
+      .setFontColor("#000000");
+    revisionSheet.setFrozenRows(1);
 
-  var allSheets = ss.getSheets();
-  var collectedRows = [];
-  var collectedRichTextsA = [];
-  var collectedRichTextsB = [];
-  var seenPairs = {};
+    // Limpiar contenido anterior de forma segura
+    var lastRow = revisionSheet.getLastRow();
+    if (lastRow > 1) {
+      revisionSheet.getRange(2, 1, lastRow - 1, headers.length).clear({ contentsOnly: true });
+      try {
+        revisionSheet.getRange(2, 9, lastRow - 1, 1).clearDataValidations();
+      } catch (ve) {}
+    }
 
-  for (var s = 0; s < allSheets.length; s++) {
-    var curSheet = allSheets[s];
-    var curName = curSheet.getName().trim();
-    var upperCurName = curName.toUpperCase();
-
-    // Solo pestañas de psicólogas (ej. "MATCHES JENN", "MATCHES ANA ", etc.)
-    if (upperCurName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperCurName !== "MATCHES" && upperCurName !== "MATCHES COMPLETED") {
-      var psycName = curName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
-      var sHeaders = getSheetHeaders(curSheet);
-
-      var statusCol = sHeaders["STATUS"];
-      var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
-      var personBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"] || sHeaders["CANDIDATO"] || sHeaders["MATCH"];
-      var obsCol = sHeaders["OBSERVACIONES"] || sHeaders["OBSERVACION"] || sHeaders["NOTAS"];
-
-      if (!statusCol || !personACol) continue;
-
-      var lastCol = curSheet.getLastColumn();
-      var totalRows = curSheet.getLastRow();
-      if (totalRows <= 1 || lastCol < 1) continue;
-
-      var sheetValues = curSheet.getRange(1, 1, totalRows, lastCol).getValues();
-      var sheetRichTexts = curSheet.getRange(1, 1, totalRows, lastCol).getRichTextValues();
-
-      var statusIdx = statusCol - 1;
-      var personAIdx = personACol - 1;
-      var personBIdx = personBCol ? personBCol - 1 : -1;
-      var obsIdx = obsCol ? obsCol - 1 : -1;
-
-      for (var r = 1; r < sheetValues.length; r++) {
-        var rowVal = sheetValues[r];
-        var st = (rowVal[statusIdx] || "").toString().trim().toUpperCase();
-
-        if (st === "HECHO" || st === "HECHO POR MAPE" || st === "APROBADO") {
-          var obsVal = obsIdx !== -1 ? (rowVal[obsIdx] || "").toString().trim() : "";
-
-          var richTextA = sheetRichTexts[r][personAIdx];
-          var richTextB = personBIdx !== -1 ? sheetRichTexts[r][personBIdx] : null;
-
-          var textA = richTextA ? richTextA.getText() : (rowVal[personAIdx] || "").toString().trim();
-          var textB = richTextB ? richTextB.getText() : (personBIdx !== -1 ? (rowVal[personBIdx] || "").toString().trim() : "");
-
-          if (!textA || !textB) continue;
-
-          var pairKey = getCanonicalPairId(textA, textB);
-          if (seenPairs[pairKey]) continue; // Evitar duplicados entre psicóloga origen y espejo
-          seenPairs[pairKey] = true;
-
-          var psycB = findPsychologistForPerson({ text: textB });
-          var isCross = (psycB && psycB !== psycName);
-          var origenTabB = isCross ? "MATCHES " + psycB : curName;
-          var obsB = isCross ? "[Pendiente de revisión]" : obsVal;
-          
-          var aprobarInitial = "APROBADO POR AMBAS PSICÓLOGAS";
-          var isAlreadyApproved = (st === "APROBADO");
-          if (isAlreadyApproved) {
-            aprobarInitial = "APROBADO";
-          } else if (isCross) {
-            aprobarInitial = "ESPERANDO APROBACIÓN DE " + psycB;
+    // 1. Crear mapa local ultra-rápido de psicólogas por persona para evitar peticiones HTTP en bucle
+    var psycMap = {};
+    var allSheets = ss.getSheets();
+    for (var s = 0; s < allSheets.length; s++) {
+      var sh = allSheets[s];
+      var sName = sh.getName().trim();
+      var sUpper = sName.toUpperCase();
+      if (sUpper.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sUpper !== "MATCHES" && sUpper !== "MATCHES COMPLETED") {
+        var pNameOnly = sName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
+        var shHeaders = getSheetHeaders(sh);
+        var pACol = shHeaders["PERSON A"] || shHeaders["PERSONA A"] || 7;
+        var pLast = Math.min(sh.getLastRow(), 3000);
+        if (pLast > 1 && pACol) {
+          var pNames = sh.getRange(2, pACol, pLast - 1, 1).getValues();
+          for (var pIdx = 0; pIdx < pNames.length; pIdx++) {
+            var rawP = (pNames[pIdx][0] || "").toString().trim().toLowerCase();
+            if (rawP && !psycMap[rawP]) {
+              psycMap[rawP] = pNameOnly;
+            }
           }
-
-          var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
-
-          // 10 columnas: ID MATCH, Persona A, Origen A, Obs A, Persona B, Origen B, Obs B, Aprobar, Aprobación María (Checkbox: isAlreadyApproved), NOTAS MARÍA
-          collectedRows.push([
-            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, isAlreadyApproved, ""
-          ]);
-
-          collectedRichTextsA.push(richTextA);
-          collectedRichTextsB.push(richTextB);
         }
       }
     }
-  }
 
-  // ⚡ ESCRITURA BATCH ULTRA-RÁPIDA
-  if (collectedRows.length > 0) {
-    if (revisionSheet.getMaxRows() < collectedRows.length + 1) {
-      revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), (collectedRows.length + 1) - revisionSheet.getMaxRows() + 10);
-    }
+    var collectedRows = [];
+    var collectedRichTextsA = [];
+    var collectedRichTextsB = [];
+    var seenPairs = {};
 
-    var targetRange = revisionSheet.getRange(2, 1, collectedRows.length, headers.length);
-    targetRange.setValues(collectedRows);
+    // 2. Escanear matches en estado HECHO o APROBADO de forma ultra-ligera
+    for (var s = 0; s < allSheets.length; s++) {
+      var curSheet = allSheets[s];
+      var curName = curSheet.getName().trim();
+      var upperCurName = curName.toUpperCase();
 
-    // Inyectar hipervínculos en batch en Persona A (Col 2) y Persona B (Col 5)
-    var rangeA = revisionSheet.getRange(2, 2, collectedRows.length, 1);
-    var rangeB = revisionSheet.getRange(2, 5, collectedRows.length, 1);
+      if (upperCurName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperCurName !== "MATCHES" && upperCurName !== "MATCHES COMPLETED") {
+        var psycName = curName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
+        var sHeaders = getSheetHeaders(curSheet);
 
-    var richColA = collectedRichTextsA.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
-    var richColB = collectedRichTextsB.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
+        var statusCol = sHeaders["STATUS"];
+        var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
+        var personBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"] || sHeaders["CANDIDATO"] || sHeaders["MATCH"];
+        var obsCol = sHeaders["OBSERVACIONES"] || sHeaders["OBSERVACION"] || sHeaders["NOTAS"];
 
-    rangeA.setRichTextValues(richColA);
-    rangeB.setRichTextValues(richColB);
+        if (!statusCol || !personACol) continue;
 
-    // Configurar Checkbox real en Col 9 (Aprobación María)
-    var checkboxRange = revisionSheet.getRange(2, 9, collectedRows.length, 1);
-    var checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-    checkboxRange.setDataValidation(checkboxRule);
+        var totalRows = curSheet.getLastRow();
+        if (totalRows <= 1) continue;
 
-    // Formateo visual condicional según estado de validación
-    for (var k = 0; k < collectedRows.length; k++) {
-      var apState = collectedRows[k][7];
-      var rowNum = k + 2;
-      if (apState === "APROBADO POR AMBAS PSICÓLOGAS") {
-        revisionSheet.getRange(rowNum, 8).setBackground("#D9EAD3");
-        revisionSheet.getRange(rowNum, 9).setBackground("#D9EAD3"); // Checkbox habilitado para María
-      } else {
-        revisionSheet.getRange(rowNum, 8).setBackground("#FFF2CC");
-        revisionSheet.getRange(rowNum, 9).setBackground("#E8EAED"); // Checkbox deshabilitado (esperando psicóloga B)
+        var maxColToFetch = Math.max(statusCol, personACol, personBCol || 1, obsCol || 1);
+        var sheetValues = curSheet.getRange(2, 1, totalRows - 1, maxColToFetch).getValues();
+
+        var statusIdx = statusCol - 1;
+        var personAIdx = personACol - 1;
+        var personBIdx = personBCol ? personBCol - 1 : -1;
+        var obsIdx = obsCol ? obsCol - 1 : -1;
+
+        for (var r = 0; r < sheetValues.length; r++) {
+          var rowVal = sheetValues[r];
+          var st = (rowVal[statusIdx] || "").toString().trim().toUpperCase();
+
+          if (st === "HECHO" || st === "HECHO POR MAPE" || st === "APROBADO") {
+            var textA = (rowVal[personAIdx] || "").toString().trim();
+            var textB = personBIdx !== -1 ? (rowVal[personBIdx] || "").toString().trim() : "";
+
+            if (!textA || !textB) continue;
+
+            var pairKey = getCanonicalPairId(textA, textB);
+            if (seenPairs[pairKey]) continue;
+            seenPairs[pairKey] = true;
+
+            var actualRowInSheet = r + 2;
+            var richTextA = curSheet.getRange(actualRowInSheet, personACol).getRichTextValue();
+            var richTextB = personBCol ? curSheet.getRange(actualRowInSheet, personBCol).getRichTextValue() : null;
+
+            var obsVal = obsIdx !== -1 ? (rowVal[obsIdx] || "").toString().trim() : "";
+            var psycB = psycMap[textB.toLowerCase()] || "";
+            var isCross = (psycB && psycB.toLowerCase() !== psycName.toLowerCase());
+            var origenTabB = isCross ? "MATCHES " + psycB : curName;
+            var obsB = isCross ? "[Pendiente de revisión]" : obsVal;
+            
+            var aprobarInitial = "APROBADO POR AMBAS PSICÓLOGAS";
+            var isAlreadyApproved = (st === "APROBADO");
+            if (isAlreadyApproved) {
+              aprobarInitial = "APROBADO";
+            } else if (isCross) {
+              aprobarInitial = "ESPERANDO APROBACIÓN DE " + psycB;
+            }
+
+            var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
+
+            collectedRows.push([
+              matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, isAlreadyApproved, ""
+            ]);
+
+            collectedRichTextsA.push(richTextA);
+            collectedRichTextsB.push(richTextB);
+          }
+        }
       }
     }
-  }
 
-  Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas en batch (10 columnas canónicas).");
-  ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos.", "Revisión Lista", 5);
+    // 3. Escritura en batch garantizada
+    if (collectedRows.length > 0) {
+      if (revisionSheet.getMaxRows() < collectedRows.length + 1) {
+        revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), (collectedRows.length + 1) - revisionSheet.getMaxRows() + 10);
+      }
+
+      var targetRange = revisionSheet.getRange(2, 1, collectedRows.length, headers.length);
+      targetRange.setValues(collectedRows);
+
+      var rangeA = revisionSheet.getRange(2, 2, collectedRows.length, 1);
+      var rangeB = revisionSheet.getRange(2, 5, collectedRows.length, 1);
+
+      var richColA = collectedRichTextsA.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
+      var richColB = collectedRichTextsB.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
+
+      rangeA.setRichTextValues(richColA);
+      rangeB.setRichTextValues(richColB);
+
+      var checkboxRange = revisionSheet.getRange(2, 9, collectedRows.length, 1);
+      var checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+      checkboxRange.setDataValidation(checkboxRule);
+
+      for (var k = 0; k < collectedRows.length; k++) {
+        var apState = collectedRows[k][7];
+        var rowNum = k + 2;
+        if (apState === "APROBADO POR AMBAS PSICÓLOGAS") {
+          revisionSheet.getRange(rowNum, 8).setBackground("#D9EAD3");
+          revisionSheet.getRange(rowNum, 9).setBackground("#D9EAD3");
+        } else {
+          revisionSheet.getRange(rowNum, 8).setBackground("#FFF2CC");
+          revisionSheet.getRange(rowNum, 9).setBackground("#E8EAED");
+        }
+      }
+    }
+
+    Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas.");
+    try {
+      ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos.", "Revisión Lista", 5);
+    } catch (tErr) {}
+  } catch (err) {
+    Logger.log("ERROR CRÍTICO en reconstruirRevisionMaria: " + err.message + "\n" + err.stack);
+  }
 }
 
 /**
@@ -4409,95 +4435,102 @@ function verificarInactividad15DiasClientes() {
   }
 
   Logger.log("✅ Verificación de inactividad de 15 días completada. Evaluados: " + processedCount + " | Reactivados: " + reactivatedCount);
-  if (reactivatedCount > 0) {
-    ss.toast("Se crearon " + reactivatedCount + " filas de reactivación por inactividad de 15+ días en las psicólogas.", "Inactividad 15+ Días", 7);
-  } else {
-    ss.toast("Todos los clientes evaluados tienen actividad reciente (<15 días).", "Inactividad Verificada", 5);
+    try {
+      if (reactivatedCount > 0) {
+        ss.toast("Se crearon " + reactivatedCount + " filas de reactivación por inactividad de 15+ días en las psicólogas.", "Inactividad 15+ Días", 7);
+      } else {
+        ss.toast("Todos los clientes evaluados tienen actividad reciente (<15 días).", "Inactividad Verificada", 5);
+      }
+    } catch (tErr) {}
+  } catch (err) {
+    Logger.log("ERROR CRÍTICO en verificarInactividad15DiasClientes: " + err.message + "\n" + err.stack);
   }
 }
 
 function actualizarAlertas15DiasMatches() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
-  if (!matchesSheet) return;
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return;
+    
+    var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+    if (!matchesSheet) return;
 
-  var lastRow = matchesSheet.getLastRow();
-  if (lastRow <= 1) return;
+    var lastRow = matchesSheet.getLastRow();
+    if (lastRow <= 1) return;
 
-  var headers = getSheetHeaders(matchesSheet);
-  var matchCol = headers["ESTADO TOTAL"] || headers["MATCH"] || 1;
-  var statusACol = headers["ESTADO PERSONA A"] || 2;
-  var statusBCol = headers["ESTADO PERSONA B"] || 3;
-  var personACol = headers["PERSONA A"] || headers["PERSON A"] || 4;
-  var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
-  var diaCol = headers["DÍA"] || headers["DIA"] || 6;
-  var lugarCol = headers["LUGAR"] || 7;
-  var cityCol = headers["CIUDAD"] || headers["CITY"] || 8;
-  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
-  var fechaRealCol = headers["FECHA CITA REAL"] || 17;
+    var headers = getSheetHeaders(matchesSheet);
+    var matchCol = headers["ESTADO TOTAL"] || headers["MATCH"] || 1;
+    var statusACol = headers["ESTADO PERSONA A"] || 2;
+    var statusBCol = headers["ESTADO PERSONA B"] || 3;
+    var personACol = headers["PERSONA A"] || headers["PERSON A"] || 4;
+    var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+    var diaCol = headers["DÍA"] || headers["DIA"] || 7;
+    var lugarCol = headers["LUGAR"] || headers["RESTAURANTE"] || 10;
+    var cityCol = headers["CIUDAD"] || headers["CITY"] || 6;
+    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 9;
+    var fechaRealCol = headers["FECHA CITA REAL"] || 16;
 
-  var maxCheckCol = Math.max(personACol, personBCol, diaCol, matchCol, obsCol, fechaRealCol);
-  var data = matchesSheet.getRange(2, 1, lastRow - 1, maxCheckCol).getValues();
-  var today = new Date();
-  var overdueCount = 0;
+    var totalSheetCols = matchesSheet.getLastColumn();
+    var maxCheckCol = Math.min(totalSheetCols, matchesSheet.getMaxColumns());
+    if (maxCheckCol <= 0) return;
 
-  for (var i = 0; i < data.length; i++) {
-    var rowIdx = i + 2;
-    var nameA = (data[i][personACol - 1] || "").toString().trim();
-    var nameB = (data[i][personBCol - 1] || "").toString().trim();
-    var diaVal = (data[i][diaCol - 1] || "").toString().trim();
-    var fechaRealVal = (fechaRealCol && data[i][fechaRealCol - 1] ? data[i][fechaRealCol - 1].toString().trim() : "");
-    var statusVal = (data[i][matchCol - 1] || "").toString().trim().toUpperCase();
-    var obsVal = (data[i][obsCol - 1] || "").toString().trim();
+    var data = matchesSheet.getRange(2, 1, lastRow - 1, maxCheckCol).getValues();
+    var today = new Date();
+    var overdueCount = 0;
 
-    // Solo evaluar zona inferior (sin fecha agendada y en seguimiento de CS)
-    var isScheduled = (diaVal !== "" || fechaRealVal !== "" || statusVal === "CITA CONFIRMADA" || statusVal === "DATE PROGRAMADO" || statusVal === "CITA REALIZADA");
-    if (!nameA || isScheduled) continue;
+    for (var i = 0; i < data.length; i++) {
+      var rowIdx = i + 2;
+      var nameA = (personACol <= maxCheckCol ? data[i][personACol - 1] : "").toString().trim();
+      var nameB = (personBCol <= maxCheckCol ? data[i][personBCol - 1] : "").toString().trim();
+      var diaVal = (diaCol <= maxCheckCol ? data[i][diaCol - 1] : "").toString().trim();
+      var fechaRealVal = (fechaRealCol && fechaRealCol <= maxCheckCol && data[i][fechaRealCol - 1] ? data[i][fechaRealCol - 1].toString().trim() : "");
+      var statusVal = (matchCol <= maxCheckCol ? data[i][matchCol - 1] : "").toString().trim().toUpperCase();
+      var obsVal = (obsCol <= maxCheckCol ? data[i][obsCol - 1] : "").toString().trim();
 
-    // Detectar fecha de ingreso a CS
-    var entryDate = null;
-    var dateMatch = obsVal.match(/\[(?:Ingreso CS|Fecha):\s*(\d{4}-\d{2}-\d{2})\]/i);
-    if (dateMatch) {
-      entryDate = new Date(dateMatch[1]);
-    } else {
-      try {
-        var note = matchesSheet.getRange(rowIdx, personACol).getNote() || "";
-        var noteDateMatch = note.match(/(\d{4}-\d{2}-\d{2})/);
-        if (noteDateMatch) {
-          entryDate = new Date(noteDateMatch[1]);
-        }
-      } catch (ne) {}
-    }
+      // Solo evaluar zona inferior (sin fecha agendada y en seguimiento de CS)
+      var isScheduled = (diaVal !== "" || fechaRealVal !== "" || statusVal === "CITA CONFIRMADA" || statusVal === "DATE PROGRAMADO" || statusVal === "CITA REALIZADA");
+      if (!nameA || isScheduled) continue;
 
-    // Si no tiene fecha explícita, buscar en PROFILES o asumir fecha de entrevista
-    if (!entryDate || isNaN(entryDate.getTime())) {
-      var cellAData = getCellData(matchesSheet, rowIdx, personACol);
-      var detailsA = findPersonDetailsInWorkbook(cellAData);
-      if (detailsA && detailsA.date) {
-        entryDate = new Date(detailsA.date);
-      }
-    }
-
-    if (entryDate && !isNaN(entryDate.getTime())) {
-      var diffDays = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays >= 15) {
-        overdueCount++;
-        var alertNote = "🚨 ALERTA SERVICIO AL CLIENTE: Este match lleva " + diffDays + " días en CS sin agendar cita (>15 días desde " + Utilities.formatDate(entryDate, CONFIG.TIMEZONE, "yyyy-MM-dd") + ").";
-        matchesSheet.getRange(rowIdx, matchCol).setBackground("#F4CCCC");
-        matchesSheet.getRange(rowIdx, personACol).setNote(alertNote);
-
+      // Detectar fecha de ingreso a CS
+      var entryDate = null;
+      var dateMatch = obsVal.match(/\[(?:Ingreso CS|Fecha):\s*(\d{4}-\d{2}-\d{2})\]/i);
+      if (dateMatch) {
+        entryDate = new Date(dateMatch[1]);
+      } else {
         try {
-          notifyPsychologistOverdue(nameA, nameB, diffDays, entryDate);
-        } catch (pe) {
-          Logger.log("Aviso al notificar retraso a psicóloga: " + pe.message);
+          var note = matchesSheet.getRange(rowIdx, personACol).getNote() || "";
+          var noteDateMatch = note.match(/(\d{4}-\d{2}-\d{2})/);
+          if (noteDateMatch) {
+            entryDate = new Date(noteDateMatch[1]);
+          }
+        } catch (ne) {}
+      }
+
+      if (entryDate && !isNaN(entryDate.getTime())) {
+        var diffDays = Math.floor((today.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays >= 15) {
+          overdueCount++;
+          var alertNote = "🚨 ALERTA SERVICIO AL CLIENTE: Este match lleva " + diffDays + " días en CS sin agendar cita (>15 días desde " + Utilities.formatDate(entryDate, CONFIG.TIMEZONE, "yyyy-MM-dd") + ").";
+          matchesSheet.getRange(rowIdx, matchCol).setBackground("#F4CCCC");
+          matchesSheet.getRange(rowIdx, personACol).setNote(alertNote);
+
+          try {
+            notifyPsychologistOverdue(nameA, nameB, diffDays, entryDate);
+          } catch (pe) {
+            Logger.log("Aviso al notificar retraso a psicóloga: " + pe.message);
+          }
         }
       }
     }
-  }
 
-  Logger.log("✅ Verificación de 15 días en MATCHES completada. Matches vencidos encontrados: " + overdueCount);
-  if (overdueCount > 0) {
-    ss.toast("Se encontraron " + overdueCount + " matches con >15 días sin agendar en CS.", "Alerta de Retraso", 6);
+    Logger.log("✅ Verificación de 15 días en MATCHES completada. Matches vencidos encontrados: " + overdueCount);
+    try {
+      if (overdueCount > 0) {
+        ss.toast("Se encontraron " + overdueCount + " matches con >15 días sin agendar en CS.", "Alerta de Retraso", 6);
+      }
+    } catch (tErr) {}
+  } catch (err) {
+    Logger.log("ERROR CRÍTICO en actualizarAlertas15DiasMatches: " + err.message + "\n" + err.stack);
   }
 }
 
