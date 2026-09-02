@@ -14,160 +14,7 @@ const CITIES = [
   'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
 ]
 
-const RESTAURANTS_LIST = [
-  'Mora Pastelería (Zona G)',
-  'Primi Restaurante (Zona T)',
-  'Cantina y Punto (Zona G)',
-  'Criterión (Zona G)',
-  'El Bandido Bistro (Zona G)',
-  'Harry Sasson (Zona G)',
-  'Osaka Cocina Nikkei (Zona G)',
-  'Café San Alberto (Usaquén)',
-  'Abasto (Usaquén)',
-  'Storia D’Amore (Zona T / Usaquén)',
-  'Matiz Restaurante (Chicó)',
-  'Otro lugar por definir'
-]
-
-function ScheduleModal({ match, onClose, onScheduled }) {
-  const defaultDate = new Date()
-  defaultDate.setDate(defaultDate.getDate() + 2)
-  defaultDate.setHours(19, 30, 0, 0)
-  const defaultDateStr = defaultDate.toISOString().slice(0, 16)
-
-  const [dateVal, setDateVal] = useState(defaultDateStr)
-  const [venueVal, setVenueVal] = useState(RESTAURANTS_LIST[0])
-  const [customVenue, setCustomVenue] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!dateVal) {
-      alert('Por favor selecciona la fecha y hora en el calendario.')
-      return
-    }
-
-    const effectiveVenue = venueVal === 'Otro lugar por definir' ? (customVenue || 'Por definir') : venueVal
-    setSubmitting(true)
-
-    try {
-      const formattedDate = dateVal.replace('T', ' ')
-      await onScheduled(match, formattedDate, effectiveVenue)
-      onClose()
-    } catch (err) {
-      alert(err.message || 'Error al agendar cita')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
-    }} onClick={onClose}>
-      <div style={{
-        background: '#1A1214', border: '1px solid var(--border-color)', borderRadius: 16,
-        padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <CalendarIcon size={20} style={{ color: 'var(--color-primary)' }} />
-            Agendar Fecha Real de Cita
-          </h2>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <div style={{ background: 'rgba(150,21,0,0.08)', borderRadius: 8, padding: '12px 16px', marginBottom: 20 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pareja Confirmada</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
-            {match.person_a} <span style={{ color: 'var(--color-primary)' }}>×</span> {match.person_b}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-            📍 Ciudad: {match.city || 'Bogotá'}
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-              📅 Fecha y Hora Real (Selector Interactivo de Calendario):
-            </label>
-            <input
-              type="datetime-local"
-              required
-              value={dateVal}
-              onChange={e => setDateVal(e.target.value)}
-              style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid var(--border-color)', background: 'var(--bg-base)',
-                color: 'var(--text-primary)', fontSize: 14, outline: 'none'
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-              📍 Lugar / Restaurante Catálogo:
-            </label>
-            <select
-              value={venueVal}
-              onChange={e => setVenueVal(e.target.value)}
-              style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid var(--border-color)', background: 'var(--bg-base)',
-                color: 'var(--text-primary)', fontSize: 13, outline: 'none'
-              }}
-            >
-              {RESTAURANTS_LIST.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-
-          {venueVal === 'Otro lugar por definir' && (
-            <div style={{ marginBottom: 20 }}>
-              <input
-                type="text"
-                placeholder="Especifica el nombre del restaurante o lugar..."
-                value={customVenue}
-                onChange={e => setCustomVenue(e.target.value)}
-                style={{
-                  width: '100%', padding: '10px 14px', borderRadius: 8,
-                  border: '1px solid var(--border-color)', background: 'var(--bg-base)',
-                  color: 'var(--text-primary)', fontSize: 13, outline: 'none'
-                }}
-              />
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
-                background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer'
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              style={{
-                padding: '9px 20px', borderRadius: 8, border: 'none',
-                background: 'var(--color-primary)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer'
-              }}
-            >
-              {submitting ? 'Guardando...' : 'Confirmar y Activar Cita'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
+import RestaurantFilterModal from '../../components/RestaurantFilterModal'
 
 export default function AprobadosMaria() {
   const { token } = useAuth()
@@ -502,10 +349,10 @@ export default function AprobadosMaria() {
       </div>
 
       {scheduleModalMatch && (
-        <ScheduleModal
+        <RestaurantFilterModal
           match={scheduleModalMatch}
           onClose={() => setScheduleModalMatch(null)}
-          onScheduled={handleScheduledConfirm}
+          onConfirm={(dateVal, venueVal) => handleScheduledConfirm(scheduleModalMatch, dateVal, venueVal)}
         />
       )}
     </div>

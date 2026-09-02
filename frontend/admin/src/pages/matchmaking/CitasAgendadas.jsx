@@ -10,128 +10,7 @@ const CITIES = [
   'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
 ]
 
-function RescheduleModal({ item, onClose, onRescheduled }) {
-  const defaultDate = new Date()
-  defaultDate.setDate(defaultDate.getDate() + 2)
-  defaultDate.setHours(19, 30, 0, 0)
-  const defaultDateStr = defaultDate.toISOString().slice(0, 16)
-
-  const [newDate, setNewDate] = useState(item.scheduled_date ? item.scheduled_date.slice(0, 16).replace(' ', 'T') : defaultDateStr)
-  const [reason, setReason] = useState('Cliente solicitó cambio de horario')
-  const [submitting, setSubmitting] = useState(false)
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!newDate) {
-      alert('Por favor selecciona la nueva fecha y hora en el calendario.')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await onRescheduled(item.calendar_id, {
-        reschedule: true,
-        new_scheduled_date: newDate.replace('T', ' '),
-        reschedule_reason: reason
-      })
-      onClose()
-    } catch (err) {
-      alert(err.message || 'Error al reprogramar')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
-    }} onClick={onClose}>
-      <div style={{
-        background: '#1A1214', border: '1px solid var(--border-color)', borderRadius: 16,
-        padding: 28, maxWidth: 500, width: '100%', boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <RotateCcw size={20} style={{ color: '#D97706' }} />
-            Reprogramar Cita
-          </h2>
-          <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-            <X size={18} />
-          </button>
-        </div>
-
-        <div style={{ background: 'rgba(217,119,6,0.1)', borderRadius: 8, padding: '12px 16px', marginBottom: 20 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Cita Actual</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
-            {item.person_a} <span style={{ color: 'var(--color-primary)' }}>×</span> {item.person_b}
-          </div>
-          <div style={{ fontSize: 12, color: '#D97706', marginTop: 4 }}>
-            📅 Fecha anterior: {item.scheduled_date || 'Por definir'} | 📍 {item.venue || 'Lugar por definir'}
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-              📅 Nueva Fecha y Hora (Selector de Calendario):
-            </label>
-            <input
-              type="datetime-local"
-              required
-              value={newDate}
-              onChange={e => setNewDate(e.target.value)}
-              style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid var(--border-color)', background: 'var(--bg-base)',
-                color: 'var(--text-primary)', fontSize: 14, outline: 'none'
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-              Motivo de la Reprogramación:
-            </label>
-            <input
-              type="text"
-              required
-              value={reason}
-              onChange={e => setReason(e.target.value)}
-              style={{
-                width: '100%', padding: '10px 14px', borderRadius: 8,
-                border: '1px solid var(--border-color)', background: 'var(--bg-base)',
-                color: 'var(--text-primary)', fontSize: 13, outline: 'none'
-              }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 24 }}>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border-color)',
-                background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer'
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              style={{
-                padding: '9px 20px', borderRadius: 8, border: 'none',
-                background: '#D97706', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer'
-              }}
-            >
-              {submitting ? 'Reprogramando...' : 'Guardar Nueva Fecha'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
+import RestaurantFilterModal from '../../components/RestaurantFilterModal'
 
 export default function CitasAgendadas() {
   const { token } = useAuth()
@@ -519,10 +398,17 @@ export default function CitasAgendadas() {
       </div>
 
       {rescheduleModalItem && (
-        <RescheduleModal
-          item={rescheduleModalItem}
+        <RestaurantFilterModal
+          match={rescheduleModalItem}
+          initialDate={rescheduleModalItem.scheduled_date}
+          initialVenue={rescheduleModalItem.venue}
           onClose={() => setRescheduleModalItem(null)}
-          onRescheduled={handleUpdateDate}
+          onConfirm={(newDateTime, newVenue) => handleUpdateDate(rescheduleModalItem.calendar_id, {
+            reschedule: true,
+            new_scheduled_date: newDateTime,
+            venue: newVenue,
+            reschedule_reason: 'Actualización de fecha/restaurante desde filtro'
+          })}
         />
       )}
     </div>
