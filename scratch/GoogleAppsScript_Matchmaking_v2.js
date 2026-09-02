@@ -116,15 +116,15 @@ function onEditInstallable(e) {
     return;
   }
 
-  // ── DEBOUNCING ANTI-DUPLICADO DE TRIGGERS ──
-  var editKey = "onEdit_" + sheetName + "_" + row + "_" + col + "_" + (editVal || "");
+  // ── DEBOUNCING ANTI-DUPLICADO DE TRIGGERS (POR CELDA FÍSICA) ──
+  var editKey = "onEdit_" + sheetName + "_" + row + "_" + col;
   try {
     var cache = CacheService.getScriptCache();
     if (cache && cache.get(editKey)) {
-      Logger.log("⚠️ Evento onEdit duplicado detectado para " + editKey + " (debounced). Abortando segunda ejecución.");
+      Logger.log("⚠️ Evento onEdit duplicado en misma celda detectado para " + editKey + " (debounced). Abortando segunda ejecución.");
       return;
     }
-    if (cache) cache.put(editKey, "1", 3);
+    if (cache) cache.put(editKey, "1", 4); // 4 segundos de protección por celda
   } catch (cacheErr) {
     Logger.log("Aviso de CacheService: " + cacheErr.message);
   }
@@ -269,6 +269,14 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
 
         // 2. Bloqueo Duro con Modal "¿Forzar?": Solo para Orientación Real Incompatible o Cita Previa Repetida
         if (!compCheck.compatible && compCheck.issues && compCheck.issues.length > 0) {
+          var alertLockKey = "alert_comp_" + sheet.getName() + "_" + row;
+          var cache = CacheService.getScriptCache();
+          if (cache && cache.get(alertLockKey)) {
+            Logger.log("⚠️ Modal de compatibilidad ya mostrado recientemente para " + alertLockKey + ". Omitiendo modal duplicado.");
+            return;
+          }
+          if (cache) cache.put(alertLockKey, "1", 6); // 6 segundos de protección contra modal duplicado
+
           var ui = SpreadsheetApp.getUi();
           var promptMsg = "⚠️ INCOMPATIBILIDAD DETECTADA EN ESTA PROPUESTA:\n\n" + 
                           compCheck.issues.map(function(iss) { return "• " + iss; }).join("\n") + 
@@ -2616,6 +2624,15 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   if (unclosedClient) {
     Logger.log("🚨 BLOQUEO PROFILES: " + cleanPsyc + " ya tiene un cliente sin tocar: '" + unclosedClient + "'");
     
+    var alertLockKey = "alert_prof_" + sheet.getName() + "_" + row + "_" + cleanPsyc;
+    var cache = CacheService.getScriptCache();
+    if (cache && cache.get(alertLockKey)) {
+      Logger.log("⚠️ Modal de cliente abierto ya mostrado recientemente para " + alertLockKey + ". Omitiendo modal duplicado.");
+      sheet.deleteRow(row);
+      return;
+    }
+    if (cache) cache.put(alertLockKey, "1", 6);
+
     var alertMsg = "⚠️ BLOQUEO DE CLIENTE ABIERTO:\n\n" +
                    "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin tocar: '" + unclosedClient + "'.\n\n" +
                    "Cada psicóloga solo puede tener 1 cliente sin tocar a la vez en PROFILES.\n" +
