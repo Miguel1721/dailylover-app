@@ -89,12 +89,11 @@ var CONFIG = {
   }
 };
 
-// ─── 1. DISPARADOR PRINCIPAL (SIMPLE & INSTALABLE) ──────────────────────────
-
-function onEdit(e) {
-  Logger.log("=== onEdit (Simple Trigger) Disparado ===");
-  onEditInstallable(e);
-}
+// ─── 1. DISPARADOR PRINCIPAL (SOLO INSTALABLE - NUNCA CREAR onEdit SIMPLE) ─
+// ⚠️ IMPORTANTE: NUNCA definir 'function onEdit(e)'. El libro ya tiene un
+// trigger instalable configurado que ejecuta 'onEditInstallable(e)'.
+// Si se define 'onEdit(e)', Google Sheets disparará ambas funciones al mismo
+// tiempo provocando condiciones de carrera y bloqueos.
 
 function onEditInstallable(e) {
   Logger.log("=== onEditInstallable Disparado ===");
