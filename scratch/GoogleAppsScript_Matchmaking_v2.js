@@ -116,6 +116,19 @@ function onEditInstallable(e) {
     return;
   }
 
+  // ── DEBOUNCING ANTI-DUPLICADO DE TRIGGERS ──
+  var editKey = "onEdit_" + sheetName + "_" + row + "_" + col + "_" + (editVal || "");
+  try {
+    var cache = CacheService.getScriptCache();
+    if (cache && cache.get(editKey)) {
+      Logger.log("⚠️ Evento onEdit duplicado detectado para " + editKey + " (debounced). Abortando segunda ejecución.");
+      return;
+    }
+    if (cache) cache.put(editKey, "1", 3);
+  } catch (cacheErr) {
+    Logger.log("Aviso de CacheService: " + cacheErr.message);
+  }
+
   var upperSheetName = sheetName.trim().toUpperCase();
 
   // A. Pestañas de psicólogas ("MATCHES SILVI", "MATCHES JENN", "MATCHES ANA ", etc.)
@@ -2575,20 +2588,20 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   // ── 7.5 REGLA BLOQUEANTE: MÁXIMO 1 CLIENTE ABIERTO POR PSICÓLOGA EN PROFILES ──
   var unclosedClient = getUnclosedClientForPsychologist(psycSheet, personAName);
   if (unclosedClient) {
-    Logger.log("🚨 BLOQUEO PROFILES: " + cleanPsyc + " ya tiene un cliente sin cerrar: '" + unclosedClient + "'");
-    sheet.getRange(row, slotsCol)
-      .setValue("BLOQUEADO: CLIENTE ABIERTO (" + unclosedClient + ")")
-      .setBackground("#F4CCCC")
-      .setNote("La psicóloga " + cleanPsyc + " ya tiene a '" + unclosedClient + "' abierto sin cerrar. Debe cerrar o agendar cita al cliente actual antes de generar slots nuevos.");
+    Logger.log("🚨 BLOQUEO PROFILES: " + cleanPsyc + " ya tiene un cliente sin tocar: '" + unclosedClient + "'");
     
     var alertMsg = "⚠️ BLOQUEO DE CLIENTE ABIERTO:\n\n" +
-                   "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin cerrar: '" + unclosedClient + "'.\n\n" +
-                   "Cada psicóloga solo puede tener 1 cliente sin cerrar a la vez en PROFILES.\n" +
-                   "Debe agendar cita o cerrar el cliente actual (NO HAY GENTE, DESCALIFICADO, REFUND, etc.) antes de crear slots para '" + personAName + "'.";
+                   "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin tocar: '" + unclosedClient + "'.\n\n" +
+                   "Cada psicóloga solo puede tener 1 cliente sin tocar a la vez en PROFILES.\n" +
+                   "Debe cambiar el estado o trabajar el cliente actual antes de ingresar a '" + personAName + "'.\n\n" +
+                   "La fila ingresada será eliminada de PROFILES.";
     try {
       SpreadsheetApp.getUi().alert("Límite de Cliente Abierto", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
     } catch (uiErr) {}
-    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Bloqueo: " + cleanPsyc + " ya tiene a '" + unclosedClient + "' sin cerrar.", "Cliente Pendiente", 8);
+    
+    // Borrar la fila completa para no acumular basura en PROFILES
+    sheet.deleteRow(row);
+    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Fila eliminada: " + cleanPsyc + " ya tiene a '" + unclosedClient + "' sin tocar.", "Cliente Pendiente", 8);
     return;
   }
 
@@ -2680,6 +2693,7 @@ function onOpen(e) {
     menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
     menu.addItem("⚙️ Reordenar Columnas MATCHES (17 Canónicas)", "reordenarColumnasMatchesCanonico");
+    menu.addItem("⚙️ Reordenar Pestañas Psicólogas (Fecha en Col B)", "reordenarColumnasPsicologasCanonico");
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
     menu.addToUi();
@@ -5461,4 +5475,45 @@ function aplicarDesplegablesDependientesRestaurantesTodos() {
     updateDependentRestaurantDropdown(sheet, r);
   }
   ss.toast("Desplegables dependientes de restaurantes actualizados en todas las filas de MATCHES.", "Restaurantes Filtrados", 6);
+}
+
+
+/**
+ * Reordena las columnas en las 10 pestañas de psicólogas de forma canónica:
+ * Mueve físicamente la columna 'Fecha de entrevista' / 'FECHA' a la Columna B (Columna 2).
+ * Preserva el 100% de los datos históricos y actualiza los encabezados.
+ */
+function reordenarColumnasPsicologasCanonico() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  var modifiedCount = 0;
+
+  for (var s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    var sName = sheet.getName().trim();
+    if (sName.indexOf("MATCHES ") !== 0 || sName === "MATCHES") continue;
+
+    var headers = getSheetHeaders(sheet);
+    var colFecha = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
+
+    if (!colFecha) {
+      // Si no existe, insertar columna en Columna B (2)
+      sheet.insertColumnAfter(1);
+      sheet.getRange(1, 2).setValue("Fecha de entrevista").setFontWeight("bold").setBackground("#D9EAD3");
+      modifiedCount++;
+      Logger.log("✅ Columna 'Fecha de entrevista' creada en Columna B de '" + sName + "'.");
+    } else if (colFecha !== 2) {
+      // Mover físicamente a la Columna B (2)
+      sheet.moveColumns(sheet.getRange(1, colFecha), 2);
+      sheet.getRange(1, 2).setValue("Fecha de entrevista").setFontWeight("bold").setBackground("#D9EAD3");
+      modifiedCount++;
+      Logger.log("✅ Columna 'Fecha de entrevista' movida de Col " + colFecha + " a Columna B en '" + sName + "'.");
+    } else {
+      sheet.getRange(1, 2).setValue("Fecha de entrevista").setFontWeight("bold").setBackground("#D9EAD3");
+      Logger.log("ℹ️ '" + sName + "' ya tiene 'Fecha de entrevista' en Columna B.");
+    }
+  }
+
+  ss.toast("Se reordenaron " + modifiedCount + " pestañas de psicólogas (Fecha de entrevista en Columna B).", "Reordenamiento Canónico", 6);
+  Logger.log("✅ Reordenamiento de psicólogas completado exitosamente.");
 }
