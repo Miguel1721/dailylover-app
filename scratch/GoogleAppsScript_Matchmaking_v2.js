@@ -1264,9 +1264,15 @@ function getTrueLastRow(sheet, checkColIndex) {
  * ID MATCH | Persona A | Origen pestaña (A) | Observaciones (A) | Persona B | Origen pestaña (B) | Observaciones (B) | Aprobar | NOTAS MARÍA
  */
 function reconstruirRevisionMaria() {
+  var tStart = new Date().getTime();
+  Logger.log("⏱️ [0.000s] === INICIO DE reconstruirRevisionMaria ===");
+
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (!ss) return;
+    if (!ss) {
+      Logger.log("❌ No se pudo obtener la hoja de cálculo activa.");
+      return;
+    }
     
     var sheetName = CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA";
     var revisionSheet = ss.getSheetByName(sheetName) || ss.getSheetByName("REVISION MARIA");
@@ -1281,6 +1287,9 @@ function reconstruirRevisionMaria() {
       revisionSheet = ss.insertSheet(sheetName);
       revisionSheet.setTabColor("#D5A6BD");
     }
+
+    var tInit = ((new Date().getTime() - tStart) / 1000).toFixed(3);
+    Logger.log("⏱️ [" + tInit + "s] Pestaña 'REVISIÓN MARÍA' lista. Ajustando dimensiones...");
 
     // Asegurar que la hoja tenga exactamente al menos 10 columnas
     if (revisionSheet.getMaxColumns() < headers.length) {
@@ -1308,14 +1317,20 @@ function reconstruirRevisionMaria() {
       } catch (ve) {}
     }
 
-    // 1. Crear mapa local ultra-rápido de psicólogas por persona para evitar peticiones HTTP en bucle
+    var tClear = ((new Date().getTime() - tStart) / 1000).toFixed(3);
+    Logger.log("⏱️ [" + tClear + "s] Limpieza completada. Construyendo mapa de psicólogas en memoria...");
+
+    // 1. Crear mapa local de psicólogas por persona en memoria O(1)
     var psycMap = {};
     var allSheets = ss.getSheets();
+    var psychologistSheets = [];
+
     for (var s = 0; s < allSheets.length; s++) {
       var sh = allSheets[s];
       var sName = sh.getName().trim();
       var sUpper = sName.toUpperCase();
       if (sUpper.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sUpper !== "MATCHES" && sUpper !== "MATCHES COMPLETED") {
+        psychologistSheets.push(sh);
         var pNameOnly = sName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
         var shHeaders = getSheetHeaders(sh);
         var pACol = shHeaders["PERSON A"] || shHeaders["PERSONA A"] || 7;
@@ -1332,125 +1347,128 @@ function reconstruirRevisionMaria() {
       }
     }
 
+    var tMap = ((new Date().getTime() - tStart) / 1000).toFixed(3);
+    Logger.log("⏱️ [" + tMap + "s] Mapa de psicólogas indexado (" + Object.keys(psycMap).length + " clientes). Procesando las " + psychologistSheets.length + " pestañas en batch...");
+
     var collectedRows = [];
-    var collectedRichTextsA = [];
-    var collectedRichTextsB = [];
+    var richColA = [];
+    var richColB = [];
+    var bgMatrix = [];
     var seenPairs = {};
 
-    // 2. Escanear matches en estado HECHO o APROBADO de forma ultra-ligera
-    for (var s = 0; s < allSheets.length; s++) {
-      var curSheet = allSheets[s];
+    // 2. Escanear matches en batch (1 lectura de valores + 1 lectura de RichText por pestaña)
+    for (var i = 0; i < psychologistSheets.length; i++) {
+      var curSheet = psychologistSheets[i];
       var curName = curSheet.getName().trim();
-      var upperCurName = curName.toUpperCase();
+      var psycName = curName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
+      var sHeaders = getSheetHeaders(curSheet);
 
-      if (upperCurName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperCurName !== "MATCHES" && upperCurName !== "MATCHES COMPLETED") {
-        var psycName = curName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
-        var sHeaders = getSheetHeaders(curSheet);
+      var statusCol = sHeaders["STATUS"];
+      var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
+      var personBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"] || sHeaders["CANDIDATO"] || sHeaders["MATCH"];
+      var obsCol = sHeaders["OBSERVACIONES"] || sHeaders["OBSERVACION"] || sHeaders["NOTAS"];
 
-        var statusCol = sHeaders["STATUS"];
-        var personACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
-        var personBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"] || sHeaders["CANDIDATO"] || sHeaders["MATCH"];
-        var obsCol = sHeaders["OBSERVACIONES"] || sHeaders["OBSERVACION"] || sHeaders["NOTAS"];
+      if (!statusCol || !personACol) continue;
 
-        if (!statusCol || !personACol) continue;
+      var totalRows = curSheet.getLastRow();
+      if (totalRows <= 1) continue;
 
-        var totalRows = curSheet.getLastRow();
-        if (totalRows <= 1) continue;
+      var numRows = totalRows - 1;
+      var maxColToFetch = Math.max(statusCol, personACol, personBCol || 1, obsCol || 1);
+      
+      // Batch get values + batch get rich text
+      var sheetValues = curSheet.getRange(2, 1, numRows, maxColToFetch).getValues();
+      var rtsA = curSheet.getRange(2, personACol, numRows, 1).getRichTextValues();
+      var rtsB = personBCol ? curSheet.getRange(2, personBCol, numRows, 1).getRichTextValues() : null;
 
-        var maxColToFetch = Math.max(statusCol, personACol, personBCol || 1, obsCol || 1);
-        var sheetValues = curSheet.getRange(2, 1, totalRows - 1, maxColToFetch).getValues();
+      var statusIdx = statusCol - 1;
+      var personAIdx = personACol - 1;
+      var personBIdx = personBCol ? personBCol - 1 : -1;
+      var obsIdx = obsCol ? obsCol - 1 : -1;
 
-        var statusIdx = statusCol - 1;
-        var personAIdx = personACol - 1;
-        var personBIdx = personBCol ? personBCol - 1 : -1;
-        var obsIdx = obsCol ? obsCol - 1 : -1;
+      var foundInSheet = 0;
+      for (var r = 0; r < numRows; r++) {
+        var rowVal = sheetValues[r];
+        var st = (rowVal[statusIdx] || "").toString().trim().toUpperCase();
 
-        for (var r = 0; r < sheetValues.length; r++) {
-          var rowVal = sheetValues[r];
-          var st = (rowVal[statusIdx] || "").toString().trim().toUpperCase();
+        if (st === "HECHO" || st === "HECHO POR MAPE" || st === "APROBADO") {
+          var textA = (rowVal[personAIdx] || "").toString().trim();
+          var textB = personBIdx !== -1 ? (rowVal[personBIdx] || "").toString().trim() : "";
 
-          if (st === "HECHO" || st === "HECHO POR MAPE" || st === "APROBADO") {
-            var textA = (rowVal[personAIdx] || "").toString().trim();
-            var textB = personBIdx !== -1 ? (rowVal[personBIdx] || "").toString().trim() : "";
+          if (!textA || !textB) continue;
 
-            if (!textA || !textB) continue;
+          var pairKey = getCanonicalPairId(textA, textB);
+          if (seenPairs[pairKey]) continue;
+          seenPairs[pairKey] = true;
 
-            var pairKey = getCanonicalPairId(textA, textB);
-            if (seenPairs[pairKey]) continue;
-            seenPairs[pairKey] = true;
+          var richA = rtsA[r][0];
+          var richB = rtsB ? rtsB[r][0] : null;
 
-            var actualRowInSheet = r + 2;
-            var richTextA = curSheet.getRange(actualRowInSheet, personACol).getRichTextValue();
-            var richTextB = personBCol ? curSheet.getRange(actualRowInSheet, personBCol).getRichTextValue() : null;
-
-            var obsVal = obsIdx !== -1 ? (rowVal[obsIdx] || "").toString().trim() : "";
-            var psycB = psycMap[textB.toLowerCase()] || "";
-            var isCross = (psycB && psycB.toLowerCase() !== psycName.toLowerCase());
-            var origenTabB = isCross ? "MATCHES " + psycB : curName;
-            var obsB = isCross ? "[Pendiente de revisión]" : obsVal;
-            
-            var aprobarInitial = "APROBADO POR AMBAS PSICÓLOGAS";
-            var isAlreadyApproved = (st === "APROBADO");
-            if (isAlreadyApproved) {
-              aprobarInitial = "APROBADO";
-            } else if (isCross) {
-              aprobarInitial = "ESPERANDO APROBACIÓN DE " + psycB;
-            }
-
-            var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
-
-            collectedRows.push([
-              matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, isAlreadyApproved, ""
-            ]);
-
-            collectedRichTextsA.push(richTextA);
-            collectedRichTextsB.push(richTextB);
+          var obsVal = obsIdx !== -1 ? (rowVal[obsIdx] || "").toString().trim() : "";
+          var psycB = psycMap[textB.toLowerCase()] || "";
+          var isCross = (psycB && psycB.toLowerCase() !== psycName.toLowerCase());
+          var origenTabB = isCross ? "MATCHES " + psycB : curName;
+          var obsB = isCross ? "[Pendiente de revisión]" : obsVal;
+          
+          var aprobarInitial = "APROBADO POR AMBAS PSICÓLOGAS";
+          var isAlreadyApproved = (st === "APROBADO");
+          if (isAlreadyApproved) {
+            aprobarInitial = "APROBADO";
+          } else if (isCross) {
+            aprobarInitial = "ESPERANDO APROBACIÓN DE " + psycB;
           }
+
+          var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
+
+          collectedRows.push([
+            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, isAlreadyApproved, ""
+          ]);
+
+          richColA.push([richA || SpreadsheetApp.newRichTextValue().setText(textA).build()]);
+          richColB.push([richB || SpreadsheetApp.newRichTextValue().setText(textB).build()]);
+
+          // Construir colores de fila en batch
+          var col8Bg = (aprobarInitial === "APROBADO POR AMBAS PSICÓLOGAS") ? "#D9EAD3" : "#FFF2CC";
+          var col9Bg = (aprobarInitial === "APROBADO POR AMBAS PSICÓLOGAS") ? "#D9EAD3" : "#E8EAED";
+          bgMatrix.push([null, null, null, null, null, null, null, col8Bg, col9Bg, null]);
+          foundInSheet++;
         }
       }
+      Logger.log("  ↳ [" + curName + "] " + foundInSheet + " matches calificados añadidos.");
     }
 
-    // 3. Escritura en batch garantizada
+    var tScan = ((new Date().getTime() - tStart) / 1000).toFixed(3);
+    Logger.log("⏱️ [" + tScan + "s] Escaneo completado. Total filas a escribir: " + collectedRows.length + ". Escribiendo en batch...");
+
+    // 3. Escritura y formateo 100% Vectorizado en 1 Solo Batch Call
     if (collectedRows.length > 0) {
-      if (revisionSheet.getMaxRows() < collectedRows.length + 1) {
-        revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), (collectedRows.length + 1) - revisionSheet.getMaxRows() + 10);
+      var totalNeededRows = collectedRows.length + 1;
+      if (revisionSheet.getMaxRows() < totalNeededRows) {
+        revisionSheet.insertRowsAfter(revisionSheet.getMaxRows(), totalNeededRows - revisionSheet.getMaxRows() + 10);
       }
 
-      var targetRange = revisionSheet.getRange(2, 1, collectedRows.length, headers.length);
-      targetRange.setValues(collectedRows);
+      // Escribir valores
+      revisionSheet.getRange(2, 1, collectedRows.length, headers.length).setValues(collectedRows);
 
-      var rangeA = revisionSheet.getRange(2, 2, collectedRows.length, 1);
-      var rangeB = revisionSheet.getRange(2, 5, collectedRows.length, 1);
+      // Inyectar RichText en batch
+      revisionSheet.getRange(2, 2, collectedRows.length, 1).setRichTextValues(richColA);
+      revisionSheet.getRange(2, 5, collectedRows.length, 1).setRichTextValues(richColB);
 
-      var richColA = collectedRichTextsA.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
-      var richColB = collectedRichTextsB.map(function(rt) { return [rt || SpreadsheetApp.newRichTextValue().setText("").build()]; });
+      // Inyectar colores de fondo en 1 solo batch call
+      revisionSheet.getRange(2, 1, collectedRows.length, headers.length).setBackgrounds(bgMatrix);
 
-      rangeA.setRichTextValues(richColA);
-      rangeB.setRichTextValues(richColB);
-
-      var checkboxRange = revisionSheet.getRange(2, 9, collectedRows.length, 1);
+      // Configurar Checkboxes en 1 solo batch call
       var checkboxRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-      checkboxRange.setDataValidation(checkboxRule);
-
-      for (var k = 0; k < collectedRows.length; k++) {
-        var apState = collectedRows[k][7];
-        var rowNum = k + 2;
-        if (apState === "APROBADO POR AMBAS PSICÓLOGAS") {
-          revisionSheet.getRange(rowNum, 8).setBackground("#D9EAD3");
-          revisionSheet.getRange(rowNum, 9).setBackground("#D9EAD3");
-        } else {
-          revisionSheet.getRange(rowNum, 8).setBackground("#FFF2CC");
-          revisionSheet.getRange(rowNum, 9).setBackground("#E8EAED");
-        }
-      }
+      revisionSheet.getRange(2, 9, collectedRows.length, 1).setDataValidation(checkboxRule);
     }
 
-    Logger.log("✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas.");
+    var tEnd = ((new Date().getTime() - tStart) / 1000).toFixed(3);
+    Logger.log("⏱️ [" + tEnd + "s] ✅ Pestaña 'REVISIÓN MARÍA' reconstruida exitosamente con " + collectedRows.length + " filas.");
     try {
-      ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos.", "Revisión Lista", 5);
+      ss.toast("REVISIÓN MARÍA actualizada: " + collectedRows.length + " matches listos en " + tEnd + "s.", "Revisión Lista", 5);
     } catch (tErr) {}
   } catch (err) {
-    Logger.log("ERROR CRÍTICO en reconstruirRevisionMaria: " + err.message + "\n" + err.stack);
+    Logger.log("❌ ERROR CRÍTICO en reconstruirRevisionMaria: " + err.message + " | " + err.stack);
   }
 }
 
