@@ -4129,6 +4129,13 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
     matchesSheet.getRange(targetRow, fechaRealCol).setValue("").clearNote().setBackground(null);
   }
 
+  // 6. Inicializar menú desplegable dependiente de restaurantes según la ciudad
+  try {
+    updateDependentRestaurantDropdown(matchesSheet, targetRow);
+  } catch (drErr) {
+    Logger.log("Aviso al inicializar desplegable dependiente de restaurantes: " + drErr.message);
+  }
+
   Logger.log("✅ Match insertado en zona inferior de MATCHES (Fila " + targetRow + "): " + cellA.text + " + " + (cellB ? cellB.text : "Por definir") + (hasCompAlert ? " [CON ALERTA DE COMPATIBILIDAD]" : ""));
 }
 
@@ -4632,6 +4639,13 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
         Logger.log("Aviso al sincronizar cita con fecha: " + ce.message);
       }
     }
+  }
+
+  // ── 4. EDICIÓN EN CIUDAD O PRESUPUESTO -> ACTUALIZAR DESPLEGABLE DEPENDIENTE DE RESTAURANTE ──
+  var presupuestoCol = headers["PRESUPUESTO"] || 9;
+  var restauranteCol = headers["RESTAURANTE"] || headers["LUGAR"] || 10;
+  if (col === cityCol || col === presupuestoCol) {
+    updateDependentRestaurantDropdown(sheet, row);
   }
 }
 
@@ -5349,4 +5363,103 @@ function getUnclosedClientForPsychologist(psycSheet, currentClientName) {
   }
 
   return null;
+}
+
+
+/**
+ * Actualiza dinámicamente la lista desplegable de RESTAURANTE en una fila específica de MATCHES
+ * filtrando únicamente los restaurantes de ⚙️ RESTAURANTES que coincidan con la CIUDAD y PRESUPUESTO de esa fila.
+ */
+function updateDependentRestaurantDropdown(sheet, row) {
+  var headers = getSheetHeaders(sheet);
+  var cityCol = headers["CIUDAD"] || headers["CITY"] || 6;
+  var budgetCol = headers["PRESUPUESTO"] || 9;
+  var restCol = headers["RESTAURANTE"] || headers["LUGAR"] || 10;
+
+  var currentCity = (sheet.getRange(row, cityCol).getValue() || "").toString().trim();
+  var currentBudget = (sheet.getRange(row, budgetCol).getValue() || "").toString().trim();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+  if (!restSheet) return;
+
+  var rLast = restSheet.getLastRow();
+  if (rLast <= 1) return;
+
+  // Columnas en ⚙️ RESTAURANTES:
+  // 1: Restaurante / Café (Nombre)
+  // 2: Ciudad
+  // 3: Tipo de comida
+  // 4: Precio (rango)
+  // 5: Precio Numérico (COP)
+  // 6: Categoría de Presupuesto
+  // 7: Días Disponibles
+  // 8: Horario
+  // 9: Zona
+  // 10: Ubicación detallada
+  var rData = restSheet.getRange(2, 1, rLast - 1, 10).getValues();
+  var filteredNames = [];
+
+  for (var i = 0; i < rData.length; i++) {
+    var rName = (rData[i][0] || "").toString().trim();
+    var rCity = (rData[i][1] || "").toString().trim();
+    var rCat = (rData[i][5] || "").toString().trim();
+
+    if (!rName) continue;
+
+    var matchCity = true;
+    if (currentCity && currentCity.toLowerCase() !== "todas" && currentCity.toLowerCase() !== "todos") {
+      matchCity = (rCity.toLowerCase() === currentCity.toLowerCase() || normalizeCityLocal(rCity) === normalizeCityLocal(currentCity));
+    }
+
+    var matchBudget = true;
+    if (currentBudget && currentBudget.toLowerCase() !== "todos" && currentBudget.toLowerCase() !== "todas" && currentBudget.toLowerCase() !== "cualquier presupuesto") {
+      matchBudget = (rCat.toLowerCase() === currentBudget.toLowerCase());
+    }
+
+    if (matchCity && matchBudget) {
+      filteredNames.push(rName);
+    }
+  }
+
+  var restCell = sheet.getRange(row, restCol);
+  if (filteredNames.length > 0) {
+    var rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(filteredNames, true)
+      .setAllowInvalid(true)
+      .build();
+    safeSetDataValidation(restCell, rule);
+    
+    // Si el valor actual de la celda ya no calza en la lista filtrada, avisar con nota
+    var curVal = (restCell.getValue() || "").toString().trim();
+    if (curVal && filteredNames.indexOf(curVal) === -1) {
+      restCell.setNote("ℹ️ Restaurante fuera del filtro actual (" + currentCity + " / " + currentBudget + "). Elija uno de las " + filteredNames.length + " opciones disponibles.");
+    } else {
+      restCell.clearNote();
+    }
+  } else {
+    var emptyRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["(Sin restaurantes para este filtro)", "Otro lugar por definir"], true)
+      .setAllowInvalid(true)
+      .build();
+    safeSetDataValidation(restCell, emptyRule);
+    restCell.setNote("⚠️ No hay restaurantes registrados en ⚙️ RESTAURANTES para " + currentCity + " con presupuesto " + currentBudget + ".");
+  }
+}
+
+/**
+ * Inicializa los desplegables dependientes de restaurantes para todas las filas activas en MATCHES.
+ */
+function aplicarDesplegablesDependientesRestaurantesTodos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("MATCHES");
+  if (!sheet) return;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return;
+
+  for (var r = 2; r <= lastRow; r++) {
+    updateDependentRestaurantDropdown(sheet, r);
+  }
+  ss.toast("Desplegables dependientes de restaurantes actualizados en todas las filas de MATCHES.", "Restaurantes Filtrados", 6);
 }
