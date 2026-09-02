@@ -4230,7 +4230,8 @@ function notifyPsychologistOverdue(nameA, nameB, diffDays, entryDate) {
  *   3. Agrega la observación: "[INACTIVIDAD 15+ DÍAS] Sin match ni cita desde YYYY-MM-DD (X días sin actividad). Reactivación automática."
  */
 function verificarInactividad15DiasClientes() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
   var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
   if (!profSheet) {
     Logger.log("ERROR: No se encontró la pestaña 'PROFILES'.");
