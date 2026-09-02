@@ -312,7 +312,7 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   var statusVal = (newValue || sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase();
   if (!statusVal) return;
 
-  var fechaCol = headers["FECHA"];
+  var fechaCol = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
   var cityCol = headers["CITY"] || headers["CIUDAD"];
   var prefCol = headers["PREF"] || headers["PREFERENCIA"];
   var planCol = headers["PLAN"] || headers["PLAN TIER"];
@@ -804,7 +804,8 @@ function appendNewRetryRow(sheet, headers, data) {
 
   if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue("");
 
-  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue("");
+  var fColRet = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
+  if (fColRet) sheet.getRange(newRow, fColRet).setValue("");
   if (headers["STATUS"]) sheet.getRange(newRow, headers["STATUS"]).setValue(data.status);
 
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(data.observaciones);
@@ -861,7 +862,8 @@ function copyToTroubleMatches(sourcePsychologistSheet, data) {
     setCellData(troubleSheet, targetRow, headers["PERSON B"] || headers["PERSONA B"] || headers["MATCH"], data.personBCell);
   }
 
-  if (headers["FECHA"]) troubleSheet.getRange(targetRow, headers["FECHA"]).setValue(data.fecha || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd"));
+  var fColTr = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
+  if (fColTr) troubleSheet.getRange(targetRow, fColTr).setValue(data.fecha || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd"));
   if (headers["STATUS"]) troubleSheet.getRange(targetRow, headers["STATUS"]).setValue(data.status);
   if (headers["OBSERVACIONES"] || headers["OBSERVACION"]) {
     troubleSheet.getRange(targetRow, headers["OBSERVACIONES"] || headers["OBSERVACION"]).setValue(data.observaciones);
@@ -1639,7 +1641,8 @@ function appendPrioritySlotRow(sheet, headers, data) {
   if (headers["PSICÓLOGA DE B"]) sheet.getRange(newRow, headers["PSICÓLOGA DE B"]).setValue(data.psychologistB || "");
 
   var fechaToSet = data.fecha || Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
-  if (headers["FECHA"]) sheet.getRange(newRow, headers["FECHA"]).setValue(fechaToSet);
+  var fCol = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
+  if (fCol) sheet.getRange(newRow, fCol).setValue(fechaToSet);
   if (headers["STATUS"]) {
     var initialStatus = data.status || "Listo para match";
     var statusRange = sheet.getRange(newRow, headers["STATUS"]).setValue(initialStatus);
@@ -4284,7 +4287,7 @@ function verificarInactividad15DiasClientes() {
       var sHeaders = getSheetHeaders(sh);
       var spACol = sHeaders["PERSON A"] || sHeaders["PERSONA A"] || sHeaders["CLIENTE"];
       var spBCol = sHeaders["PERSON B"] || sHeaders["PERSONA B"];
-      var sFechaCol = sHeaders["FECHA"] || 9;
+      var sFechaCol = sHeaders["FECHA DE ENTREVISTA"] || sHeaders["FECHA ENTREVISTA"] || sHeaders["FECHA"] || sHeaders["DATE"] || 2;
       if (!spACol) continue;
 
       var sData = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(spACol, spBCol || 1, sFechaCol || 1)).getValues();
@@ -4340,7 +4343,7 @@ function verificarInactividad15DiasClientes() {
       var pbCol = psycHeaders["PERSON B"] || psycHeaders["PERSONA B"] || 7;
       var pStatusCol = psycHeaders["STATUS"] || psycHeaders["ESTADO"] || 10;
       var pObsCol = psycHeaders["OBSERVACIONES"] || 11;
-      var pFechaCol = psycHeaders["FECHA"] || 9;
+      var pFechaCol = psycHeaders["FECHA DE ENTREVISTA"] || psycHeaders["FECHA ENTREVISTA"] || psycHeaders["FECHA"] || psycHeaders["DATE"] || 2;
 
       var lastRowPsyc = sheetPsyc.getLastRow();
 
