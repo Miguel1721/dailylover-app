@@ -5307,8 +5307,10 @@ function getHistorialSidebarHtml(initialQuery) {
 
 
 /**
- * Verifica si la psicóloga ya tiene un cliente abierto sin cerrar en su pestaña.
- * Un cliente está "Cerrado" si tiene cita agendada en MATCHES o status terminal (NO HAY GENTE, DESCALIFICADO, etc.).
+ * Verifica si la psicóloga ya tiene un cliente sin tocar (todos sus slots en "Listo para match") en su pestaña.
+ * Un cliente cuenta como trabajado/no bloqueante si CUALQUIERA de sus slots tiene un estado distinto a "Listo para match"
+ * (HECHO, APROBADO, REVISAR, NOT APPROVED, REFUND, NO HAY GENTE, etc.).
+ * Solo bloquea si ABSOLUTAMENTE TODOS sus slots siguen exactamente en "Listo para match" / sin tocar.
  */
 function getUnclosedClientForPsychologist(psycSheet, currentClientName) {
   var headers = getSheetHeaders(psycSheet);
@@ -5322,11 +5324,6 @@ function getUnclosedClientForPsychologist(psycSheet, currentClientName) {
 
   var data = psycSheet.getRange(2, 1, lastRow - 1, Math.max(personACol, statusCol, obsCol, llegadaCol || 1)).getValues();
   var clientsMap = {}; // name -> list of statuses
-
-  var TERMINAL_STATUSES = [
-    "NO HAY GENTE", "DESCALIFICADO", "REFUND", "PAUSADO", "RETIRADO", "NO MATCH",
-    "CITA CONFIRMADA", "DATE PROGRAMADO", "CITA REALIZADA", "MATCH DONE", "MATCH"
-  ];
 
   for (var i = 0; i < data.length; i++) {
     var pName = (data[i][personACol - 1] || "").toString().trim();
@@ -5345,22 +5342,22 @@ function getUnclosedClientForPsychologist(psycSheet, currentClientName) {
     clientsMap[pName].push(st);
   }
 
-  // Evaluar cada cliente: si NINGUNO de sus slots tiene estado terminal, está "abierto"
+  // Evaluar cada cliente: bloquea SOLO si TODOS sus slots siguen en "Listo para match" (sin tocar)
   for (var name in clientsMap) {
     var statuses = clientsMap[name];
-    var isClosed = false;
+    var hasProgress = false;
     for (var s = 0; s < statuses.length; s++) {
       var curSt = statuses[s];
-      for (var t = 0; t < TERMINAL_STATUSES.length; t++) {
-        if (curSt.indexOf(TERMINAL_STATUSES[t]) >= 0) {
-          isClosed = true;
-          break;
-        }
+      // Si el slot tiene cualquier estado DISTINTO a "Listo para match" / vacío, ya hubo acción
+      var isUntouched = (curSt === "" || curSt.indexOf("LISTO PARA MATCH") >= 0 || curSt === "LISTO" || curSt === "LLENAR");
+      if (!isUntouched) {
+        hasProgress = true;
+        break;
       }
-      if (isClosed) break;
     }
-    if (!isClosed) {
-      return name; // Retorna el primer cliente abierto
+    // Si ningún slot ha sido tocado (todos siguen en Listo para match), este cliente bloquea
+    if (!hasProgress && statuses.length > 0) {
+      return name;
     }
   }
 
