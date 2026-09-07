@@ -1042,91 +1042,16 @@ function getSheetSafeLastColumn(sheet) {
  * Esto elimina de raíz el error "No se puede realizar esta operación en columnas de tipo".
  * Preserva el 100% de los datos, hipervínculos, formatos y notas en las celdas.
  */
+/**
+ * Desvinculación de tablas nativas:
+ * Se eliminan por completo las llamadas HTTP REST a la API externa de Google Sheets
+ * para evitar el error 403 ('Google Sheets API has not been used in project... or it is disabled')
+ * y eliminar las pérdidas de tiempo acumuladas por timeouts de red.
+ * La normalización ahora utiliza directamente 'recrearHojaLimpiaCanonica()',
+ * la cual destruye las tablas nativas y columnas tipadas 100% de forma nativa en Apps Script.
+ */
 function desvincularTablasNativasDeHoja(sheet) {
-  if (!sheet) return false;
-  var sName = sheet.getName();
-  try {
-    // Limpiar protecciones de celda locales que pudieran bloquear deleteTable
-    try {
-      var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
-      for (var p = 0; p < protections.length; p++) {
-        if (protections[p].canEdit()) {
-          protections[p].remove();
-        }
-      }
-    } catch (eProt) {
-      Logger.log("Aviso limpiando protecciones en '" + sName + "': " + eProt.message);
-    }
-
-    var ss = sheet.getParent();
-    var sheetId = sheet.getSheetId();
-    var ssId = ss.getId();
-    var token = ScriptApp.getOAuthToken();
-
-    var getUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + ssId + "?fields=sheets(properties(sheetId),tables(tableId,name))";
-    var getResp = UrlFetchApp.fetch(getUrl, {
-      method: "get",
-      headers: { Authorization: "Bearer " + token },
-      muteHttpExceptions: true
-    });
-
-    if (getResp.getResponseCode() !== 200) {
-      Logger.log("Aviso al consultar tablas nativas en '" + sName + "': " + getResp.getContentText());
-      return false;
-    }
-
-    var sheetData = JSON.parse(getResp.getContentText());
-    var tableIds = [];
-    var allSheets = sheetData.sheets || [];
-    for (var i = 0; i < allSheets.length; i++) {
-      if (allSheets[i].properties && allSheets[i].properties.sheetId === sheetId) {
-        var tbls = allSheets[i].tables || [];
-        for (var t = 0; t < tbls.length; t++) {
-          if (tbls[t].tableId) {
-            tableIds.push(tbls[t].tableId);
-          }
-        }
-      }
-    }
-
-    if (tableIds.length === 0) {
-      return true; // No tiene tablas nativas
-    }
-
-    Logger.log("Encontradas " + tableIds.length + " tabla(s) nativa(s) en '" + sName + "'. Desvinculando...");
-    var requests = [];
-    for (var k = 0; k < tableIds.length; k++) {
-      requests.push({
-        deleteTable: {
-          tableId: tableIds[k]
-        }
-      });
-    }
-
-    var batchUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + ssId + ":batchUpdate";
-    var batchResp = UrlFetchApp.fetch(batchUrl, {
-      method: "post",
-      headers: {
-        Authorization: "Bearer " + token,
-        "Content-Type": "application/json"
-      },
-      payload: JSON.stringify({ requests: requests }),
-      muteHttpExceptions: true
-    });
-
-    if (batchResp.getResponseCode() === 200) {
-      Logger.log("✅ Tabla(s) nativa(s) desvinculada(s) con éxito en '" + sName + "'.");
-      SpreadsheetApp.flush();
-      Utilities.sleep(300);
-      return true;
-    } else {
-      Logger.log("Aviso batchUpdate deleteTable en '" + sName + "': " + batchResp.getContentText());
-      return false;
-    }
-  } catch (err) {
-    Logger.log("Excepción en desvincularTablasNativasDeHoja para '" + sName + "': " + err.message);
-    return false;
-  }
+  return false;
 }
 
 /**
@@ -1281,13 +1206,6 @@ function normalizarPestanaPsicologa(sheet) {
   ];
   var CANONICAL_WIDTHS = [70, 130, 80, 110, 80, 140, 190, 190, 120, 120, 220, 130];
 
-  // 1. Desvincular cualquier tabla nativa existente si es posible
-  try {
-    desvincularTablasNativasDeHoja(sheet);
-  } catch (eDesv) {
-    Logger.log("Aviso en desvincularTablasNativasDeHoja para '" + sName + "': " + eDesv.message);
-  }
-
   var lastRow = 1;
   var lastCol = 12;
   try {
@@ -1298,31 +1216,13 @@ function normalizarPestanaPsicologa(sheet) {
     try { lastCol = sheet.getMaxColumns(); } catch (e) { lastCol = 12; }
   }
 
-  // Caso: hoja vacía o solo fila 1
+  // Caso: hoja vacía o solo fila 1 -> Recrear hoja limpia canónica directamente
   if (lastRow <= 1) {
-    try {
-      if (sheet.getMaxColumns() < 12) {
-        sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
-      } else if (sheet.getMaxColumns() > 12) {
-        sheet.deleteColumns(13, sheet.getMaxColumns() - 12);
-      }
-      sheet.getRange(1, 1, 1, 12).setValues([CANONICAL_HEADERS]);
-      sheet.getRange(1, 1, 1, 12).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
-      sheet.setRowHeight(1, 32);
-      try { if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1); } catch (e) {}
-      for (var w = 0; w < CANONICAL_WIDTHS.length; w++) {
-        sheet.setColumnWidth(w + 1, CANONICAL_WIDTHS[w]);
-      }
-      aplicarValidacionesCanónicas(sheet, Math.max(sheet.getMaxRows(), 100));
-      SpreadsheetApp.flush();
-      Logger.log("✅ Pestaña vacía '" + sName + "' configurada con 12 columnas canónicas y validaciones.");
-      return;
-    } catch (emptyErr) {
-      Logger.log("Aviso en pestaña vacía '" + sName + "': " + emptyErr.message + ". Recreando hoja limpia...");
-      recrearHojaLimpiaCanonica(ss, sheet, sName, [CANONICAL_HEADERS], null, [["#D9EAD3"]], null, 1, CANONICAL_WIDTHS);
-      SpreadsheetApp.flush();
-      return;
-    }
+    var newValuesEmpty = [CANONICAL_HEADERS];
+    var cleanEmptySheet = recrearHojaLimpiaCanonica(ss, sheet, sName, newValuesEmpty, null, [["#D9EAD3"]], null, 100, CANONICAL_WIDTHS);
+    SpreadsheetApp.flush();
+    Logger.log("✅ Pestaña vacía '" + sName + "' recreada limpiamente con 12 columnas canónicas y validaciones.");
+    return cleanEmptySheet;
   }
 
   var newValues = [];
@@ -1622,52 +1522,20 @@ function normalizarPestanaPsicologa(sheet) {
       newNotes.push(rowNotes);
     }
 
-    // INTENTO 1: Normalización in-place
-    var targetRows = newValues.length;
-    sheet.clearConditionalFormatRules();
-    sheet.clearFormats();
-    sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).clearDataValidations();
-
-    var currentMaxCols = sheet.getMaxColumns();
-    if (currentMaxCols < 12) {
-      sheet.insertColumnsAfter(currentMaxCols, 12 - currentMaxCols);
-    } else if (currentMaxCols > 12) {
-      sheet.deleteColumns(13, currentMaxCols - 12);
-    }
-
-    var currentMaxRows = sheet.getMaxRows();
-    if (currentMaxRows < targetRows) {
-      sheet.insertRowsAfter(currentMaxRows, targetRows - currentMaxRows);
-    } else if (currentMaxRows > Math.max(targetRows, 100)) {
-      sheet.deleteRows(Math.max(targetRows, 100) + 1, currentMaxRows - Math.max(targetRows, 100));
-    }
-
-    var targetRange = sheet.getRange(1, 1, targetRows, 12);
-    targetRange.setValues(newValues);
-    try { targetRange.setRichTextValues(newRichTexts); } catch (eRich) {}
-    try { targetRange.setBackgrounds(newBackgrounds); } catch (eBg) {}
-    try { targetRange.setNotes(newNotes); } catch (eNt) {}
-
-    sheet.getRange(1, 1, 1, 12).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
-    sheet.setRowHeight(1, 32);
-    try { if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1); } catch (e) {}
-
-    for (var cW = 0; cW < CANONICAL_WIDTHS.length; cW++) {
-      sheet.setColumnWidth(cW + 1, CANONICAL_WIDTHS[cW]);
-    }
-
-    aplicarValidacionesCanónicas(sheet, targetRows);
+    // Recreación limpia canónica directa (100% nativa en Apps Script, cero dependencias REST, cero fallos por tablas nativas)
+    var cleanSheet = recrearHojaLimpiaCanonica(ss, sheet, sName, newValues, newRichTexts, newBackgrounds, newNotes, Math.max(newValues.length, 100), CANONICAL_WIDTHS);
     SpreadsheetApp.flush();
-    Logger.log("✅ Pestaña '" + sName + "' normalizada in-place exitosamente (" + (targetRows - 1) + " registros).");
+    Logger.log("✅ Pestaña '" + sName + "' recreada limpiamente con 12 columnas canónicas (" + (newValues.length - 1) + " registros).");
+    return cleanSheet;
 
-  } catch (inPlaceErr) {
-    // INTENTO 2 (FALLBACK): Recrear hoja limpia canónica ante CUALQUIER fallo (lectura o escritura)
-    Logger.log("⚠️ Falló procesamiento in-place de '" + sName + "' (" + inPlaceErr.message + "). Disparando recreación limpia de hoja...");
+  } catch (normErr) {
+    Logger.log("⚠️ Falló procesamiento de datos en '" + sName + "' (" + normErr.message + "). Disparando recreación limpia canónica de emergencia...");
     if (!newValues || newValues.length === 0) {
       newValues = [CANONICAL_HEADERS];
     }
-    recrearHojaLimpiaCanonica(ss, sheet, sName, newValues, newRichTexts, newBackgrounds, newNotes, Math.max(newValues.length, 100), CANONICAL_WIDTHS);
+    var emergSheet = recrearHojaLimpiaCanonica(ss, sheet, sName, newValues, newRichTexts, newBackgrounds, newNotes, Math.max(newValues.length, 100), CANONICAL_WIDTHS);
     SpreadsheetApp.flush();
+    return emergSheet;
   }
 }
 
@@ -1940,14 +1808,45 @@ function reconstruirRevisionMaria() {
     var psycMap = {};
     var allSheets = ss.getSheets();
     var psychologistSheets = [];
+    var seenPsycKeys = {};
 
     for (var s = 0; s < allSheets.length; s++) {
       var sh = allSheets[s];
       var sName = sh.getName().trim();
       var sUpper = sName.toUpperCase();
       if (sUpper.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sUpper !== "MATCHES" && sUpper !== "MATCHES COMPLETED") {
-        psychologistSheets.push(sh);
         var pNameOnly = sName.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
+        var normPsyc = typeof normalizarNombrePsicologa === "function" ? normalizarNombrePsicologa(pNameOnly) : pNameOnly.toUpperCase();
+
+        // 1. Excluir explícitamente psicólogas inactivas (ej: LAU / LAURA)
+        if (normPsyc === "LAU" || normPsyc === "LAURA" || pNameOnly.toUpperCase() === "LAU" || pNameOnly.toUpperCase() === "LAURA") {
+          Logger.log("ℹ️ [reconstruirRevisionMaria] Ignorando pestaña inactiva: '" + sName + "'");
+          continue;
+        }
+
+        // 2. Validar que pertenezca a las psicólogas canónicas oficiales si CONFIG.VALID_PSYCHOLOGISTS está definido
+        var esValida = false;
+        var validList = CONFIG.VALID_PSYCHOLOGISTS || [];
+        for (var v = 0; v < validList.length; v++) {
+          if (validList[v] === normPsyc) {
+            esValida = true;
+            break;
+          }
+        }
+        if (!esValida && validList.length > 0) {
+          Logger.log("ℹ️ [reconstruirRevisionMaria] Ignorando pestaña no oficial: '" + sName + "'");
+          continue;
+        }
+
+        // 3. Deduplicar pestañas para evitar doble escaneo (ej: 'MATCHES MANU' vs 'MATCHES MANU ')
+        var psycKey = normPsyc.replace(/\s+/g, " ").trim().toUpperCase();
+        if (seenPsycKeys[psycKey]) {
+          Logger.log("⚠️ [reconstruirRevisionMaria] Pestaña duplicada ignorada: '" + sName + "' (ya registrada como '" + psycKey + "')");
+          continue;
+        }
+        seenPsycKeys[psycKey] = true;
+
+        psychologistSheets.push(sh);
         var shHeaders = getSheetHeaders(sh);
         var pACol = shHeaders["PERSON A"] || shHeaders["PERSONA A"] || 7;
         var pLast = Math.min(sh.getLastRow(), 3000);
