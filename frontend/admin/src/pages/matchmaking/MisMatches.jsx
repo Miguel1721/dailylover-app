@@ -537,7 +537,7 @@ export default function MisMatches() {
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <Heart size={26} color="#B8324F" fill="#B8324F" />
-            Mis Matches — Hoja Operativa de Psicólogas
+            MATCHES{selectedPsyc && selectedPsyc !== 'all' ? ` ${selectedPsyc}` : ''}
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
             Gestión diaria de matches por psicóloga. Incluye cruce de psicóloga de B, historial con 1-clic y detección de duplicados.

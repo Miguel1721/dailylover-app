@@ -159,7 +159,7 @@ export default function MatchmakerDashboard() {
             onClick={() => navigate('/matchmaking/mis-matches')}
           >
             <Heart size={16} />
-            Ir a Mis Matches (Flujo Operativo)
+            Ir a MATCHES (Flujo Operativo)
           </button>
         </div>
       </div>

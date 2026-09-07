@@ -236,7 +236,7 @@ function Sidebar({ isOpen, onClose }) {
 
   const matchmakingItems = [
     ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'Matches (Todas las Psicólogas)' : 'Mis Matches', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'MATCHES (Todas las Psicólogas)' : 'MATCHES', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: Headphones, label: isCs ? 'Citas por Agendar' : 'Aprobados por María (CS)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: 'Citas Aceptadas', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/aprobaciones-cruzadas', icon: ShieldCheck, label: 'Aprobaciones Cruzadas (A ↔ B)', module: 'matching', action: 'view' }] : []),
