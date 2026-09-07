@@ -33,6 +33,7 @@ var CONFIG = {
   TROUBLE_SHEET_NAME: "TROUBLE MATCHES",
   REFUNDS_SHEET_NAME: "REFUNDS PENDIENTES",
   VUELVE_A_PAGAR_SHEET_NAME: "VUELVE A PAGAR",
+  VUELVE_A_PAGAR_ALIASES: ["VUELVE A PAGAR", "VOLVIO A PAGAR", "VOLVIÓ A PAGAR"],
   REVISION_MARIA_SHEET_NAME: "REVISIÓN MARÍA",
   MATCHES_SHEET_NAME: "MATCHES",
   CONFIG_ESTADOS_SHEET_NAME: "⚙️ CONFIG ESTADOS",
@@ -140,7 +141,7 @@ function onEditInstallable(e) {
   if (upperSheetName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && upperSheetName !== "MATCHES") {
     Logger.log("Despachando a handlePsychologistSheetEdit...");
     handlePsychologistSheetEdit(sheet, row, col, e.value, e.oldValue);
-  } else if (upperSheetName === CONFIG.VUELVE_A_PAGAR_SHEET_NAME) {
+  } else if (upperSheetName === CONFIG.VUELVE_A_PAGAR_SHEET_NAME || upperSheetName === "VOLVIO A PAGAR" || upperSheetName === "VOLVIÓ A PAGAR") {
     Logger.log("Despachando a handleVuelveAPagarEdit...");
     handleVuelveAPagarEdit(sheet, row, col, e.value, e.oldValue);
   } else if (upperSheetName === CONFIG.REFUNDS_SHEET_NAME) {
@@ -636,81 +637,161 @@ function handlePsychologistSheetEdit(sheet, row, col, newValue, oldValue) {
   }
 }
 
-// ─── 3. GESTIÓN DE TABLA "VUELVE A PAGAR" (SSOT EXACTO) ──────────────────────
+// ─── 3. GESTIÓN DE TABLA "VUELVE A PAGAR" / "VOLVIO A PAGAR" (SSOT EXACTO & RECOMPRAS) ──
 
+/**
+ * Busca la pestaña de recompras aceptando los nombres oficiales y alias:
+ * "VUELVE A PAGAR", "VOLVIO A PAGAR", "VOLVIÓ A PAGAR".
+ */
+function findVuelveAPagarSheet(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  var direct = ss.getSheetByName(CONFIG.VUELVE_A_PAGAR_SHEET_NAME || "VUELVE A PAGAR");
+  if (direct) return direct;
+  var aliases = CONFIG.VUELVE_A_PAGAR_ALIASES || ["VOLVIO A PAGAR", "VOLVIÓ A PAGAR", "VUELVE A PAGAR"];
+  for (var i = 0; i < aliases.length; i++) {
+    var sh = ss.getSheetByName(aliases[i]);
+    if (sh) return sh;
+  }
+  return null;
+}
+
+/**
+ * Procesa recompras de citas en "VUELVE A PAGAR" / "VOLVIO A PAGAR":
+ * Genera una fila nueva en la pestaña de la psicóloga responsable
+ * siguiendo el patrón canónico de reactivación / fila nueva con nota indicando recompra.
+ */
 function handleVuelveAPagarEdit(sheet, row, col, newValue, oldValue) {
+  if (row <= 1) return; // Ignorar fila de encabezados
+
   var headers = getSheetHeaders(sheet);
-  var statusCol = headers["STATUS"];
-  if (!statusCol || col !== statusCol) return;
-
-  var statusVal = (newValue || sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase();
-  if (!statusVal) return;
-
-  var personaCol = headers["PERSONA"] || headers["PERSON A"] || headers["CLIENTE"];
+  var statusCol = headers["STATUS"] || headers["ESTADO"];
+  var personaCol = headers["PERSONA"] || headers["PERSON A"] || headers["CLIENTE"] || headers["NOMBRE"] || 2;
   var psychologistCol = headers["HECHO POR"] || headers["PSICOLOGA"] || headers["PSICÓLOGA"];
-  var planCol = headers["PLAN"] || headers["PLAN TIER"];
-  var csObsCol = headers["COMENTARIO CUSTOMER SERVICE"] || headers["OBSERVACIONES"] || headers["COMENTARIO"];
+  var planCol = headers["PLAN"] || headers["PLAN TIER"] || headers["RAZÓN"] || headers["RAZON"] || 3;
+  var fechaCol = headers["FECHA"] || 4;
+  var csObsCol = headers["COMENTARIO CUSTOMER SERVICE"] || headers["OBSERVACIONES"] || headers["COMENTARIO"] || headers["NOTA"] || 5;
 
-  var personACell = personaCol ? getCellData(sheet, row, personaCol) : null;
-  var personAName = personACell ? personACell.text : "";
-  var psychologist = psychologistCol ? sheet.getRange(row, psychologistCol).getValue().toString().trim() : "";
-  var rawPlan = planCol ? sheet.getRange(row, planCol).getValue().toString().trim() : "";
+  var statusVal = statusCol ? (newValue && col === statusCol ? newValue : sheet.getRange(row, statusCol).getValue() || "").toString().trim().toUpperCase() : "";
 
-  if (!personAName) return;
-
-  // 7. VALIDACIÓN DE PLAN: NO asumir silenciosamente
-  var numSlots = resolvePlanSlots(rawPlan);
-
-  if (!numSlots) {
-    // Marcar visiblemente como error en la celda de plan y observación
-    if (planCol) {
-      sheet.getRange(row, planCol).setBackground("#F4CCCC").setNote("PLAN NO ESPECIFICADO O NO VÁLIDO. Especifique: Básico 40k, Estándar 65k o VIP 195k.");
+  // Determinar si la edición debe procesarse:
+  // Modo A: Hoja con columna STATUS -> procesar cuando status sea APROBADO / LISTO / PROCESAR / NOT APPROVED / TROUBLEMAKER
+  // Modo B: Hoja sin columna STATUS (esquema real de 'VOLVIO A PAGAR') -> procesar cuando se edita Col 1 (checkbox/ok/procesar),
+  //         o cuando se ingresa RAZÓN o NOMBRE en una fila nueva o pendiente.
+  var shouldProcess = false;
+  if (statusCol) {
+    if (col === statusCol && (statusVal === "APROBADO" || statusVal === "LISTO PARA MATCH" || statusVal === "PROCESAR" || statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER")) {
+      shouldProcess = true;
     }
-    if (csObsCol) {
-      var existingObs = sheet.getRange(row, csObsCol).getValue().toString();
-      if (existingObs.indexOf("[ERROR: PLAN REQUERIDO]") === -1) {
-        sheet.getRange(row, csObsCol).setValue((existingObs ? existingObs + " | " : "") + "[ERROR: PLAN REQUERIDO PARA CREAR SLOTS]");
+  } else {
+    // Hoja real 'VOLVIO A PAGAR':
+    var col1Val = sheet.getRange(row, 1).getValue().toString().trim().toUpperCase();
+    var noteVal = sheet.getRange(row, personaCol).getNote() || "";
+    if (col1Val.indexOf("PROCESADO") >= 0 || noteVal.indexOf("[RECOMPRA PROCESADA]") >= 0) {
+      return; // Ya procesado, evitar duplicación
+    }
+
+    if (col === 1 || col === personaCol || col === planCol) {
+      var col1Text = (newValue && col === 1 ? newValue : col1Val).toString().trim().toUpperCase();
+      if (col === 1 && (col1Text === "OK" || col1Text === "SI" || col1Text === "SÍ" || col1Text === "PROCESAR" || col1Text === "TRUE")) {
+        shouldProcess = true;
+      } else if (col === planCol || col === personaCol) {
+        var curName = (sheet.getRange(row, personaCol).getValue() || "").toString().trim();
+        var curRazon = (sheet.getRange(row, planCol).getValue() || "").toString().trim();
+        if (curName && curRazon) {
+          shouldProcess = true;
+        }
       }
     }
-    SpreadsheetApp.getActiveSpreadsheet().toast("Error: El plan '" + rawPlan + "' no es válido. No se crearon slots.", "Plan Requerido", 6);
+  }
+
+  if (!shouldProcess) return;
+
+  var personACell = getCellData(sheet, row, personaCol);
+  var personAName = personACell ? personACell.text.trim() : "";
+  if (!personAName) return;
+
+  var rawPlan = planCol ? (sheet.getRange(row, planCol).getValue() || "").toString().trim() : "";
+  var rawDate = fechaCol ? (sheet.getRange(row, fechaCol).getValue() || "").toString().trim() : "";
+  var extraNota = csObsCol ? (sheet.getRange(row, csObsCol).getValue() || "").toString().trim() : "";
+
+  // 1. Determinar psicóloga responsable
+  var psychologist = psychologistCol ? sheet.getRange(row, psychologistCol).getValue().toString().trim() : "";
+  if (!psychologist) {
+    // Si la hoja no tiene columna 'Hecho por' (como la hoja real 'VOLVIO A PAGAR'), buscar en el libro / CRM
+    psychologist = findPsychologistForPerson(personACell);
+    if (!psychologist) {
+      var pData = buscarDatosPersona(personACell);
+      if (pData && pData.psychologist) {
+        psychologist = pData.psychologist;
+      }
+    }
+  }
+
+  if (!psychologist) {
+    if (psychologistCol) {
+      sheet.getRange(row, psychologistCol).setBackground("#FFF2CC").setNote("Indique la psicóloga responsable en 'Hecho por'.");
+    } else {
+      sheet.getRange(row, personaCol).setBackground("#FFF2CC").setNote("No se encontró psicóloga asignada a este cliente en PROFILES ni en pestañas de psicólogas.");
+    }
+    Logger.log("Aviso: No se encontró psicóloga para '" + personAName + "'.");
+    SpreadsheetApp.getActiveSpreadsheet().toast("No se encontró psicóloga para '" + personAName + "'. Indique la psicóloga responsable.", "Recompra", 6);
     return;
   }
 
-  // 8. BÚSQUEDA ROBUSTA DE PESTAÑA DE PSICÓLOGA
-  if (statusVal === "NOT APPROVED" || statusVal === "TROUBLEMAKER" || statusVal === "APROBADO") {
-    if (!psychologist) {
-      if (psychologistCol) {
-        sheet.getRange(row, psychologistCol).setBackground("#FFF2CC").setNote("Indique la psicóloga responsable en 'Hecho por'.");
-      }
-      return;
+  var psycSheet = findPsychologistSheet(psychologist);
+  if (!psycSheet) {
+    if (psychologistCol) {
+      sheet.getRange(row, psychologistCol).setBackground("#F4CCCC").setNote("No se encontró la pestaña 'MATCHES " + psychologist + "'. Verifique el nombre.");
     }
-
-    var psycSheet = findPsychologistSheet(psychologist);
-    if (!psycSheet) {
-      // Aviso visible de que la psicóloga no tiene pestaña
-      if (psychologistCol) {
-        sheet.getRange(row, psychologistCol).setBackground("#F4CCCC").setNote("No se encontró la pestaña 'MATCHES " + psychologist + "'. Verifique el nombre.");
-      }
-      Logger.log("ERROR: Pestaña no encontrada para psicóloga: " + psychologist);
-      SpreadsheetApp.getActiveSpreadsheet().toast("No se encontró la pestaña de " + psychologist, "Error de Psicóloga", 6);
-      return;
-    }
-
-    // Crear fila de reasignación con preservación de CRM Link
-    withScriptLock(function() {
-      var psycHeaders = getSheetHeaders(psycSheet);
-      appendNewRetryRow(psycSheet, psycHeaders, {
-        city: "",
-        pref: "",
-        plan: rawPlan,
-        personACell: personACell,
-        personBCell: null,
-        fecha: "",
-        status: "Listo para match",
-        observaciones: "Vuelve a Pagar / Reasignación (" + statusVal + ")"
-      });
-    });
+    Logger.log("ERROR: Pestaña no encontrada para psicóloga: " + psychologist);
+    SpreadsheetApp.getActiveSpreadsheet().toast("No se encontró la pestaña de " + psychologist, "Error de Psicóloga", 6);
+    return;
   }
+
+  // 2. Obtener datos complementarios del cliente (ciudad, link CRM, etc.)
+  var clientCity = "";
+  var clientPref = "";
+  var clientDetails = buscarDatosPersona(personACell);
+  if (clientDetails) {
+    clientCity = clientDetails.city || "";
+    clientPref = clientDetails.pref || "";
+    if ((!personACell.richText || !personACell.richText.getLinkUrl()) && clientDetails.crmId) {
+      var crmLink = buildCanonicalCrmUrl(clientDetails.crmId);
+      personACell.richText = SpreadsheetApp.newRichTextValue().setText(personAName).setLinkUrl(crmLink).build();
+      personACell.link = crmLink;
+    }
+  }
+
+  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+  var obsFinal = "[RECOMPRA: " + (rawPlan || "Pago cita adicional") + (rawDate ? " (" + rawDate + ")" : "") + "]";
+  if (extraNota) obsFinal += " | " + extraNota;
+
+  // 3. Crear fila nueva en la pestaña de la psicóloga (patrón de reactivación / fila nueva)
+  withScriptLock(function() {
+    var psycHeaders = getSheetHeaders(psycSheet);
+    appendNewRetryRow(psycSheet, psycHeaders, {
+      city: clientCity,
+      pref: clientPref,
+      plan: rawPlan || "Recompra",
+      personACell: personACell,
+      personBCell: null,
+      fecha: todayStr,
+      status: "Listo para match",
+      observaciones: obsFinal
+    });
+  });
+
+  // 4. Marcar fila como procesada en la hoja de recompra
+  try {
+    sheet.getRange(row, 1).setValue("✅ PROCESADO").setBackground("#D9EAD3");
+    sheet.getRange(row, personaCol).setNote("[RECOMPRA PROCESADA] Fila generada en " + psycSheet.getName() + " el " + todayStr);
+    if (statusCol) {
+      sheet.getRange(row, statusCol).setValue("LISTO");
+    }
+  } catch (eMark) {}
+
+  Logger.log("✅ Recompra procesada: Fila nueva creada en '" + psycSheet.getName() + "' para '" + personAName + "'.");
+  SpreadsheetApp.getActiveSpreadsheet().toast("Fila de recompra creada en " + psycSheet.getName() + " para " + personAName, "Recompra Exitosa", 5);
 }
 
 // ─── 4. FLUJO DE REFUNDS DE LINA (REFUNDS PENDIENTES) ─────────────────────────
@@ -931,6 +1012,16 @@ function findPsychologistSheet(psycName) {
   // 1. Probar nombre directo
   var directUpper = rawName.toUpperCase();
   var targetPrefix = CONFIG.PSYCHOLOGIST_SHEET_PREFIX + directUpper;
+
+  // Manejo especial de desambiguación para MANU si existen 'MATCHES MANU ' y 'MATCHES MANU'
+  if (directUpper === "MANU" || (typeof normalizarNombrePsicologa === "function" && normalizarNombrePsicologa(rawName) === "MANU")) {
+    var shSpace = ss.getSheetByName("MATCHES MANU ");
+    var shNoSpace = ss.getSheetByName("MATCHES MANU");
+    if (shSpace && shNoSpace) {
+      return (shSpace.getLastRow() >= shNoSpace.getLastRow()) ? shSpace : shNoSpace;
+    }
+  }
+
   var direct = ss.getSheetByName(targetPrefix);
   if (direct) return direct;
 
@@ -2049,7 +2140,8 @@ function resolvePlanSlots(rawPlan) {
   if (clean.indexOf("VIP") >= 0 || clean.indexOf("4 DATE") >= 0 || clean.indexOf("4 CITA") >= 0) return 4;
   if (clean.indexOf("PREMIUM") >= 0 || clean.indexOf("150K") >= 0) return 3;
   if (clean.indexOf("ESTANDAR") >= 0 || clean.indexOf("ESTÁNDAR") >= 0 || clean.indexOf("3 DATE") >= 0 || clean.indexOf("3 CITA") >= 0) return 3;
-  if (clean.indexOf("BASICO") >= 0 || clean.indexOf("BÁSICO") >= 0 || clean.indexOf("2 DATE") >= 0 || clean.indexOf("2 CITA") >= 0 || clean.indexOf("1 CITA") >= 0) return 2;
+  if (clean.indexOf("BASICO") >= 0 || clean.indexOf("BÁSICO") >= 0 || clean.indexOf("2 DATE") >= 0 || clean.indexOf("2 CITA") >= 0 || clean.indexOf("DOS DATE") >= 0) return 2;
+  if (clean.indexOf("PAGO OTRA") >= 0 || clean.indexOf("OTRA DATE") >= 0 || clean.indexOf("1 DATE") >= 0 || clean.indexOf("1 CITA") >= 0 || clean.indexOf("UNA DATE") >= 0) return 1;
   return 0;
 }
 
@@ -6112,8 +6204,123 @@ function aplicarDesplegablesDependientesRestaurantesTodos() {
  * - Elimina físicamente columnas extra (CRM, feedback, Columna 2..20) dejando maxColumns = 12.
  * - Preserva 100% de hipervínculos CRM, colores de fondo y notas.
  */
+/**
+ * Unifica las pestañas duplicadas de MANU ('MATCHES MANU ' y 'MATCHES MANU') sin sobreescribir datos.
+ * Preserva 100% de los registros de la pestaña principal (411 filas) y anexa los registros únicos
+ * de la pestaña secundaria (130 filas).
+ */
+function unificarPestanasManu(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetManu = ss.getSheetByName("MATCHES MANU");
+  var sheetManuSpace = ss.getSheetByName("MATCHES MANU ");
+
+  if (!sheetManu || !sheetManuSpace) {
+    return; // No hay duplicados que unificar
+  }
+
+  Logger.log("🔄 Detectadas dos pestañas para MANU ('MATCHES MANU' y 'MATCHES MANU '). Unificando datos...");
+
+  // Identificar la principal (la de mayor número de filas / columnas)
+  var mainSheet = (sheetManuSpace.getLastRow() >= sheetManu.getLastRow()) ? sheetManuSpace : sheetManu;
+  var secSheet = (mainSheet === sheetManuSpace) ? sheetManu : sheetManuSpace;
+
+  var mainHeaders = getSheetHeaders(mainSheet);
+  var secHeaders = getSheetHeaders(secSheet);
+
+  var mainPACol = mainHeaders["PERSON A"] || mainHeaders["PERSONA A"] || 6;
+  var mainPBCol = mainHeaders["PERSON B"] || mainHeaders["PERSONA B"] || 7;
+  var secPACol = secHeaders["PERSON A"] || secHeaders["PERSONA A"] || 1;
+  var secPBCol = secHeaders["PERSON B"] || secHeaders["PERSONA B"] || 2;
+  var secObsCol = secHeaders["OBSERVACIONES"] || secHeaders["OBSERVACION"] || 3;
+  var secStatusCol = secHeaders["STATUS"] || 4;
+
+  // Registrar pares Persona A / Persona B existentes en la principal
+  var mainLast = mainSheet.getLastRow();
+  var existingPairs = {};
+  if (mainLast > 1) {
+    var maxCol = Math.max(mainPACol, mainPBCol);
+    var mainValues = mainSheet.getRange(2, 1, mainLast - 1, maxCol).getValues();
+    for (var m = 0; m < mainValues.length; m++) {
+      var pa = (mainValues[m][mainPACol - 1] || "").toString().trim().toLowerCase();
+      var pb = (mainValues[m][mainPBCol - 1] || "").toString().trim().toLowerCase();
+      if (pa) existingPairs[pa + "||" + pb] = true;
+    }
+  }
+
+  // Filtrar filas de la secundaria que no existan en la principal
+  var secLast = secSheet.getLastRow();
+  var rowsToAppend = [];
+  if (secLast > 1) {
+    var secValues = secSheet.getRange(2, 1, secLast - 1, secSheet.getLastColumn()).getValues();
+    var secRich = secSheet.getRange(2, secPACol, secLast - 1, 1).getRichTextValues();
+
+    for (var s = 0; s < secValues.length; s++) {
+      var sPA = (secValues[s][secPACol - 1] || "").toString().trim();
+      var sPB = (secValues[s][secPBCol - 1] || "").toString().trim();
+      if (!sPA || sPA.toLowerCase() === "matches" || sPA.toLowerCase() === "person a") continue;
+
+      var key = sPA.toLowerCase() + "||" + sPB.toLowerCase();
+      var keyEmptyB = sPA.toLowerCase() + "||";
+      if (!existingPairs[key] && !existingPairs[keyEmptyB]) {
+        var rtCell = secRich[s][0];
+        var cellObj = {
+          text: sPA,
+          richText: rtCell,
+          link: rtCell ? (rtCell.getLinkUrl() || "") : ""
+        };
+        var sObs = secObsCol ? (secValues[s][secObsCol - 1] || "").toString().trim() : "";
+        var sSt = secStatusCol ? (secValues[s][secStatusCol - 1] || "").toString().trim() : "Listo para match";
+
+        rowsToAppend.push({
+          personACell: cellObj,
+          personBText: sPB,
+          status: sSt,
+          observaciones: sObs ? sObs + " [MIGRADO DE MANU DRAFT]" : "[MIGRADO DE MANU DRAFT]"
+        });
+        existingPairs[key] = true;
+      }
+    }
+  }
+
+  Logger.log("Se encontraron " + rowsToAppend.length + " filas únicas en la pestaña secundaria para anexar a la principal.");
+
+  // Anexar filas a la principal
+  if (rowsToAppend.length > 0) {
+    for (var a = 0; a < rowsToAppend.length; a++) {
+      var item = rowsToAppend[a];
+      appendNewRetryRow(mainSheet, mainHeaders, {
+        city: "",
+        pref: "",
+        plan: "",
+        personACell: item.personACell,
+        personBCell: item.personBText ? { text: item.personBText } : null,
+        fecha: "",
+        status: item.status,
+        observaciones: item.observaciones
+      });
+    }
+  }
+
+  // Eliminar la secundaria y renombrar la principal a 'MATCHES MANU'
+  try {
+    ss.deleteSheet(secSheet);
+    mainSheet.setName("MATCHES MANU");
+    Logger.log("✅ Pestañas de MANU unificadas con éxito. Ahora existe una sola 'MATCHES MANU'.");
+  } catch (eRen) {
+    Logger.log("Aviso al renombrar pestaña unificada de MANU: " + eRen.message);
+  }
+}
+
 function reordenarColumnasPsicologasCanonico() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 0. Unificar pestañas duplicadas de MANU si existen ('MATCHES MANU ' y 'MATCHES MANU')
+  try {
+    unificarPestanasManu(ss);
+  } catch (manuErr) {
+    Logger.log("Aviso en unificación de pestañas MANU: " + manuErr.message);
+  }
+
   var psycList = CONFIG.VALID_PSYCHOLOGISTS || [
     "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA", "MARÍA"
   ];
