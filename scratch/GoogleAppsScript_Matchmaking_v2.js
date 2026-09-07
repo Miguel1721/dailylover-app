@@ -1579,9 +1579,9 @@ function normalizarPestanaPsicologa(sheet) {
 }
 
 /**
- * Puesta a punto inicial automática del archivo:
- * Se ejecuta al abrir (onOpen) y utiliza PropertiesService para asegurar ejecución
- * una sola vez por archivo/copia.
+ * Puesta a punto inicial del archivo:
+ * Se ejecuta EXCLUSIVAMENTE de forma MANUAL desde el menú '⚙️ Puesta a Punto Inicial'.
+ * NUNCA se debe ejecutar desde onOpen para respetar el límite de 30s de triggers simples.
  * Normaliza las 11 pestañas de psicólogas a 12 columnas canónicas, congela fila 1 e instala los triggers automáticos.
  */
 function ejecutarPuestaAPuntoInicialAutomatico(force) {
@@ -3249,18 +3249,13 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
 
 /**
  * Crea el menú '🔎 Daily Lover' en la barra superior al abrir la hoja de cálculo.
- * Solo muestra opciones exclusivas de administración a María (CONFIG.MARIA_EMAIL).
+ * REGLA CRÍTICA: El menú se construye y se añade a la UI INMEDIATAMENTE al inicio de onOpen.
+ * Nunca debe haber llamadas pesadas (REST, normalización de tablas, etc.) antes de crear el menú,
+ * respetando el límite estricto de 30 segundos de los triggers simples de Apps Script.
  */
 function onOpen(e) {
+  // 1. Construir y agregar el menú interactivo PRIMERO
   try {
-    // 1. Puesta a punto inicial automática (se ejecuta una sola vez con bandera en PropertiesService)
-    try {
-      ejecutarPuestaAPuntoInicialAutomatico(false);
-    } catch (setupErr) {
-      Logger.log("Aviso en ejecución de puesta a punto inicial: " + setupErr);
-    }
-
-    // 2. Construcción de menú interactivo
     var menu = SpreadsheetApp.getUi().createMenu("🔎 Daily Lover");
     menu.addItem("Historial de persona", "mostrarHistorialPersona");
     menu.addSeparator();
@@ -3294,8 +3289,36 @@ function onOpen(e) {
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
     menu.addToUi();
-  } catch (err) {
-    Logger.log("No se pudo crear menú en onOpen: " + err);
+    Logger.log("✅ Menú '🔎 Daily Lover' creado exitosamente en onOpen.");
+  } catch (menuErr) {
+    Logger.log("Error crítico creando menú en onOpen: " + menuErr);
+  }
+
+  // 2. Tarea secundaria ultraliviana (solo congelar fila 1 si no lo está, <50ms, sin llamadas REST)
+  try {
+    asegurarFilasCongeladasLiviano();
+  } catch (lightErr) {
+    Logger.log("Aviso en asegurarFilasCongeladasLiviano: " + lightErr.message);
+  }
+}
+
+/**
+ * Operación ultraliviana para onOpen: asegura que la fila 1 de las pestañas principales esté congelada.
+ * No realiza llamadas REST, no altera datos, no reordena columnas ni toca tablas nativas.
+ */
+function asegurarFilasCongeladasLiviano() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i];
+    var sName = sh.getName().trim().toUpperCase();
+    if (sName.indexOf("MATCHES") === 0 || sName === "PROFILES" || sName === "PERSONAS DÍFICILES" || sName === "PERSONAS DIFICILES") {
+      try {
+        if (sh.getFrozenRows() < 1) {
+          sh.setFrozenRows(1);
+        }
+      } catch (e) {}
+    }
   }
 }
 
