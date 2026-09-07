@@ -1648,6 +1648,13 @@ function ejecutarPuestaAPuntoInicialAutomatico(force) {
   Logger.log("🚀 INICIANDO PUESTA A PUNTO INICIAL AUTOMÁTICA...");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   
+  // 0. Asegurar pestañas de soporte críticas (CONFIG ESTADOS, RESTAURANTES, Citas Aceptadas, REFUNDS PENDIENTES)
+  try {
+    crearPestanasDeSoporteSiFaltan(ss);
+  } catch (soporteErr) {
+    Logger.log("Aviso en creación de pestañas de soporte: " + soporteErr.message);
+  }
+
   // 1. Reordenamiento y normalización canónica de todas las pestañas de psicólogas
   try {
     reordenarColumnasPsicologasCanonico();
@@ -3362,6 +3369,7 @@ function onOpen(e) {
       menu.addSeparator();
     }
 
+    menu.addItem("🛠️ Crear Pestañas de Soporte Si Faltan", "crearPestanasDeSoporteSiFaltan");
     menu.addItem("⚙️ Puesta a Punto Inicial (Estandarizar 11 Pestañas)", "ejecutarPuestaAPuntoInicialManual");
     menu.addItem("⚙️ Normalizar Todas las Pestañas (12 Cols Canónicas)", "reordenarColumnasPsicologasCanonico");
     menu.addItem("➕ Crear Nueva Pestaña de Psicóloga", "promptCrearNuevaPsicologa");
@@ -3640,13 +3648,8 @@ function ensureMatchesColumnsAndDropdowns() {
 
   // 6. Aplicar Desplegable de ⚙️ RESTAURANTES en la columna LUGAR
   var lugarCol = headers["LUGAR"] || 7;
-  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
-  if (restSheet && lugarCol && maxRows > 1) {
-    var rLast = Math.max(2, restSheet.getLastRow());
-    var venueRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
-      .setAllowInvalid(false)
-      .build();
+  var venueRule = getRestaurantVenueValidationRule(ss);
+  if (venueRule && lugarCol && maxRows > 1) {
     safeSetDataValidation(sheet.getRange(2, lugarCol, maxRows - 1, 1), venueRule);
   }
 
@@ -3721,17 +3724,404 @@ function sincronizarTodasLasCitasAceptadas() {
   }
 
   // Asegurar regla de validación de restaurantes
-  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
-  if (restSheet && lugarCol) {
-    var rLast = Math.max(2, restSheet.getLastRow());
-    var venueRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
-      .setAllowInvalid(false)
-      .build();
+  var venueRule = getRestaurantVenueValidationRule(ss);
+  if (venueRule && lugarCol && lastRow > 1) {
     safeSetDataValidation(sheet.getRange(2, lugarCol, lastRow - 1, 1), venueRule);
   }
 
   ss.toast("Se limpiaron y sincronizaron " + (lastRow - 1) + " fechas en 'Citas Aceptadas'.", "Sincronización Exitosa", 5);
+}
+
+
+// ─── 12B. GESTIÓN AUTOMÁTICA DE PESTAÑAS DE SOPORTE CRÍTICAS ────────────────
+
+/**
+ * Retorna la regla de validación para la columna LUGAR / RESTAURANTES apuntando al catálogo de ⚙️ RESTAURANTES.
+ * Detecta dinámicamente la columna 'RESTAURANTE / CAFÉ' sin asumir posición fija.
+ */
+function getRestaurantVenueValidationRule(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+  if (!restSheet) return null;
+  var rLast = Math.max(2, restSheet.getLastRow());
+  if (rLast <= 1) return null;
+  var restHeaders = getSheetHeaders(restSheet);
+  var nameCol = restHeaders["RESTAURANTE / CAFÉ"] || restHeaders["RESTAURANTE / CAFE"] || restHeaders["RESTAURANTE"] || 2;
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInRange(restSheet.getRange(2, nameCol, rLast - 1, 1), true)
+    .setAllowInvalid(true)
+    .build();
+}
+
+/**
+ * Crea las 4 pestañas de soporte críticas si no existen en el archivo:
+ * 1. ⚙️ CONFIG ESTADOS (con los 46 estados agrupados en las 4 etapas y formateo de color)
+ * 2. ⚙️ RESTAURANTES (con el catálogo oficial de 118 restaurantes limpios y sus metadatos)
+ * 3. Citas Aceptadas (con las 12 columnas canónicas)
+ * 4. REFUNDS PENDIENTES (con las 9 columnas del módulo de soporte/Lina)
+ *
+ * Es 100% IDEMPOTENTE: Si una pestaña ya existe con datos, NO la sobreescribe ni altera.
+ */
+function crearPestanasDeSoporteSiFaltan(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  var creadas = [];
+  var existentes = [];
+
+  // 1. ⚙️ CONFIG ESTADOS
+  var estadosName = CONFIG.CONFIG_ESTADOS_SHEET_NAME || "⚙️ CONFIG ESTADOS";
+  var sheetEstados = ss.getSheetByName(estadosName);
+  if (!sheetEstados) {
+    sheetEstados = ss.insertSheet(estadosName);
+    try { sheetEstados.setTabColor("#961500"); } catch (e) {}
+    creadas.push(estadosName);
+  } else {
+    existentes.push(estadosName);
+  }
+  if (sheetEstados.getLastRow() <= 1) {
+    poblarConfigEstados(sheetEstados);
+  }
+
+  // 2. ⚙️ RESTAURANTES
+  var restName = "⚙️ RESTAURANTES";
+  var sheetRest = ss.getSheetByName(restName);
+  if (!sheetRest) {
+    sheetRest = ss.insertSheet(restName);
+    try { sheetRest.setTabColor("#961500"); } catch (e) {}
+    creadas.push(restName);
+  } else {
+    existentes.push(restName);
+  }
+  if (sheetRest.getLastRow() <= 1) {
+    poblarRestaurantes(sheetRest);
+  }
+
+  // 3. Citas Aceptadas
+  var citasName = "Citas Aceptadas";
+  var sheetCitas = ss.getSheetByName(citasName);
+  if (!sheetCitas) {
+    sheetCitas = ss.insertSheet(citasName);
+    try { sheetCitas.setTabColor("#961500"); } catch (e) {}
+    creadas.push(citasName);
+  } else {
+    existentes.push(citasName);
+  }
+  if (sheetCitas.getLastRow() === 0) {
+    poblarCitasAceptadasHeader(sheetCitas);
+  }
+
+  // 4. REFUNDS PENDIENTES
+  var refundsName = CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES";
+  var sheetRefunds = ss.getSheetByName(refundsName);
+  if (!sheetRefunds) {
+    sheetRefunds = ss.insertSheet(refundsName);
+    try { sheetRefunds.setTabColor("#961500"); } catch (e) {}
+    creadas.push(refundsName);
+  } else {
+    existentes.push(refundsName);
+  }
+  if (sheetRefunds.getLastRow() === 0) {
+    poblarRefundsPendientesHeader(sheetRefunds);
+  }
+
+  SpreadsheetApp.flush();
+
+  // Si se crearon o actualizaron estados/restaurantes, refrescar desplegables dinámicos
+  if (creadas.length > 0) {
+    try {
+      actualizarDesplegablesDinamicos();
+    } catch (eDesp) {
+      Logger.log("Aviso actualizando desplegables dinámicos tras crear pestañas: " + eDesp.message);
+    }
+  }
+
+  var msg = "Pestañas de soporte verificadas. Creadas: [" + (creadas.join(", ") || "Ninguna") + "]. Ya existían: [" + existentes.join(", ") + "].";
+  Logger.log("✅ " + msg);
+  try {
+    ss.toast(msg, "Pestañas de Soporte", 6);
+  } catch (tErr) {}
+
+  return { creadas: creadas, existentes: existentes };
+}
+
+function poblarConfigEstados(sheet) {
+  var data = OBTENER_DATOS_CONFIG_ESTADOS();
+  sheet.clear();
+  sheet.getRange(1, 1, data.length, 3).setValues(data);
+  sheet.setFrozenRows(1);
+
+  // Formato encabezado
+  sheet.getRange(1, 1, 1, 3)
+    .setBackground("#961500")
+    .setFontColor("#FFFFFF")
+    .setFontWeight("bold")
+    .setFontSize(11)
+    .setHorizontalAlignment("center");
+
+  // Colorear columna B con sus respectivos colores
+  var backgrounds = [];
+  for (var i = 1; i < data.length; i++) {
+    backgrounds.push([data[i][1] || "#FFFFFF"]);
+  }
+  if (backgrounds.length > 0) {
+    sheet.getRange(2, 2, backgrounds.length, 1)
+      .setBackgrounds(backgrounds)
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+  }
+
+  sheet.autoResizeColumns(1, 3);
+  Logger.log("✅ '⚙️ CONFIG ESTADOS' poblada y formateada con " + (data.length - 1) + " estados.");
+}
+
+function poblarRestaurantes(sheet) {
+  var data = OBTENER_DATOS_RESTAURANTES();
+  sheet.clear();
+  sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+  sheet.setFrozenRows(1);
+
+  // Formato encabezado
+  sheet.getRange(1, 1, 1, data[0].length)
+    .setBackground("#961500")
+    .setFontColor("#FFFFFF")
+    .setFontWeight("bold")
+    .setFontSize(10)
+    .setHorizontalAlignment("center");
+
+  sheet.autoResizeColumns(1, data[0].length);
+  Logger.log("✅ '⚙️ RESTAURANTES' poblada y formateada con " + (data.length - 1) + " restaurantes aliados.");
+}
+
+function poblarCitasAceptadasHeader(sheet) {
+  var headers = [
+    "ID MATCH", "FECHA CITA REAL", "PERSONA A", "PERSONA B", "LUGAR", "CIUDAD",
+    "CONFIRMACIÓN", "DÍA ANTES", "HOY", "RESERVA", "ESTADO RESERVA", "OBSERVACIONES"
+  ];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(1, 1, 1, headers.length)
+    .setBackground("#961500")
+    .setFontColor("#FFFFFF")
+    .setFontWeight("bold")
+    .setFontSize(10)
+    .setHorizontalAlignment("center");
+
+  // Columna FECHA CITA REAL con validación de fecha
+  var dateRule = SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build();
+  sheet.getRange(2, 2, 500, 1).setDataValidation(dateRule);
+
+  // Columna LUGAR con dropdown de restaurantes
+  var ss = sheet.getParent();
+  var venueRule = getRestaurantVenueValidationRule(ss);
+  if (venueRule) {
+    sheet.getRange(2, 5, 500, 1).setDataValidation(venueRule);
+  }
+
+  sheet.autoResizeColumns(1, headers.length);
+  Logger.log("✅ 'Citas Aceptadas' creada con las 12 columnas canónicas.");
+}
+
+function poblarRefundsPendientesHeader(sheet) {
+  var headers = [
+    "FECHA REPORTE", "ORIGEN (PESTAÑA)", "FILA ORIGEN", "PERSONA A", "PLAN",
+    "OBSERVACIONES / MOTIVO", "ESTADO REFUND", "FECHA PROCESADO", "LINA NOTAS"
+  ];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.setFrozenRows(1);
+
+  sheet.getRange(1, 1, 1, headers.length)
+    .setBackground("#961500")
+    .setFontColor("#FFFFFF")
+    .setFontWeight("bold")
+    .setFontSize(10)
+    .setHorizontalAlignment("center");
+
+  // Dropdown para ESTADO REFUND
+  var refundStatuses = [
+    "PENDIENTE LINA", "REFUND APROBADO", "REFUND RECHAZADO",
+    "REFUND PROCESADO", "REFUND DONE", "CLIENTE QUIERE ESPERAR"
+  ];
+  var stRule = SpreadsheetApp.newDataValidation().requireValueInList(refundStatuses, true).setAllowInvalid(true).build();
+  sheet.getRange(2, 7, 500, 1).setDataValidation(stRule);
+
+  sheet.autoResizeColumns(1, headers.length);
+  Logger.log("✅ 'REFUNDS PENDIENTES' creada con las 9 columnas canónicas.");
+}
+
+function OBTENER_DATOS_CONFIG_ESTADOS() {
+  return [
+    ["Estado", "Color", "Etapa"],
+    ["Llenar perfil", "#E6B8AF", "PSICOLOGA"],
+    ["Listo para match", "#FFF2CC", "PSICOLOGA"],
+    ["HECHO", "#D9EAD3", "PSICOLOGA"],
+    ["APROBADO", "#B6D7A8", "PSICOLOGA"],
+    ["NOT APPROVED", "#F4CCCC", "PSICOLOGA"],
+    ["DESCALIFICADO", "#EA9999", "PSICOLOGA"],
+    ["NO HAY GENTE", "#FCE5CD", "PSICOLOGA"],
+    ["REVISAR", "#D9D2E9", "PSICOLOGA"],
+    ["TROUBLEMAKER", "#E06666", "PSICOLOGA"],
+    ["HECHO POR MAPE", "#D9EAD3", "PSICOLOGA"],
+    ["REQUEST PROFILE UPDATE", "#FFF2CC", "PSICOLOGA"],
+    ["PSIC. URG", "#FFD966", "PSICOLOGA"],
+    ["MUJER +50", "#EAD1DC", "PSICOLOGA"],
+    ["REFUND", "#F4CCCC", "PSICOLOGA"],
+    ["pendiente", "#FFF2CC", "SERVICIO_CLIENTE"],
+    ["agendando", "#CFE2F3", "SERVICIO_CLIENTE"],
+    ["por confirmar", "#FCE5CD", "SERVICIO_CLIENTE"],
+    ["esperar", "#EAD1DC", "SERVICIO_CLIENTE"],
+    ["de viaje", "#D9D2E9", "SERVICIO_CLIENTE"],
+    ["problemas personales", "#F4CCCC", "SERVICIO_CLIENTE"],
+    ["no contestan", "#EA9999", "SERVICIO_CLIENTE"],
+    ["reprogramar", "#FFE599", "SERVICIO_CLIENTE"],
+    ["esperar que salgan con su date", "#D9EAD3", "SERVICIO_CLIENTE"],
+    ["TROUBLEMAKER", "#E06666", "SERVICIO_CLIENTE"],
+    ["cita confirmada", "#B6D7A8", "RESULTADO_CITA"],
+    ["DATE PROGRAMADO", "#B6D7A8", "RESULTADO_CITA"],
+    ["cita realizada", "#D9EAD3", "RESULTADO_CITA"],
+    ["match", "#A4C2F4", "RESULTADO_CITA"],
+    ["MATCH DONE", "#6D9EEB", "RESULTADO_CITA"],
+    ["no match (él rechazó)", "#F4CCCC", "RESULTADO_CITA"],
+    ["no match (ella rechazó)", "#F4CCCC", "RESULTADO_CITA"],
+    ["sin química (mutuo)", "#D9D2E9", "RESULTADO_CITA"],
+    ["REFUND DONE", "#EA9999", "REFUND"],
+    ["REFUND PENDIENTE – NEQUI", "#F4CCCC", "REFUND"],
+    ["REFUND PENDIENTE – DATOS", "#F4CCCC", "REFUND"],
+    ["REFUND PENDIENTE – STRIPE", "#F4CCCC", "REFUND"],
+    ["REFUND PARCIAL PENDIENTE", "#FCE5CD", "REFUND"],
+    ["PENDIENTE DE RESPUESTA CLIENTE", "#FFF2CC", "REFUND"],
+    ["CLIENTE QUIERE ESPERAR", "#EAD1DC", "REFUND"],
+    ["RECHAZADA POR PSICÓLOGA B", "#F4CCCC", "PSICOLOGA"],
+    ["NO HAY GENTE", "#FCE5CD", "PERSONAS_DIFICILES"],
+    ["ESPERA O REFUND", "#F4CCCC", "PERSONAS_DIFICILES"],
+    ["REFUND APROBADO", "#B6D7A8", "REFUND"],
+    ["REFUND RECHAZADO", "#F4CCCC", "REFUND"],
+    ["REFUND PENDIENTE", "#FFF2CC", "REFUND"],
+    ["REFUND PROCESADO", "#D9EAD3", "REFUND"]
+  ];
+}
+
+function OBTENER_DATOS_RESTAURANTES() {
+  return [
+    ["CIUDAD", "RESTAURANTE / CAFÉ", "TIPO DE COMIDA", "PRECIO NUMÉRICO (COP)", "CATEGORÍA PRESUPUESTO", "DÍAS DISPONIBLES", "HORARIO", "ZONA", "UBICACIÓN DETALLADA", "ACEPTA RESERVAS"],
+    ["Barranquilla", "Devoto", "Italiano", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Zona norte", "Sí"],
+    ["Barranquilla", "Nena Lela Trattoria", "Italiano romántico", "200000", "200k-300k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Norte", "Zona norte", "Sí"],
+    ["Barranquilla", "Noa", "Fusión: sushi, mar, carnes, arroces, moderno y romántico", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Riomar", "Sí"],
+    ["Barranquilla", "Mistura", "", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "", "", "", "Sí"],
+    ["Barranquilla", "Umi", "Sushi", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "DOS SEDES OJO", "Sí"],
+    ["Barranquilla", "bruma coffe lab", "Café de especialidad, relajado", "85000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Juev 9am-11pm Vi-Dom 9am-12am", "Norte", "centro historico", "Sí"],
+    ["Barranquilla", "Café de Especialidad 80100", "Café de especialidad, relajado", "85000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Norte", "Norte de Barranquilla", "No"],
+    ["Bogotá", "Amari", "Elegante", "550000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte", "Zona norte", "Sí"],
+    ["Bogotá", "Viva la Vida", "Demasiado top, japonesa fusión, cócteles wow", "550000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte", "Autopista Norte con Calle 114", "Sí"],
+    ["Bogotá", "Astoria Rooftop", "Bar rooftop, muy buenos cócteles y ambiente", "400000", "Más de 300k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Norte", "Calle 85", "Sí"],
+    ["Bogotá", "Don Doh", "Parrilla coreana, sofisticado", "400000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte", "Calle 93", "Sí"],
+    ["Bogotá", "Primi", "Italiano", "400000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte", "Calle 93", "Sí"],
+    ["Bogotá", "Santorini Rooftop", "Bar rooftop, muy buenos cócteles y ambiente", "400000", "Más de 300k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Norte", "Calle 85", "Sí"],
+    ["Bogotá", "Tohoku", "Japonés muy premium", "400000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte", "Calle 93", "Sí"],
+    ["Bogotá", "URO", "Parrilla argentina", "400000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte", "Calle 85", "Sí"],
+    ["Bogotá", "Blac", "Pescados y mariscos a la parrilla con vino", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Jue 12:00-10:00pm · Vie-Sáb 12:00-11:00pm · Dom 12:00-5:00pm", "Norte (Chicó)", "Carrera 11a #89-10 · Grupo Takami", "Sí"],
+    ["Bogotá", "Café Amarti", "Romántico y sofisticado", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 8:00am-6:00pm", "Norte", "Usaquén", "Sí"],
+    ["Bogotá", "Casa", "Sofisticado, comida variada", "200000", "200k-300k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Norte", "Calle 85", "Sí"],
+    ["Bogotá", "Cecilia", "Romántico y sofisticado italiano", "200000", "200k-300k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Norte", "Calle 93 y Usaquén", "Sí"],
+    ["Bogotá", "Via del cuore", "Romántico y sofisticado italiano", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "", "Norte", "calle 85", "Sí"],
+    ["Bogotá", "Tragaluz asia del pacifico", "comida fusion asiatica-colombiana, ambiente sofisticado", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "martes y miercoles 12pm-9pm jueves 12pm-10pm viernes y sabado 12pm-11pm y domingos 12pm-5pm lunes cerrado", "zona G-chapinero", "cl 70 #8-25", "Sí"],
+    ["Bogotá", "mercado tres", "comida peruana, relajado, cool", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "martes, miercoles, jueves y viernes de 12pm-4pm 6pm-10pm sabado1pm-10pm domingo 12pm-5pm", "zona G-chapinero", "cl 55 #6-31", "Sí"],
+    ["Bogotá", "El Francés", "Bistró clásico francés reinterpretado", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mar 12:00-9:00pm · Mié-Sáb 12:00-11:00pm · Dom/fest 12:00-6:00pm", "Norte", "Calle 80 #9-11, Zona G/Chapinero · Grupo Takami", "Sí"],
+    ["Bogotá", "Sorella", "Casa de la pasta fresca y pizza", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mar 12:00-9:00pm · Mié 12:00-10:00pm · Jue-Sáb 12:00-11:00pm · Dom 12:00-5:00pm", "Centro-Norte (Chapinero Alto)", "Calle 66 Bis #4-71 · Grupo Takami", "Sí"],
+    ["Bogotá", "amalfitana", "italiano, ambiente cool", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "", "zona G-chapinero", "cl 72 #5-22", "Sí"],
+    ["Bogotá", "Atic & Keller", "Reservado, casual y bonito para tardear", "175000", "100k-200k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Norte", "Restaurante: Calle 75 · Pizzería: Calle 85", "Sí"],
+    ["Bogotá", "inkkei", "fusion peruana, tiene una terraza con vista super linda", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "L/M/M/J 12-9pm viernes y sabado de 12-10pm, domingo 12-6pm", "zona G-chapinero", "cl 57 #4-10", "Sí"],
+    ["Bogotá", "flora", "italiana relajado", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "L/M/M/J 12-11PM viernes y sabado 12-12pm domingo 12-9pm", "zona G-chapinero", "cra 5 #58 45", "Sí"],
+    ["Bogotá", "roma", "italiana relajado", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "L/M/M/J 12-9pm viernes y sabado de 12-10pm, domingo 12-6pm", "zona G-chapinero", "cra 5 #58 39", "Sí"],
+    ["Bogotá", "Brera", "Italiana", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "salvio 93", "Sí"],
+    ["Bogotá", "Ideal", "Variado", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Calle 85", "Sí"],
+    ["Bogotá", "Luna", "Italiano casual elegante", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Calle 83 #12-20", "Sí"],
+    ["Bogotá", "Oficial", "Peruana", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Calle 85 #12-90", "Sí"],
+    ["Bogotá", "Parmessano", "Italiana", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "CC Atlantis y GE (suele llenarse)", "Sí"],
+    ["Bogotá", "Punto Baja", "Mexicano", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Calle 90", "Sí"],
+    ["Bogotá", "Cacio e Pepe", "Italiano romántico", "150000", "100k-200k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Norte", "Calle 90", "Sí"],
+    ["Bogotá", "Cosette", "Bistro tranquilo", "150000", "100k-200k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Norte/Occidente", "Salitre, centro andino, 81, Calle 109 y Fontanar", "Sí"],
+    ["Bogotá", "Osaki", "Cocina asiática moderna", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mié 12:00-9:00pm · Jue-Sáb 12:00-10:00pm · Dom/fest 12:00-9:00pm", "Norte", "71, 85, 89, 93, 118 y Chía", "Sí"],
+    ["Bogotá", "Veccina", "Italiano moderno, relajado", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Calle 85 y 118 con Cra 19", "Sí"],
+    ["Bogotá", "80 Sillas", "Comida de mar y montaña, ceviches", "140000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mié 12:00-11:00pm · Jue-Sáb 12:00-11:30pm · Dom 12:00-6:00pm", "Norte", "Calle 118 #6A-05, Usaquén · Grupo Takami", "Sí"],
+    ["Bogotá", "Cantina y Punto", "Mexicana contemporánea y bar", "140000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Centro-Norte (Chapinero)", "Calle 66 #4A-33 · Grupo Takami", "No"],
+    ["Bogotá", "Central Cevichería", "Pescados, ceviches y paellas", "140000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Jue 12:00-9:30pm · Vie-Sáb 12:00-10:00pm · Dom 12:00-9:00pm", "Norte", "Carrera 13 #85-14 (Zona T) y Av. 19 #118-92 (Usaquén) · Grupo Takami", "Sí"],
+    ["Bogotá", "Di Lucca", "Trattoria italiana clásica, 35 años", "125000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:00-10:00/11:00pm aprox.", "Norte (Zona T / Calle 85, también Salitre y Chía)", "Carrera 13 #85-32 (sede principal)", "Sí"],
+    ["Bogotá", "Il Forno", "Pastas, pizzas y risottos italianos", "120000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Dom-Mié 11:30am-8:00pm · Jue 11:30am-9:00pm · Vie-Sáb 11:30am-10:00pm", "Norte (Multisede)", "Calle 109, Calle 93, Zona G (Calle 69A), Santa Bárbara (Av. 19), entre otros", "Sí"],
+    ["Bogotá", "Chin-Chin", "Bar de vinos por copa y media copa", "115000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mar 3:00-10:00pm · Mié 3:00-11:00pm · Jue-Sáb 12:00-11:00pm · Dom cerrado", "Norte (Zona G)", "Calle 80 #9-17 · Grupo Takami", "No"],
+    ["Bogotá", "Ugly American", "Taberna americana, brunch y hamburguesas", "115000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mié 12:00-10:00pm · Jue-Vie 12:00-11:00pm/12am · Sáb 9:30am-12am · Dom 9:30am-9:00pm", "Norte", "Calle 81 #9-12, Zona G/El Retiro · Grupo Takami", "Sí"],
+    ["Bogotá", "La Fama BBQ", "BBQ sureño estadounidense, especialista en cortes (nota: reseñas recientes mixtas sobre calidad y porciones)", "110000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Jue 12:00-10:00pm · Vie-Sáb 12:00-10:00pm aprox. · Dom 12:00-6:00pm", "Norte", "Calle 65 Bis #4-85 y Calle 85 #12-61 (2 sedes) · Grupo Takami", "Sí"],
+    ["Bogotá", "Tacos MX", "Cocina mexicana tradicional y tacos", "90000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Jue 12:00-9:00pm · Vie-Sáb 12:00-10:00pm · Dom 12:00-8:00pm", "Noroccidente (Suba/Colina)", "Av. Boyacá #145-2, CC Parque La Colina · Grupo Takami", "No"],
+    ["Bogotá", "Azahar café", "Café de especialidad", "110000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "", "Norte", "parque de la 93 y calle 70", "Sí"],
+    ["Bogotá", "MASA", "Café de especialidad", "110000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "", "Norte", "calle 70, calle 81, calle 105", "Sí"],
+    ["Bogotá", "Libertario Coffee Roasters", "Café de especialidad", "110000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 7:00am-7:30pm · Dom y fest 8:00am-6:00pm", "Norte", "Zona G, Parque 93, Calle 109, Calle 122, Usaquén, Calle 82, Calle 79", "No"],
+    ["Bogotá", "Amor Perfecto", "Café de especialidad de referencia, baristas expertos, Academia del Café", "90000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 7:30am-7:30pm · Dom 8:00am-6:00pm", "Norte (Multisede - Usaquén y otros)", "Usaquén, Chicó, Quinta Camacho", "No"],
+    ["Bogotá", "Universal de Hamburguesas", "Smash burgers", "55000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Mié 11:30am-9:00/10:00pm · Jue-Sáb 11:30am-10:00/11:00pm · Dom/fest 12:00-8:00/9:00pm", "Norte (El Nogal/Usaquén)", "Carrera 9 #79a-26 y Carrera 19 #118-48 · Grupo Takami", "No"],
+    ["Bogotá", "Sipote Burrito", "Burritos, potes y tacos rápidos", "45000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 11:00am-10:00pm aprox. · Dom 11:00am-9:00pm", "Multisede (Norte/Occidente/Chía)", "13 puntos: Fontanar, Calle 93A, Calle 71, Salitre Plaza, Centro Andino, Plaza Central, entre otros · Grupo Takami", "No"],
+    ["Bucaramanga", "Battuto", "Italiana", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Cabecera / Sotomayor", "Sí"],
+    ["Bucaramanga", "Casa Cartagena", "Mar", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Sotomayor", "Sí"],
+    ["Bucaramanga", "El Republicano", "Mar", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Sotomayor", "Sí"],
+    ["Bucaramanga", "Mia Nonna", "Italiana", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Cabecera", "Sí"],
+    ["Cali", "Nispero", "Mariscos", "275000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Ringlete", "Variado", "250000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Fatorrino Ristorante", "Italiana", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Nikkei 225", "Nikkei", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Storia D'Amore", "Italiano", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte / Multisede", "Granada, Chipichape, Unicentro", "Sí"],
+    ["Cali", "Tortelli", "Italiana", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "chipichape, el peñon, palmas mall", "Cali", "Sí"],
+    ["Cali", "Izumi", "Oriental", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Gastroteca", "Variado", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Odiseo Bistro", "Mediterráneo", "125000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Cali", "Sí"],
+    ["Cali", "Café La Marinela", "Café", "80000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Zona por confirmar", "Cali", "No"],
+    ["Cali", "Caffè D'Amore", "Café italiano, repostería, brunch, muy romántico", "60000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 8:00am aprox. · Cerrado cerca de las 10:00pm", "Norte (Granada)", "Av. 9 Norte #14N-57, Barrio Granada", "No"],
+    ["Madrid", "Tatel", "Español top, alta gastronomía con show en vivo", "400000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Jue 13:00-01:00 · Vie-Sáb 13:00-02:30am · Dom 12:00-02:30am", "Norte (Castellana/Salamanca)", "Paseo de la Castellana 36", "Sí"],
+    ["Madrid", "Arde", "Carnes", "250000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Norte (aprox.)", "Salamanca (aprox.)", "Sí"],
+    ["Madrid", "Charrúa", "Carnes", "250000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Zona por confirmar", "Madrid", "Sí"],
+    ["Madrid", "Bel Mondo", "Variado", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Madrid", "Sí"],
+    ["Madrid", "Juana la Loca", "Tapas españolas, más informal", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Centro", "La Latina (aprox.)", "Sí"],
+    ["Madrid", "Ponja", "Nikkei peruano", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Madrid", "Sí"],
+    ["Madrid", "Quispe", "Comida peruana", "315000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Norte", "Salamanca", "Sí"],
+    ["Madrid", "Gaston Wine Bar", "Wine bar, muy cool", "225000", "200k-300k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Zona por confirmar", "Madrid", "Sí"],
+    ["Madrid", "Circolo Popolare", "Italiana", "180000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Centro-Norte", "Almagro (aprox.)", "No"],
+    ["Madrid", "Casa Om", "Café", "135000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Norte", "Salamanca", "No"],
+    ["Madrid", "Fonico", "Café y brunch", "135000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 8:00am-6:00pm", "Norte", "Salamanca", "No"],
+    ["Madrid", "HanSo Cafe", "Café", "135000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Centro", "Centro", "No"],
+    ["Madrid", "Misión Café", "Café", "135000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Centro", "Centro", "No"],
+    ["Manizales", "Idilio", "Italiana con carnes", "225000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Centro", "Milán", "Sí"],
+    ["Manizales", "Spago", "Italiana elegante", "175000", "100k-200k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Centro", "Palogrande", "Sí"],
+    ["Manizales", "Manuelina", "Italiana, romántico", "125000", "100k-200k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Centro", "Palogrande", "Sí"],
+    ["Manizales", "Sushi Time", "Sushi", "125000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Centro", "Manizales", "Sí"],
+    ["Manizales", "Flora Joy", "Café de especialidad", "75000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Centro", "Av. Paralela", "No"],
+    ["Manizales", "La Ocasión", "Café de especialidad", "75000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Centro", "Palogrande", "No"],
+    ["Medellín", "Carmen", "Cocina contemporánea inspirada en Colombia, fine dining", "325000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb", "Lun 6:30-9:30pm · Mar-Sáb 12:00-3:00pm y 6:30-9:30pm · Cerrado domingo", "Sur (El Poblado - Provenza)", "Carrera 36 #10A-27", "Sí"],
+    ["Medellín", "OCI.mde", "Cocina de autor, pesca fresca, cocción lenta", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Sur (El Poblado)", "El Poblado", "Sí"],
+    ["Medellín", "Bárbaro Primitive Cuisine", "Carnes a la brasa y platos de autor", "160000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Occidente (Laureles)", "Carrera 76 #73b-39, Laureles", "Sí"],
+    ["Medellín", "La Pampa Parrilla Argentina", "Parrilla argentina con música en vivo", "140000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Occidente (Laureles) / Multisede", "Av. Jardín, Laureles (3 sedes en la ciudad)", "Sí"],
+    ["Medellín", "Casa de Nadie", "De todo", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Vía Las Palmas", "Sí"],
+    ["Medellín", "Marzzano", "Brunch, tardeo, almuerzo y cena italiano", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur (El Poblado)", "El Poblado", "Sí"],
+    ["Medellín", "Mistura", "Fusión peruana, mar, sushi y carnes", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur / Occidente", "Laureles, Provenza, El Tesoro, San Lucas", "Sí"],
+    ["Medellín", "Parmessano", "Italiana", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Multisede", "Laureles, Oviedo, El Tesoro, La Strada, Ciudad del Río, Indiana Mall, Unicentro, Florida, Viva Envigado, Fabricato, Llano Grande, Mercado del Río, San Nicolás", "Sí"],
+    ["Medellín", "Romero", "Italiano", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Provenza, Laureles, Llano Grande, Arkadia, CC Envigado", "Sí"],
+    ["Medellín", "Susurro", "Coctelería y platos pequeños", "200000", "200k-300k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Sur (El Poblado)", "El Poblado", "Sí"],
+    ["Medellín", "Tagliata", "Italiana", "180000", "100k-200k", "Mar,Mié,Jue,Vie,Sáb,Dom", "Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes", "Sur", "El Poblado", "Sí"],
+    ["Medellín", "Pergamino Café", "Café moderno", "125000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Vie 8:00am-9:00pm · Sáb 9:00am-9:00pm · Dom/fest 10:00am-7:00pm", "Sur / Multisede", "Vía Primavera, Arkadia, Viva Envigado, Ciudad del Río, El Tesoro, Laureles, Oviedo, San Lucas, Manila", "No"],
+    ["Medellín", "Andaluf", "Cocina del Pacífico colombiano (Chocó)", "115000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:00-8:00pm", "Sur (Provenza y Manila)", "Carrera 36 #8a-88 (Provenza) y Carrera 43f #11a-30 (Manila, también centro cultural)", "Sí"],
+    ["Medellín", "Della Nonna Trattoria", "Cocina italiana tradicional, multisede", "115000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Jue 12:00-10:00pm · Vie-Sáb 12:00-10:30pm", "Multisede (El Poblado, Laureles, Envigado, Llanogrande)", "El Tesoro, Milla de Oro/Manila, Mall del Este, Laureles, Alto las Palmas, Llanogrande", "Sí"],
+    ["Medellín", "Mondongo's", "Comida típica paisa: mondongo, bandeja paisa", "75000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Occidente (Laureles)", "Carrera 70 Circular 3-43, Laureles", "Sí"],
+    ["Medellín", "Libertario Coffee Roasters (Ciudad del Río)", "Café de especialidad", "110000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 7:00am-7:30pm · Dom y fest 8:00am-6:00pm", "Sur (Ciudad del Río)", "Carrera 48 #18A-33, Ciudad del Río", "No"],
+    ["Medellín", "Libertario Coffee Roasters (Laureles)", "Café de especialidad", "110000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 7:00am-7:30pm · Dom y fest 8:00am-5:30pm", "Occidente (Laureles)", "Dg 75 #39CB-20, Laureles-Estadio", "No"],
+    ["Miami", "Carbone", "Italiana", "400000", "Más de 300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Miami Beach (South of Fifth)", "Miami Beach", "Sí"],
+    ["Miami", "Amara at Paraiso", "Variado", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Centro-Norte", "Edgewater", "Sí"],
+    ["Miami", "Giselle", "Carnes, rooftop", "200000", "200k-300k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Zona por confirmar", "Miami", "Sí"],
+    ["Miami", "Komodo", "Asiático", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Cena: Lun-Mié y Dom 6:00-10:00pm · Jue 6:00-11:00pm · Vie-Sáb 6:00-12:00am · Almuerzo Lun-Vie", "Centro", "Brickell", "Sí"],
+    ["Miami", "Zuma", "Japonés contemporáneo, vista wow", "200000", "200k-300k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Todos los días 12:30-3:30pm y 7:00-11:00pm", "Centro", "Brickell", "Sí"],
+    ["Miami", "neverland coffe bar", "cafe", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "", "north miami", "", "Sí"],
+    ["Miami", "Crazy About You", "Italiana", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Zona por confirmar", "Miami", "Sí"],
+    ["Miami", "Luca Osteria", "Italiana", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur", "Coral Gables", "Sí"],
+    ["Miami", "Pubbelly Sushi", "Sushi", "150000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Multisede", "Aventura, Brickell y Miami Beach", "Sí"],
+    ["Pereira", "Zelva", "Rooftop variado, coctelería", "275000", "200k-300k", "Mié,Jue,Vie,Sáb", "Mié-Sáb 5:00pm-2:00am · Dom brunch 12:00-6:00pm", "Centro", "Pereira", "Sí"],
+    ["Pereira", "Osteria Bianco", "Italiano", "175000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Dom 12:00pm-10:00pm", "Sur/Occidente", "Cerritos y Circunvalar (mejor ubicación: Circunvalar)", "Sí"],
+    ["Pereira", "B612", "Café de especialidad", "115000", "100k-200k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Centro", "Pereira", "No"],
+    ["Pereira", "Amarillo Limón Repostería", "Café de especialidad", "70000", "Menos de 100k", "Lun,Mar,Mié,Jue,Vie,Sáb,Dom", "Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm", "Centro", "Pereira", "No"]
+  ];
 }
 
 /**
@@ -3850,15 +4240,7 @@ function actualizarDesplegablesDinamicos() {
     .build();
 
   // 5. Regla para LUGAR / RESTAURANTES (Desde pestaña ⚙️ RESTAURANTES)
-  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
-  var venueRule = null;
-  if (restSheet) {
-    var rLast = Math.max(2, restSheet.getLastRow());
-    venueRule = SpreadsheetApp.newDataValidation()
-      .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
-      .setAllowInvalid(false)
-      .build();
-  }
+  var venueRule = getRestaurantVenueValidationRule(ss);
 
   // Aplicar a todas las pestañas con logging detallado y protección de excepciones
   var allSheets = ss.getSheets();
@@ -5601,13 +5983,8 @@ function syncMatchToCitasAceptadas(matchesSheet, row) {
     if (cObsCol) citasSheet.getRange(newRowIdx, cObsCol).setValue(obsVal);
 
     // Dropdown de restaurante
-    var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
-    if (restSheet && cLugarCol) {
-      var rLast = Math.max(2, restSheet.getLastRow());
-      var venueRule = SpreadsheetApp.newDataValidation()
-        .requireValueInRange(restSheet.getRange(2, 1, rLast - 1, 1), true)
-        .setAllowInvalid(false)
-        .build();
+    var venueRule = getRestaurantVenueValidationRule(ss);
+    if (venueRule && cLugarCol) {
       citasSheet.getRange(newRowIdx, cLugarCol).setDataValidation(venueRule);
     }
   }
@@ -6113,24 +6490,18 @@ function updateDependentRestaurantDropdown(sheet, row) {
   var rLast = restSheet.getLastRow();
   if (rLast <= 1) return;
 
-  // Columnas en ⚙️ RESTAURANTES:
-  // 1: Restaurante / Café (Nombre)
-  // 2: Ciudad
-  // 3: Tipo de comida
-  // 4: Precio (rango)
-  // 5: Precio Numérico (COP)
-  // 6: Categoría de Presupuesto
-  // 7: Días Disponibles
-  // 8: Horario
-  // 9: Zona
-  // 10: Ubicación detallada
-  var rData = restSheet.getRange(2, 1, rLast - 1, 10).getValues();
+  var restHeaders = getSheetHeaders(restSheet);
+  var nameColIdx = (restHeaders["RESTAURANTE / CAFÉ"] || restHeaders["RESTAURANTE / CAFE"] || restHeaders["RESTAURANTE"] || 2) - 1;
+  var cityColIdx = (restHeaders["CIUDAD"] || restHeaders["CITY"] || 1) - 1;
+  var bcatColIdx = (restHeaders["CATEGORÍA PRESUPUESTO"] || restHeaders["CATEGORIA PRESUPUESTO"] || restHeaders["PRESUPUESTO"] || 5) - 1;
+
+  var rData = restSheet.getRange(2, 1, rLast - 1, restSheet.getLastColumn()).getValues();
   var filteredNames = [];
 
   for (var i = 0; i < rData.length; i++) {
-    var rName = (rData[i][0] || "").toString().trim();
-    var rCity = (rData[i][1] || "").toString().trim();
-    var rCat = (rData[i][5] || "").toString().trim();
+    var rName = (rData[i][nameColIdx] || "").toString().trim();
+    var rCity = (rData[i][cityColIdx] || "").toString().trim();
+    var rCat = (rData[i][bcatColIdx] || "").toString().trim();
 
     if (!rName) continue;
 
