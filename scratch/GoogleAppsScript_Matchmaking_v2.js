@@ -4965,7 +4965,128 @@ function updateStatusInPsychologistSheet(psycName, nameA, nameB, newStatus, bgCo
   }
 }
 
-// ─── 14. PESTAÑA PRIVADA 🔒 SUPERVISIÓN MARÍA (DASHBOARD OPERATIVO) ─────────
+// ─── 14. PESTAÑA PRIVADA 🔒 SUPERVISIÓN MARÍA Y TIEMPO DE RESPUESTA CS ─────
+
+/**
+ * Helper para parsear fechas con o sin hora en Google Apps Script sin depender del locale del motor.
+ */
+function parseDateFlexible(dateStr) {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
+  var str = dateStr.toString().trim();
+  var match = str.match(/(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/);
+  if (!match) return null;
+  var y = parseInt(match[1], 10);
+  var m = parseInt(match[2], 10) - 1;
+  var d = parseInt(match[3], 10);
+  var hh = match[4] ? parseInt(match[4], 10) : 0;
+  var mm = match[5] ? parseInt(match[5], 10) : 0;
+  return new Date(y, m, d, hh, mm, 0);
+}
+
+/**
+ * Registra en MATCHES la fecha y tiempo de respuesta de Servicio al Cliente
+ * cuando el estado se aleja de 'pendiente' por primera vez.
+ */
+function registrarRespuestaServicioCliente(sheet, row, obsCol) {
+  if (!sheet || !row || !obsCol) return;
+  try {
+    var obsVal = (sheet.getRange(row, obsCol).getValue() || "").toString().trim();
+    
+    // Si ya tiene fecha de respuesta registrada, no sobreescribir (medir solo el primer contacto)
+    if (obsVal.indexOf("[Respuesta CS:") >= 0) {
+      return;
+    }
+
+    var now = new Date();
+    var nowStr = Utilities.formatDate(now, CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
+    var responseTag = "[Respuesta CS: " + nowStr + "]";
+
+    // Buscar timestamp de ingreso
+    var matchIngreso = obsVal.match(/\[Ingreso CS:\s*([^\]]+)\]/);
+    if (matchIngreso && matchIngreso[1]) {
+      var entryDate = parseDateFlexible(matchIngreso[1]);
+      if (entryDate) {
+        var diffMs = now.getTime() - entryDate.getTime();
+        if (diffMs >= 0) {
+          var diffHours = (diffMs / (1000 * 60 * 60));
+          var timeTag = "[Tiempo CS: " + diffHours.toFixed(1) + "h]";
+          responseTag += " " + timeTag;
+          Logger.log("⏱️ Fila " + row + ": Tiempo de respuesta CS calculado: " + diffHours.toFixed(1) + " horas.");
+        }
+      }
+    }
+
+    var newObs = (obsVal ? obsVal + " " : "") + responseTag;
+    sheet.getRange(row, obsCol).setValue(newObs);
+  } catch (err) {
+    Logger.log("Aviso al registrar tiempo de respuesta CS: " + err.message);
+  }
+}
+
+/**
+ * Calcula el promedio general del equipo de Servicio al Cliente en MATCHES.
+ */
+function calcularTiempoRespuestaGeneralCS(matchesSheet) {
+  var result = {
+    avgHours: "0.0",
+    avgDays: "0.0",
+    totalCases: 0,
+    formatted: "Sin datos registrados"
+  };
+
+  if (!matchesSheet || matchesSheet.getLastRow() <= 1) return result;
+
+  try {
+    var headers = getSheetHeaders(matchesSheet);
+    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+    var lastRow = matchesSheet.getLastRow();
+    var data = matchesSheet.getRange(2, obsCol, lastRow - 1, 1).getValues();
+
+    var totalHours = 0;
+    var count = 0;
+
+    for (var r = 0; r < data.length; r++) {
+      var obs = (data[r][0] || "").toString();
+      // 1. Buscar tag explícito [Tiempo CS: X.Xh]
+      var mTime = obs.match(/\[Tiempo CS:\s*([0-9.]+)h\]/);
+      if (mTime && mTime[1]) {
+        var h = parseFloat(mTime[1]);
+        if (!isNaN(h) && h >= 0) {
+          totalHours += h;
+          count++;
+          continue;
+        }
+      }
+
+      // 2. Si no tiene tag directo, calcular desde [Ingreso CS: ...] y [Respuesta CS: ...]
+      var mIn = obs.match(/\[Ingreso CS:\s*([^\]]+)\]/);
+      var mOut = obs.match(/\[Respuesta CS:\s*([^\]]+)\]/);
+      if (mIn && mOut) {
+        var dIn = parseDateFlexible(mIn[1]);
+        var dOut = parseDateFlexible(mOut[1]);
+        if (dIn && dOut && dOut >= dIn) {
+          var calcH = (dOut.getTime() - dIn.getTime()) / (1000 * 60 * 60);
+          totalHours += calcH;
+          count++;
+        }
+      }
+    }
+
+    if (count > 0) {
+      var avgH = totalHours / count;
+      var avgD = avgH / 24;
+      result.avgHours = avgH.toFixed(1);
+      result.avgDays = avgD.toFixed(1);
+      result.totalCases = count;
+      result.formatted = avgH.toFixed(1) + " hrs (" + avgD.toFixed(1) + " días)";
+    }
+  } catch (e) {
+    Logger.log("Error al calcular tiempo promedio de CS: " + e.message);
+  }
+
+  return result;
+}
 
 /**
  * Genera o actualiza la pestaña privada '🔒 SUPERVISIÓN MARÍA' con KPIs ejecutivos en tiempo real.
@@ -5035,6 +5156,7 @@ function generarPanelSupervisionMaria() {
   var scheduledDates = 0;
   if (matchesSheet && matchesSheet.getLastRow() > 1) {
     var mData = matchesSheet.getRange(2, 1, matchesSheet.getLastRow() - 1, matchesSheet.getLastColumn()).getValues();
+    var mHeaders = getSheetHeaders(matchesSheet);
     var diaCol = mHeaders["DÍA"] || mHeaders["DIA"] || 6;
     var matchCol = mHeaders["ESTADO TOTAL"] || mHeaders["MATCH"] || 1;
     for (var m = 0; m < mData.length; m++) {
@@ -5049,6 +5171,7 @@ function generarPanelSupervisionMaria() {
   }
 
   var pendingRefunds = refundsSheet ? Math.max(0, refundsSheet.getLastRow() - 1) : 0;
+  var csMetrics = calcularTiempoRespuestaGeneralCS(matchesSheet);
 
   // 3. Tarjetas KPI
   var kpiHeaders = [
@@ -5068,8 +5191,18 @@ function generarPanelSupervisionMaria() {
   sheet.getRange("G4:H4").merge().setValue(kpiHeaders[0][3]).setFontWeight("bold").setBackground("#783F04").setFontColor("#FFF").setHorizontalAlignment("center");
   sheet.getRange("G5:H5").merge().setValue(kpiHeaders[1][3]).setFontSize(18).setFontWeight("bold").setBackground("#FCE5CD").setHorizontalAlignment("center");
 
-  // 4. Tabla de Rendimiento y Slots por Psicóloga
-  sheet.getRange("A7:H7").merge()
+  // Tarjeta Ejecutiva de Tiempo de Respuesta CS (Fila 6)
+  var csText = "⏱️ TIEMPO PROMEDIO RESPUESTA SERVICIO AL CLIENTE (EQUIPO): " + (csMetrics.totalCases > 0 ? (csMetrics.avgHours + " hrs (" + csMetrics.avgDays + " días) — " + csMetrics.totalCases + " casos gestionados") : "Sin registros de tiempo aún");
+  sheet.getRange("A6:H6").merge()
+    .setValue(csText)
+    .setFontWeight("bold")
+    .setFontSize(10)
+    .setBackground("#2E1A47")
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center");
+
+  // 4. Tabla 1: Rendimiento y Slots por Psicóloga
+  sheet.getRange("A8:H8").merge()
     .setValue("📊 ACTIVIDAD Y CARGA OPERATIVA POR PSICÓLOGA")
     .setFontWeight("bold")
     .setBackground("#20124D")
@@ -5077,7 +5210,7 @@ function generarPanelSupervisionMaria() {
 
   var psycHeaders = ["Psicóloga", "Total Slots", "Listos Match", "Hechos", "Aprobados", "Trouble/Rechazos", "Refunds", "Eficiencia"];
   for (var h = 0; h < psycHeaders.length; h++) {
-    sheet.getRange(8, h + 1).setValue(psycHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+    sheet.getRange(9, h + 1).setValue(psycHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   }
 
   var psycList = obtenerPsicologasValidas();
@@ -5103,7 +5236,7 @@ function generarPanelSupervisionMaria() {
     }
 
     var efec = totalSlots > 0 ? Math.round(((aprobados + hechos) / totalSlots) * 100) + "%" : "0%";
-    var curRow = 9 + p;
+    var curRow = 10 + p;
     sheet.getRange(curRow, 1).setValue(pName).setFontWeight("bold");
     sheet.getRange(curRow, 2).setValue(totalSlots).setHorizontalAlignment("center");
     sheet.getRange(curRow, 3).setValue(listos).setHorizontalAlignment("center");
@@ -5113,6 +5246,118 @@ function generarPanelSupervisionMaria() {
     sheet.getRange(curRow, 7).setValue(refunds).setHorizontalAlignment("center");
     sheet.getRange(curRow, 8).setValue(efec).setHorizontalAlignment("center");
   }
+
+  // 5. Tabla 2: Brecha PROFILES vs. MATCHES por Psicóloga (Clientes asignados sin trabajar)
+  var startRowT2 = 10 + psycList.length + 2;
+
+  sheet.getRange(startRowT2, 1, 1, 5).merge()
+    .setValue("📉 BRECHA PROFILES VS. MATCHES POR PSICÓLOGA (CLIENTES ASIGNADOS SIN TRABAJAR)")
+    .setFontWeight("bold")
+    .setBackground("#5C0D00")
+    .setFontColor("#FFFFFF");
+
+  var gapHeaders = ["Psicóloga", "Asignados en PROFILES", "Procesados en su MATCHES", "Brecha", "Estado"];
+  for (var gh = 0; gh < gapHeaders.length; gh++) {
+    sheet.getRange(startRowT2 + 1, gh + 1)
+      .setValue(gapHeaders[gh])
+      .setFontWeight("bold")
+      .setBackground("#E8EAED")
+      .setHorizontalAlignment("center");
+  }
+
+  // Leer asignaciones en PROFILES (1 sola lectura en memoria)
+  var assignedClientsByPsyc = {};
+  for (var pi = 0; pi < psycList.length; pi++) {
+    assignedClientsByPsyc[psycList[pi]] = {};
+  }
+
+  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
+  if (profSheet && profSheet.getLastRow() > 1) {
+    var profHeaders = getSheetHeaders(profSheet);
+    var pNameCol = profHeaders["FULLNAME"] || profHeaders["FULL NAME"] || profHeaders["NOMBRE"] || 2;
+    var pRespCol = profHeaders["RESPONSABLE"] || profHeaders["PSICOLOGA"] || 4;
+    var profLastRow = profSheet.getLastRow();
+    var profData = profSheet.getRange(2, 1, profLastRow - 1, Math.max(pNameCol, pRespCol)).getValues();
+
+    for (var pr = 0; pr < profData.length; pr++) {
+      var clientRaw = (profData[pr][pNameCol - 1] || "").toString().trim();
+      var respRaw = (profData[pr][pRespCol - 1] || "").toString().trim();
+      if (!clientRaw || !respRaw) continue;
+
+      var normPsyc = normalizePsychologistName(respRaw);
+      if (normPsyc && assignedClientsByPsyc[normPsyc]) {
+        var cleanClient = clientRaw.toLowerCase().replace(/\s+/g, " ");
+        assignedClientsByPsyc[normPsyc][cleanClient] = true;
+      }
+    }
+  }
+
+  var totalAssignedTeam = 0;
+  var totalProcessedTeam = 0;
+  var totalGapTeam = 0;
+
+  for (var p2 = 0; p2 < psycList.length; p2++) {
+    var psycName = psycList[p2];
+    var psycSheet = findPsychologistSheet(psycName);
+    var workedClientsSet = {};
+
+    if (psycSheet && psycSheet.getLastRow() > 1) {
+      var psycHeaders = getSheetHeaders(psycSheet);
+      var personACol = psycHeaders["PERSON A"] || psycHeaders["PERSONA A"] || psycHeaders["CLIENTE"] || 4;
+      var psycLastRow = psycSheet.getLastRow();
+      var matchValues = psycSheet.getRange(2, personACol, psycLastRow - 1, 1).getValues();
+
+      for (var mr = 0; mr < matchValues.length; mr++) {
+        var rawNameA = (matchValues[mr][0] || "").toString().trim();
+        if (!rawNameA || rawNameA.toLowerCase() === "listo para match" || rawNameA.indexOf("...") >= 0) continue;
+        var cleanNameA = rawNameA.toLowerCase().replace(/\s+/g, " ");
+        workedClientsSet[cleanNameA] = true;
+      }
+    }
+
+    var assignedObj = assignedClientsByPsyc[psycName] || {};
+    var assignedNames = Object.keys(assignedObj);
+    var assignedCount = assignedNames.length;
+    var processedCount = 0;
+
+    for (var a = 0; a < assignedNames.length; a++) {
+      if (workedClientsSet[assignedNames[a]]) {
+        processedCount++;
+      }
+    }
+
+    var gap = Math.max(0, assignedCount - processedCount);
+    totalAssignedTeam += assignedCount;
+    totalProcessedTeam += processedCount;
+    totalGapTeam += gap;
+
+    var curGapRow = startRowT2 + 2 + p2;
+    sheet.getRange(curGapRow, 1).setValue(psycName).setFontWeight("bold");
+    sheet.getRange(curGapRow, 2).setValue(assignedCount).setHorizontalAlignment("center");
+    sheet.getRange(curGapRow, 3).setValue(processedCount).setHorizontalAlignment("center");
+    sheet.getRange(curGapRow, 4).setValue(gap).setFontWeight("bold").setHorizontalAlignment("center");
+
+    if (gap === 0) {
+      sheet.getRange(curGapRow, 5).setValue("✅ Al día").setFontWeight("bold").setHorizontalAlignment("center").setBackground("#D9EAD3").setFontColor("#274E13");
+      sheet.getRange(curGapRow, 4).setBackground("#D9EAD3").setFontColor("#274E13");
+    } else {
+      var badgeBg = gap > 10 ? "#F4CCCC" : "#FFF2CC";
+      var badgeColor = gap > 10 ? "#961500" : "#7F6000";
+      sheet.getRange(curGapRow, 5).setValue("⚠️ " + gap + " sin trabajar").setFontWeight("bold").setHorizontalAlignment("center").setBackground(badgeBg).setFontColor(badgeColor);
+      sheet.getRange(curGapRow, 4).setBackground(badgeBg).setFontColor(badgeColor);
+    }
+  }
+
+  // Fila TOTAL EQUIPO
+  var totalRowT2 = startRowT2 + 2 + psycList.length;
+  sheet.getRange(totalRowT2, 1).setValue("TOTAL EQUIPO").setFontWeight("bold").setBackground("#E8EAED");
+  sheet.getRange(totalRowT2, 2).setValue(totalAssignedTeam).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowT2, 3).setValue(totalProcessedTeam).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowT2, 4).setValue(totalGapTeam).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  var teamStatus = totalGapTeam === 0 ? "✅ Equipo al día" : "⚠️ " + totalGapTeam + " clientes por trabajar";
+  var teamStatusBg = totalGapTeam === 0 ? "#D9EAD3" : "#FFF2CC";
+  var teamStatusColor = totalGapTeam === 0 ? "#274E13" : "#7F6000";
+  sheet.getRange(totalRowT2, 5).setValue(teamStatus).setFontWeight("bold").setBackground(teamStatusBg).setFontColor(teamStatusColor).setHorizontalAlignment("center");
 
   // 5. Proteger pestaña exclusivamente para María (NUNCA agregar a quien ejecuta la función)
   var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
@@ -5191,7 +5436,7 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
   }
 
   // 4. Observaciones & Alerta de Compatibilidad para Servicio al Cliente (Sanitizado sin duplicados)
-  var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
+  var nowStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm");
   var obsText = matchData.observaciones || "";
   
   // Limpiar posibles duplicados de [Compatibilidad Forzada...]
@@ -5204,9 +5449,9 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
 
   var hasCompAlert = (obsText.indexOf("Compatibilidad Forzada") >= 0 || obsText.indexOf("ALERTA COMPATIBILIDAD") >= 0 || obsText.indexOf("INCOMPATIBILIDAD") >= 0);
 
-  // Agregar tag de fecha de ingreso para trazabilidad de 15 días si no existe
+  // Agregar tag de fecha y hora de ingreso para trazabilidad de 15 días y medición de tiempo de respuesta CS
   if (obsText.indexOf("[Ingreso CS:") === -1) {
-    obsText = (obsText ? obsText + " " : "") + "[Ingreso CS: " + todayStr + "]";
+    obsText = (obsText ? obsText + " " : "") + "[Ingreso CS: " + nowStr + "]";
   }
 
   if (obsCol) {
@@ -5651,6 +5896,12 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
       sheet.getRange(row, col).setBackground(estadosData.COLOR_MAP[editUpper]);
     }
 
+    // ── TIEMPO DE RESPUESTA SERVICIO AL CLIENTE (Primer cambio que se aleja de pendiente) ──
+    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+    if (editUpper && editUpper !== "PENDIENTE") {
+      registrarRespuestaServicioCliente(sheet, row, obsCol);
+    }
+
     // ── REGLA 9: DISPARO INMEDIATO DE RECHAZO SI CUALQUIERA DE LOS DOS RECHAZA ──
     if (isRejectionStatus(editVal)) {
       sheet.getRange(row, matchCol).setValue(editVal).setBackground("#F4CCCC");
@@ -5716,6 +5967,12 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
       sheet.getRange(row, matchCol).setBackground(estadosData.COLOR_MAP[statusUpper]);
     }
 
+    // ── TIEMPO DE RESPUESTA SERVICIO AL CLIENTE (Primer cambio que se aleja de pendiente) ──
+    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+    if (statusUpper && statusUpper !== "PENDIENTE") {
+      registrarRespuestaServicioCliente(sheet, row, obsCol);
+    }
+
     if (isRejectionStatus(statusVal)) {
       var cellA = getCellData(sheet, row, personACol);
       var cellB = getCellData(sheet, row, personBCol);
@@ -5746,6 +6003,9 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
       }
 
       updateMatchesRowColor(sheet, row, fechaStr, curStTotal);
+
+      var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+      registrarRespuestaServicioCliente(sheet, row, obsCol);
 
       try {
         syncMatchToCitasAceptadas(sheet, row);
