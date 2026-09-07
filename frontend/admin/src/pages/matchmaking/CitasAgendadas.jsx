@@ -110,10 +110,10 @@ export default function CitasAgendadas() {
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <CalendarIcon size={28} style={{ color: 'var(--color-primary)' }} />
-            Citas Agendadas (Calendario & Mensajería)
+            Citas Aceptadas (Agendamiento & Mensajería)
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-            Control de citas confirmadas por orden cronológico, plantillas de mensajes WhatsApp y gestión de reprogramaciones con selector de calendario.
+            Pestaña operativa sincronizada con la hoja canónica <strong>Citas Aceptadas</strong>. Control cronológico de citas confirmadas, plantillas WhatsApp (Confirmación, Día Antes, Hoy) y gestión de reprogramaciones con selector de restaurantes.
           </p>
         </div>
 
@@ -139,7 +139,7 @@ export default function CitasAgendadas() {
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 20 }}>
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 10, padding: '16px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Citas Agendadas</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Citas Aceptadas</div>
           <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>{calendarDates.length}</div>
         </div>
         <div style={{ background: 'var(--bg-card)', border: '1px solid #B6D7A8', borderRadius: 10, padding: '16px' }}>
@@ -268,7 +268,7 @@ export default function CitasAgendadas() {
       {/* Table */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div className="empty-state" style={{ padding: 40 }}>Cargando citas agendadas...</div>
+          <div className="empty-state" style={{ padding: 40 }}>Cargando citas aceptadas...</div>
         ) : calendarDates.length === 0 ? (
           <div className="empty-state" style={{ padding: 40 }}>
             <CalendarIcon size={36} style={{ color: 'var(--color-primary)', margin: '0 auto 12px', display: 'block' }} />

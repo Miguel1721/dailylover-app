@@ -16,7 +16,6 @@ import Dashboard from './pages/Dashboard'
 import Clientes from './pages/Clientes'
 import Eventos from './pages/Eventos'
 import Importar from './pages/Importar'
-import Matching from './pages/Matching'
 import Employees from './pages/Employees'
 import Commissions from './pages/Commissions'
 import Payroll from './pages/Payroll'
@@ -32,7 +31,6 @@ import MatchmakerDashboard from './pages/MatchmakerDashboard'
 import AgendaPsicologa from './pages/AgendaPsicologa'
 import EvaluacionCita from './pages/EvaluacionCita'
 import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
-import MatchingManual from './pages/MatchingManual'
 import CmsEventos from './pages/CmsEventos'
 import CmsCiudades from './pages/CmsCiudades'
 import MisMatches from './pages/matchmaking/MisMatches'
@@ -223,48 +221,50 @@ function Sidebar({ isOpen, onClose }) {
   const isPsyc = effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker')
   const isLina = effectiveRole === 'Lina (Refunds)'
 
-  // Groups and items configuration
+  const homePath = isCs ? '/matchmaking/aprobados-maria' : isLina ? '/matchmaking/refunds' : '/'
+
+  // Groups and items configuration — Zero noise per role
   const coreItems = [
-    ...(!isLina ? [{ to: '/', icon: Heart, label: 'Panel Clínico (Psicólogas)', module: 'dashboard', action: 'view', end: true }] : []),
+    ...(isPsyc || isMaria ? [{ to: '/', icon: Heart, label: isMaria ? 'Panel Clínico (Psicólogas)' : 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
-    ...(!isLina ? [{ to: '/agenda', icon: Calendar, label: 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' }] : []),
-    { to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' },
+    ...(isPsyc || isMaria ? [{ to: '/agenda', icon: Calendar, label: isMaria ? 'Agenda de Entrevistas' : 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' }] : []),
+    ...(!isLina ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
+    ...(isMaria ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
   ]
 
   const matchmakingItems = [
     ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'Matches (Todas las Psicólogas)' : 'Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: Headphones, label: 'Aprobados por María (CS)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: 'Citas Agendadas (Calendario)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'Matches (Todas las Psicólogas)' : 'Mis Matches', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: Headphones, label: isCs ? 'Citas por Agendar' : 'Aprobados por María (CS)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: 'Citas Aceptadas', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/aprobaciones-cruzadas', icon: ShieldCheck, label: 'Aprobaciones Cruzadas (A ↔ B)', module: 'matching', action: 'view' }] : []),
-    { to: '/matchmaking/todos-los-matches', icon: Sparkles, label: 'Todos los Matches (Lookbook)', module: 'matching', action: 'view' },
+    ...(isMaria ? [{ to: '/matchmaking/todos-los-matches', icon: Sparkles, label: 'Todos los Matches (Lookbook)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: 'Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
-  const cmsItems = [
+  const cmsItems = isMaria ? [
     { to: '/cms/eventos', icon: Calendar, label: 'CMS Eventos', module: 'eventos', action: 'view' },
     { to: '/cms/ciudades', icon: Globe, label: 'CMS Ciudades', module: 'eventos', action: 'view' },
-  ]
+  ] : []
 
-  const personalItems = [
+  const personalItems = isMaria ? [
     { to: '/empleados', icon: Users, label: 'Empleados', module: 'empleados', action: 'view' },
     { to: '/nomina', icon: Wallet, label: 'Nómina', module: 'nomina', action: 'view' },
     { to: '/comisiones', icon: Percent, label: 'Comisiones', module: 'comisiones', action: 'view' },
-  ]
+  ] : []
 
   const financeItems = [
-    { to: '/ingresos', icon: TrendingUp, label: 'Ingresos', module: 'ingresos', action: 'view' },
-    { to: '/gastos', icon: TrendingDown, label: 'Gastos', module: 'gastos', action: 'view' },
-    { to: '/flujo-de-caja', icon: Landmark, label: 'Flujo de caja', module: 'flujo_caja', action: 'view' },
+    ...(isMaria ? [{ to: '/ingresos', icon: TrendingUp, label: 'Ingresos', module: 'ingresos', action: 'view' }] : []),
+    ...(isMaria ? [{ to: '/gastos', icon: TrendingDown, label: 'Gastos', module: 'gastos', action: 'view' }] : []),
+    ...(isMaria || isLina ? [{ to: '/flujo-de-caja', icon: Landmark, label: 'Flujo de caja', module: 'flujo_caja', action: 'view' }] : []),
   ]
 
-  const systemItems = [
+  const systemItems = isMaria ? [
     { to: '/roles', icon: Shield, label: 'Roles de Sistema', module: 'roles', action: 'view' },
     { to: '/usuarios', icon: UserCheck, label: 'Cuentas de Acceso', module: 'usuarios', action: 'view' },
-  ]
+  ] : []
 
   const showMatchmaking = matchmakingItems.some(i => hasPermission(i.module, i.action))
   const showPersonal = personalItems.some(i => hasPermission(i.module, i.action))
@@ -306,10 +306,10 @@ function Sidebar({ isOpen, onClose }) {
   return (
     <aside className={`sidebar ${isOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
+        <NavLink to={homePath} onClick={handleLinkClick} style={{ textDecoration: 'none' }}>
           <span style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: 18 }}>Daily Lover</span>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Panel Admin</div>
-        </div>
+        </NavLink>
         <button 
           onClick={onClose} 
           className="mobile-menu-btn" 
@@ -389,6 +389,22 @@ function Sidebar({ isOpen, onClose }) {
         )}
       </div>
     </aside>
+  )
+}
+
+function HomeRoute() {
+  const { user } = useAuth()
+  const effectiveRole = user?.role || ''
+  if (effectiveRole === 'Servicio al Cliente') {
+    return <Navigate to="/matchmaking/aprobados-maria" replace />
+  }
+  if (effectiveRole === 'Lina (Refunds)') {
+    return <Navigate to="/matchmaking/refunds" replace />
+  }
+  return (
+    <ProtectedRoute module="dashboard" action="view">
+      <MatchmakerDashboard />
+    </ProtectedRoute>
   )
 }
 
@@ -529,14 +545,7 @@ function AppContent() {
                 </header>
                 <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
                   <Routes>
-                    <Route 
-                      path="/" 
-                      element={
-                        <ProtectedRoute module="dashboard" action="view">
-                          <MatchmakerDashboard />
-                        </ProtectedRoute>
-                      } 
-                    />
+                    <Route path="/" element={<HomeRoute />} />
                     <Route path="/general" element={<ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute>} />
                     <Route path="/clinico" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
                     <Route path="/auditoria-psicologas" element={<ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute>} />
@@ -557,9 +566,9 @@ function AppContent() {
                     
                     <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
                     <Route path="/matchmaking/refunds" element={<ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute>} />
-                    <Route path="/matching-manual" element={<ProtectedRoute module="matching" action="view"><MatchingManual /></ProtectedRoute>} />
 
                     {/* Redirecciones de compatibilidad */}
+                    <Route path="/matching-manual" element={<Navigate to="/matchmaking/mis-matches" replace />} />
                     <Route path="/matching" element={<Navigate to="/matchmaking/todos-los-matches" replace />} />
                     <Route path="/matchmaking/aprobacion" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
                     <Route path="/matchmaking/pendientes" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />

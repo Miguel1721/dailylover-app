@@ -58,46 +58,47 @@ export function AuthProvider({ children }) {
   const hasPermission = (module, action) => {
     if (!user) return false
 
-    // Si está activo el modo "Ver como" (Role preview)
-    if (previewRole) {
-      if (previewRole === 'María') {
-        return true // Acceso completo de supervisión
-      }
-      if (previewRole === 'Psicóloga') {
-        if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores'].includes(module)) {
-          return false
-        }
-        if (module === 'dashboard' && action === 'view') return true
-        if (module === 'clientes' && action === 'view') return true
-        if (module === 'matching' && action === 'view') return true
-        if (module === 'importar' && action === 'view') return true
-        return false
-      }
-      if (previewRole === 'Servicio al Cliente') {
-        if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos'].includes(module)) {
-          return false
-        }
-        if (module === 'dashboard' && action === 'view') return true
-        if (module === 'clientes' && action === 'view') return true
-        if (module === 'matching' && action === 'view') return true
-        return false
-      }
-      if (previewRole === 'Lina (Refunds)') {
-        if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'proveedores', 'importar', 'eventos', 'dashboard'].includes(module)) {
-          return false
-        }
-        if (module === 'clientes' && action === 'view') return true
-        if (module === 'matching' && action === 'view') return true
-        if (['ingresos', 'gastos', 'flujo_caja'].includes(module) && action === 'view') return true
-        return false
-      }
+    const role = previewRole || user?.role || ''
+    const isSuperOrAdmin = !previewRole && (
+      user.role === 'Admin' ||
+      user.role === 'Super Admin' ||
+      (user.role && user.role.toLowerCase().includes('admin'))
+    )
+
+    if (isSuperOrAdmin || role === 'María') {
+      return true // Acceso completo de supervisión
     }
 
-    // Modo normal sin preview: If Admin or Super Admin, full access
-    if (user.role === 'Admin' || user.role === 'Super Admin' || (user.role && user.role.toLowerCase().includes('admin'))) return true
-    // Matching and Dashboard view allowed for psychologists/team members
+    if (role === 'Psicóloga' || role.toLowerCase().includes('psicolog') || role.toLowerCase().includes('matchmaker')) {
+      if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos'].includes(module)) {
+        return false
+      }
+      if (module === 'dashboard' && action === 'view') return true
+      if (module === 'clientes' && action === 'view') return true
+      if (module === 'matching' && action === 'view') return true
+      return false
+    }
+
+    if (role === 'Servicio al Cliente') {
+      if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos', 'dashboard'].includes(module)) {
+        return false
+      }
+      if (module === 'clientes' && action === 'view') return true
+      if (module === 'matching' && action === 'view') return true
+      return false
+    }
+
+    if (role === 'Lina (Refunds)') {
+      if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'proveedores', 'importar', 'eventos', 'dashboard', 'clientes'].includes(module)) {
+        return false
+      }
+      if (module === 'matching' && action === 'view') return true
+      if (module === 'flujo_caja' && action === 'view') return true
+      return false
+    }
+
+    // Fallback normal
     if (module === 'matching' && action === 'view') return true
-    if (module === 'dashboard' && action === 'view') return true
     const permissionKey = `${module}.${action}`
     return user.permissions?.includes(permissionKey) || false
   }
