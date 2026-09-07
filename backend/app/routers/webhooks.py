@@ -559,3 +559,43 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
 
     return {"status": "success", "message": "Evento recibido y encolado correctamente"}
 
+
+@router.post("/calendly")
+async def calendly_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para recibir eventos de entrevistas completadas desde Calendly.
+    Cruza los datos del invitado contra SmartMatchApp CRM y registra automáticamente
+    al usuario en la pestaña PROFILES con Responsable vacío en amarillo (#FFF2CC).
+    """
+    try:
+        payload = await request.json()
+    except Exception as e:
+        logger.error(f"Error parseando JSON de Calendly: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    event_type = payload.get("event") or "calendly.event"
+    logger.info(f"Calendly Webhook recibido: {event_type}")
+
+    # 1. Guardar copia cruda en base de datos para auditoría
+    try:
+        await db.execute(text("""
+            INSERT INTO webhook_events_raw (source, event_type, payload, processed, received_at)
+            VALUES ('calendly', :etype, :payload, false, NOW())
+        """), {
+            "etype": event_type,
+            "payload": json.dumps(payload, ensure_ascii=False)
+        })
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"No se pudo guardar raw event de Calendly: {e}")
+
+    # 2. Procesar cruce CRM -> PROFILES
+    from app.services.calendly_sync import process_calendly_interview_completed
+    result = await process_calendly_interview_completed(payload, db)
+
+    return {"status": "success", "result": result}
+

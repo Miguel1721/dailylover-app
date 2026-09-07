@@ -65,6 +65,20 @@ def get_sheets_client():
     """Retorna un cliente de Google Sheets API autenticado con la cuenta de servicio."""
     creds_path = os.environ.get("GOOGLE_SHEETS_CREDENTIALS_PATH")
     if not creds_path or not os.path.exists(creds_path):
+        candidate_paths = [
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "scratch", "service_account.json"),
+            os.path.join(os.path.dirname(__file__), "..", "service_account.json"),
+            os.path.join(os.getcwd(), "scratch", "service_account.json"),
+            os.path.join(os.getcwd(), "service_account.json"),
+            "/opt/daily-lover-web/service_account.json"
+        ]
+        for cp in candidate_paths:
+            norm_p = os.path.normpath(cp)
+            if os.path.exists(norm_p):
+                creds_path = norm_p
+                break
+
+    if not creds_path or not os.path.exists(creds_path):
         logger.warning(f"Google Sheets Service Account JSON no configurado o ausente en ruta: {creds_path}")
         return None
 
@@ -426,4 +440,170 @@ def sync_confirmed_date_to_matches(
     except Exception as e:
         logger.error(f"Error sincronizando FECHA CITA REAL a MATCHES: {e}")
         return False
+
+
+def check_person_exists_in_profiles(name: str, crm_id: Optional[str] = None, spreadsheet_id: Optional[str] = None) -> bool:
+    """
+    Verifica si una persona ya existe en la pestaña PROFILES por crm_id o por nombre normalizado.
+    Lee las fórmulas para detectar hipervínculos de SmartMatchApp (ej: =HYPERLINK("...client/1234/...", "Nombre")).
+    """
+    client = get_sheets_client()
+    if not client:
+        logger.warning("No se pudo obtener cliente de Google Sheets para verificar PROFILES.")
+        return False
+
+    sheet_id = spreadsheet_id or get_spreadsheet_id()
+    try:
+        res = client.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range="PROFILES!A2:F",
+            valueRenderOption="FORMULA"
+        ).execute()
+
+        rows = res.get("values", [])
+        if not rows:
+            return False
+
+        clean_target_name = (name or "").strip().lower()
+        clean_target_crm = str(crm_id).strip() if crm_id else None
+
+        for row in rows:
+            if len(row) < 2:
+                continue
+            cell_b = str(row[1]).strip().lower()
+            
+            # 1. Coincidencia por CRM ID (prioritaria en URL o fórmula)
+            if clean_target_crm and clean_target_crm in cell_b:
+                logger.info(f"Cliente con CRM ID '{clean_target_crm}' ya existe en PROFILES (Fórmula/Link: {cell_b})")
+                return True
+
+            # 2. Coincidencia por Nombre normalizado
+            if clean_target_name and clean_target_name in cell_b:
+                logger.info(f"Cliente con nombre '{name}' ya existe en PROFILES (Fila: {cell_b})")
+                return True
+
+        return False
+    except Exception as e:
+        logger.error(f"Error comprobando existencia en PROFILES: {e}")
+        return False
+
+
+def append_profile_to_profiles_tab(person_data: Dict[str, Any], spreadsheet_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Inserta una nueva fila en PROFILES para una entrevista de Calendly completada:
+    - Col A: No. consecutivo
+    - Col B: FullName con hipervínculo canónico al CRM SmartMatchApp
+    - Col C: Fecha de entrevista (YYYY-MM-DD)
+    - Col D: Responsable VACÍO con fondo amarillo #FFF2CC (para asignación manual)
+    - Col E: Ciudad y edad (si viene en datos)
+    - Col F: SLOTS CREADOS (vacío)
+    """
+    client = get_sheets_client()
+    if not client:
+        return {"success": False, "error": "Google Sheets client not available"}
+
+    sheet_id = spreadsheet_id or get_spreadsheet_id()
+    name = str(person_data.get("name") or "").strip()
+    crm_id = person_data.get("crm_id")
+    interview_date = str(person_data.get("interview_date") or "").strip()
+    responsable = str(person_data.get("responsable") or "").strip()
+    city = str(person_data.get("city") or "").strip()
+    age = str(person_data.get("age") or "").strip()
+
+    if not name:
+        return {"success": False, "error": "Nombre de persona requerido"}
+
+    try:
+        # 1. Obtener sheetId numérico de PROFILES para el batchUpdate de formato
+        meta = client.spreadsheets().get(spreadsheetId=sheet_id).execute()
+        profiles_sheet_id = None
+        for s in meta.get("sheets", []):
+            if s.get("properties", {}).get("title") == "PROFILES":
+                profiles_sheet_id = s.get("properties", {}).get("sheetId")
+                break
+
+        # 2. Obtener consecutivo de filas
+        res = client.spreadsheets().values().get(
+            spreadsheetId=sheet_id,
+            range="PROFILES!A:A"
+        ).execute()
+        existing_rows = res.get("values", [])
+        existing_count = len(existing_rows)
+        next_no = max(1, existing_count)  # Fila 1 es encabezado
+        target_row = existing_count + 1
+
+        # 3. Formatear FullName con hipervínculo a SmartMatchApp si hay crm_id
+        if crm_id:
+            clean_cid = str(crm_id).strip()
+            crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{clean_cid}/"
+            fullname_cell = f'=HYPERLINK("{crm_url}", "{name}")'
+        else:
+            fullname_cell = name
+
+        city_age_str = ""
+        if city and age:
+            city_age_str = f"{city} / {age}"
+        elif city:
+            city_age_str = city
+        elif age:
+            city_age_str = str(age)
+
+        # 4. Fila nueva canónica
+        # [No., FullName, Fecha, Responsable, Ciudad y años, SLOTS CREADOS]
+        row_values = [
+            str(next_no),
+            fullname_cell,
+            interview_date,
+            responsable,  # Psicóloga asignada desde Calendly o vacía si no se indicó
+            city_age_str,
+            ""   # SLOTS CREADOS vacío
+        ]
+
+        client.spreadsheets().values().append(
+            spreadsheetId=sheet_id,
+            range="PROFILES!A:F",
+            valueInputOption="USER_ENTERED",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [row_values]}
+        ).execute()
+
+        # 5. Formatear celda D (Responsable): Si está vacía, marcar en amarillo #FFF2CC con nota explicativa
+        if profiles_sheet_id is not None and not responsable:
+            row_idx = target_row - 1
+            format_requests = [
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": profiles_sheet_id,
+                            "startRowIndex": row_idx,
+                            "endRowIndex": row_idx + 1,
+                            "startColumnIndex": 3,  # Columna D (0-indexed = 3)
+                            "endColumnIndex": 4
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": {
+                                    "red": 1.0,
+                                    "green": 0.949,
+                                    "blue": 0.8
+                                }
+                            },
+                            "note": "Entrevista de Calendly completada sin psicóloga especificada. Asigne la responsable manualmente."
+                        },
+                        "fields": "userEnteredFormat.backgroundColor,note"
+                    }
+                }
+            ]
+            client.spreadsheets().batchUpdate(
+                spreadsheetId=sheet_id,
+                body={"requests": format_requests}
+            ).execute()
+
+        status_msg = f"Responsable: '{responsable}'" if responsable else "Responsable pendiente (amarillo)"
+        logger.info(f"✅ Perfil ingresado con éxito a PROFILES (Fila {target_row}): {name} (CRM: {crm_id}) con {status_msg}.")
+        return {"success": True, "row": target_row, "name": name, "crm_id": crm_id, "responsable": responsable or "PENDIENTE"}
+
+    except Exception as e:
+        logger.error(f"Error insertando perfil en PROFILES: {e}")
+        return {"success": False, "error": str(e)}
 
