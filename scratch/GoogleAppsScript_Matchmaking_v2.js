@@ -72,6 +72,8 @@ var CONFIG = {
     "BASICO 40K": 2,
     "BÁSICO": 2,
     "BASICO": 2,
+    "PREMIUM": 3,
+    "PREMIUM 150K": 3,
     "ESTÁNDAR 65K (2 CITAS)": 3,
     "ESTANDAR 65K (2 CITAS)": 3,
     "ESTÁNDAR 65K (1 CITA)": 3,
@@ -82,10 +84,13 @@ var CONFIG = {
     "ESTANDAR PLUS 98K": 3,
     "ESTÁNDAR": 3,
     "ESTANDAR": 3,
+    "VIP 195K (5 CITAS)": 4,
     "VIP 195K": 4,
     "VIP 295K": 4,
     "VIP ORO": 4,
-    "VIP": 4
+    "VIP": 4,
+    "MATCHMAKING EXPERIENCE": 4,
+    "EXPERIENCE": 4
   }
 };
 
@@ -654,8 +659,7 @@ function handleVuelveAPagarEdit(sheet, row, col, newValue, oldValue) {
   if (!personAName) return;
 
   // 7. VALIDACIÓN DE PLAN: NO asumir silenciosamente
-  var cleanPlanKey = rawPlan.toUpperCase().replace(/\s+/g, " ");
-  var numSlots = CONFIG.PLAN_SLOTS_MAP[cleanPlanKey];
+  var numSlots = resolvePlanSlots(rawPlan);
 
   if (!numSlots) {
     // Marcar visiblemente como error en la celda de plan y observación
@@ -941,103 +945,636 @@ function findPsychologistSheet(psycName) {
 // ─── 8B. PUESTA A PUNTO INICIAL AUTOMÁTICA & NORMALIZACIÓN DE 10 PESTAÑAS ───
 
 /**
- * Normaliza una pestaña individual de psicóloga:
- * 1. Congela la fila 1 (sheet.setFrozenRows(1)).
- * 2. Lee los encabezados existentes de la fila 1 de forma segura.
- * 3. Identifica qué columnas del set canónico faltan:
- *    (ID | PAIS | CITY | PREF | PLAN | PERSON A | PERSON B | PSICÓLOGA DE B | FECHA | STATUS | OBSERVACIONES | Fecha de llegada)
- * 4. Agrega a la derecha las columnas que falten sin alterar ni tocar las columnas ni datos existentes.
- * 5. Si la hoja está vacía, inserta el set completo en la fila 1 y aplica negrita.
+ * Normaliza una pestaña individual de psicóloga a la estructura canónica exacta de 12 columnas:
+ * ID (Col A) | Fecha de entrevista (Col B) | PAIS (Col C) | CITY (Col D) | PREF (Col E) | PLAN (Col F) |
+ * PERSON A (Col G) | PERSON B (Col H) | PSICÓLOGA DE B (Col I) | STATUS (Col J) | OBSERVACIONES (Col K) | Fecha de llegada (Col L)
+ *
+ * - Mapea inteligentemente las columnas existentes sin importar el orden original (ej: SOFI, ALEJA).
+ * - Mueve físicamente 'Fecha de entrevista' / 'FECHA' a la Columna B.
+ * - Fusiona el contenido de columnas extra no vacías:
+ *     * TAREAS (MAPE D) -> OBSERVACIONES como " | [TAREAS: ...]"
+ *     * APRO DATE (ALEJA) -> OBSERVACIONES como " | [APRO DATE: ...]"
+ * - Consolida columnas de fechas duplicadas (ej: Fecha de llegada en SILVI, FECHA en MANU).
+ * - Elimina físicamente todas las columnas extra (CRM, feedback, Columna 2..20) recortando la hoja a exactamente 12 columnas.
+ * - Preserva 100% de hipervínculos CRM RichText, fondos y notas.
+ * - Aplica formato (#D9EAD3, negrita, centrado, altura 32, fila 1 congelada, anchos canónicos y validaciones).
  */
-function normalizarPestanaPsicologa(sheet) {
-  if (!sheet) return;
-
-  // 1. Congelar fila 1
+/**
+ * Obtiene de forma segura la última fila con datos de una hoja,
+ * evitando que columnas tipadas de Tablas Nativas bloqueen la lectura con excepciones.
+ */
+function getSheetSafeLastRow(sheet) {
   try {
-    if (sheet.getFrozenRows() < 1) {
-      sheet.setFrozenRows(1);
-    }
-  } catch (fzErr) {
-    Logger.log("Aviso al congelar fila 1 en '" + sheet.getName() + "': " + fzErr);
+    var lr = sheet.getLastRow();
+    if (lr > 0) return lr;
+  } catch (e) {
+    Logger.log("Aviso en getLastRow() para '" + sheet.getName() + "': " + e.message);
   }
 
-  var CANONICAL_COLS = [
-    "ID", "PAIS", "CITY", "PREF", "PLAN", "PERSON A", 
-    "PERSON B", "PSICÓLOGA DE B", "FECHA", "STATUS", 
-    "OBSERVACIONES", "Fecha de llegada"
-  ];
-
-  var lastCol = sheet.getLastColumn();
-  if (lastCol === 0) {
-    sheet.getRange(1, 1, 1, CANONICAL_COLS.length).setValues([CANONICAL_COLS]);
-    sheet.getRange(1, 1, 1, CANONICAL_COLS.length).setFontWeight("bold");
-    Logger.log("✅ Set canónico completo escrito en pestaña vacía '" + sheet.getName() + "'");
-    return;
-  }
-
-  // 2. Leer encabezados existentes
-  var existingHeaders = [];
+  // Fallback seguro: escanear columna A para encontrar última fila con contenido
   try {
-    var rawValues = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
-    for (var i = 0; i < rawValues.length; i++) {
-      existingHeaders.push((rawValues[i] || "").toString().trim());
-    }
-  } catch (readErr) {
-    for (var c = 1; c <= lastCol; c++) {
-      try {
-        existingHeaders.push(sheet.getRange(1, c).getDisplayValue().trim());
-      } catch (cellErr) {
-        existingHeaders.push("");
+    var maxR = Math.min(sheet.getMaxRows(), 5000);
+    var colA = sheet.getRange(1, 1, maxR, 1).getValues();
+    for (var r = colA.length - 1; r >= 0; r--) {
+      var val = colA[r][0];
+      if (val !== "" && val !== null && val !== undefined) {
+        return r + 1;
       }
     }
+  } catch (e2) {
+    Logger.log("Aviso en escaneo de Columna A: " + e2.message);
   }
 
-  var existingUpper = existingHeaders.map(function(h) {
-    return h.toUpperCase().replace(/\s+/g, " ").trim();
-  });
+  return Math.min(sheet.getMaxRows(), 3000);
+}
 
-  // Alias para detectar si la columna ya existe bajo alguna variante
-  var colAliases = {
-    "ID": ["ID", "NO.", "MATCH_ID"],
-    "PAIS": ["PAIS", "PAÍS", "COUNTRY"],
-    "CITY": ["CITY", "CIUDAD"],
-    "PREF": ["PREF", "PREFERENCIA", "ORIENTATION"],
-    "PLAN": ["PLAN", "PLAN_TIER", "PLAN TIER"],
-    "PERSON A": ["PERSON A", "PERSONA A", "PERSON_A", "CLIENTE"],
-    "PERSON B": ["PERSON B", "PERSONA B", "PERSON_B", "CANDIDATO"],
-    "PSICÓLOGA DE B": ["PSICÓLOGA DE B", "PSICOLOGA DE B", "PSICÓLOGA B", "PSICOLOGA B", "PSICOLOGA DE CANDIDATO"],
-    "FECHA": ["FECHA", "DATE", "FECHA CITA"],
-    "STATUS": ["STATUS", "ESTADO"],
-    "OBSERVACIONES": ["OBSERVACIONES", "OBS", "OBSERVATIONS", "NOTAS"],
-    "Fecha de llegada": ["FECHA DE LLEGADA", "FECHA LLEGADA", "LLEGADA", "DATE OF ARRIVAL"]
-  };
+/**
+ * Obtiene de forma segura la última columna con datos de una hoja,
+ * evitando fallos en hojas con Tablas Nativas tipadas.
+ */
+function getSheetSafeLastColumn(sheet) {
+  try {
+    var lc = sheet.getLastColumn();
+    if (lc > 0) return lc;
+  } catch (e) {
+    Logger.log("Aviso en getLastColumn() para '" + sheet.getName() + "': " + e.message);
+  }
 
-  var colsToAdd = [];
-  for (var k = 0; k < CANONICAL_COLS.length; k++) {
-    var colName = CANONICAL_COLS[k];
-    var aliases = colAliases[colName] || [colName.toUpperCase()];
-    
-    var found = false;
-    for (var a = 0; a < aliases.length; a++) {
-      if (existingUpper.indexOf(aliases[a]) >= 0) {
-        found = true;
+  try {
+    var maxC = Math.min(sheet.getMaxColumns(), 60);
+    var row1 = sheet.getRange(1, 1, 1, maxC).getValues()[0];
+    for (var c = row1.length - 1; c >= 0; c--) {
+      var val = row1[c];
+      if (val !== "" && val !== null && val !== undefined) {
+        return c + 1;
+      }
+    }
+  } catch (e2) {
+    Logger.log("Aviso en escaneo de Fila 1: " + e2.message);
+  }
+
+  return Math.max(12, sheet.getMaxColumns());
+}
+
+/**
+ * Desvincula cualquier Tabla Nativa de Google Sheets en la hoja especificada,
+ * convirtiéndola nuevamente en un rango normal mediante Google Sheets REST API (deleteTable).
+ * Esto elimina de raíz el error "No se puede realizar esta operación en columnas de tipo".
+ * Preserva el 100% de los datos, hipervínculos, formatos y notas en las celdas.
+ */
+function desvincularTablasNativasDeHoja(sheet) {
+  if (!sheet) return false;
+  var sName = sheet.getName();
+  try {
+    // Limpiar protecciones de celda locales que pudieran bloquear deleteTable
+    try {
+      var protections = sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+      for (var p = 0; p < protections.length; p++) {
+        if (protections[p].canEdit()) {
+          protections[p].remove();
+        }
+      }
+    } catch (eProt) {
+      Logger.log("Aviso limpiando protecciones en '" + sName + "': " + eProt.message);
+    }
+
+    var ss = sheet.getParent();
+    var sheetId = sheet.getSheetId();
+    var ssId = ss.getId();
+    var token = ScriptApp.getOAuthToken();
+
+    var getUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + ssId + "?fields=sheets(properties(sheetId),tables(tableId,name))";
+    var getResp = UrlFetchApp.fetch(getUrl, {
+      method: "get",
+      headers: { Authorization: "Bearer " + token },
+      muteHttpExceptions: true
+    });
+
+    if (getResp.getResponseCode() !== 200) {
+      Logger.log("Aviso al consultar tablas nativas en '" + sName + "': " + getResp.getContentText());
+      return false;
+    }
+
+    var sheetData = JSON.parse(getResp.getContentText());
+    var tableIds = [];
+    var allSheets = sheetData.sheets || [];
+    for (var i = 0; i < allSheets.length; i++) {
+      if (allSheets[i].properties && allSheets[i].properties.sheetId === sheetId) {
+        var tbls = allSheets[i].tables || [];
+        for (var t = 0; t < tbls.length; t++) {
+          if (tbls[t].tableId) {
+            tableIds.push(tbls[t].tableId);
+          }
+        }
+      }
+    }
+
+    if (tableIds.length === 0) {
+      return true; // No tiene tablas nativas
+    }
+
+    Logger.log("Encontradas " + tableIds.length + " tabla(s) nativa(s) en '" + sName + "'. Desvinculando...");
+    var requests = [];
+    for (var k = 0; k < tableIds.length; k++) {
+      requests.push({
+        deleteTable: {
+          tableId: tableIds[k]
+        }
+      });
+    }
+
+    var batchUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + ssId + ":batchUpdate";
+    var batchResp = UrlFetchApp.fetch(batchUrl, {
+      method: "post",
+      headers: {
+        Authorization: "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      payload: JSON.stringify({ requests: requests }),
+      muteHttpExceptions: true
+    });
+
+    if (batchResp.getResponseCode() === 200) {
+      Logger.log("✅ Tabla(s) nativa(s) desvinculada(s) con éxito en '" + sName + "'.");
+      SpreadsheetApp.flush();
+      Utilities.sleep(300);
+      return true;
+    } else {
+      Logger.log("Aviso batchUpdate deleteTable en '" + sName + "': " + batchResp.getContentText());
+      return false;
+    }
+  } catch (err) {
+    Logger.log("Excepción en desvincularTablasNativasDeHoja para '" + sName + "': " + err.message);
+    return false;
+  }
+}
+
+/**
+ * Aplica las validaciones desplegables canónicas en PREF (Col E) y STATUS (Col J).
+ */
+function aplicarValidacionesCanónicas(sheet, lastRow) {
+  if (!sheet) return;
+  var rowCount = Math.max(lastRow - 1, 10);
+
+  // 1. PREF (Col E / 5)
+  try {
+    var prefRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(["H", "M", "H+M"], true)
+      .setAllowInvalid(true)
+      .build();
+    safeSetDataValidation(sheet.getRange(2, 5, rowCount, 1), prefRule);
+  } catch (e1) {}
+
+  // 2. STATUS (Col J / 10)
+  try {
+    var psycEstados = [
+      "Llenar perfil", "Listo para match", "HECHO", "APROBADO", "NOT APPROVED", "DESCALIFICADO",
+      "NO HAY GENTE", "REVISAR", "TROUBLEMAKER", "HECHO POR MAPE", "REQUEST PROFILE UPDATE",
+      "PSIC. URG", "MUJER +50", "REFUND", "RECHAZADA POR PSICÓLOGA B"
+    ];
+    try {
+      var estadosData = obtenerEstadosConfigurados();
+      if (estadosData && estadosData.PSICOLOGA && estadosData.PSICOLOGA.length > 0) {
+        psycEstados = estadosData.PSICOLOGA;
+      }
+    } catch (eConfig) {}
+
+    var statusRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(psycEstados, true)
+      .setAllowInvalid(true)
+      .build();
+    safeSetDataValidation(sheet.getRange(2, 10, rowCount, 1), statusRule);
+  } catch (e2) {}
+}
+
+/**
+ * Crea una pestaña limpia sin tablas nativas para reemplazar una pestaña bloqueada por columnas tipadas.
+ * Copia 100% de datos canónicos, formatos, rich text (enlaces CRM), anchos y validaciones.
+ */
+function recrearHojaLimpiaCanonica(ss, origSheet, sName, newValues, richColA, richColB, newBackgrounds, newNotes, lastRow, canonicalWidths) {
+  var origIndex = origSheet.getIndex();
+  var origTabColor = null;
+  try { origTabColor = origSheet.getTabColor(); } catch (e) {}
+
+  // Limpiar protecciones en hoja original antes de eliminar
+  try {
+    var protections = origSheet.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+    for (var p = 0; p < protections.length; p++) {
+      if (protections[p].canEdit()) {
+        protections[p].remove();
+      }
+    }
+  } catch (eP) {}
+
+  // Crear pestaña temporal
+  var tempSheetName = sName + "_TEMP_CANONICAL";
+  var oldTemp = ss.getSheetByName(tempSheetName);
+  if (oldTemp) {
+    try { ss.deleteSheet(oldTemp); } catch (e) {}
+  }
+
+  var targetRowCount = Math.max(lastRow, 100);
+  var newSheet = ss.insertSheet(tempSheetName, origIndex);
+
+  // Asegurar 12 columnas exactas
+  if (newSheet.getMaxColumns() < 12) {
+    newSheet.insertColumnsAfter(newSheet.getMaxColumns(), 12 - newSheet.getMaxColumns());
+  } else if (newSheet.getMaxColumns() > 12) {
+    newSheet.deleteColumns(13, newSheet.getMaxColumns() - 12);
+  }
+
+  // Ajustar filas si es necesario
+  if (newSheet.getMaxRows() < targetRowCount) {
+    newSheet.insertRowsAfter(newSheet.getMaxRows(), targetRowCount - newSheet.getMaxRows());
+  } else if (newSheet.getMaxRows() > targetRowCount && targetRowCount > 10) {
+    newSheet.deleteRows(targetRowCount + 1, newSheet.getMaxRows() - targetRowCount);
+  }
+
+  // Escribir datos canónicos
+  if (newValues && newValues.length > 0) {
+    var range = newSheet.getRange(1, 1, newValues.length, 12);
+    range.setValues(newValues);
+    if (newBackgrounds && newBackgrounds.length === newValues.length) {
+      range.setBackgrounds(newBackgrounds);
+    }
+    if (newNotes && newNotes.length === newValues.length) {
+      range.setNotes(newNotes);
+    }
+  }
+
+  // Restaurar hipervínculos RichText en Col G (7) y Col H (8)
+  if (lastRow > 0) {
+    if (richColA && richColA.length > 0) {
+      newSheet.getRange(1, 7, richColA.length, 1).setRichTextValues(richColA);
+    }
+    if (richColB && richColB.length > 0) {
+      newSheet.getRange(1, 8, richColB.length, 1).setRichTextValues(richColB);
+    }
+  }
+
+  // Formato encabezados fila 1
+  newSheet.getRange(1, 1, 1, 12).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
+  newSheet.setRowHeight(1, 32);
+  try { newSheet.setFrozenRows(1); } catch (e) {}
+
+  // Anchos canónicos
+  for (var w = 0; w < canonicalWidths.length; w++) {
+    newSheet.setColumnWidth(w + 1, canonicalWidths[w]);
+  }
+
+  // Aplicar validaciones
+  aplicarValidacionesCanónicas(newSheet, lastRow);
+
+  // Restaurar color de pestaña si existía
+  if (origTabColor) {
+    try { newSheet.setTabColor(origTabColor); } catch (e) {}
+  }
+
+  // Borrar la hoja original bloqueada y renombrar la nueva
+  ss.deleteSheet(origSheet);
+  newSheet.setName(sName);
+  Logger.log("✅ Pestaña '" + sName + "' recreada limpiamente sin tablas nativas y con 12 columnas canónicas.");
+}
+
+function normalizarPestanaPsicologa(sheet) {
+  if (!sheet) return;
+  var sName = sheet.getName();
+  var ss = sheet.getParent();
+
+  var CANONICAL_HEADERS = [
+    "ID", "Fecha de entrevista", "PAIS", "CITY", "PREF", "PLAN",
+    "PERSON A", "PERSON B", "PSICÓLOGA DE B", "STATUS", "OBSERVACIONES", "Fecha de llegada"
+  ];
+  var CANONICAL_WIDTHS = [70, 130, 80, 110, 80, 140, 190, 190, 120, 120, 220, 130];
+
+  // 1. Paso fundamental: Desvincular cualquier tabla nativa existente
+  desvincularTablasNativasDeHoja(sheet);
+
+  var lastRow = getSheetSafeLastRow(sheet);
+  var lastCol = getSheetSafeLastColumn(sheet);
+
+  // Caso: hoja vacía o solo fila 1
+  if (lastRow <= 1) {
+    try {
+      if (sheet.getMaxColumns() < 12) {
+        sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
+      } else if (sheet.getMaxColumns() > 12) {
+        sheet.deleteColumns(13, sheet.getMaxColumns() - 12);
+      }
+      sheet.getRange(1, 1, 1, 12).setValues([CANONICAL_HEADERS]);
+      sheet.getRange(1, 1, 1, 12).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
+      sheet.setRowHeight(1, 32);
+      try { if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1); } catch (e) {}
+      for (var w = 0; w < CANONICAL_WIDTHS.length; w++) {
+        sheet.setColumnWidth(w + 1, CANONICAL_WIDTHS[w]);
+      }
+      Logger.log("✅ Pestaña vacía '" + sName + "' configurada con 12 columnas canónicas.");
+      return;
+    } catch (emptyErr) {
+      Logger.log("Aviso en pestaña vacía '" + sName + "': " + emptyErr.message + ". Recreando hoja limpia...");
+      recrearHojaLimpiaCanonica(ss, sheet, sName, [CANONICAL_HEADERS], null, null, [["#D9EAD3"]], null, 1, CANONICAL_WIDTHS);
+      return;
+    }
+  }
+
+  // Leer encabezados existentes
+  var headerValues = [];
+  try {
+    headerValues = sheet.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  } catch (eH) {
+    headerValues = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  }
+
+  // Mapear encabezados existentes
+  var colMap = {};
+  var entrevistaCols = [];
+  var fechaCols = [];
+  var llegadaCols = [];
+  var tareasCol = -1;
+  var aproDateCol = -1;
+
+  for (var c = 0; c < headerValues.length; c++) {
+    var h = (headerValues[c] || "").toString().trim().toUpperCase().replace(/\s+/g, " ");
+    if (!h) continue;
+
+    if (h === "ID" || h === "NO." || h === "MATCH_ID") {
+      if (colMap["ID"] === undefined) colMap["ID"] = c;
+    } else if (h.indexOf("ENTREVISTA") >= 0) {
+      entrevistaCols.push(c);
+    } else if (h === "FECHA" || h === "DATE" || h === "FECHA CITA") {
+      fechaCols.push(c);
+    } else if (h === "PAIS" || h === "PAÍS" || h === "COUNTRY") {
+      if (colMap["PAIS"] === undefined) colMap["PAIS"] = c;
+    } else if (h === "CITY" || h === "CIUDAD") {
+      if (colMap["CITY"] === undefined) colMap["CITY"] = c;
+    } else if (h === "PREF" || h === "PREFERENCIA" || h === "PREFERENCIAS" || h === "ORIENTATION") {
+      if (colMap["PREF"] === undefined) colMap["PREF"] = c;
+    } else if (h === "PLAN" || h === "PLAN TIER" || h === "PLAN_TIER") {
+      if (colMap["PLAN"] === undefined) colMap["PLAN"] = c;
+    } else if (h === "PERSON A" || h === "PERSONA A" || h === "CLIENTE" || h === "PERSON_A") {
+      if (colMap["PERSON A"] === undefined) colMap["PERSON A"] = c;
+    } else if (h === "PERSON B" || h === "PERSONA B" || h === "CANDIDATO" || h === "PERSON_B" || h === "MATCH") {
+      if (colMap["PERSON B"] === undefined) colMap["PERSON B"] = c;
+    } else if (h.indexOf("PSIC") >= 0 && h.indexOf("B") >= 0) {
+      if (colMap["PSICÓLOGA DE B"] === undefined) colMap["PSICÓLOGA DE B"] = c;
+    } else if (h === "STATUS" || h === "ESTADO") {
+      if (colMap["STATUS"] === undefined) colMap["STATUS"] = c;
+    } else if (h.indexOf("OBSERV") >= 0 || h === "NOTAS" || h === "NOTA" || h === "OBS") {
+      if (colMap["OBSERVACIONES"] === undefined) colMap["OBSERVACIONES"] = c;
+    } else if (h.indexOf("LLEGADA") >= 0) {
+      llegadaCols.push(c);
+    } else if (h === "TAREAS") {
+      tareasCol = c;
+    } else if (h === "APRO DATE" || h === "APRO_DATE") {
+      aproDateCol = c;
+    }
+  }
+
+  // Leer todos los datos del rango
+  var fullRange = sheet.getRange(1, 1, lastRow, lastCol);
+  var values = fullRange.getValues();
+  var richTexts = fullRange.getRichTextValues();
+  var backgrounds = fullRange.getBackgrounds();
+  var notes = fullRange.getNotes();
+
+  var newValues = [];
+  var newRichTexts = [];
+  var newBackgrounds = [];
+  var newNotes = [];
+
+  // Fila 1: Encabezados Canónicos
+  newValues.push(CANONICAL_HEADERS);
+  var headerRichTexts = [];
+  var headerBackgrounds = [];
+  var headerNotes = [];
+  for (var k = 0; k < 12; k++) {
+    headerRichTexts.push(SpreadsheetApp.newRichTextValue().setText(CANONICAL_HEADERS[k]).build());
+    headerBackgrounds.push("#D9EAD3");
+    headerNotes.push("");
+  }
+  newRichTexts.push(headerRichTexts);
+  newBackgrounds.push(headerBackgrounds);
+  newNotes.push(headerNotes);
+
+  // Filas de datos (2 a lastRow)
+  for (var r = 1; r < lastRow; r++) {
+    var rowVals = new Array(12);
+    var rowRich = new Array(12);
+    var rowBg = new Array(12);
+    var rowNotes = new Array(12);
+
+    for (var initIdx = 0; initIdx < 12; initIdx++) {
+      rowVals[initIdx] = "";
+      rowRich[initIdx] = SpreadsheetApp.newRichTextValue().setText("").build();
+      rowBg[initIdx] = "#ffffff";
+      rowNotes[initIdx] = "";
+    }
+
+    // 1. ID (Col A)
+    if (colMap["ID"] !== undefined) {
+      rowVals[0] = values[r][colMap["ID"]];
+      rowRich[0] = richTexts[r][colMap["ID"]];
+      rowBg[0] = backgrounds[r][colMap["ID"]];
+      rowNotes[0] = notes[r][colMap["ID"]];
+    }
+
+    // 2. Fecha de entrevista (Col B)
+    var fechaVal = "";
+    var fechaRich = null;
+    var fechaBg = "#ffffff";
+    var fechaNote = "";
+    for (var ec = 0; ec < entrevistaCols.length; ec++) {
+      var ev = values[r][entrevistaCols[ec]];
+      if (ev !== "" && ev !== null && ev !== undefined) {
+        fechaVal = ev;
+        fechaRich = richTexts[r][entrevistaCols[ec]];
+        fechaBg = backgrounds[r][entrevistaCols[ec]];
+        fechaNote = notes[r][entrevistaCols[ec]];
         break;
       }
     }
-
-    if (!found) {
-      colsToAdd.push(colName);
+    if ((fechaVal === "" || fechaVal === null || fechaVal === undefined) && fechaCols.length > 0) {
+      for (var fc = 0; fc < fechaCols.length; fc++) {
+        var fv = values[r][fechaCols[fc]];
+        if (fv !== "" && fv !== null && fv !== undefined) {
+          fechaVal = fv;
+          fechaRich = richTexts[r][fechaCols[fc]];
+          fechaBg = backgrounds[r][fechaCols[fc]];
+          fechaNote = notes[r][fechaCols[fc]];
+          break;
+        }
+      }
     }
+    rowVals[1] = fechaVal;
+    rowRich[1] = fechaRich || SpreadsheetApp.newRichTextValue().setText(fechaVal ? fechaVal.toString() : "").build();
+    rowBg[1] = fechaBg;
+    rowNotes[1] = fechaNote;
+
+    // 3. PAIS (Col C)
+    if (colMap["PAIS"] !== undefined) {
+      rowVals[2] = values[r][colMap["PAIS"]];
+      rowRich[2] = richTexts[r][colMap["PAIS"]];
+      rowBg[2] = backgrounds[r][colMap["PAIS"]];
+      rowNotes[2] = notes[r][colMap["PAIS"]];
+    }
+
+    // 4. CITY (Col D)
+    if (colMap["CITY"] !== undefined) {
+      rowVals[3] = values[r][colMap["CITY"]];
+      rowRich[3] = richTexts[r][colMap["CITY"]];
+      rowBg[3] = backgrounds[r][colMap["CITY"]];
+      rowNotes[3] = notes[r][colMap["CITY"]];
+    }
+
+    // 5. PREF (Col E)
+    if (colMap["PREF"] !== undefined) {
+      rowVals[4] = values[r][colMap["PREF"]];
+      rowRich[4] = richTexts[r][colMap["PREF"]];
+      rowBg[4] = backgrounds[r][colMap["PREF"]];
+      rowNotes[4] = notes[r][colMap["PREF"]];
+    }
+
+    // 6. PLAN (Col F)
+    if (colMap["PLAN"] !== undefined) {
+      rowVals[5] = values[r][colMap["PLAN"]];
+      rowRich[5] = richTexts[r][colMap["PLAN"]];
+      rowBg[5] = backgrounds[r][colMap["PLAN"]];
+      rowNotes[5] = notes[r][colMap["PLAN"]];
+    }
+
+    // 7. PERSON A (Col G)
+    if (colMap["PERSON A"] !== undefined) {
+      rowVals[6] = values[r][colMap["PERSON A"]];
+      rowRich[6] = richTexts[r][colMap["PERSON A"]];
+      rowBg[6] = backgrounds[r][colMap["PERSON A"]];
+      rowNotes[6] = notes[r][colMap["PERSON A"]];
+    }
+
+    // 8. PERSON B (Col H)
+    if (colMap["PERSON B"] !== undefined) {
+      rowVals[7] = values[r][colMap["PERSON B"]];
+      rowRich[7] = richTexts[r][colMap["PERSON B"]];
+      rowBg[7] = backgrounds[r][colMap["PERSON B"]];
+      rowNotes[7] = notes[r][colMap["PERSON B"]];
+    }
+
+    // 9. PSICÓLOGA DE B (Col I)
+    if (colMap["PSICÓLOGA DE B"] !== undefined) {
+      rowVals[8] = values[r][colMap["PSICÓLOGA DE B"]];
+      rowRich[8] = richTexts[r][colMap["PSICÓLOGA DE B"]];
+      rowBg[8] = backgrounds[r][colMap["PSICÓLOGA DE B"]];
+      rowNotes[8] = notes[r][colMap["PSICÓLOGA DE B"]];
+    }
+
+    // 10. STATUS (Col J)
+    if (colMap["STATUS"] !== undefined) {
+      rowVals[9] = values[r][colMap["STATUS"]];
+      rowRich[9] = richTexts[r][colMap["STATUS"]];
+      rowBg[9] = backgrounds[r][colMap["STATUS"]];
+      rowNotes[9] = notes[r][colMap["STATUS"]];
+    }
+
+    // 11. OBSERVACIONES (Col K) - Fusión con TAREAS y APRO DATE
+    var obsVal = "";
+    var obsRich = null;
+    var obsBg = "#ffffff";
+    var obsNote = "";
+    if (colMap["OBSERVACIONES"] !== undefined) {
+      obsVal = (values[r][colMap["OBSERVACIONES"]] || "").toString().trim();
+      obsRich = richTexts[r][colMap["OBSERVACIONES"]];
+      obsBg = backgrounds[r][colMap["OBSERVACIONES"]];
+      obsNote = notes[r][colMap["OBSERVACIONES"]];
+    }
+
+    if (tareasCol >= 0) {
+      var tVal = (values[r][tareasCol] || "").toString().trim();
+      if (tVal && obsVal.indexOf(tVal) === -1) {
+        obsVal = obsVal ? (obsVal + " | [TAREAS: " + tVal + "]") : ("[TAREAS: " + tVal + "]");
+        obsRich = null;
+      }
+    }
+
+    if (aproDateCol >= 0) {
+      var apVal = (values[r][aproDateCol] || "").toString().trim();
+      if (apVal && obsVal.indexOf(apVal) === -1) {
+        obsVal = obsVal ? (obsVal + " | [APRO DATE: " + apVal + "]") : ("[APRO DATE: " + apVal + "]");
+        obsRich = null;
+      }
+    }
+
+    rowVals[10] = obsVal;
+    rowRich[10] = obsRich || SpreadsheetApp.newRichTextValue().setText(obsVal).build();
+    rowBg[10] = obsBg;
+    rowNotes[10] = obsNote;
+
+    // 12. Fecha de llegada (Col L)
+    var llegadaVal = "";
+    var llegadaRich = null;
+    var llegadaBg = "#ffffff";
+    var llegadaNote = "";
+    for (var lc = 0; lc < llegadaCols.length; lc++) {
+      var lv = values[r][llegadaCols[lc]];
+      if (lv !== "" && lv !== null && lv !== undefined) {
+        llegadaVal = lv;
+        llegadaRich = richTexts[r][llegadaCols[lc]];
+        llegadaBg = backgrounds[r][llegadaCols[lc]];
+        llegadaNote = notes[r][llegadaCols[lc]];
+        break;
+      }
+    }
+    rowVals[11] = llegadaVal;
+    rowRich[11] = llegadaRich || SpreadsheetApp.newRichTextValue().setText(llegadaVal ? llegadaVal.toString() : "").build();
+    rowBg[11] = llegadaBg;
+    rowNotes[11] = llegadaNote;
+
+    newValues.push(rowVals);
+    newRichTexts.push(rowRich);
+    newBackgrounds.push(rowBg);
+    newNotes.push(rowNotes);
   }
 
-  // 3. Insertar solo las columnas faltantes a la derecha
-  if (colsToAdd.length > 0) {
-    var startCol = lastCol + 1;
-    sheet.getRange(1, startCol, 1, colsToAdd.length).setValues([colsToAdd]);
-    sheet.getRange(1, startCol, 1, colsToAdd.length).setFontWeight("bold");
-    Logger.log("✅ Columnas agregadas a '" + sheet.getName() + "': " + colsToAdd.join(", "));
-  } else {
-    Logger.log("ℹ️ Pestaña '" + sheet.getName() + "' ya cuenta con todas las columnas canónicas.");
+  // Extraer columnas de RichText para PERSON A y PERSON B
+  var richColA = [];
+  var richColB = [];
+  for (var rIdx = 0; rIdx < lastRow; rIdx++) {
+    richColA.push([newRichTexts[rIdx][6]]);
+    richColB.push([newRichTexts[rIdx][7]]);
+  }
+
+  // Intentar normalización in-place
+  try {
+    if (sheet.getMaxColumns() < 12) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
+    }
+
+    var targetRange = sheet.getRange(1, 1, lastRow, 12);
+    targetRange.setValues(newValues);
+
+    sheet.getRange(1, 7, lastRow, 1).setRichTextValues(richColA);
+    sheet.getRange(1, 8, lastRow, 1).setRichTextValues(richColB);
+
+    targetRange.setBackgrounds(newBackgrounds);
+    targetRange.setNotes(newNotes);
+
+    if (sheet.getMaxColumns() > 12) {
+      sheet.deleteColumns(13, sheet.getMaxColumns() - 12);
+    }
+
+    sheet.getRange(1, 1, 1, 12).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
+    sheet.setRowHeight(1, 32);
+    try { if (sheet.getFrozenRows() < 1) sheet.setFrozenRows(1); } catch (e) {}
+
+    for (var cw = 0; cw < CANONICAL_WIDTHS.length; cw++) {
+      sheet.setColumnWidth(cw + 1, CANONICAL_WIDTHS[cw]);
+    }
+
+    aplicarValidacionesCanónicas(sheet, lastRow);
+    Logger.log("✅ Pestaña '" + sName + "' normalizada in-place exitosamente a 12 columnas canónicas.");
+
+  } catch (inPlaceErr) {
+    // Si falla cualquier operación por tablas nativas o columnas tipadas, ejecutar fallback limpio
+    Logger.log("Aviso en normalización in-place de '" + sName + "': " + inPlaceErr.message + ". Ejecutando recreación limpia de hoja...");
+    recrearHojaLimpiaCanonica(ss, sheet, sName, newValues, richColA, richColB, newBackgrounds, newNotes, lastRow, CANONICAL_WIDTHS);
   }
 }
 
@@ -1045,11 +1582,11 @@ function normalizarPestanaPsicologa(sheet) {
  * Puesta a punto inicial automática del archivo:
  * Se ejecuta al abrir (onOpen) y utiliza PropertiesService para asegurar ejecución
  * una sola vez por archivo/copia.
- * Normaliza las 10 pestañas de psicólogas, congela fila 1 e instala los triggers automáticos.
+ * Normaliza las 11 pestañas de psicólogas a 12 columnas canónicas, congela fila 1 e instala los triggers automáticos.
  */
 function ejecutarPuestaAPuntoInicialAutomatico(force) {
   var props = PropertiesService.getDocumentProperties();
-  var isDone = props.getProperty("PUESTA_A_PUNTO_INICIAL_AUTOMATICA_V2");
+  var isDone = props.getProperty("PUESTA_A_PUNTO_INICIAL_AUTOMATICA_V3");
   
   if (isDone && !force) {
     Logger.log("ℹ️ Puesta a punto inicial ya completada previamente en este archivo.");
@@ -1058,36 +1595,22 @@ function ejecutarPuestaAPuntoInicialAutomatico(force) {
 
   Logger.log("🚀 INICIANDO PUESTA A PUNTO INICIAL AUTOMÁTICA...");
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var countNormalizadas = 0;
-
-  var psycList = CONFIG.VALID_PSYCHOLOGISTS || [
-    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"
-  ];
-
-  for (var i = 0; i < psycList.length; i++) {
-    var pSheet = findPsychologistSheet(psycList[i]);
-    if (pSheet) {
-      normalizarPestanaPsicologa(pSheet);
-      countNormalizadas++;
-    }
+  
+  // 1. Reordenamiento y normalización canónica de todas las pestañas de psicólogas
+  try {
+    reordenarColumnasPsicologasCanonico();
+  } catch (psycErr) {
+    Logger.log("Aviso en normalización de psicólogas: " + psycErr.message);
   }
 
-  var allSheets = ss.getSheets();
-  for (var s = 0; s < allSheets.length; s++) {
-    var sName = allSheets[s].getName().trim().toUpperCase();
-    if (sName.indexOf("MATCHES ") === 0 && sName !== "MATCHES") {
-      normalizarPestanaPsicologa(allSheets[s]);
-    }
-  }
-
-  // 3. Reordenamiento estructural canónico de MATCHES (17 columnas)
+  // 2. Reordenamiento estructural canónico de MATCHES (17 columnas)
   try {
     reordenarColumnasMatchesCanonico();
   } catch (mErr) {
     Logger.log("Aviso en reordenamiento de MATCHES: " + mErr.message);
   }
 
-  // 4. Instalar disparadores automáticos periódicos
+  // 3. Instalar disparadores automáticos periódicos
   try {
     instalarTriggerRevisionMaria();
     instalarTriggerAlertas15DiasMatches();
@@ -1095,12 +1618,12 @@ function ejecutarPuestaAPuntoInicialAutomatico(force) {
     Logger.log("Aviso instalando triggers en puesta a punto: " + trigErr);
   }
 
-  props.setProperty("PUESTA_A_PUNTO_INICIAL_AUTOMATICA_V2", "true");
+  props.setProperty("PUESTA_A_PUNTO_INICIAL_AUTOMATICA_V3", "true");
   props.setProperty("PUESTA_A_PUNTO_FECHA", new Date().toISOString());
 
-  Logger.log("✅ PUESTA A PUNTO INICIAL COMPLETADA EXITOSAMENTE (" + countNormalizadas + " pestañas procesadas).");
+  Logger.log("✅ PUESTA A PUNTO INICIAL COMPLETADA EXITOSAMENTE.");
   try {
-    ss.toast("Puesta a punto completada: " + countNormalizadas + " pestañas normalizadas y triggers instalados.", "Daily Lover Setup", 6);
+    ss.toast("Puesta a punto completada: pestañas normalizadas y triggers instalados.", "Daily Lover Setup", 6);
   } catch (tErr) {}
 }
 
@@ -1530,7 +2053,9 @@ function resolvePlanSlots(rawPlan) {
   if (!rawPlan) return 0;
   var clean = rawPlan.toString().toUpperCase().trim().replace(/\s+/g, " ");
   if (CONFIG.PLAN_SLOTS_MAP[clean]) return CONFIG.PLAN_SLOTS_MAP[clean];
+  if (clean.indexOf("EXPERIENCE") >= 0) return 4;
   if (clean.indexOf("VIP") >= 0 || clean.indexOf("4 DATE") >= 0 || clean.indexOf("4 CITA") >= 0) return 4;
+  if (clean.indexOf("PREMIUM") >= 0 || clean.indexOf("150K") >= 0) return 3;
   if (clean.indexOf("ESTANDAR") >= 0 || clean.indexOf("ESTÁNDAR") >= 0 || clean.indexOf("3 DATE") >= 0 || clean.indexOf("3 CITA") >= 0) return 3;
   if (clean.indexOf("BASICO") >= 0 || clean.indexOf("BÁSICO") >= 0 || clean.indexOf("2 DATE") >= 0 || clean.indexOf("2 CITA") >= 0 || clean.indexOf("1 CITA") >= 0) return 2;
   return 0;
@@ -2620,13 +3145,23 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var numSlots = resolvePlanSlots(planFromCrm);
   Logger.log("Plan extraído: '" + planFromCrm + "', Slots a generar: " + numSlots);
 
+  // ── REGLA: Matchmaking Experience es exclusivo de MAPE D ──
+  var isExperiencePlan = (planFromCrm && planFromCrm.toString().toUpperCase().indexOf("EXPERIENCE") >= 0);
+  if (isExperiencePlan && cleanPsyc !== "MAPE D") {
+    Logger.log("⭐ Plan Matchmaking Experience detectado. Reasignando exclusivamente a MAPE D.");
+    cleanPsyc = "MAPE D";
+    sheet.getRange(row, respCol).setValue("MAPE D");
+    psycSheet = findPsychologistSheet("MAPE D");
+    SpreadsheetApp.getActiveSpreadsheet().toast("Plan Matchmaking Experience asignado automáticamente a MAPE D (exclusivo).", "Asignación MAPE", 6);
+  }
+
   // 7. VALIDACIÓN DE PLAN (Sin default: si no viene, fila amarilla y no genera slots)
   if (!crmProfile || !crmProfile.found || !numSlots) {
     Logger.log("AVISO: Perfil sin plan válido en CRM. Marcando fila en amarillo #FFF2CC");
     sheet.getRange(row, slotsCol)
       .setValue("PENDIENTE PLAN (CRM)")
       .setBackground("#FFF2CC")
-      .setNote("El perfil en CRM no tiene un plan válido asignado (Básico 40k, Estándar 65k o VIP 195k). No se crearon slots.");
+      .setNote("El perfil en CRM no tiene un plan válido asignado (Básico: 2 slots, Premium: 3 slots, VIP: 4 slots, Matchmaking Experience: 4 slots). No se crearon slots.");
     sheet.getRange(row, fullNameCol).setBackground("#FFF2CC");
     SpreadsheetApp.getActiveSpreadsheet().toast("Cliente " + personAName + " sin plan en CRM. No se crearon slots.", "Plan Requerido", 6);
     return;
@@ -2746,7 +3281,9 @@ function onOpen(e) {
       menu.addSeparator();
     }
 
-    menu.addItem("⚙️ Puesta a Punto Inicial (Estandarizar 10 Pestañas)", "ejecutarPuestaAPuntoInicialManual");
+    menu.addItem("⚙️ Puesta a Punto Inicial (Estandarizar 11 Pestañas)", "ejecutarPuestaAPuntoInicialManual");
+    menu.addItem("⚙️ Normalizar Todas las Pestañas (12 Cols Canónicas)", "reordenarColumnasPsicologasCanonico");
+    menu.addItem("➕ Crear Nueva Pestaña de Psicóloga", "promptCrearNuevaPsicologa");
     menu.addItem("⏰ Instalar Disparadores Automáticos (Triggers)", "instalarTodosLosTriggers");
     menu.addItem("⏰ Verificar Alertas de 15 Días (CS y Psicólogas)", "actualizarAlertas15DiasMatches");
     menu.addItem("🚨 Verificar Inactividad 15+ Días en Clientes", "verificarInactividad15DiasClientes");
@@ -2754,7 +3291,6 @@ function onOpen(e) {
     menu.addItem("Actualizar Desplegables desde ⚙️ CONFIG ESTADOS", "actualizarDesplegablesDinamicos");
     menu.addItem("Configurar Dropdown Responsable", "configurarDropdownResponsable");
     menu.addItem("⚙️ Reordenar Columnas MATCHES (17 Canónicas)", "reordenarColumnasMatchesCanonico");
-    menu.addItem("⚙️ Reordenar Pestañas Psicólogas (Fecha en Col B)", "reordenarColumnasPsicologasCanonico");
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
     menu.addToUi();
@@ -5548,41 +6084,213 @@ function aplicarDesplegablesDependientesRestaurantesTodos() {
 
 
 /**
- * Reordena las columnas en las 10 pestañas de psicólogas de forma canónica:
- * Mueve físicamente la columna 'Fecha de entrevista' / 'FECHA' a la Columna B (Columna 2).
- * Preserva el 100% de los datos históricos y actualiza los encabezados.
+ * Normaliza y reordena todas las pestañas de psicólogas de forma canónica:
+ * - Procesa las 11 pestañas de psicólogas registradas en CONFIG.VALID_PSYCHOLOGISTS
+ *   y cualquier otra pestaña con prefijo 'MATCHES ' (excepto 'MATCHES').
+ * - Unifica a exactamente 12 columnas canónicas en orden estricto:
+ *   ID | Fecha de entrevista | PAIS | CITY | PREF | PLAN | PERSON A | PERSON B | PSICÓLOGA DE B | STATUS | OBSERVACIONES | Fecha de llegada
+ * - Mueve 'Fecha de entrevista' a Col B.
+ * - Fusiona TAREAS (MAPE D) y APRO DATE (ALEJA) hacia OBSERVACIONES.
+ * - Elimina duplicados de fecha (SILVI, MANU).
+ * - Elimina físicamente columnas extra (CRM, feedback, Columna 2..20) dejando maxColumns = 12.
+ * - Preserva 100% de hipervínculos CRM, colores de fondo y notas.
  */
 function reordenarColumnasPsicologasCanonico() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheets = ss.getSheets();
-  var modifiedCount = 0;
+  var psycList = CONFIG.VALID_PSYCHOLOGISTS || [
+    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA", "MARÍA"
+  ];
 
-  for (var s = 0; s < sheets.length; s++) {
-    var sheet = sheets[s];
-    var sName = sheet.getName().trim();
-    if (sName.indexOf("MATCHES ") !== 0 || sName === "MATCHES") continue;
+  var exitosas = [];
+  var fallidas = [];
+  var processedNames = {};
 
-    var headers = getSheetHeaders(sheet);
-    var colFecha = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
-
-    if (!colFecha) {
-      // Si no existe, insertar columna en Columna B (2)
-      sheet.insertColumnAfter(1);
-      sheet.getRange(1, 2).setValue("Fecha de entrevista").setFontWeight("bold").setBackground("#D9EAD3");
-      modifiedCount++;
-      Logger.log("✅ Columna 'Fecha de entrevista' creada en Columna B de '" + sName + "'.");
-    } else if (colFecha !== 2) {
-      // Mover físicamente a la Columna B (2)
-      sheet.moveColumns(sheet.getRange(1, colFecha), 2);
-      sheet.getRange(1, 2).setValue("Fecha de entrevista").setFontWeight("bold").setBackground("#D9EAD3");
-      modifiedCount++;
-      Logger.log("✅ Columna 'Fecha de entrevista' movida de Col " + colFecha + " a Columna B en '" + sName + "'.");
-    } else {
-      sheet.getRange(1, 2).setValue("Fecha de entrevista").setFontWeight("bold").setBackground("#D9EAD3");
-      Logger.log("ℹ️ '" + sName + "' ya tiene 'Fecha de entrevista' en Columna B.");
+  // 1. Procesar psicólogas prioritarias de la lista oficial
+  for (var i = 0; i < psycList.length; i++) {
+    var pName = psycList[i];
+    var pSheet = findPsychologistSheet(pName);
+    if (pSheet) {
+      var sRealName = pSheet.getName();
+      var normKey = sRealName.trim().toUpperCase().replace(/\s+/g, " ");
+      if (!processedNames[normKey]) {
+        try {
+          normalizarPestanaPsicologa(pSheet);
+          exitosas.push(sRealName);
+          Logger.log("✅ [" + exitosas.length + "] Normalizada correctamente: " + sRealName);
+        } catch (tabErr) {
+          fallidas.push({ name: sRealName, error: tabErr.message });
+          Logger.log("❌ Error al normalizar '" + sRealName + "': " + tabErr.message);
+        }
+        processedNames[normKey] = true;
+      }
     }
   }
 
-  ss.toast("Se reordenaron " + modifiedCount + " pestañas de psicólogas (Fecha de entrevista en Columna B).", "Reordenamiento Canónico", 6);
-  Logger.log("✅ Reordenamiento de psicólogas completado exitosamente.");
+  // 2. Procesar cualquier otra hoja que empiece por MATCHES (excepto la hoja maestra MATCHES)
+  var allSheets = ss.getSheets();
+  for (var s = 0; s < allSheets.length; s++) {
+    var sh = allSheets[s];
+    var sRawName = sh.getName();
+    var sUpper = sRawName.trim().toUpperCase().replace(/\s+/g, " ");
+    if (sUpper.indexOf("MATCHES ") === 0 && sUpper !== "MATCHES") {
+      if (!processedNames[sUpper]) {
+        try {
+          normalizarPestanaPsicologa(sh);
+          exitosas.push(sRawName);
+          Logger.log("✅ [" + exitosas.length + "] Normalizada correctamente: " + sRawName);
+        } catch (tabErr2) {
+          fallidas.push({ name: sRawName, error: tabErr2.message });
+          Logger.log("❌ Error al normalizar '" + sRawName + "': " + tabErr2.message);
+        }
+        processedNames[sUpper] = true;
+      }
+    }
+  }
+
+  // 3. Resumen y alertas al usuario
+  var resumenMsg = "Resultado de Normalización Canónica:\n\n";
+  resumenMsg += "✅ Exitosas (" + exitosas.length + "):\n";
+  if (exitosas.length > 0) {
+    resumenMsg += " • " + exitosas.join("\n • ") + "\n\n";
+  } else {
+    resumenMsg += " • Ninguna\n\n";
+  }
+
+  if (fallidas.length > 0) {
+    resumenMsg += "❌ Fallidas (" + fallidas.length + "):\n";
+    for (var f = 0; f < fallidas.length; f++) {
+      resumenMsg += " • " + fallidas[f].name + ": " + fallidas[f].error + "\n";
+    }
+  } else {
+    resumenMsg += "🎉 ¡Todas las pestañas de psicólogas quedaron normalizadas a 12 columnas exactas!";
+  }
+
+  try {
+    SpreadsheetApp.getUi().alert("⚙️ Normalizar Todas las Pestañas", resumenMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (uiErr) {
+    Logger.log("UI Alert no disponible: " + uiErr.message);
+  }
+
+  ss.toast("Normalizadas: " + exitosas.length + " | Fallidas: " + fallidas.length, "Reordenamiento Canónico", 10);
+  Logger.log(resumenMsg);
 }
+
+/**
+ * Crea una nueva pestaña de psicóloga con la estructura canónica estandarizada (12 columnas).
+ * @param {string} nombre - Nombre de la psicóloga (ej: "CARO", "LAURA").
+ * @return {Sheet} La hoja creada o existente.
+ */
+function crearNuevaPsicologa(nombre) {
+  if (!nombre || typeof nombre !== "string" || !nombre.trim()) {
+    throw new Error("Debe proporcionar un nombre válido de psicóloga.");
+  }
+
+  var rawName = nombre.trim();
+  var upperName = rawName.toUpperCase();
+  var sheetName = CONFIG.PSYCHOLOGIST_SHEET_PREFIX + upperName;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+
+  if (sheet) {
+    SpreadsheetApp.getUi().alert("Aviso", "La pestaña '" + sheetName + "' ya existe.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return sheet;
+  }
+
+  // Crear la hoja
+  sheet = ss.insertSheet(sheetName);
+
+  // Columnas canónicas (12)
+  var CANONICAL_HEADERS = [
+    "ID", "Fecha de entrevista", "PAIS", "CITY", "PREF", "PLAN",
+    "PERSON A", "PERSON B", "PSICÓLOGA DE B", "STATUS", "OBSERVACIONES", "Fecha de llegada"
+  ];
+  var CANONICAL_WIDTHS = [70, 130, 80, 110, 80, 140, 190, 190, 120, 120, 220, 130];
+
+  // Configurar columnas: asegurar mínimo 12 y eliminar exceso
+  if (sheet.getMaxColumns() < 12) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
+  } else if (sheet.getMaxColumns() > 12) {
+    sheet.deleteColumns(13, sheet.getMaxColumns() - 12);
+  }
+
+  // Escribir encabezados
+  var headerRange = sheet.getRange(1, 1, 1, CANONICAL_HEADERS.length);
+  headerRange.setValues([CANONICAL_HEADERS]);
+  headerRange.setFontWeight("bold");
+  headerRange.setBackground("#D9EAD3");
+  headerRange.setHorizontalAlignment("center");
+  sheet.setRowHeight(1, 32);
+  try { sheet.setFrozenRows(1); } catch (e) {}
+
+  // Ancho de columnas
+  for (var w = 0; w < CANONICAL_WIDTHS.length; w++) {
+    sheet.setColumnWidth(w + 1, CANONICAL_WIDTHS[w]);
+  }
+
+  // Validaciones de datos
+  // 1. PREF en columna 5 (E)
+  var prefRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["H", "M", "H+M"], true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 5, Math.max(sheet.getMaxRows() - 1, 100), 1).setDataValidation(prefRule);
+
+  // 2. STATUS en columna 10 (J)
+  var psycEstados = [
+    "Llenar perfil", "Listo para match", "HECHO", "APROBADO", "NOT APPROVED", "DESCALIFICADO",
+    "NO HAY GENTE", "REVISAR", "TROUBLEMAKER", "HECHO POR MAPE", "REQUEST PROFILE UPDATE",
+    "PSIC. URG", "MUJER +50", "REFUND", "RECHAZADA POR PSICÓLOGA B"
+  ];
+  try {
+    var estadosData = obtenerEstadosConfigurados();
+    if (estadosData && estadosData.PSICOLOGA && estadosData.PSICOLOGA.length > 0) {
+      psycEstados = estadosData.PSICOLOGA;
+    }
+  } catch (e) {
+    Logger.log("Aviso leyendo estados para nueva psicóloga: " + e.message);
+  }
+
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(psycEstados, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 100), 1).setDataValidation(statusRule);
+
+  // Registrar en CONFIG.VALID_PSYCHOLOGISTS si no está
+  if (CONFIG.VALID_PSYCHOLOGISTS.indexOf(upperName) === -1) {
+    CONFIG.VALID_PSYCHOLOGISTS.push(upperName);
+  }
+  if (!CONFIG.PSYCHOLOGIST_ALIASES[upperName]) {
+    CONFIG.PSYCHOLOGIST_ALIASES[upperName] = upperName;
+  }
+
+  ss.toast("Pestaña '" + sheetName + "' creada exitosamente con 12 columnas canónicas.", "Nueva Psicóloga", 6);
+  return sheet;
+}
+
+/**
+ * Prompt interactivo en la UI de Sheets para crear una nueva pestaña de psicóloga.
+ */
+function promptCrearNuevaPsicologa() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt(
+    "➕ Crear Nueva Pestaña de Psicóloga",
+    "Ingrese el nombre de la nueva psicóloga (ej: CARO, LAURA, DANIELA):",
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() === ui.Button.OK) {
+    var nombre = response.getResponseText();
+    if (!nombre || !nombre.trim()) {
+      ui.alert("Aviso", "No ingresó un nombre válido.", ui.ButtonSet.OK);
+      return;
+    }
+    try {
+      crearNuevaPsicologa(nombre);
+    } catch (err) {
+      ui.alert("Error", "No se pudo crear la pestaña: " + err.message, ui.ButtonSet.OK);
+    }
+  }
+}
+
