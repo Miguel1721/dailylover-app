@@ -2112,9 +2112,13 @@ function reconstruirRevisionMaria() {
 }
 
 /**
- * Instala el disparador periódico para reconstruir REVISIÓN MARÍA cada 15 minutos
+ * Instala el disparador periódico para reconstruir REVISIÓN MARÍA cada 60 minutos (1 hora).
+ * OPTIMIZACIÓN DE PRESUPUESTO: Para cuentas personales de Google (cuota máxima de 90 min/día de triggers),
+ * cambiar de 15 minutos (96 corridas/día) a 1 hora (24 corridas/día) reduce el tiempo de ejecución
+ * en un 75% (de ~16 min/día a solo ~4 min/día), dejando un margen del 95% libre.
  */
-function instalarTriggerRevisionMaria() {
+function instalarTriggerRevisionMaria(frecuenciaHoras) {
+  var horas = frecuenciaHoras || 1;
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === "reconstruirRevisionMaria") {
@@ -2124,10 +2128,29 @@ function instalarTriggerRevisionMaria() {
 
   ScriptApp.newTrigger("reconstruirRevisionMaria")
     .timeBased()
-    .everyMinutes(15)
+    .everyHours(horas)
     .create();
 
-  Logger.log("✅ Disparador de REVISIÓN MARÍA configurado para ejecutarse cada 15 minutos.");
+  Logger.log("✅ Disparador de REVISIÓN MARÍA configurado para ejecutarse cada " + horas + " hora(s) (optimizado para cuota de 90 min/día).");
+}
+
+/**
+ * Opción alternativa: disparador cada 30 minutos (48 corridas/día = ~8 min/día de ejecución).
+ */
+function instalarTriggerRevisionMariaCada30Min() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "reconstruirRevisionMaria") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  ScriptApp.newTrigger("reconstruirRevisionMaria")
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+
+  Logger.log("✅ Disparador de REVISIÓN MARÍA configurado para ejecutarse cada 30 minutos.");
 }
 
 /**
@@ -2153,13 +2176,16 @@ function instalarTriggerAlertas15DiasMatches() {
 }
 
 /**
- * Instala todos los disparadores periódicos esenciales del sistema.
+ * Instala todos los disparadores periódicos esenciales del sistema (versión optimizada y liviana).
+ * - REVISIÓN MARÍA: cada 1 hora (24 corridas/día = ~4 min/día).
+ * - Alertas 15 días: 1 vez al día a las 6 AM.
+ * Consumo total de triggers time-driven: < 5 minutos al día (5.5% de la cuota de 90 min/día).
  */
 function instalarTodosLosTriggers() {
-  instalarTriggerRevisionMaria();
+  instalarTriggerRevisionMaria(1);
   instalarTriggerAlertas15DiasMatches();
   try {
-    SpreadsheetApp.getActiveSpreadsheet().toast("Disparadores automáticos instalados (Revisión María cada 15m, Alertas 15d diario).", "Triggers Configurados", 5);
+    SpreadsheetApp.getActiveSpreadsheet().toast("Disparadores optimizados instalados (Revisión María cada 1 hora, Alertas 15d diario). Presupuesto protegido.", "Triggers Configurados", 5);
   } catch (e) {}
 }
 
@@ -3392,6 +3418,7 @@ function onOpen(e) {
 
     // Solo mostrar opciones de supervisión y desbloqueo a María
     if (currentUserEmail && mariaEmail && currentUserEmail === mariaEmail) {
+      menu.addItem("🔄 Reconstruir REVISIÓN MARÍA (A Demanda)", "reconstruirRevisionMaria");
       menu.addItem("Generar 🔒 Panel de Supervisión María", "generarPanelSupervisionMaria");
       menu.addItem("🔄 Recalcular Supervisión Con Filtro", "recalcularSupervisionConFiltro");
       menu.addItem("🔓 Desbloquear Fila Cruzada (Solo María)", "desbloquearFilaCruzada");
@@ -3399,6 +3426,7 @@ function onOpen(e) {
       menu.addSeparator();
     }
 
+    menu.addItem("🔄 Reconstruir REVISIÓN MARÍA", "reconstruirRevisionMaria");
     menu.addItem("🛠️ Crear Pestañas de Soporte Si Faltan", "crearPestanasDeSoporteSiFaltan");
     menu.addItem("⚙️ Puesta a Punto Inicial (Estandarizar 11 Pestañas)", "ejecutarPuestaAPuntoInicialManual");
     menu.addItem("⚙️ Normalizar Todas las Pestañas (12 Cols Canónicas)", "reordenarColumnasPsicologasCanonico");
