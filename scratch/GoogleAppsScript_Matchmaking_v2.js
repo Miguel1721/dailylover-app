@@ -1922,9 +1922,9 @@ function reconstruirRevisionMaria() {
           continue;
         }
 
-        // 2. Validar que pertenezca a las psicólogas canónicas oficiales si CONFIG.VALID_PSYCHOLOGISTS está definido
+        // 2. Validar que pertenezca a las psicólogas canónicas oficiales (persistidas en DocumentProperties)
         var esValida = false;
-        var validList = CONFIG.VALID_PSYCHOLOGISTS || [];
+        var validList = obtenerPsicologasValidas();
         for (var v = 0; v < validList.length; v++) {
           if (validList[v] === normPsyc) {
             esValida = true;
@@ -2395,10 +2395,11 @@ function normalizePsychologistName(rawName) {
     upper = upper.substring(CONFIG.PSYCHOLOGIST_SHEET_PREFIX.length).trim();
   }
 
-  // 1. Coincidencia exacta en lista oficial
-  for (var i = 0; i < CONFIG.VALID_PSYCHOLOGISTS.length; i++) {
-    if (upper === CONFIG.VALID_PSYCHOLOGISTS[i]) {
-      return CONFIG.VALID_PSYCHOLOGISTS[i];
+  // 1. Coincidencia exacta en lista oficial (persistida en DocumentProperties)
+  var validList = obtenerPsicologasValidas();
+  for (var i = 0; i < validList.length; i++) {
+    if (upper === validList[i]) {
+      return validList[i];
     }
   }
 
@@ -3350,6 +3351,8 @@ function onOpen(e) {
   // 1. Construir y agregar el menú interactivo PRIMERO
   try {
     var menu = SpreadsheetApp.getUi().createMenu("🔎 Daily Lover");
+    menu.addItem("🚀 CONFIGURACIÓN INICIAL COMPLETA (Ejecutar una sola vez)", "configuracionInicialCompleta");
+    menu.addSeparator();
     menu.addItem("Historial de persona", "mostrarHistorialPersona");
     menu.addSeparator();
 
@@ -3578,6 +3581,7 @@ function reordenarColumnasMatchesCanonico() {
   try {
     ss.toast("Estructura canónica de MATCHES (17 columnas) reordenada exitosamente.", "MATCHES Actualizado", 6);
   } catch (e) {}
+  return { success: true, columns: 17 };
 }
 
 /**
@@ -5076,7 +5080,7 @@ function generarPanelSupervisionMaria() {
     sheet.getRange(8, h + 1).setValue(psycHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   }
 
-  var psycList = CONFIG.VALID_PSYCHOLOGISTS || ["JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"];
+  var psycList = obtenerPsicologasValidas();
   for (var p = 0; p < psycList.length; p++) {
     var pName = psycList[p];
     var pSheet = findPsychologistSheet(pName);
@@ -6707,7 +6711,7 @@ function unificarPestanasManu(ss) {
   }
 }
 
-function reordenarColumnasPsicologasCanonico() {
+function reordenarColumnasPsicologasCanonico(silent) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // 0. Unificar pestañas duplicadas de MANU si existen ('MATCHES MANU ' y 'MATCHES MANU')
@@ -6717,9 +6721,7 @@ function reordenarColumnasPsicologasCanonico() {
     Logger.log("Aviso en unificación de pestañas MANU: " + manuErr.message);
   }
 
-  var psycList = CONFIG.VALID_PSYCHOLOGISTS || [
-    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA", "MARÍA"
-  ];
+  var psycList = obtenerPsicologasValidas();
 
   var exitosas = [];
   var fallidas = [];
@@ -6819,16 +6821,260 @@ function reordenarColumnasPsicologasCanonico() {
   }
 
   SpreadsheetApp.flush();
-  try {
-    SpreadsheetApp.getUi().alert("⚙️ Normalizar Todas las Pestañas", resumenMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-  } catch (uiErr) {
-    Logger.log("UI Alert no disponible: " + uiErr.message);
+  if (!silent) {
+    try {
+      SpreadsheetApp.getUi().alert("⚙️ Normalizar Todas las Pestañas", resumenMsg, SpreadsheetApp.getUi().ButtonSet.OK);
+    } catch (uiErr) {
+      Logger.log("UI Alert no disponible: " + uiErr.message);
+    }
   }
 
   ss.toast("Normalizadas: " + exitosas.length + " | Fallidas: " + fallidas.length, "Reordenamiento Canónico", 10);
   Logger.log(resumenMsg);
+  return { exitosas: exitosas, fallidas: fallidas };
 }
 
+
+/**
+ * Retorna la lista oficial y permanente de psicólogas activas.
+ * Lee primero de PropertiesService (clave 'ACTIVE_PSYCHOLOGISTS').
+ * Si no está configurada o está vacía, inicializa con CONFIG.VALID_PSYCHOLOGISTS.
+ * Garantiza que cualquier psicóloga creada con crearNuevaPsicologa persista entre sesiones,
+ * triggers y diferentes usuarios.
+ */
+function obtenerPsicologasValidas() {
+  var defaultList = CONFIG.VALID_PSYCHOLOGISTS || [
+    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA", "MARÍA"
+  ];
+  try {
+    var props = PropertiesService.getDocumentProperties();
+    var stored = props.getProperty("ACTIVE_PSYCHOLOGISTS");
+    if (stored) {
+      var parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        var combined = [];
+        var seen = {};
+        for (var d = 0; d < defaultList.length; d++) {
+          var nameD = defaultList[d].trim().toUpperCase();
+          if (!seen[nameD]) { seen[nameD] = true; combined.push(nameD); }
+        }
+        for (var p = 0; p < parsed.length; p++) {
+          var nameP = (parsed[p] || "").toString().trim().toUpperCase();
+          if (nameP && !seen[nameP]) { seen[nameP] = true; combined.push(nameP); }
+        }
+        return combined;
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso leyendo ACTIVE_PSYCHOLOGISTS de PropertiesService: " + e.message);
+  }
+  return defaultList;
+}
+
+/**
+ * Guarda permanentemente una nueva psicóloga en PropertiesService y en memoria de la sesión.
+ */
+function registrarNuevaPsicologaPersistente(nombre) {
+  if (!nombre) return obtenerPsicologasValidas();
+  var upper = nombre.trim().toUpperCase();
+  var currentList = obtenerPsicologasValidas();
+  if (currentList.indexOf(upper) === -1) {
+    currentList.push(upper);
+  }
+  try {
+    PropertiesService.getDocumentProperties().setProperty("ACTIVE_PSYCHOLOGISTS", JSON.stringify(currentList));
+    Logger.log("✅ Psicóloga '" + upper + "' guardada permanentemente en DocumentProperties. Total activas: " + currentList.length);
+  } catch (e) {
+    Logger.log("Error guardando psicóloga en DocumentProperties: " + e.message);
+  }
+
+  // Actualizar también CONFIG en memoria para la ejecución en curso
+  if (CONFIG.VALID_PSYCHOLOGISTS.indexOf(upper) === -1) {
+    CONFIG.VALID_PSYCHOLOGISTS.push(upper);
+  }
+  if (!CONFIG.PSYCHOLOGIST_ALIASES[upper]) {
+    CONFIG.PSYCHOLOGIST_ALIASES[upper] = upper;
+  }
+  return currentList;
+}
+
+/**
+ * Configura el desplegable de psicólogas activas en la columna Responsable de PROFILES.
+ */
+function configurarDropdownResponsable() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES");
+  if (!sheet) return;
+  var headers = getSheetHeaders(sheet);
+  var respCol = headers["RESPONSABLE"] || headers["PSICÓLOGA"] || headers["PSICOLOGA"] || 4;
+  var psycList = obtenerPsicologasValidas();
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(psycList, true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, respCol, Math.max(sheet.getMaxRows() - 1, 100), 1).setDataValidation(rule);
+  Logger.log("✅ Dropdown de Responsable en PROFILES configurado con: " + psycList.join(", "));
+  try {
+    ss.toast("Dropdown de Responsable en PROFILES configurado con " + psycList.length + " psicólogas.", "Responsable", 5);
+  } catch (e) {}
+}
+
+/**
+ * 🚀 CONFIGURACIÓN INICIAL COMPLETA
+ * Función maestra para inicializar de una sola vez cualquier archivo nuevo de Daily Lover:
+ * 
+ * 1. Pestañas de Soporte: Verifica y crea (si faltan) ⚙️ CONFIG ESTADOS, ⚙️ RESTAURANTES, Citas Aceptadas y REFUNDS PENDIENTES.
+ * 2. Psicólogas Canónicas: Unifica duplicados (MANU) y normaliza todas las pestañas de psicólogas activas a 12 columnas canónicas.
+ * 3. MATCHES Canónico: Reordena y estandariza la pestaña MATCHES a 17 columnas canónicas (CRM IDs, fechas, notas, colores).
+ * 4. Desplegables y Validaciones: Conecta desplegables dinámicos desde ⚙️ CONFIG ESTADOS y ⚙️ RESTAURANTES en todas las hojas.
+ * 5. Dropdown Responsable: Configura el desplegable de psicólogas en PROFILES.
+ * 6. Filas Congeladas: Congela fila 1 en todas las pestañas operativas.
+ * 7. Triggers Automáticos: Instala disparadores periódicos (supervisión María, alertas 15 días).
+ *
+ * Incluye checkpoints de progreso en PropertiesService ('CONFIG_INICIAL_PASO'),
+ * control de tiempo y diálogo de resumen final con el detalle de todo lo ejecutado.
+ */
+function configuracionInicialCompleta() {
+  var tStart = new Date().getTime();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var props = PropertiesService.getDocumentProperties();
+  var ui = SpreadsheetApp.getUi();
+
+  var confirmacion = ui.alert(
+    "🚀 Configuración Inicial Completa",
+    "Esta operación configurará todo el archivo automáticamente:\n\n" +
+    "1. Crear 4 pestañas de soporte (⚙️ CONFIG ESTADOS, ⚙️ RESTAURANTES, Citas Aceptadas, REFUNDS PENDIENTES)\n" +
+    "2. Normalizar pestañas de psicólogas a 12 columnas canónicas (incluye unificar MANU)\n" +
+    "3. Normalizar pestaña MATCHES a 17 columnas canónicas\n" +
+    "4. Vincular validaciones y desplegables dinámicos\n" +
+    "5. Configurar dropdown de psicólogas en PROFILES\n" +
+    "6. Congelar filas de encabezado\n" +
+    "7. Instalar activadores automáticos (Triggers)\n\n" +
+    "¿Desea continuar?",
+    ui.ButtonSet.YES_NO
+  );
+
+  if (confirmacion !== ui.Button.YES) {
+    ui.alert("Operación cancelada.");
+    return;
+  }
+
+  var resumen = {
+    paso1_soporte: null,
+    paso2_psicologas: null,
+    paso3_matches: null,
+    paso4_desplegables: null,
+    paso5_responsable: null,
+    paso6_congelar: null,
+    paso7_triggers: null,
+    tiempoTotalSegundos: 0,
+    errorEnPaso: null
+  };
+
+  try {
+    // ── PASO 1: PESTAÑAS DE SOPORTE ──
+    props.setProperty("CONFIG_INICIAL_PASO", "1_SOPORTE");
+    Logger.log("🚀 [Paso 1/7] Verificando / creando pestañas de soporte...");
+    var resSoporte = crearPestanasDeSoporteSiFaltan(ss);
+    resumen.paso1_soporte = "✅ Creadas: " + (resSoporte.creadas.length > 0 ? resSoporte.creadas.join(", ") : "Ninguna (ya existían)") + 
+                            " | Existentes: " + resSoporte.existentes.join(", ");
+    SpreadsheetApp.flush();
+
+    // ── PASO 2: PSICÓLOGAS (12 COLS CANÓNICAS + MANU UNIFY) ──
+    props.setProperty("CONFIG_INICIAL_PASO", "2_PSICOLOGAS");
+    Logger.log("🚀 [Paso 2/7] Normalizando pestañas de psicólogas...");
+    var resPsyc = reordenarColumnasPsicologasCanonico(true);
+    if (resPsyc && typeof resPsyc === "object") {
+      resumen.paso2_psicologas = "✅ Exitosas (" + (resPsyc.exitosas ? resPsyc.exitosas.length : 0) + "): " + (resPsyc.exitosas || []).join(", ") +
+                                 (resPsyc.fallidas && resPsyc.fallidas.length > 0 ? " | ⚠️ Avisos: " + resPsyc.fallidas.map(function(f){ return f.name; }).join(", ") : "");
+    } else {
+      resumen.paso2_psicologas = "✅ Pestañas de psicólogas normalizadas con éxito.";
+    }
+    SpreadsheetApp.flush();
+
+    // ── PASO 3: MATCHES (17 COLS CANÓNICAS) ──
+    props.setProperty("CONFIG_INICIAL_PASO", "3_MATCHES");
+    Logger.log("🚀 [Paso 3/7] Reordenando MATCHES a 17 columnas canónicas...");
+    var resMatches = reordenarColumnasMatchesCanonico();
+    resumen.paso3_matches = resMatches && resMatches.error ? "⚠️ MATCHES: " + resMatches.error : "✅ MATCHES normalizada a 17 columnas canónicas.";
+    SpreadsheetApp.flush();
+
+    // ── PASO 4: DESPLEGABLES DINÁMICOS ──
+    props.setProperty("CONFIG_INICIAL_PASO", "4_DESPLEGABLES");
+    Logger.log("🚀 [Paso 4/7] Actualizando desplegables dinámicos (Estados y Restaurantes)...");
+    try {
+      actualizarDesplegablesDinamicos();
+      resumen.paso4_desplegables = "✅ Desplegables de estados y restaurantes enlazados dinámicamente.";
+    } catch (eDesp) {
+      resumen.paso4_desplegables = "⚠️ Aviso en desplegables: " + eDesp.message;
+    }
+    SpreadsheetApp.flush();
+
+    // ── PASO 5: DROPDOWN RESPONSABLE EN PROFILES ──
+    props.setProperty("CONFIG_INICIAL_PASO", "5_RESPONSABLE");
+    Logger.log("🚀 [Paso 5/7] Configurando dropdown Responsable en PROFILES...");
+    try {
+      configurarDropdownResponsable();
+      resumen.paso5_responsable = "✅ Dropdown de psicólogas activas configurado en PROFILES.";
+    } catch (eResp) {
+      resumen.paso5_responsable = "⚠️ Aviso en dropdown Responsable: " + eResp.message;
+    }
+    SpreadsheetApp.flush();
+
+    // ── PASO 6: CONGELAR FILAS DE ENCABEZADO ──
+    props.setProperty("CONFIG_INICIAL_PASO", "6_CONGELAR");
+    Logger.log("🚀 [Paso 6/7] Asegurando congelamiento de fila 1...");
+    try {
+      asegurarFilasCongeladasLiviano();
+      resumen.paso6_congelar = "✅ Fila 1 congelada en todas las pestañas.";
+    } catch (eCong) {
+      resumen.paso6_congelar = "⚠️ Aviso al congelar filas: " + eCong.message;
+    }
+    SpreadsheetApp.flush();
+
+    // ── PASO 7: ACTIVADORES AUTOMÁTICOS (TRIGGERS) ──
+    props.setProperty("CONFIG_INICIAL_PASO", "7_TRIGGERS");
+    Logger.log("🚀 [Paso 7/7] Instalando activadores automáticos...");
+    try {
+      instalarTodosLosTriggers();
+      resumen.paso7_triggers = "✅ Triggers automáticos instalados (Alertas 15 días, Supervisión María).";
+    } catch (eTrig) {
+      resumen.paso7_triggers = "⚠️ Aviso al instalar triggers: " + eTrig.message;
+    }
+
+    props.setProperty("CONFIG_INICIAL_PASO", "COMPLETADO");
+    props.setProperty("CONFIG_INICIAL_FECHA", new Date().toISOString());
+
+  } catch (errGlobal) {
+    var pasoFallo = props.getProperty("CONFIG_INICIAL_PASO") || "DESCONOCIDO";
+    resumen.errorEnPaso = "❌ Falló en paso [" + pasoFallo + "]: " + errGlobal.message;
+    Logger.log("ERROR en configuracionInicialCompleta: " + errGlobal.stack);
+  }
+
+  var tEnd = new Date().getTime();
+  var segs = ((tEnd - tStart) / 1000).toFixed(1);
+  resumen.tiempoTotalSegundos = segs;
+
+  // Mostrar Resumen Final
+  var textoResumen = "⏱️ Tiempo de ejecución: " + segs + " segundos\n\n";
+  textoResumen += "1. Soporte: " + (resumen.paso1_soporte || "Pendiente") + "\n\n";
+  textoResumen += "2. Psicólogas: " + (resumen.paso2_psicologas || "Pendiente") + "\n\n";
+  textoResumen += "3. MATCHES: " + (resumen.paso3_matches || "Pendiente") + "\n\n";
+  textoResumen += "4. Desplegables: " + (resumen.paso4_desplegables || "Pendiente") + "\n\n";
+  textoResumen += "5. PROFILES: " + (resumen.paso5_responsable || "Pendiente") + "\n\n";
+  textoResumen += "6. Congelar filas: " + (resumen.paso6_congelar || "Pendiente") + "\n\n";
+  textoResumen += "7. Triggers: " + (resumen.paso7_triggers || "Pendiente") + "\n";
+
+  if (resumen.errorEnPaso) {
+    textoResumen += "\n🚨 " + resumen.errorEnPaso + "\nPuede resolver el detalle o reejecutar el paso correspondiente desde el menú.";
+    ui.alert("⚠️ Configuración Incompleta", textoResumen, ui.ButtonSet.OK);
+  } else {
+    textoResumen += "\n🎉 ¡El archivo está 100% configurado y listo para operar!";
+    ui.alert("✅ Configuración Inicial Exitosa", textoResumen, ui.ButtonSet.OK);
+  }
+
+  return resumen;
+}
 
 /**
  * Crea una nueva pestaña de psicóloga con la estructura canónica estandarizada (12 columnas).
@@ -6912,13 +7158,9 @@ function crearNuevaPsicologa(nombre) {
     .build();
   sheet.getRange(2, 10, Math.max(sheet.getMaxRows() - 1, 100), 1).setDataValidation(statusRule);
 
-  // Registrar en CONFIG.VALID_PSYCHOLOGISTS si no está
-  if (CONFIG.VALID_PSYCHOLOGISTS.indexOf(upperName) === -1) {
-    CONFIG.VALID_PSYCHOLOGISTS.push(upperName);
-  }
-  if (!CONFIG.PSYCHOLOGIST_ALIASES[upperName]) {
-    CONFIG.PSYCHOLOGIST_ALIASES[upperName] = upperName;
-  }
+  // Registrar permanentemente en DocumentProperties y memoria
+  registrarNuevaPsicologaPersistente(upperName);
+  try { configurarDropdownResponsable(); } catch (eDrop) {}
 
   ss.toast("Pestaña '" + sheetName + "' creada exitosamente con 12 columnas canónicas.", "Nueva Psicóloga", 6);
   return sheet;
