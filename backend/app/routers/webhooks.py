@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/v1/webhooks", tags=["Webhooks"])
 # Mapeo de IDs de productos / montos de Stripe a planes de Daily Lover
 STRIPE_PLAN_MAP = {
     "195": "VIP 195k",
-    "150": "Premium 150k",
+    "150": "Premium",
     "98": "Estándar Plus 98k",
     "65": "Estándar 65k",
     "40": "Básico 40k",
@@ -54,8 +54,12 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
         # Determinar el plan según el monto o metadata
         plan_name = "Estándar 65k"
-        if data_object.get("metadata", {}).get("plan_tier"):
-            plan_name = data_object["metadata"]["plan_tier"]
+        meta_plan = data_object.get("metadata", {}).get("plan_tier") or data_object.get("metadata", {}).get("plan") or ""
+        desc = str(data_object.get("description", "")).lower()
+        if "experience" in str(meta_plan).lower() or "experience" in desc:
+            plan_name = "Matchmaking Experience"
+        elif meta_plan:
+            plan_name = meta_plan
         elif amount_paid:
             for key, name in STRIPE_PLAN_MAP.items():
                 if key in str(amount_paid):
@@ -252,19 +256,21 @@ async def process_webhook_payload(event_type: str, data: dict):
                         for k, v in data.items():
                             if isinstance(v, dict) and "choice_label" in v:
                                 lbl = str(v.get("choice_label", "")).lower()
-                                if any(p in lbl for p in ["40k", "65k", "195k", "150k", "98k", "básico", "basico", "estándar", "estandar", "vip", "premium"]):
+                                if any(p in lbl for p in ["40k", "65k", "195k", "150k", "98k", "básico", "basico", "estándar", "estandar", "vip", "premium", "experience"]):
                                     raw_plan = v.get("choice_label")
                                     break
-                            elif isinstance(v, str) and any(p in v.lower() for p in ["40k", "65k", "195k", "150k", "98k", "básico", "basico", "estándar", "estandar", "vip", "premium"]):
+                            elif isinstance(v, str) and any(p in v.lower() for p in ["40k", "65k", "195k", "150k", "98k", "básico", "basico", "estándar", "estandar", "vip", "premium", "experience"]):
                                 raw_plan = v
                                 break
 
                     if raw_plan:
                         r_low = str(raw_plan).lower()
-                        if "195" in r_low or "vip" in r_low:
+                        if "experience" in r_low:
+                            plan_val = "Matchmaking Experience"
+                        elif "195" in r_low or "vip" in r_low:
                             plan_val = "VIP 195k (5 citas)"
                         elif "150" in r_low or "premium" in r_low:
-                            plan_val = "Premium 150k"
+                            plan_val = "Premium"
                         elif "98" in r_low:
                             plan_val = "Estándar Plus 98k"
                         elif "65" in r_low or "estándar" in r_low or "estandar" in r_low or "2 citas" in r_low:

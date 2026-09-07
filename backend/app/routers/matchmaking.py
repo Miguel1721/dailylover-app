@@ -33,11 +33,15 @@ PREF_COLORS = {
 
 PLAN_COLORS = {
     "Básico 40k": "#F3F3F3",
+    "Básico": "#F3F3F3",
     "Estándar 65k (1 cita)": "#D9EAD3",
     "Estándar 65k (2 citas)": "#B6D7A8",
     "Estándar Plus 98k": "#A2C4C9",
     "Premium 150k": "#C9DAF8",
+    "Premium": "#C9DAF8",
     "VIP 195k": "#FFE599",
+    "VIP": "#FFE599",
+    "Matchmaking Experience": "#D5A6BD",
 }
 
 STATUS_COLORS = {
@@ -85,21 +89,26 @@ ALLOWED_STATUSES = [
 
 def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
     """
-    Retorna la cantidad exacta de slots según el plan activo (SSOT v2):
-    - Básico 40k (1 cita) -> 2 slots
-    - Estándar 65k (2 citas) -> 3 slots
-    - VIP 195k -> 4 slots
+    Retorna la cantidad exacta de slots según el plan activo (SSOT canónico):
+    - Básico -> 2 slots
+    - Premium -> 3 slots
+    - VIP -> 4 slots
+    - Matchmaking Experience (solo MAPE) -> 4 slots
     Si el plan está vacío o no es reconocido, retorna None para obligar a validación explícita.
     """
     if not plan_str or not str(plan_str).strip():
         return None
     p = str(plan_str).lower().strip()
-    if "vip" in p:
+    if "experience" in p:
         return 4
-    elif "40k" in p or "básico" in p or "basico" in p or "1 cita" in p:
-        return 2
+    elif "vip" in p:
+        return 4
+    elif "premium" in p or "150k" in p:
+        return 3
     elif "65k" in p or "estándar" in p or "estandar" in p or "2 citas" in p or "98k" in p:
         return 3
+    elif "40k" in p or "básico" in p or "basico" in p or "1 cita" in p:
+        return 2
     return None
 
 CONFIRMATION_OPTIONS = [
@@ -1763,24 +1772,34 @@ async def get_person_history(query_or_name: str, db: AsyncSession = Depends(get_
 
 def normalize_plan(raw_plan: Optional[str]) -> str:
     """
-    Normaliza valores crudos del CRM o etiquetas a los 3 planes oficiales:
-    - VIP 195k (VIP, 195k, 295k, VIP client) -> 4 slots
-    - Estándar 65k (2 citas) (2 dates, 2 citas, standard, 65k, 98k, 150k) -> 3 slots
-    - Básico 40k (1 date, 1 cita, basic, 40k) -> 2 slots
+    Normaliza valores crudos del CRM o etiquetas a los planes oficiales:
+    - Matchmaking Experience (solo MAPE) -> 4 slots
+    - VIP 195k -> 4 slots
+    - Premium -> 3 slots
+    - Estándar 65k (2 citas) -> 3 slots
+    - Básico 40k -> 2 slots
     """
     if not raw_plan:
         return ""
     p = raw_plan.lower().strip()
     
-    # 1. VIP (máxima prioridad de match si tiene 'vip')
+    # 1. Matchmaking Experience (solo lo hace MAPE)
+    if "experience" in p:
+        return "Matchmaking Experience"
+
+    # 2. VIP (máxima prioridad de match si tiene 'vip')
     if "vip" in p or "195k" in p or "295k" in p:
         return "VIP 195k"
     
-    # 2. Estándar (2 dates / standard / 65k / 98k / 150k)
-    if "2 date" in p or "2 cita" in p or "standard" in p or "estandar" in p or "estándar" in p or "65k" in p or "98k" in p or "150k" in p or "premium" in p:
+    # 3. Premium
+    if "premium" in p or "150k" in p:
+        return "Premium"
+
+    # 4. Estándar (2 dates / standard / 65k / 98k)
+    if "2 date" in p or "2 cita" in p or "standard" in p or "estandar" in p or "estándar" in p or "65k" in p or "98k" in p:
         return "Estándar 65k (2 citas)"
     
-    # 3. Básico (1 date / basic / 40k)
+    # 5. Básico (1 date / basic / 40k)
     if "1 date" in p or "1 cita" in p or "basic" in p or "basico" in p or "básico" in p or "40k" in p:
         return "Básico 40k"
         

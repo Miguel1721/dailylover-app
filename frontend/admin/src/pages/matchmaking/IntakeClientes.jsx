@@ -22,11 +22,13 @@ const PLAN_TIERS = [
   'Estándar 65k (2 citas)',
   'Estándar 65k (1 cita)',
   'Estándar Plus 98k',
+  'Premium',
   'Premium 150k',
   'VIP 195k',
   'VIP 295k',
   'VIP Oro',
   'Básico 40k',
+  'Matchmaking Experience',
   'Eventos Presenciales'
 ]
 

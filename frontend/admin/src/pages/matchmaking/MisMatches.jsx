@@ -14,11 +14,13 @@ const PLAN_TIERS_LIST = [
   'Estándar 65k (2 citas)',
   'Estándar 65k (1 cita)',
   'Estándar Plus 98k',
+  'Premium',
   'Premium 150k',
   'VIP 195k',
   'VIP 295k',
   'VIP Oro',
   'Básico 40k',
+  'Matchmaking Experience',
   'Eventos Presenciales'
 ]
 
@@ -32,11 +34,15 @@ const PREF_COLORS = {
 
 const PLAN_COLORS = {
   'Básico 40k': { bg: '#F3F3F3', color: '#434343' },
+  'Básico': { bg: '#F3F3F3', color: '#434343' },
   'Estándar 65k (1 cita)': { bg: '#D9EAD3', color: '#274E13' },
   'Estándar 65k (2 citas)': { bg: '#B6D7A8', color: '#274E13' },
   'Estándar Plus 98k': { bg: '#A2C4C9', color: '#134F5C' },
+  'Premium': { bg: '#C9DAF8', color: '#1155CC' },
   'Premium 150k': { bg: '#C9DAF8', color: '#1155CC' },
   'VIP 195k': { bg: '#FFE599', color: '#7F6000' },
+  'VIP': { bg: '#FFE599', color: '#7F6000' },
+  'Matchmaking Experience': { bg: '#D5A6BD', color: '#4C1130' },
 }
 
 const STATUS_COLORS = {
@@ -1154,9 +1160,11 @@ export default function MisMatches() {
                     }}
                   >
                     <option value="">(Sin plan — marcar en amarillo)</option>
+                    <option value="Básico 40k">Básico (2 slots)</option>
+                    <option value="Premium">Premium (3 slots)</option>
+                    <option value="VIP 195k">VIP (4 slots)</option>
+                    <option value="Matchmaking Experience">Matchmaking Experience (4 slots - solo MAPE)</option>
                     <option value="Estándar 65k (2 citas)">Estándar 65k (3 slots)</option>
-                    <option value="VIP 195k">VIP 195k (4 slots)</option>
-                    <option value="Básico 40k">Básico 40k (2 slots)</option>
                   </select>
                 </div>
               </div>

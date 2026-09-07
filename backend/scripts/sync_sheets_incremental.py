@@ -112,20 +112,24 @@ def normalize_plan(raw_plan: Optional[str]) -> str:
     if not raw_plan:
         return ""
     p = str(raw_plan).lower().strip()
+    if "experience" in p:
+        return "Matchmaking Experience"
     if "vip" in p or "195k" in p or "295k" in p:
         return "VIP 195k"
-    if "2 date" in p or "2 cita" in p or "standard" in p or "estandar" in p or "estándar" in p or "65k" in p or "98k" in p or "150k" in p or "premium" in p:
+    if "premium" in p or "150k" in p:
+        return "Premium"
+    if "2 date" in p or "2 cita" in p or "standard" in p or "estandar" in p or "estándar" in p or "65k" in p or "98k" in p:
         return "Estándar 65k (2 citas)"
     if "1 date" in p or "1 cita" in p or "basic" in p or "basico" in p or "básico" in p or "40k" in p:
         return "Básico 40k"
     return ""
 
 def get_slots_count(plan_name: str) -> int:
-    if plan_name == "VIP 195k":
+    if plan_name in ["VIP 195k", "VIP", "Matchmaking Experience"]:
         return 4
-    elif plan_name == "Estándar 65k (2 citas)":
+    elif plan_name in ["Estándar 65k (2 citas)", "Premium", "Estándar Plus 98k"]:
         return 3
-    elif plan_name == "Básico 40k":
+    elif plan_name in ["Básico 40k", "Básico"]:
         return 2
     return 0  # Si no hay plan conocido, NO se crea ningún slot (0 slots) en paridad exacta con el Sheet
 
