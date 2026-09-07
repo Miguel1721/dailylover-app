@@ -921,21 +921,41 @@ function withScriptLock(actionFn) {
 }
 
 /**
- * 8. Búsqueda tolerante de la pestaña de psicóloga (maneja espacios extras como 'MATCHES ANA ')
+ * 8. Búsqueda tolerante de la pestaña de psicóloga (maneja espacios extras, tildes como 'MARÍA' vs 'MARIA', y alias)
  */
 function findPsychologistSheet(psycName) {
   if (!psycName) return null;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var cleanName = psycName.toString().trim().toUpperCase();
-  var targetPrefix = CONFIG.PSYCHOLOGIST_SHEET_PREFIX + cleanName;
+  var rawName = psycName.toString().trim();
 
+  // 1. Probar nombre directo
+  var directUpper = rawName.toUpperCase();
+  var targetPrefix = CONFIG.PSYCHOLOGIST_SHEET_PREFIX + directUpper;
   var direct = ss.getSheetByName(targetPrefix);
   if (direct) return direct;
 
+  // 2. Probar mediante normalización de alias si existe
+  var canonical = (typeof normalizarNombrePsicologa === "function") ? normalizarNombrePsicologa(rawName) : directUpper;
+  var targetCanonical = CONFIG.PSYCHOLOGIST_SHEET_PREFIX + canonical;
+  var directCanon = ss.getSheetByName(targetCanonical);
+  if (directCanon) return directCanon;
+
+  // 3. Búsqueda tolerante a espacios y diacríticos (tildes como MARÍA vs MARIA)
+  var stripAccents = function(str) {
+    return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim().replace(/\s+/g, " ");
+  };
+  var targetNorm = stripAccents(targetCanonical);
+  var targetNormRaw = stripAccents(targetPrefix);
+
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
-    var sName = sheets[i].getName().trim().toUpperCase();
-    if (sName === targetPrefix || sName.replace(/\s+/g, " ") === targetPrefix.replace(/\s+/g, " ")) {
+    var sName = sheets[i].getName();
+    var sClean = sName.trim().toUpperCase().replace(/\s+/g, " ");
+    if (sClean === targetPrefix || sClean === targetCanonical) {
+      return sheets[i];
+    }
+    var sNorm = stripAccents(sName);
+    if (sNorm === targetNorm || sNorm === targetNormRaw) {
       return sheets[i];
     }
   }
@@ -1268,11 +1288,14 @@ function normalizarPestanaPsicologa(sheet) {
       for (var w = 0; w < CANONICAL_WIDTHS.length; w++) {
         sheet.setColumnWidth(w + 1, CANONICAL_WIDTHS[w]);
       }
-      Logger.log("✅ Pestaña vacía '" + sName + "' configurada con 12 columnas canónicas.");
+      aplicarValidacionesCanónicas(sheet, Math.max(sheet.getMaxRows(), 100));
+      SpreadsheetApp.flush();
+      Logger.log("✅ Pestaña vacía '" + sName + "' configurada con 12 columnas canónicas y validaciones.");
       return;
     } catch (emptyErr) {
       Logger.log("Aviso en pestaña vacía '" + sName + "': " + emptyErr.message + ". Recreando hoja limpia...");
       recrearHojaLimpiaCanonica(ss, sheet, sName, [CANONICAL_HEADERS], null, null, [["#D9EAD3"]], null, 1, CANONICAL_WIDTHS);
+      SpreadsheetApp.flush();
       return;
     }
   }
@@ -6138,8 +6161,17 @@ function reordenarColumnasPsicologasCanonico() {
       if (!processedNames[normKey]) {
         try {
           normalizarPestanaPsicologa(pSheet);
+          SpreadsheetApp.flush();
+
+          // Verificación real in-sheet para eliminar cualquier posibilidad de falso positivo
+          var postHeaders = pSheet.getRange(1, 1, 1, Math.min(pSheet.getMaxColumns(), 12)).getValues()[0];
+          var colB = (postHeaders[1] || "").toString().trim();
+          if (colB !== "Fecha de entrevista" || pSheet.getMaxColumns() !== 12) {
+            throw new Error("Verificación fallida: Col B es '" + colB + "' (esperado 'Fecha de entrevista') y cols=" + pSheet.getMaxColumns());
+          }
+
           exitosas.push(sRealName);
-          Logger.log("✅ [" + exitosas.length + "] Normalizada correctamente: " + sRealName);
+          Logger.log("✅ [" + exitosas.length + "] Normalizada y verificada correctamente: " + sRealName);
         } catch (tabErr) {
           fallidas.push({ name: sRealName, error: tabErr.message });
           Logger.log("❌ Error al normalizar '" + sRealName + "': " + tabErr.message);
@@ -6159,8 +6191,16 @@ function reordenarColumnasPsicologasCanonico() {
       if (!processedNames[sUpper]) {
         try {
           normalizarPestanaPsicologa(sh);
+          SpreadsheetApp.flush();
+
+          var postHeaders2 = sh.getRange(1, 1, 1, Math.min(sh.getMaxColumns(), 12)).getValues()[0];
+          var colB2 = (postHeaders2[1] || "").toString().trim();
+          if (colB2 !== "Fecha de entrevista" || sh.getMaxColumns() !== 12) {
+            throw new Error("Verificación fallida: Col B es '" + colB2 + "' (esperado 'Fecha de entrevista') y cols=" + sh.getMaxColumns());
+          }
+
           exitosas.push(sRawName);
-          Logger.log("✅ [" + exitosas.length + "] Normalizada correctamente: " + sRawName);
+          Logger.log("✅ [" + exitosas.length + "] Normalizada y verificada correctamente: " + sRawName);
         } catch (tabErr2) {
           fallidas.push({ name: sRawName, error: tabErr2.message });
           Logger.log("❌ Error al normalizar '" + sRawName + "': " + tabErr2.message);
@@ -6188,6 +6228,7 @@ function reordenarColumnasPsicologasCanonico() {
     resumenMsg += "🎉 ¡Todas las pestañas de psicólogas quedaron normalizadas a 12 columnas exactas!";
   }
 
+  SpreadsheetApp.flush();
   try {
     SpreadsheetApp.getUi().alert("⚙️ Normalizar Todas las Pestañas", resumenMsg, SpreadsheetApp.getUi().ButtonSet.OK);
   } catch (uiErr) {
