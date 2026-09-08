@@ -1695,10 +1695,9 @@ function ejecutarPuestaAPuntoInicialAutomatico(force) {
     Logger.log("Aviso en reordenamiento de MATCHES: " + mErr.message);
   }
 
-  // 3. Instalar disparadores automáticos periódicos
+  // 3. Instalar disparadores automáticos periódicos y de edición
   try {
-    instalarTriggerRevisionMaria();
-    instalarTriggerAlertas15DiasMatches();
+    instalarTodosLosTriggers();
   } catch (trigErr) {
     Logger.log("Aviso instalando triggers en puesta a punto: " + trigErr);
   }
@@ -2176,16 +2175,66 @@ function instalarTriggerAlertas15DiasMatches() {
 }
 
 /**
- * Instala todos los disparadores periódicos esenciales del sistema (versión optimizada y liviana).
- * - REVISIÓN MARÍA: cada 1 hora (24 corridas/día = ~4 min/día).
- * - Alertas 15 días: 1 vez al día a las 6 AM.
- * Consumo total de triggers time-driven: < 5 minutos al día (5.5% de la cuota de 90 min/día).
+ * Instala el disparador de edición instalable 'onEditInstallable' para la hoja de cálculo activa.
+ * Es el activador fundamental que escucha las ediciones en PROFILES, pestañas de psicólogas (MATCHES [nombre]),
+ * REVISIÓN MARÍA, etc., y dispara la resolución de links, creación de slots, colores y validaciones.
+ * Borra cualquier trigger previo de esta misma función para evitar duplicados.
+ */
+function instalarTriggerOnEditInstallable() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    Logger.log("❌ No se pudo obtener la hoja de cálculo activa para instalar onEditInstallable.");
+    return;
+  }
+
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "onEditInstallable") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  ScriptApp.newTrigger("onEditInstallable")
+    .forSpreadsheet(ss)
+    .onEdit()
+    .create();
+
+  Logger.log("✅ Disparador instalable 'onEditInstallable' configurado exitosamente para la hoja de cálculo.");
+}
+
+/**
+ * Instala todos los disparadores automáticos esenciales del sistema:
+ * 1. onEditInstallable: Disparador de edición en tiempo real (PROFILES, MATCHES psicólogas, REVISIÓN MARÍA, etc.).
+ * 2. REVISIÓN MARÍA: cada 1 hora (24 corridas/día = ~4 min/día).
+ * 3. Alertas 15 días: 1 vez al día a las 6 AM.
+ * Borra cualquier duplicado previo antes de crear cada activador.
  */
 function instalarTodosLosTriggers() {
+  instalarTriggerOnEditInstallable();
   instalarTriggerRevisionMaria(1);
   instalarTriggerAlertas15DiasMatches();
+
+  // Asegurar también onEditClaude si está definido en el proyecto
   try {
-    SpreadsheetApp.getActiveSpreadsheet().toast("Disparadores optimizados instalados (Revisión María cada 1 hora, Alertas 15d diario). Presupuesto protegido.", "Triggers Configurados", 5);
+    if (typeof onEditClaude === "function") {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      if (ss) {
+        var triggers = ScriptApp.getProjectTriggers();
+        for (var i = 0; i < triggers.length; i++) {
+          if (triggers[i].getHandlerFunction() === "onEditClaude") {
+            ScriptApp.deleteTrigger(triggers[i]);
+          }
+        }
+        ScriptApp.newTrigger("onEditClaude").forSpreadsheet(ss).onEdit().create();
+        Logger.log("✅ Disparador instalable 'onEditClaude' configurado exitosamente.");
+      }
+    }
+  } catch (cErr) {
+    Logger.log("Aviso verificando onEditClaude: " + cErr.message);
+  }
+
+  try {
+    SpreadsheetApp.getActiveSpreadsheet().toast("Disparadores automáticos instalados (onEditInstallable, Revisión María cada 1h, Alertas 15d diario).", "Triggers Configurados", 6);
   } catch (e) {}
 }
 
@@ -3432,6 +3481,7 @@ function onOpen(e) {
     menu.addItem("⚙️ Normalizar Todas las Pestañas (12 Cols Canónicas)", "reordenarColumnasPsicologasCanonico");
     menu.addItem("➕ Crear Nueva Pestaña de Psicóloga", "promptCrearNuevaPsicologa");
     menu.addItem("⏰ Instalar Disparadores Automáticos (Triggers)", "instalarTodosLosTriggers");
+    menu.addItem("⚡ Instalar Trigger de Edición (onEdit)", "instalarTriggerOnEditInstallable");
     menu.addItem("⏰ Verificar Alertas de 15 Días (CS y Psicólogas)", "actualizarAlertas15DiasMatches");
     menu.addItem("🚨 Verificar Inactividad 15+ Días en Clientes", "verificarInactividad15DiasClientes");
     menu.addSeparator();
