@@ -599,3 +599,27 @@ async def calendly_webhook(
 
     return {"status": "success", "result": result}
 
+
+@router.post("/calendly/sync")
+async def calendly_poll_sync(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint de sondeo (polling) activo para sincronizar entrevistas de Calendly:
+    Permite consultar directamente a la API de Calendly eventos recientes o un evento específico por UUID.
+    Útil cuando los webhooks automáticos de Calendly no están activos por restricciones del plan.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    limit = body.get("limit", 5)
+    event_uuid = body.get("event_uuid")
+
+    from app.services.calendly_sync import poll_calendly_scheduled_events
+    result = await poll_calendly_scheduled_events(db, limit=limit, event_uuid=event_uuid)
+    return result
+
+

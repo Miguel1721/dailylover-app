@@ -536,7 +536,8 @@ def append_profile_to_profiles_tab(person_data: Dict[str, Any], spreadsheet_id: 
         if crm_id:
             clean_cid = str(crm_id).strip()
             crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{clean_cid}/"
-            fullname_cell = f'=HYPERLINK("{crm_url}", "{name}")'
+            # Locale español requiere punto y coma (;) como separador en fórmulas
+            fullname_cell = f'=HYPERLINK("{crm_url}"; "{name}")'
         else:
             fullname_cell = name
 
@@ -559,11 +560,11 @@ def append_profile_to_profiles_tab(person_data: Dict[str, Any], spreadsheet_id: 
             ""   # SLOTS CREADOS vacío
         ]
 
-        client.spreadsheets().values().append(
+        # Escritura determinística directa en las columnas A:F de target_row
+        client.spreadsheets().values().update(
             spreadsheetId=sheet_id,
-            range="PROFILES!A:F",
+            range=f"PROFILES!A{target_row}:F{target_row}",
             valueInputOption="USER_ENTERED",
-            insertDataOption="INSERT_ROWS",
             body={"values": [row_values]}
         ).execute()
 

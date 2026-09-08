@@ -274,3 +274,102 @@ async def process_calendly_interview_completed(
             "status": "error",
             "reason": result.get("error")
         }
+
+
+CALENDLY_USER_URI = "https://api.calendly.com/users/cba1f544-e8d9-4a59-a31e-65c16371eae0"
+
+
+async def poll_calendly_scheduled_events(
+    db: AsyncSession,
+    limit: int = 5,
+    event_uuid: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Consulta la API de Calendly (Polling) para procesar eventos recientes o un evento específico:
+    1. Si se provee event_uuid, consulta ese evento directamente.
+    2. Si no, consulta los eventos activos ordenados por start_time.
+    3. Para cada evento, obtiene sus invitados (invitees), extrae Q&A y procesa la inserción en PROFILES.
+    """
+    import urllib.request
+    import json
+    from app.config import get_settings
+
+    settings = get_settings()
+    token = settings.calendly_api_token or os.environ.get("CALENDLY_API_TOKEN")
+    if not token:
+        return {"status": "error", "message": "CALENDLY_API_TOKEN no configurado"}
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Content-Type": "application/json"
+    }
+
+    results = []
+
+    try:
+        events_to_process = []
+        if event_uuid:
+            clean_uuid = event_uuid.split("/")[-1]
+            url = f"https://api.calendly.com/scheduled_events/{clean_uuid}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+                if data.get("resource"):
+                    events_to_process.append(data["resource"])
+        else:
+            url = f"https://api.calendly.com/scheduled_events?user={CALENDLY_USER_URI}&status=active&count={limit}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+                events_to_process = data.get("collection", [])
+
+        logger.info(f"Calendly Polling: {len(events_to_process)} evento(s) a revisar.")
+
+        for ev in events_to_process:
+            ev_uri = ev.get("uri", "")
+            ev_uuid = ev_uri.split("/")[-1] if ev_uri else ""
+            if not ev_uuid:
+                continue
+
+            # Obtener los invitados
+            inv_url = f"https://api.calendly.com/scheduled_events/{ev_uuid}/invitees"
+            inv_req = urllib.request.Request(inv_url, headers=headers)
+            with urllib.request.urlopen(inv_req, timeout=15) as inv_resp:
+                inv_data = json.loads(inv_resp.read().decode())
+                invitees = inv_data.get("collection", [])
+
+            for inv in invitees:
+                payload = {
+                    "event": "invitee.created",
+                    "payload": {
+                        "event_type": {"name": ev.get("name")},
+                        "event": ev_uri,
+                        "name": inv.get("name"),
+                        "email": inv.get("email"),
+                        "status": inv.get("status"),
+                        "start_time": ev.get("start_time"),
+                        "questions_and_answers": inv.get("questions_and_answers", [])
+                    }
+                }
+                res = await process_calendly_interview_completed(payload, db)
+                results.append({
+                    "event_uuid": ev_uuid,
+                    "invitee_name": inv.get("name"),
+                    "result": res
+                })
+
+        return {
+            "status": "success",
+            "total_events_checked": len(events_to_process),
+            "processed": results
+        }
+
+    except Exception as e:
+        logger.error(f"Error durante polling de Calendly: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "processed": results
+        }
+
