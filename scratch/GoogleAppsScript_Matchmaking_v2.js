@@ -5669,6 +5669,10 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   var sumAssigned = 0, sumProcessed = 0, sumGap = 0;
   var sumNoAprobados = 0, sumTroubleOnly = 0, sumNoHayGente = 0; // NUEVO
 
+  // Cambio 13: Forzar formato numérico plano ("0") en todas las columnas de conteo de la tabla
+  sheet.getRange(10, 2, psychologistsData.length + 1, 9).setNumberFormat("0");
+  sheet.getRange(10, 15, psychologistsData.length + 1, 3).setNumberFormat("0");
+
   // Escribir datos de la Tabla Unificada
   for (var rIdx = 0; rIdx < psychologistsData.length; rIdx++) {
     var pData = psychologistsData[rIdx];
@@ -5689,15 +5693,15 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sumNoHayGente += pData.noHayGente;   // NUEVO
 
     sheet.getRange(rowNum, 1).setValue(pData.name).setFontWeight("bold");
-    sheet.getRange(rowNum, 2).setValue(pData.totalSlots).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 3).setValue(pData.listos).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 4).setValue(pData.hechos).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 5).setValue(pData.aprobados).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 6).setValue(pData.trouble).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 7).setValue(pData.refunds).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 8).setValue(pData.assigned).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 9).setValue(pData.processed).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 10).setValue(pData.gap).setFontWeight("bold").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 2).setValue(pData.totalSlots).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 3).setValue(pData.listos).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 4).setValue(pData.hechos).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 5).setValue(pData.aprobados).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 6).setValue(pData.trouble).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 7).setValue(pData.refunds).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 8).setValue(pData.assigned).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 9).setValue(pData.processed).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 10).setValue(pData.gap).setFontWeight("bold").setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 11).setValue(pData.eficiencia + "%").setFontWeight("bold").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 12).setValue("#" + rankingNum).setFontWeight("bold").setHorizontalAlignment("center");
 
@@ -5725,10 +5729,10 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
       obsCell.setFontColor("#888888").setFontWeight("normal");
     }
 
-    // NUEVO: columnas 15-19
-    sheet.getRange(rowNum, 15).setValue(pData.noAprobados).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 16).setValue(pData.troubleOnly).setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 17).setValue(pData.noHayGente).setHorizontalAlignment("center");
+    // NUEVO: columnas 15-19 (con formato numérico plano - Cambio 13)
+    sheet.getRange(rowNum, 15).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 16).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 17).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 18).setValue(pData.fechaEnBlanco).setHorizontalAlignment("center");
 
     var estadoCell = sheet.getRange(rowNum, 19);
@@ -5750,15 +5754,15 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   var teamNivel = totalEficiencia >= 60 ? "Alto" : totalEficiencia >= 20 ? "Medio" : "Bajo";
 
   sheet.getRange(totalRowUnified, 1).setValue("TOTAL EQUIPO").setFontWeight("bold").setBackground("#E8EAED");
-  sheet.getRange(totalRowUnified, 2).setValue(sumSlots).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 3).setValue(sumListos).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 4).setValue(sumHechos).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 5).setValue(sumAprobados).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 6).setValue(sumTrouble).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 7).setValue(sumRefunds).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 8).setValue(sumAssigned).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 9).setValue(sumProcessed).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 10).setValue(sumGap).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 2).setValue(sumSlots).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 3).setValue(sumListos).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 4).setValue(sumHechos).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 5).setValue(sumAprobados).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 6).setValue(sumTrouble).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 7).setValue(sumRefunds).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 8).setValue(sumAssigned).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 9).setValue(sumProcessed).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 10).setValue(sumGap).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   sheet.getRange(totalRowUnified, 11).setValue(totalEficiencia + "%").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   sheet.getRange(totalRowUnified, 12).setValue("-").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   
@@ -5770,9 +5774,9 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
 
   var teamObsStatus = sumGap === 0 ? "✅ Equipo al día" : "⚠️ " + sumGap + " sin trabajar";
   sheet.getRange(totalRowUnified, 14).setValue(teamObsStatus).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 15).setValue(sumNoAprobados).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 16).setValue(sumTroubleOnly).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 17).setValue(sumNoHayGente).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 15).setValue(sumNoAprobados).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 16).setValue(sumTroubleOnly).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 17).setValue(sumNoHayGente).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   sheet.getRange(totalRowUnified, 18).setValue("-").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   var teamEstado = sumGap === 0 ? "Al día" : "Con brecha pendiente";
   sheet.getRange(totalRowUnified, 19).setValue(teamEstado).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
@@ -8129,7 +8133,7 @@ function agregarGraficoAprobadosPorPsicologa() {
     .setChartType(Charts.ChartType.BAR)
     .addRange(sheet.getRange(10, 1, lastDataRow - 9, 1))
     .addRange(sheet.getRange(10, 5, lastDataRow - 9, 1))
-    .setPosition(chartAnchorRow, 1, 0, 0)
+    .setPosition(9, 21, 0, 0) // Cambio 14: Columna U (col 21), fila 9 para no tapar Tablas 2-5
     .setOption("title", "Matches Aprobados por Psicóloga")
     .setOption("legend", "none")
     .setOption("colors", ["#961500"])
