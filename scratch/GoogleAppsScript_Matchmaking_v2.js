@@ -3470,6 +3470,7 @@ function onOpen(e) {
       menu.addItem("🔄 Reconstruir REVISIÓN MARÍA (A Demanda)", "reconstruirRevisionMaria");
       menu.addItem("Generar 🔒 Panel de Supervisión María", "generarPanelSupervisionMaria");
       menu.addItem("🔄 Recalcular Supervisión Con Filtro", "recalcularSupervisionConFiltro");
+      menu.addItem("⏰ Instalar Trigger Diario Supervisión (5 AM)", "instalarTriggerPanelSupervisionDiario");
       menu.addItem("🔓 Desbloquear Fila Cruzada (Solo María)", "desbloquearFilaCruzada");
       menu.addItem("Proteger ⚙️ CONFIG ESTADOS (Solo María)", "protegerConfigEstados");
       menu.addSeparator();
@@ -5305,20 +5306,23 @@ function recalcularSupervisionConFiltro() {
  * además de los 5 análisis ejecutivos avanzados (Embudo, Tiempo Aprobación, Calidad, Déficit, Refunds).
  * Solo puede ser ejecutada por María (CONFIG.MARIA_EMAIL).
  */
-function generarPanelSupervisionMaria(customDesde, customHasta) {
+function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mariaEmail = (CONFIG.MARIA_EMAIL || "").toLowerCase().trim();
 
   // Control de Acceso Estricto: Si no es María quien ejecuta, denegar acceso inmediatamente
-  var activeEmail = "";
-  try {
-    activeEmail = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
-  } catch (e) {}
+  // (se omite SOLO cuando llama el trigger diario automático, isAutomatedRun = true)
+  if (!isAutomatedRun) {
+    var activeEmail = "";
+    try {
+      activeEmail = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
+    } catch (e) {}
 
-  if (activeEmail && mariaEmail && activeEmail !== mariaEmail) {
-    SpreadsheetApp.getActiveSpreadsheet().toast("⛔ Acceso denegado: Esta función es de uso exclusivo para María.", "No Autorizado", 6);
-    Logger.log("⛔ INTENTO NO AUTORIZADO de generar panel de María por: " + activeEmail);
-    return;
+    if (activeEmail && mariaEmail && activeEmail !== mariaEmail) {
+      SpreadsheetApp.getActiveSpreadsheet().toast("⛔ Acceso denegado: Esta función es de uso exclusivo para María.", "No Autorizado", 6);
+      Logger.log("⛔ INTENTO NO AUTORIZADO de generar panel de María por: " + activeEmail);
+      return;
+    }
   }
 
   var sheetName = "🔒 SUPERVISIÓN MARÍA";
@@ -5343,7 +5347,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
   }
 
   // 1. Configurar Encabezado Principal (Estilo Premium Wine Red) - Abarca columnas A a N (14 cols)
-  sheet.getRange("A1:N1").merge()
+  sheet.getRange("A1:S1").merge()
     .setValue("👑 DAILY LOVER — PANEL PRIVADO DE SUPERVISIÓN MPS (DIRECCIÓN)")
     .setFontWeight("bold")
     .setFontSize(14)
@@ -5355,7 +5359,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
     ? (" | 📅 Filtro Activo: " + (dtDesde ? Utilities.formatDate(dtDesde, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Inicio") + " a " + (dtHasta ? Utilities.formatDate(dtHasta, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Hoy"))
     : " | 📅 Modo: Histórico Completo";
 
-  sheet.getRange("A2:N2").merge()
+  sheet.getRange("A2:S2").merge()
     .setValue("Actualizado automáticamente: " + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm:ss") + filterText + " | Entorno: SSOT Matchmaking")
     .setFontSize(9)
     .setFontStyle("italic")
@@ -5477,7 +5481,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
     .setHorizontalAlignment("center");
 
   // ─── 5. TABLA 1 UNIFICADA: ACTIVIDAD, CARGA OPERATIVA Y BRECHA POR PSICÓLOGA ──
-  sheet.getRange("A8:N8").merge()
+  sheet.getRange("A8:S8").merge()
     .setValue("📊 TABLA 1 UNIFICADA: ACTIVIDAD, CARGA OPERATIVA Y EVALUACIÓN CLÍNICA POR PSICÓLOGA")
     .setFontWeight("bold")
     .setBackground("#961500")
@@ -5486,7 +5490,8 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
   var masterHeaders = [
     "Psicóloga", "Total Slots", "Listos Match", "Hechos", "Aprobados", "Trouble/Rechazo", "Refunds",
     "Asignados en PROFILES", "Asignados en su MATCHES", "Brecha (sin trabajar)", "Eficiencia (Aprob/Slots)",
-    "Ranking", "Nivel de Rendimiento", "Observaciones/Estado"
+    "Ranking", "Nivel de Rendimiento", "Observaciones/Estado",
+    "Matches no Aprobados", "Trouble", "No hay gente", "Fecha en blanco", "ESTADO"
   ];
 
   for (var h = 0; h < masterHeaders.length; h++) {
@@ -5502,12 +5507,14 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
   }
 
   var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
+  var profileDateByClient = {}; // NUEVO: fecha de PROFILES por cliente
   if (profSheet && profSheet.getLastRow() > 1) {
     var profHeaders = getSheetHeaders(profSheet);
     var pNameCol = profHeaders["FULLNAME"] || profHeaders["FULL NAME"] || profHeaders["NOMBRE"] || 2;
     var pRespCol = profHeaders["RESPONSABLE"] || profHeaders["PSICOLOGA"] || 4;
+    var pFechaCol = profHeaders["FECHA"] || 3; // NUEVO
     var profLastRow = profSheet.getLastRow();
-    var profData = profSheet.getRange(2, 1, profLastRow - 1, Math.max(pNameCol, pRespCol)).getValues();
+    var profData = profSheet.getRange(2, 1, profLastRow - 1, Math.max(pNameCol, pRespCol, pFechaCol)).getValues();
 
     for (var pr = 0; pr < profData.length; pr++) {
       var clientRaw = (profData[pr][pNameCol - 1] || "").toString().trim();
@@ -5518,6 +5525,9 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
       if (normPsyc && assignedClientsByPsyc[normPsyc]) {
         var cleanClient = clientRaw.toLowerCase().replace(/\s+/g, " ");
         assignedClientsByPsyc[normPsyc][cleanClient] = true;
+
+        var fechaRaw = profData[pr][pFechaCol - 1]; // NUEVO
+        if (fechaRaw) profileDateByClient[cleanClient] = fechaRaw; // NUEVO
       }
     }
   }
@@ -5529,6 +5539,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
     var pName = psycList[p];
     var pSheet = findPsychologistSheet(pName);
     var totalSlots = 0, listos = 0, hechos = 0, aprobados = 0, trouble = 0, refunds = 0;
+    var noAprobados = 0, troubleOnly = 0, noHayGente = 0; // NUEVO
     var workedClientsSet = {};
 
     if (pSheet && pSheet.getLastRow() > 1) {
@@ -5556,8 +5567,13 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
         if (sVal.indexOf("LISTO") >= 0 || sVal.indexOf("LLENAR") >= 0) listos++;
         else if (sVal === "HECHO" || sVal === "HECHO POR MAPE") hechos++;
         else if (sVal === "APROBADO") aprobados++;
-        else if (sVal.indexOf("TROUBLE") >= 0 || sVal.indexOf("NOT APPROVED") >= 0 || sVal.indexOf("DESCALIFICADO") >= 0) trouble++;
+        else if (sVal.indexOf("TROUBLE") >= 0 || sVal.indexOf("NOT APPROVED") >= 0 || sVal.indexOf("DESCALIFICADO") >= 0) {
+          trouble++; // se mantiene igual que antes (columna "Trouble/Rechazo" combinada no cambia)
+          if (sVal.indexOf("NOT APPROVED") >= 0) noAprobados++;      // NUEVO
+          else if (sVal.indexOf("TROUBLE") >= 0) troubleOnly++;      // NUEVO
+        }
         else if (sVal === "REFUND") refunds++;
+        else if (sVal === "NO HAY GENTE") noHayGente++; // NUEVO
 
         if (pAName.toLowerCase() !== "listo para match" && pAName.indexOf("...") === -1) {
           workedClientsSet[pAName.toLowerCase().replace(/\s+/g, " ")] = true;
@@ -5569,10 +5585,19 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
     var assignedNames = Object.keys(assignedObj);
     var assignedCount = assignedNames.length;
     var processedCount = 0;
+    var oldestPendingDate = null; // NUEVO
 
     for (var a = 0; a < assignedNames.length; a++) {
       if (workedClientsSet[assignedNames[a]]) {
         processedCount++;
+      } else {
+        var pendingDateRaw = profileDateByClient[assignedNames[a]]; // NUEVO
+        if (pendingDateRaw) {
+          var pendingDateObj = parseFechaSupervision(pendingDateRaw);
+          if (pendingDateObj && (!oldestPendingDate || pendingDateObj < oldestPendingDate)) {
+            oldestPendingDate = pendingDateObj;
+          }
+        }
       }
     }
 
@@ -5598,6 +5623,18 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
       observaciones = "No hay gente";
     }
 
+    // NUEVO: ESTADO según brecha (umbrales acordados con María)
+    var estadoPsic = "Al día";
+    if (totalSlots === 0 && assignedCount === 0) {
+      estadoPsic = "Sin actividad";
+    } else if (gap === 0) {
+      estadoPsic = "Al día";
+    } else if (gap <= 5) {
+      estadoPsic = "Intermedio";
+    } else {
+      estadoPsic = "Atrasado";
+    }
+
     psychologistsData.push({
       name: pName,
       totalSlots: totalSlots,
@@ -5611,7 +5648,12 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
       gap: gap,
       eficiencia: eficienciaNum,
       nivel: nivelRendimiento,
-      observaciones: observaciones
+      observaciones: observaciones,
+      noAprobados: noAprobados,     // NUEVO
+      troubleOnly: troubleOnly,     // NUEVO
+      noHayGente: noHayGente,       // NUEVO
+      fechaEnBlanco: oldestPendingDate ? Utilities.formatDate(oldestPendingDate, CONFIG.TIMEZONE, "yyyy-MM-dd") : "-", // NUEVO
+      estado: estadoPsic            // NUEVO
     });
   }
 
@@ -5625,6 +5667,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
   // Totales acumulados
   var sumSlots = 0, sumListos = 0, sumHechos = 0, sumAprobados = 0, sumTrouble = 0, sumRefunds = 0;
   var sumAssigned = 0, sumProcessed = 0, sumGap = 0;
+  var sumNoAprobados = 0, sumTroubleOnly = 0, sumNoHayGente = 0; // NUEVO
 
   // Escribir datos de la Tabla Unificada
   for (var rIdx = 0; rIdx < psychologistsData.length; rIdx++) {
@@ -5641,6 +5684,9 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
     sumAssigned += pData.assigned;
     sumProcessed += pData.processed;
     sumGap += pData.gap;
+    sumNoAprobados += pData.noAprobados; // NUEVO
+    sumTroubleOnly += pData.troubleOnly; // NUEVO
+    sumNoHayGente += pData.noHayGente;   // NUEVO
 
     sheet.getRange(rowNum, 1).setValue(pData.name).setFontWeight("bold");
     sheet.getRange(rowNum, 2).setValue(pData.totalSlots).setHorizontalAlignment("center");
@@ -5678,6 +5724,24 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
     } else {
       obsCell.setFontColor("#888888").setFontWeight("normal");
     }
+
+    // NUEVO: columnas 15-19
+    sheet.getRange(rowNum, 15).setValue(pData.noAprobados).setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 16).setValue(pData.troubleOnly).setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 17).setValue(pData.noHayGente).setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 18).setValue(pData.fechaEnBlanco).setHorizontalAlignment("center");
+
+    var estadoCell = sheet.getRange(rowNum, 19);
+    estadoCell.setValue(pData.estado).setFontWeight("bold").setHorizontalAlignment("center");
+    if (pData.estado === "Al día") {
+      estadoCell.setBackground("#D9EAD3").setFontColor("#274E13");
+    } else if (pData.estado === "Intermedio") {
+      estadoCell.setBackground("#FFF2CC").setFontColor("#7F6000");
+    } else if (pData.estado === "Atrasado") {
+      estadoCell.setBackground("#F4CCCC").setFontColor("#961500");
+    } else {
+      estadoCell.setBackground("#EFEFEF").setFontColor("#666666");
+    }
   }
 
   // Fila TOTAL EQUIPO
@@ -5706,6 +5770,12 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
 
   var teamObsStatus = sumGap === 0 ? "✅ Equipo al día" : "⚠️ " + sumGap + " sin trabajar";
   sheet.getRange(totalRowUnified, 14).setValue(teamObsStatus).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 15).setValue(sumNoAprobados).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 16).setValue(sumTroubleOnly).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 17).setValue(sumNoHayGente).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  sheet.getRange(totalRowUnified, 18).setValue("-").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+  var teamEstado = sumGap === 0 ? "Al día" : "Con brecha pendiente";
+  sheet.getRange(totalRowUnified, 19).setValue(teamEstado).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
 
   // ─── 6. TABLA 2: EMBUDO DE CONVERSIÓN END-TO-END (6 ETAPAS) ─────────────────
   var startRowT2 = totalRowUnified + 2;
@@ -5894,7 +5964,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta) {
   }
 
   // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a N)
-  var colWidths = [125, 95, 95, 80, 90, 115, 80, 140, 140, 110, 105, 75, 120, 140];
+  var colWidths = [125, 95, 95, 80, 90, 115, 80, 140, 140, 110, 105, 75, 120, 140, 110, 80, 95, 110, 110];
   for (var cw = 0; cw < colWidths.length; cw++) {
     sheet.setColumnWidth(cw + 1, colWidths[cw]);
   }
@@ -7993,3 +8063,77 @@ function promptCrearNuevaPsicologa() {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+// 15. AUTOMATIZACIÓN DIARIA (5 AM) Y GRÁFICO DE SUPERVISIÓN MPS
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * NUEVO: Wrapper que llama el trigger diario (5 AM). Regenera el panel
+ * sin el bloqueo de acceso exclusivo de María (que solo aplica a ejecución manual)
+ * y actualiza el gráfico de barras.
+ */
+function actualizarPanelSupervisionDiario() {
+  generarPanelSupervisionMaria(null, null, true);
+  agregarGraficoAprobadosPorPsicologa();
+}
+
+/**
+ * NUEVO: Instala el disparador diario a las 5 AM (hora Bogotá) que actualiza
+ * el Panel de Supervisión MPS automáticamente. Correr UNA VEZ manualmente
+ * desde el editor de Apps Script (o desde el menú) para activarlo.
+ */
+function instalarTriggerPanelSupervisionDiario() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "actualizarPanelSupervisionDiario") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  ScriptApp.newTrigger("actualizarPanelSupervisionDiario")
+    .timeBased()
+    .atHour(5)
+    .everyDays(1)
+    .inTimezone(CONFIG.TIMEZONE)
+    .create();
+
+  Logger.log("✅ Disparador diario del Panel de Supervisión MPS configurado para las 5:00 AM.");
+  SpreadsheetApp.getActiveSpreadsheet().toast("Panel de Supervisión se actualizará solo, todos los días a las 5 AM.", "Trigger Instalado", 6);
+}
+
+/**
+ * NUEVO: Agrega/actualiza un gráfico de barras simple ("Matches Aprobados por Psicóloga")
+ * debajo de la Tabla 1 Unificada del Panel de Supervisión MPS.
+ */
+function agregarGraficoAprobadosPorPsicologa() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("🔒 SUPERVISIÓN MARÍA");
+  if (!sheet) return;
+
+  var charts = sheet.getCharts();
+  for (var c = 0; c < charts.length; c++) {
+    if (charts[c].getOptions().get("title") === "Matches Aprobados por Psicóloga") {
+      sheet.removeChart(charts[c]);
+    }
+  }
+
+  var lastDataRow = 9;
+  while (sheet.getRange(lastDataRow + 1, 1).getValue() !== "" && sheet.getRange(lastDataRow + 1, 1).getValue() !== "TOTAL EQUIPO") {
+    lastDataRow++;
+  }
+  if (lastDataRow < 10) return;
+
+  var chartAnchorRow = lastDataRow + 4;
+
+  var chart = sheet.newChart()
+    .setChartType(Charts.ChartType.BAR)
+    .addRange(sheet.getRange(10, 1, lastDataRow - 9, 1))
+    .addRange(sheet.getRange(10, 5, lastDataRow - 9, 1))
+    .setPosition(chartAnchorRow, 1, 0, 0)
+    .setOption("title", "Matches Aprobados por Psicóloga")
+    .setOption("legend", "none")
+    .setOption("colors", ["#961500"])
+    .build();
+
+  sheet.insertChart(chart);
+}
