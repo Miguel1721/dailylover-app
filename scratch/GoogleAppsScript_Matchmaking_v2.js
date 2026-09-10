@@ -5588,7 +5588,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     ? (" | 📅 Filtro Activo: " + (dtDesde ? Utilities.formatDate(dtDesde, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Inicio") + " a " + (dtHasta ? Utilities.formatDate(dtHasta, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Hoy"))
     : " | 📅 Modo: Histórico Completo";
 
-  sheet.getRange("A2:N2").merge()
+  sheet.getRange("A2:L2").merge()
     .setValue("Actualizado automáticamente: " + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm:ss") + filterText + " | Entorno: SSOT Matchmaking")
     .setFontSize(9)
     .setFontStyle("italic")
@@ -5597,7 +5597,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     .setHorizontalAlignment("left");
 
   // 3. Barra de Filtro de Fechas + botón Recalcular (Fila 3 - fondo gris clarito #F5F5F5, todo a la izquierda)
-  sheet.getRange("A3:N3").setBackground("#F5F5F5");
+  sheet.getRange("A3:L3").setBackground("#F5F5F5");
 
   sheet.getRange("A3:B3").merge()
     .setValue("📅 Filtro de Fechas:")
@@ -5681,7 +5681,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   sheet.setRowHeight(4, 15);
 
   // 6. Título de la Tabla 1 (Fila 5)
-  sheet.getRange("A5:N5").merge()
+  sheet.getRange("A5:L5").merge()
     .setValue("Rendimiento Matchmaker")
     .setFontWeight("bold")
     .setFontSize(12)
@@ -5689,17 +5689,35 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     .setFontColor("#FFFFFF")
     .setHorizontalAlignment("left");
 
-  // Encabezados de la Tabla 1 (Fila 6) - 14 columnas, angostas, en 2 líneas (Cambio 29)
+  // Cambio 30: Fila 6 - banner de agrupación por bloques (GESTIÓN DE MATCHES / GESTIÓN DE PERFILES)
+  sheet.getRange(6, 2, 1, 6).merge() // Columnas B-G: Asignados, Hechos, Aprobados, No aprobados, Trouble, No hay gente
+    .setValue("GESTIÓN DE MATCHES")
+    .setFontWeight("bold")
+    .setFontSize(9)
+    .setBackground("#4A2545")
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center");
+
+  sheet.getRange(6, 8, 1, 3).merge() // Columnas H-J: Sin trabajar, Fecha en blanco, Listos Match
+    .setValue("GESTIÓN DE PERFILES")
+    .setFontWeight("bold")
+    .setFontSize(9)
+    .setBackground("#1B365D")
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center");
+
+  sheet.setRowHeight(6, 22);
+
+  // Encabezados de la Tabla 1 (Fila 7) - 12 columnas, orden final agrupado (Cambio 30)
   var masterHeaders = [
-    "Psicóloga", "Listos Match", "Hechos", "Aprobados", "Trouble", "Refunds",
-    "Asignados en PROFILES", "Asignados en su MATCHES", "Sin trabajar",
-    "Matches no Aprobados", "Trouble", "No hay gente", "Fecha en blanco", "ESTADO"
+    "Psicóloga", "Asignados", "Hechos", "Aprobados", "No aprobados", "Trouble", "No hay gente",
+    "Sin trabajar", "Fecha en blanco", "Listos Match", "Refunds", "ESTADO"
   ];
 
   for (var h = 0; h < masterHeaders.length; h++) {
-    sheet.getRange(6, h + 1).setValue(masterHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center").setWrap(true);
+    sheet.getRange(7, h + 1).setValue(masterHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center").setWrap(true);
   }
-  sheet.setRowHeight(6, 42); // más alta para acomodar 2 líneas de texto
+  sheet.setRowHeight(7, 42); // más alta para acomodar 2 líneas de texto
 
   var psycList = obtenerPsicologasValidas();
   var excludedFromPanel = {
@@ -5883,10 +5901,10 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   var sumAssigned = 0, sumProcessed = 0, sumGap = 0;
   var sumNoAprobados = 0, sumTroubleOnly = 0, sumNoHayGente = 0;
 
-  // Escribir datos de la Tabla Rendimiento Matchmaker (14 columnas - Cambio 29)
+  // Escribir datos de la Tabla Rendimiento Matchmaker (12 columnas agrupadas - Cambio 30)
   for (var rIdx = 0; rIdx < psychologistsData.length; rIdx++) {
     var pData = psychologistsData[rIdx];
-    var rowNum = 7 + rIdx;
+    var rowNum = 8 + rIdx; // Cambio 30: la fila de banner de grupo corrió los encabezados a la fila 7 y los datos a la 8
 
     sumSlots += pData.totalSlots;
     sumListos += pData.listos;
@@ -5902,23 +5920,21 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sumNoHayGente += pData.noHayGente;
 
     sheet.getRange(rowNum, 1).setValue(pData.name).setFontWeight("bold");
-    sheet.getRange(rowNum, 2).setValue(pData.listos).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 2).setValue(pData.assigned).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 3).setValue(pData.hechos).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 4).setValue(pData.aprobados).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 5).setValue(pData.trouble).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 6).setValue(pData.refunds).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 7).setValue(pData.assigned).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 8).setValue(pData.processed).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 9).setValue(pData.gap).setFontWeight("bold").setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 10).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 11).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 12).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 13).setNumberFormat("@").setValue(pData.fechaEnBlanco).setHorizontalAlignment("center"); // Cambio 28: forzar texto plano para que no se autoconvierta a fecha
+    sheet.getRange(rowNum, 5).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 6).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 7).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 8).setValue(pData.gap).setFontWeight("bold").setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 9).setNumberFormat("@").setValue(pData.fechaEnBlanco).setFontSize(8).setHorizontalAlignment("center"); // Cambio 30: letra más chica para que entre sin ensanchar la columna
+    sheet.getRange(rowNum, 10).setValue(pData.listos).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 11).setValue(pData.refunds).setNumberFormat("0").setHorizontalAlignment("center");
 
-    // Cambio 29: columna "Nivel de Rendimiento" eliminada (queda solo ESTADO)
+    // Cambio 30: "Asignados en su MATCHES" y el "Trouble" combinado ya no se muestran (quedó un solo Trouble, el separado)
 
-    // Columna 14: ESTADO (semáforo operativo)
-    var estadoCell = sheet.getRange(rowNum, 14);
+    // Columna 12: ESTADO (semáforo operativo)
+    var estadoCell = sheet.getRange(rowNum, 12);
     estadoCell.setValue(pData.estado).setFontWeight("bold").setHorizontalAlignment("center");
     if (pData.estado === "Al día") {
       estadoCell.setBackground("#D9EAD3").setFontColor("#274E13");
@@ -5931,16 +5947,16 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     }
   }
 
-  // Forzar formato numérico plano ("0") en todas las columnas de conteo (cols 2 a 12 en 14 columnas)
+  // Forzar formato numérico plano ("0") en todas las columnas de conteo (Cambio 30)
   if (psychologistsData.length > 0) {
-    var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 10, 11]; // Cambio 30: renumerado (col 9 es texto, col 12 es ESTADO en texto)
     for (var pnc = 0; pnc < plainNumberCols.length; pnc++) {
-      sheet.getRange(7, plainNumberCols[pnc], psychologistsData.length, 1).setNumberFormat("0");
+      sheet.getRange(8, plainNumberCols[pnc], psychologistsData.length, 1).setNumberFormat("0"); // Cambio 30: datos ahora empiezan en fila 8
     }
   }
 
   // Fila TOTAL EQUIPO: ELIMINADA según feedback de Lina (la tabla pasa a ser de vista individual únicamente).
-  var lastTable1Row = 6 + psychologistsData.length;
+  var lastTable1Row = 7 + psychologistsData.length; // Cambio 30: encabezados ahora en fila 7 (antes 6), por la fila de banner de grupo
 
   // ─── 6. TABLA 2: EMBUDO DE CONVERSIÓN END-TO-END (6 ETAPAS) ─────────────────
   var startRowT2 = lastTable1Row + 2;
@@ -6128,8 +6144,8 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sheet.getRange(rCurRow, 5).setValue(rObj.prio).setHorizontalAlignment("center").setFontWeight("bold");
   }
 
-  // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a N - 14 cols angostas, Cambio 29)
-  var colWidths = [110, 60, 60, 70, 60, 60, 95, 95, 70, 80, 60, 70, 85, 80];
+  // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a L - 12 cols, Cambio 30)
+  var colWidths = [110, 75, 60, 70, 75, 60, 75, 70, 90, 75, 60, 80]; // Cambio 30: 12 columnas reordenadas
   for (var cw = 0; cw < colWidths.length; cw++) {
     sheet.setColumnWidth(cw + 1, colWidths[cw]);
   }
@@ -8362,8 +8378,8 @@ function agregarGraficoAprobadosPorPsicologa() {
   var chart = sheet.newChart()
     .setChartType(Charts.ChartType.BAR)
     .addRange(sheet.getRange(firstDataRow, 1, numRows, 1))
-    .addRange(sheet.getRange(firstDataRow, 4, numRows, 1)) // Columna 4: Aprobados (Cambio 29)
-    .setPosition(5, 16, 0, 0) // Columna P (16), fila 5 — a la derecha de las 14 columnas A a N
+    .addRange(sheet.getRange(firstDataRow, 4, numRows, 1)) // Columna 4: Aprobados (sigue igual en el nuevo orden)
+    .setPosition(5, 14, 0, 0) // Columna N (14), fila 5 — a la derecha de las 12 columnas A a L (Cambio 30)
     .setOption("title", "Matches Aprobados por Psicóloga")
     .setOption("legend", "none")
     .setOption("colors", ["#961500"])
