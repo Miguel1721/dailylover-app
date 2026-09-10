@@ -3673,7 +3673,15 @@ function reordenarColumnasMatchesCanonico() {
     }
   }
 
+  // Cambio 15: Mover '¿REPROGRAMAR?' a su posición canónica (columna 16, antes de FECHA CITA REAL)
+  headers = getSheetHeaders(sheet);
+  var colReprogramar = headers["¿REPROGRAMAR?"] || headers["REPROGRAMAR"];
+  if (colReprogramar && colReprogramar !== 16) {
+    sheet.moveColumns(sheet.getRange(1, colReprogramar), 16);
+  }
+
   // 6. Eliminar columnas vacías sobrantes después de la columna 17
+  headers = getSheetHeaders(sheet);
   var curLastCol = sheet.getLastColumn();
   var maxCols = sheet.getMaxColumns();
   if (maxCols > 17 && curLastCol <= 17) {
@@ -5780,6 +5788,14 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   sheet.getRange(totalRowUnified, 18).setValue("-").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   var teamEstado = sumGap === 0 ? "Al día" : "Con brecha pendiente";
   sheet.getRange(totalRowUnified, 19).setValue(teamEstado).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+
+  // NUEVO: forzar formato numérico plano (no Porcentaje) en las columnas de conteo,
+  // para que no hereden un formato de % de alguna edición anterior de esas celdas.
+  var numFormatRows = totalRowUnified - 10 + 1;
+  var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17];
+  for (var pnc = 0; pnc < plainNumberCols.length; pnc++) {
+    sheet.getRange(10, plainNumberCols[pnc], numFormatRows, 1).setNumberFormat("0");
+  }
 
   // ─── 6. TABLA 2: EMBUDO DE CONVERSIÓN END-TO-END (6 ETAPAS) ─────────────────
   var startRowT2 = totalRowUnified + 2;
@@ -8127,13 +8143,11 @@ function agregarGraficoAprobadosPorPsicologa() {
   }
   if (lastDataRow < 10) return;
 
-  var chartAnchorRow = lastDataRow + 4;
-
   var chart = sheet.newChart()
     .setChartType(Charts.ChartType.BAR)
     .addRange(sheet.getRange(10, 1, lastDataRow - 9, 1))
     .addRange(sheet.getRange(10, 5, lastDataRow - 9, 1))
-    .setPosition(9, 21, 0, 0) // Cambio 14: Columna U (col 21), fila 9 para no tapar Tablas 2-5
+    .setPosition(9, 21, 0, 0) // NUEVO: columna U (21), fila 9 — a la derecha de la tabla, no debajo, para no pisar las Tablas 2-5
     .setOption("title", "Matches Aprobados por Psicóloga")
     .setOption("legend", "none")
     .setOption("colors", ["#961500"])
