@@ -132,6 +132,10 @@ export default function AuditoriaPsicologas() {
   const totalHechos = summary.total_hechos ?? psycList.reduce((acc, p) => acc + (p.hechos || 0), 0)
   const totalTrouble = summary.total_trouble ?? psycList.reduce((acc, p) => acc + (p.trouble || 0), 0)
   const totalRefunds = summary.total_refunds ?? psycList.reduce((acc, p) => acc + (p.refunds || 0), 0)
+  const totalNoAprobados = summary.total_no_aprobados ?? psycList.reduce((acc, p) => acc + (p.no_aprobados || 0), 0)
+  const totalTroubleOnly = summary.total_trouble_only ?? psycList.reduce((acc, p) => acc + (p.trouble_only || 0), 0)
+  const totalNoHayGente = summary.total_no_hay_gente ?? psycList.reduce((acc, p) => acc + (p.no_hay_gente || 0), 0)
+  const teamEstado = summary.team_estado || (totalSlots === 0 && totalAssigned === 0 ? 'Sin actividad' : (totalGap === 0 ? 'Al día' : (totalGap <= 5 ? 'Intermedio' : 'Atrasado')))
 
   const teamEficiencia = totalSlots > 0 ? Math.round((totalAprobados / totalSlots) * 100) : 0
   const teamNivel = teamEficiencia >= 60 ? 'Alto' : teamEficiencia >= 20 ? 'Medio' : 'Bajo'
@@ -291,7 +295,7 @@ export default function AuditoriaPsicologas() {
         </div>
 
         <div className="table-container" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 1250 }}>
+          <table style={{ minWidth: 1500 }}>
             <thead>
               <tr>
                 <th style={{ textAlign: 'center', width: 45 }}>#</th>
@@ -301,13 +305,17 @@ export default function AuditoriaPsicologas() {
                 <th style={{ textAlign: 'center' }}>Hechos</th>
                 <th style={{ textAlign: 'center' }}>Aprobados</th>
                 <th style={{ textAlign: 'center' }}>Trouble/Rechazo</th>
+                <th style={{ textAlign: 'center' }}>Matches no Aprobados</th>
+                <th style={{ textAlign: 'center' }}>Trouble</th>
+                <th style={{ textAlign: 'center' }}>No hay gente</th>
+                <th style={{ textAlign: 'center' }}>Fecha en blanco</th>
                 <th style={{ textAlign: 'center' }}>Refunds</th>
                 <th style={{ textAlign: 'center' }}>Asignados PROFILES</th>
                 <th style={{ textAlign: 'center' }}>Procesados MATCHES</th>
                 <th style={{ textAlign: 'center' }}>Brecha</th>
                 <th style={{ textAlign: 'center' }}>Eficiencia</th>
                 <th style={{ textAlign: 'center' }}>Rendimiento</th>
-                <th style={{ textAlign: 'center', minWidth: 140 }}>Observaciones / Estado</th>
+                <th style={{ textAlign: 'center', minWidth: 140 }}>Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -315,7 +323,6 @@ export default function AuditoriaPsicologas() {
                 const ranking = p.ranking || (idx + 1)
                 const eficiencia = p.eficiencia ?? (p.total_slots > 0 ? Math.round((p.aprobados / p.total_slots) * 100) : 0)
                 const nivel = p.nivel_rendimiento || (eficiencia >= 60 ? 'Alto' : eficiencia >= 20 ? 'Medio' : 'Bajo')
-                const obs = p.observaciones_estado || (p.total_slots === 0 ? 'Descalificado' : (p.trouble > p.aprobados && p.trouble >= 5 ? 'Not Approved' : (p.gap > 5 ? 'No hay gente' : '-')))
                 const isZeroGap = (p.gap || 0) === 0
 
                 return (
@@ -332,6 +339,12 @@ export default function AuditoriaPsicologas() {
                     <td style={{ textAlign: 'center', color: '#2196F3', fontWeight: 600 }}>{p.hechos ?? 0}</td>
                     <td style={{ textAlign: 'center', color: '#4CAF50', fontWeight: 700 }}>{p.aprobados ?? 0}</td>
                     <td style={{ textAlign: 'center', color: (p.trouble ?? 0) > 0 ? '#ff5252' : 'var(--text-muted)' }}>{p.trouble ?? 0}</td>
+                    <td style={{ textAlign: 'center', color: (p.no_aprobados ?? 0) > 0 ? '#ff5252' : 'var(--text-muted)' }}>{p.no_aprobados ?? 0}</td>
+                    <td style={{ textAlign: 'center', color: (p.trouble_only ?? 0) > 0 ? '#ff5252' : 'var(--text-muted)' }}>{p.trouble_only ?? 0}</td>
+                    <td style={{ textAlign: 'center', color: (p.no_hay_gente ?? 0) > 0 ? '#FF9800' : 'var(--text-muted)' }}>{p.no_hay_gente ?? 0}</td>
+                    <td style={{ textAlign: 'center', fontSize: 12, color: p.fecha_en_blanco ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                      {p.fecha_en_blanco ? p.fecha_en_blanco.slice(0, 10) : '—'}
+                    </td>
                     <td style={{ textAlign: 'center', color: (p.refunds ?? 0) > 0 ? '#FF9800' : 'var(--text-muted)' }}>{p.refunds ?? 0}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600 }}>
                       <span className="badge badge-blue" style={{ fontSize: 12, padding: '3px 8px' }}>
@@ -363,15 +376,11 @@ export default function AuditoriaPsicologas() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {obs === 'Descalificado' ? (
-                        <span className="badge badge-red" style={{ fontSize: 11, padding: '3px 8px' }}>Descalificado</span>
-                      ) : obs === 'Not Approved' ? (
-                        <span className="badge" style={{ background: 'rgba(255, 152, 0, 0.2)', color: '#FF9800', fontSize: 11, padding: '3px 8px' }}>Not Approved</span>
-                      ) : obs === 'No hay gente' ? (
-                        <span className="badge badge-yellow" style={{ fontSize: 11, padding: '3px 8px' }}>No hay gente</span>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
-                      )}
+                      {p.estado === 'Al día' && <span className="badge" style={{ background: '#D9EAD3', color: '#274E13' }}>Al día</span>}
+                      {p.estado === 'Intermedio' && <span className="badge" style={{ background: '#FFF2CC', color: '#7F6000' }}>Intermedio</span>}
+                      {p.estado === 'Atrasado' && <span className="badge" style={{ background: '#F4CCCC', color: '#961500' }}>Atrasado</span>}
+                      {p.estado === 'Sin actividad' && <span className="badge" style={{ background: '#EFEFEF', color: '#666666' }}>Sin actividad</span>}
+                      {!p.estado && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>}
                     </td>
                   </tr>
                 )
@@ -386,6 +395,10 @@ export default function AuditoriaPsicologas() {
                 <td style={{ textAlign: 'center', fontSize: 13 }}>{totalHechos}</td>
                 <td style={{ textAlign: 'center', fontSize: 13, color: '#4CAF50' }}>{totalAprobados}</td>
                 <td style={{ textAlign: 'center', fontSize: 13 }}>{totalTrouble}</td>
+                <td style={{ textAlign: 'center', fontSize: 13 }}>{totalNoAprobados}</td>
+                <td style={{ textAlign: 'center', fontSize: 13 }}>{totalTroubleOnly}</td>
+                <td style={{ textAlign: 'center', fontSize: 13 }}>{totalNoHayGente}</td>
+                <td style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>—</td>
                 <td style={{ textAlign: 'center', fontSize: 13 }}>{totalRefunds}</td>
                 <td style={{ textAlign: 'center', fontSize: 13 }}>{totalAssigned}</td>
                 <td style={{ textAlign: 'center', fontSize: 13 }}>{totalProcessed}</td>
@@ -397,9 +410,15 @@ export default function AuditoriaPsicologas() {
                   </span>
                 </td>
                 <td style={{ textAlign: 'center' }}>
-                  <span className={`badge ${totalGap === 0 ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
-                    {totalGap === 0 ? '✅ Al día' : `⚠️ ${totalGap} sin trabajar`}
-                  </span>
+                  {teamEstado === 'Al día' && <span className="badge" style={{ background: '#D9EAD3', color: '#274E13' }}>Al día</span>}
+                  {teamEstado === 'Intermedio' && <span className="badge" style={{ background: '#FFF2CC', color: '#7F6000' }}>Intermedio</span>}
+                  {teamEstado === 'Atrasado' && <span className="badge" style={{ background: '#F4CCCC', color: '#961500' }}>Atrasado</span>}
+                  {teamEstado === 'Sin actividad' && <span className="badge" style={{ background: '#EFEFEF', color: '#666666' }}>Sin actividad</span>}
+                  {!teamEstado && (
+                    <span className={`badge ${totalGap === 0 ? 'badge-green' : 'badge-yellow'}`} style={{ fontSize: 11 }}>
+                      {totalGap === 0 ? 'Al día' : `${totalGap} sin trabajar`}
+                    </span>
+                  )}
                 </td>
               </tr>
             </tfoot>

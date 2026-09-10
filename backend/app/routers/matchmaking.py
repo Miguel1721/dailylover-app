@@ -1443,6 +1443,14 @@ async def update_calendar_date(
 
     await db.execute(text(f"UPDATE scheduled_dates SET {', '.join(updates)} WHERE id = :id"), params)
 
+    # Cambio W4: Reserva confirmada -> actualiza match original a 'CITA RESERVADA'
+    if payload.reservation_confirmed is True and cal_row.match_id:
+        await db.execute(text("""
+            UPDATE operational_matches
+            SET status = 'CITA RESERVADA', updated_at = NOW()
+            WHERE id = :match_id AND status NOT IN ('CITA COMPLETADA', 'CITA RESERVADA')
+        """), {"match_id": cal_row.match_id})
+
     # 1. Cita completada con feedback -> actualiza match original a 'CITA COMPLETADA'
     if payload.had_date and payload.feedback and cal_row.match_id:
         await db.execute(text("""

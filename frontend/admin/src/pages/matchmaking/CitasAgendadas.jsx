@@ -285,6 +285,7 @@ export default function CitasAgendadas() {
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Persona B (Candidato)</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Lugar / Restaurante</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Ciudad</th>
+                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Reserva</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Mensajería WhatsApp</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Reprogramar</th>
                 </tr>
@@ -307,6 +308,23 @@ export default function CitasAgendadas() {
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>
                       {c.city || 'Bogotá'}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleUpdateDate(c.calendar_id, { reservation_confirmed: !c.reservation_confirmed })}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 6,
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: 11,
+                          background: c.reservation_confirmed ? '#B4A7D6' : '#EFEFEF',
+                          color: c.reservation_confirmed ? '#3C1F5C' : '#666666'
+                        }}
+                      >
+                        {c.reservation_confirmed ? '📌 Reservada' : 'Marcar reserva'}
+                      </button>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>

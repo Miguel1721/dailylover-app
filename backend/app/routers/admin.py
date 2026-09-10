@@ -2266,6 +2266,9 @@ async def get_psychologists_performance(
     total_aprobados_team = 0
     total_trouble_team = 0
     total_refunds_team = 0
+    total_no_aprobados_team = 0
+    total_trouble_only_team = 0
+    total_no_hay_gente_team = 0
 
     for p in psychologists_config:
         pkey = p["key"]
@@ -2319,7 +2322,7 @@ async def get_psychologists_performance(
         # Brecha
         gap = max(0, assigned_cnt - processed_cnt)
 
-        # 3. Métricas operativas detalladas (Slots, Listos, Hechos, Aprobados, Trouble, Refunds)
+        # 3. Métricas operativas detalladas (Slots, Listos, Hechos, Aprobados, Trouble, Refunds, No Aprobados, Trouble Only, No Hay Gente)
         slots_query = f"""
             SELECT 
                 COUNT(*) as total_slots,
@@ -2328,7 +2331,10 @@ async def get_psychologists_performance(
                 COUNT(*) FILTER (WHERE status ILIKE '%APROBADO%') as aprobados,
                 COUNT(*) FILTER (WHERE status ILIKE '%TROUBLE%' OR status ILIKE '%NOT APPROVED%' OR status ILIKE '%DESCALIFICADO%' OR status ILIKE '%RECHAZO%') as trouble,
                 COUNT(*) FILTER (WHERE status ILIKE '%REFUND%') as refunds,
-                COUNT(*) FILTER (WHERE observations IS NOT NULL AND length(trim(observations)) > 3) as notes_count
+                COUNT(*) FILTER (WHERE observations IS NOT NULL AND length(trim(observations)) > 3) as notes_count,
+                COUNT(*) FILTER (WHERE status ILIKE '%NOT APPROVED%') as no_aprobados,
+                COUNT(*) FILTER (WHERE status ILIKE '%TROUBLE%') as trouble_only,
+                COUNT(*) FILTER (WHERE status ILIKE '%NO HAY GENTE%') as no_hay_gente
             FROM historical_matches hm
             WHERE ({alias_cond_hm}) {date_filter_matches}
         """
@@ -2341,6 +2347,9 @@ async def get_psychologists_performance(
             trouble_cnt = slot_row[4] or 0
             refunds_cnt = slot_row[5] or 0
             notes_count = slot_row[6] or 0
+            no_aprobados_cnt = slot_row[7] or 0
+            trouble_only_cnt = slot_row[8] or 0
+            no_hay_gente_cnt = slot_row[9] or 0
         except Exception:
             total_slots = 0
             listos_cnt = 0
@@ -2349,6 +2358,9 @@ async def get_psychologists_performance(
             trouble_cnt = 0
             refunds_cnt = 0
             notes_count = 0
+            no_aprobados_cnt = 0
+            trouble_only_cnt = 0
+            no_hay_gente_cnt = 0
 
         # Calificación promedio cliente
         avg_rating_query = f"""
@@ -2361,6 +2373,28 @@ async def get_psychologists_performance(
             avg_rating = avg_rating_res.scalar() or 4.8
         except Exception:
             avg_rating = 4.8
+
+        # Fecha más antigua sin trabajar (fecha en blanco)
+        fecha_en_blanco = None
+        if gap > 0:
+            oldest_query = f"""
+                SELECT MIN(u.created_at)
+                FROM profiles pr
+                JOIN users u ON u.id = pr.user_id
+                WHERE ({alias_cond_prof}) {date_filter_profiles}
+                  AND u.name IS NOT NULL AND TRIM(u.name) != ''
+                  AND LOWER(TRIM(u.name)) NOT IN (
+                    SELECT LOWER(TRIM(om.person_a)) FROM operational_matches om WHERE ({alias_cond_om}) AND om.person_a IS NOT NULL AND TRIM(om.person_a) != ''
+                    UNION
+                    SELECT LOWER(TRIM(hm.person_a)) FROM historical_matches hm WHERE ({alias_cond_hm}) {date_filter_matches} AND hm.person_a IS NOT NULL AND TRIM(hm.person_a) != ''
+                  )
+            """
+            try:
+                oldest_res = (await db.execute(text(oldest_query), combined_params)).scalar()
+                if oldest_res:
+                    fecha_en_blanco = oldest_res.isoformat() if hasattr(oldest_res, "isoformat") else str(oldest_res)
+            except Exception:
+                fecha_en_blanco = None
 
         # Eficiencia (Aprobados / Total Slots)
         eficiencia = round((aprobados_cnt / total_slots * 100.0), 1) if total_slots > 0 else 0.0
@@ -2387,6 +2421,16 @@ async def get_psychologists_performance(
         else:
             observaciones_estado = "-"
 
+        # Estado según brecha (umbrales acordados)
+        if total_slots == 0 and assigned_cnt == 0:
+            estado = "Sin actividad"
+        elif gap == 0:
+            estado = "Al día"
+        elif gap <= 5:
+            estado = "Intermedio"
+        else:
+            estado = "Atrasado"
+
         total_assigned_team += assigned_cnt
         total_processed_team += processed_cnt
         total_gap_team += gap
@@ -2396,6 +2440,9 @@ async def get_psychologists_performance(
         total_aprobados_team += aprobados_cnt
         total_trouble_team += trouble_cnt
         total_refunds_team += refunds_cnt
+        total_no_aprobados_team += no_aprobados_cnt
+        total_trouble_only_team += trouble_only_cnt
+        total_no_hay_gente_team += no_hay_gente_cnt
 
         performance_raw.append({
             "key": pkey,
@@ -2407,6 +2454,11 @@ async def get_psychologists_performance(
             "aprobados": aprobados_cnt,
             "trouble": trouble_cnt,
             "refunds": refunds_cnt,
+            "no_aprobados": no_aprobados_cnt,
+            "trouble_only": trouble_only_cnt,
+            "no_hay_gente": no_hay_gente_cnt,
+            "fecha_en_blanco": fecha_en_blanco,
+            "estado": estado,
             "assigned_clients": assigned_cnt,
             "processed_clients": processed_cnt,
             "gap": gap,
@@ -2550,12 +2602,16 @@ async def get_psychologists_performance(
             "total_aprobados": total_aprobados_team,
             "total_trouble": total_trouble_team,
             "total_refunds": total_refunds_team,
+            "total_no_aprobados": total_no_aprobados_team,
+            "total_trouble_only": total_trouble_only_team,
+            "total_no_hay_gente": total_no_hay_gente_team,
             "total_assigned": total_assigned_team,
             "total_processed": total_processed_team,
             "total_gap": total_gap_team,
             "team_eficiencia": team_eficiencia,
             "team_nivel_rendimiento": team_nivel,
             "team_status": "Al día" if total_gap_team == 0 else f"{total_gap_team} sin trabajar",
+            "team_estado": "Sin actividad" if total_slots_team == 0 and total_assigned_team == 0 else ("Al día" if total_gap_team == 0 else ("Intermedio" if total_gap_team <= 5 else "Atrasado")),
             "start_date": start_date,
             "end_date": end_date,
             "generated_at": datetime.now().isoformat()
