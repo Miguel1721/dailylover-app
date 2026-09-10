@@ -3901,14 +3901,14 @@ function ensureMatchesColumnsAndDropdowns() {
     safeSetDataValidation(sheet.getRange(2, horaColDrop, maxRows - 1, 1), horaRule);
   }
 
-  // Cambio 21: Parte A — Desplegable Sí/No en la columna RESERVA (columna 11)
-  var reservaCol = headers["RESERVA"] || 11;
-  if (reservaCol && maxRows > 1) {
+  // Cambio 21: Desplegable Sí/No en RESERVA
+  var reservaColDrop = headers["RESERVA"] || 11;
+  if (reservaColDrop && maxRows > 1) {
     var reservaRule = SpreadsheetApp.newDataValidation()
       .requireValueInList(["Sí", "No"], true)
       .setAllowInvalid(true)
       .build();
-    safeSetDataValidation(sheet.getRange(2, reservaCol, maxRows - 1, 1), reservaRule);
+    safeSetDataValidation(sheet.getRange(2, reservaColDrop, maxRows - 1, 1), reservaRule);
   }
 
   Logger.log("✅ Columnas de estado, catálogo de RESTAURANTES y desplegables de CIUDAD/PRESUPUESTO/HORA/RESERVA asegurados en MATCHES.");
@@ -4462,9 +4462,9 @@ function getEstadosPorEtapa() {
     }
   }
 
-  // Cambio 21: Asegurar estado 'cita reservada' y su color en Servicio al Cliente
+  // Cambio 21/22: Asegurar estado 'cita reservada' y su color en Servicio al Cliente
   if (!result.COLOR_MAP["CITA RESERVADA"]) {
-    result.COLOR_MAP["CITA RESERVADA"] = "#D9EAD3";
+    result.COLOR_MAP["CITA RESERVADA"] = "#B4A7D6";
   }
   var hasCitaReservada = false;
   for (var k = 0; k < result.SERVICIO_CLIENTE.length; k++) {
@@ -6846,16 +6846,13 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
     updateDependentRestaurantDropdown(sheet, row);
   }
 
-  // ── 5. Cambio 21: Parte B — EDICIÓN EN RESERVA -> MARCAR ESTADO TOTAL = "cita reservada" AUTOMÁTICAMENTE ──
-  if (col === reservaCol) {
-    var rawReserva = (typeof newValue !== "undefined" && newValue !== null && newValue !== "" ? newValue : (sheet.getRange(row, reservaCol).getValue() || "")).toString().trim();
-    var valReserva = rawReserva.toUpperCase();
-    if (valReserva === "SÍ" || valReserva === "SI") {
-      sheet.getRange(row, matchCol).setValue("cita reservada");
-      var colColor = (estadosData.COLOR_MAP && estadosData.COLOR_MAP["CITA RESERVADA"]) ? estadosData.COLOR_MAP["CITA RESERVADA"] : "#D9EAD3";
-      sheet.getRange(row, matchCol).setBackground(colColor);
-      SpreadsheetApp.getActiveSpreadsheet().toast("🍽️ Reserva confirmada ('" + rawReserva + "'). Estado Total actualizado a 'cita reservada'.", "Cita Reservada", 5);
-      Logger.log("✅ Fila " + row + ": RESERVA marcada como '" + rawReserva + "'. Estado Total actualizado automáticamente a 'cita reservada'.");
+  // ── 5. Cambio 21: EDICIÓN EN RESERVA -> MARCAR ESTADO TOTAL COMO "cita reservada" ──
+  var reservaCol = headers["RESERVA"] || 11;
+  if (reservaCol && col === reservaCol) {
+    var reservaVal = (newValue || sheet.getRange(row, reservaCol).getValue() || "").toString().trim().toUpperCase();
+    if (reservaVal === "SÍ" || reservaVal === "SI") {
+      sheet.getRange(row, matchCol).setValue("cita reservada").setBackground("#B4A7D6");
+      SpreadsheetApp.getActiveSpreadsheet().toast("📌 Reserva confirmada. Estado Total actualizado a 'cita reservada'.", "Reserva Confirmada", 5);
     }
   }
 }
