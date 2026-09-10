@@ -6778,9 +6778,14 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
       var cellA = getCellData(sheet, row, personACol);
       var cellB = getCellData(sheet, row, personBCol);
       if (cellA && cellA.text) {
+        var retornoCompleto = true;
         withScriptLock(function() {
-          returnCandidatesToPsychologists(sheet, row, cellA, cellB, editVal);
+          retornoCompleto = returnCandidatesToPsychologists(sheet, row, cellA, cellB, editVal);
         });
+        // Cambio 24: el toast ahora depende del resultado real, no se asume éxito
+        if (retornoCompleto) {
+          SpreadsheetApp.getActiveSpreadsheet().toast("🚨 Rechazo registrado ('" + editVal + "'). Ambas personas retornadas a sus psicólogas para nuevo match.", "Rechazo Inmediato", 7);
+        }
       }
       return;
     }
@@ -6889,6 +6894,21 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
   var restauranteCol = headers["RESTAURANTE"] || headers["LUGAR"] || 10;
   if (col === cityCol || col === presupuestoCol) {
     updateDependentRestaurantDropdown(sheet, row);
+  }
+
+  // Cambio 25: si la fila ya estaba promovida (ya tenía fecha puesta) y ahora se completan
+  // CIUDAD, PRESUPUESTO, LUGAR o HORA, re-sincronizar Citas Aceptadas para no dejarla desactualizada.
+  if (col === cityCol || col === presupuestoCol || col === restauranteCol || col === horaCol) {
+    var yaPromovida = (fechaRealCol && sheet.getRange(row, fechaRealCol).getValue()) ||
+                       (diaCol && sheet.getRange(row, diaCol).getValue());
+    if (yaPromovida) {
+      try {
+        syncMatchToCitasAceptadas(sheet, row);
+        reordenarCitasAceptadas();
+      } catch (eSyncLate) {
+        Logger.log("Aviso al re-sincronizar tras completar datos de agendamiento: " + eSyncLate.message);
+      }
+    }
   }
 
   // ── 5. Cambio 21: EDICIÓN EN RESERVA -> MARCAR ESTADO TOTAL COMO "cita reservada" ──
@@ -7248,6 +7268,7 @@ function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, reject
       : "Match cerrado. Persona retornada a su psicóloga.";
     SpreadsheetApp.getActiveSpreadsheet().toast(toastSuccess, "Rechazo Procesado", 5);
   }
+  return !missingPsyc; // Cambio 24: informar al llamador si el retorno fue completo
 }
 
 /**
