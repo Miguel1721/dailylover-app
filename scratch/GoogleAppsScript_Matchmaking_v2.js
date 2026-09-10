@@ -3596,6 +3596,15 @@ function reordenarColumnasMatchesCanonico() {
     return;
   }
 
+  // Cambio 18: Desunir cualquier celda combinada antes de mover columnas.
+  // Google Sheets no permite moveColumns() si el rango atraviesa una celda combinada
+  // (causa real confirmada: notas sueltas fusionadas en columnas F-H en varias filas).
+  try {
+    sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart();
+  } catch (eBreak) {
+    Logger.log("Aviso al desunir celdas combinadas en MATCHES: " + eBreak.message);
+  }
+
   var lastRow = sheet.getLastRow();
   var headers = getSheetHeaders(sheet);
 
