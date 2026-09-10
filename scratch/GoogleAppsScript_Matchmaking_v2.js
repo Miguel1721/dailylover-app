@@ -5914,7 +5914,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sheet.getRange(rowNum, 11).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 12).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 13).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 14).setValue(pData.fechaEnBlanco).setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 14).setNumberFormat("@").setValue(pData.fechaEnBlanco).setHorizontalAlignment("center"); // Cambio 28: forzar texto plano para que no se autoconvierta a fecha
 
     // Columna 15: Nivel de Rendimiento (movida al final, pegada a ESTADO)
     var nivelCell = sheet.getRange(rowNum, 15);
