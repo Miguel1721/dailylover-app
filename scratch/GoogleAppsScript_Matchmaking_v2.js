@@ -5508,6 +5508,20 @@ function isDateInRange(targetDate, desde, hasta) {
 }
 
 /**
+ * Formatea una fecha en texto legible en español (ej. "25 de noviembre, 2026").
+ */
+function formatFechaEspanolSupervision(val) {
+  if (!val) return "-";
+  var dt = parseFechaSupervision(val);
+  if (!dt || isNaN(dt.getTime())) return "-";
+  var meses = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+  ];
+  return dt.getDate() + " de " + meses[dt.getMonth()] + ", " + dt.getFullYear();
+}
+
+/**
  * Recalcula el Panel de Supervisión leyendo las fechas de C3 y E3.
  */
 function recalcularSupervisionConFiltro() {
@@ -5567,34 +5581,29 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sheet.clear();
   }
 
-  // 1. Configurar Encabezado Principal (Estilo Premium Wine Red) - Abarca columnas A a N (14 cols)
-  sheet.getRange("A1:S1").merge()
-    .setValue("👑 DAILY LOVER — PANEL PRIVADO DE SUPERVISIÓN MPS (DIRECCIÓN)")
-    .setFontWeight("bold")
-    .setFontSize(14)
-    .setBackground("#961500")
-    .setFontColor("#FFFFFF")
-    .setHorizontalAlignment("center");
+  // 1. Fila 1 (banner superior antiguo) eliminada por completo.
 
+  // 2. Fecha de actualización automática (Fila 2 - alineada a la izquierda, sin fondo, gris claro)
   var filterText = (dtDesde || dtHasta)
     ? (" | 📅 Filtro Activo: " + (dtDesde ? Utilities.formatDate(dtDesde, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Inicio") + " a " + (dtHasta ? Utilities.formatDate(dtHasta, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Hoy"))
     : " | 📅 Modo: Histórico Completo";
 
-  sheet.getRange("A2:S2").merge()
+  sheet.getRange("A2:P2").merge()
     .setValue("Actualizado automáticamente: " + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm:ss") + filterText + " | Entorno: SSOT Matchmaking")
     .setFontSize(9)
     .setFontStyle("italic")
-    .setBackground("#1A1214")
-    .setFontColor("#9A8A8D")
-    .setHorizontalAlignment("center");
+    .setBackground(null)
+    .setFontColor("#888888")
+    .setHorizontalAlignment("left");
 
-  // 2. Barra de Filtro de Fechas (Fila 3)
+  // 3. Barra de Filtro de Fechas + botón Recalcular (Fila 3 - fondo gris clarito #F5F5F5, todo a la izquierda)
+  sheet.getRange("A3:P3").setBackground("#F5F5F5");
+
   sheet.getRange("A3:B3").merge()
-    .setValue("📅 FILTRO DE FECHAS:")
+    .setValue("📅 Filtro de Fechas:")
     .setFontWeight("bold")
-    .setBackground("#20124D")
-    .setFontColor("#FFFFFF")
-    .setHorizontalAlignment("center");
+    .setFontColor("#333333")
+    .setHorizontalAlignment("left");
 
   sheet.getRange("C3")
     .setValue(dtDesde ? Utilities.formatDate(dtDesde, CONFIG.TIMEZONE, "yyyy-MM-dd") : "")
@@ -5602,15 +5611,14 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     .setBackground("#FFFFFF")
     .setFontColor("#000000")
     .setFontWeight("bold")
-    .setHorizontalAlignment("center")
+    .setHorizontalAlignment("left")
     .setNote("Fecha inicio (YYYY-MM-DD) o vacío para histórico");
 
   sheet.getRange("D3")
     .setValue("Hasta:")
     .setFontWeight("bold")
-    .setBackground("#333333")
-    .setFontColor("#FFFFFF")
-    .setHorizontalAlignment("center");
+    .setFontColor("#333333")
+    .setHorizontalAlignment("left");
 
   sheet.getRange("E3")
     .setValue(dtHasta ? Utilities.formatDate(dtHasta, CONFIG.TIMEZONE, "yyyy-MM-dd") : "")
@@ -5618,15 +5626,14 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     .setBackground("#FFFFFF")
     .setFontColor("#000000")
     .setFontWeight("bold")
-    .setHorizontalAlignment("center")
+    .setHorizontalAlignment("left")
     .setNote("Fecha fin (YYYY-MM-DD) o vacío para hoy");
 
-  sheet.getRange("F3:N3").merge()
-    .setValue("🔄 RECALCULAR CON FILTRO (Haz clic o ejecuta desde Menú)")
+  sheet.getRange("F3:H3").merge()
+    .setValue("🔄 Recalcular con Filtro")
     .setFontWeight("bold")
-    .setBackground("#961500")
-    .setFontColor("#FFFFFF")
-    .setHorizontalAlignment("center")
+    .setFontColor("#961500")
+    .setHorizontalAlignment("left")
     .setNote("Edita las fechas en C3 / E3 y corre 'Recalcular Supervisión Con Filtro'");
 
   // 3. Calcular KPIs de Control Operativo
@@ -5669,57 +5676,42 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   var csMetrics = calcularTiempoRespuestaGeneralCS(matchesSheet);
   var mpsMetrics = calcularTiempoAprobacionDireccionMPS(revSheet);
 
-  // 4. Tarjetas KPI de Nivel Superior (Filas 4 y 5)
-  sheet.getRange("A4:C4").merge().setValue("Matches por Revisar (MPS)").setFontWeight("bold").setBackground("#351C75").setFontColor("#FFF").setHorizontalAlignment("center");
-  sheet.getRange("A5:C5").merge().setValue(pendingRevision).setFontSize(18).setFontWeight("bold").setBackground("#D9D2E9").setHorizontalAlignment("center");
+  // 4 & 5. Tarjetas KPI viejas (filas 4-5) y banners de tiempos promedio (filas 6-7) ELIMINADOS.
+  // Fila 4 queda como espacio visual limpio entre el filtro y la tabla.
+  sheet.setRowHeight(4, 15);
 
-  sheet.getRange("D4:F4").merge().setValue("En Espera Servicio al Cliente").setFontWeight("bold").setBackground("#7F6000").setFontColor("#FFF").setHorizontalAlignment("center");
-  sheet.getRange("D5:F5").merge().setValue(pendingServiceCalls).setFontSize(18).setFontWeight("bold").setBackground("#FFF2CC").setHorizontalAlignment("center");
-
-  sheet.getRange("G4:I4").merge().setValue("Citas Agendadas / Activas").setFontWeight("bold").setBackground("#274E13").setFontColor("#FFF").setHorizontalAlignment("center");
-  sheet.getRange("G5:I5").merge().setValue(scheduledDates).setFontSize(18).setFontWeight("bold").setBackground("#D9EAD3").setHorizontalAlignment("center");
-
-  sheet.getRange("J4:N4").merge().setValue("Refunds Pendientes Lina").setFontWeight("bold").setBackground("#783F04").setFontColor("#FFF").setHorizontalAlignment("center");
-  sheet.getRange("J5:N5").merge().setValue(pendingRefunds).setFontSize(18).setFontWeight("bold").setBackground("#FCE5CD").setHorizontalAlignment("center");
-
-  // Banners Ejecutivos de Tiempos (Filas 6 y 7)
-  var csText = "⏱️ TIEMPO PROMEDIO RESPUESTA SERVICIO AL CLIENTE (EQUIPO): " + (csMetrics.totalCases > 0 ? (csMetrics.avgHours + " hrs (" + csMetrics.avgDays + " días) — " + csMetrics.totalCases + " casos gestionados") : "16.2 hrs (0.7 días) — 24 casos gestionados");
-  sheet.getRange("A6:N6").merge()
-    .setValue(csText)
+  // 6. Título de la Tabla 1 (Fila 5)
+  sheet.getRange("A5:P5").merge()
+    .setValue("Rendimiento Matchmaker")
     .setFontWeight("bold")
-    .setFontSize(10)
-    .setBackground("#2E1A47")
-    .setFontColor("#FFFFFF")
-    .setHorizontalAlignment("center");
-
-  var mpsText = "⏱️ TIEMPO PROMEDIO APROBACIÓN DIRECCIÓN (MPS): " + (mpsMetrics.totalCases > 0 ? (mpsMetrics.avgHours + " hrs (" + mpsMetrics.avgDays + " días) — " + mpsMetrics.totalCases + " propuestas auditadas") : "14.4 hrs (0.6 días) — 18 propuestas auditadas");
-  sheet.getRange("A7:N7").merge()
-    .setValue(mpsText)
-    .setFontWeight("bold")
-    .setFontSize(10)
-    .setBackground("#4A154B")
-    .setFontColor("#FFFFFF")
-    .setHorizontalAlignment("center");
-
-  // ─── 5. TABLA 1 UNIFICADA: ACTIVIDAD, CARGA OPERATIVA Y BRECHA POR PSICÓLOGA ──
-  sheet.getRange("A8:S8").merge()
-    .setValue("📊 TABLA 1 UNIFICADA: ACTIVIDAD, CARGA OPERATIVA Y EVALUACIÓN CLÍNICA POR PSICÓLOGA")
-    .setFontWeight("bold")
+    .setFontSize(12)
     .setBackground("#961500")
-    .setFontColor("#FFFFFF");
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("left");
 
+  // Encabezados de la Tabla 1 (Fila 6) - 16 columnas rediseñadas
   var masterHeaders = [
-    "Psicóloga", "Total Slots", "Listos Match", "Hechos", "Aprobados", "Trouble/Rechazo", "Refunds",
-    "Asignados en PROFILES", "Asignados en su MATCHES", "Brecha (sin trabajar)", "Eficiencia (Aprob/Slots)",
-    "Ranking", "Nivel de Rendimiento", "Observaciones/Estado",
-    "Matches no Aprobados", "Trouble", "No hay gente", "Fecha en blanco", "ESTADO"
+    "Psicóloga", "Total Slots", "Listos Match", "Hechos", "Aprobados", "Trouble", "Refunds",
+    "Asignados en PROFILES", "Asignados en su MATCHES", "Sin trabajar",
+    "Matches no Aprobados", "Trouble", "No hay gente", "Fecha en blanco", "Nivel de Rendimiento", "ESTADO"
   ];
 
   for (var h = 0; h < masterHeaders.length; h++) {
-    sheet.getRange(9, h + 1).setValue(masterHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
+    sheet.getRange(6, h + 1).setValue(masterHeaders[h]).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
   }
+  sheet.setRowHeight(6, 28);
 
   var psycList = obtenerPsicologasValidas();
+  var excludedFromPanel = {
+    "SOFI": true,
+    "ALEJA": true,
+    "MAPE D": true,
+    "MAPE": true,
+    "MARIA PAULA": true,
+    "MARÍA PAULA": true,
+    "MANU": true,
+    "MPS": true
+  };
 
   // Leer asignaciones en PROFILES (1 sola lectura en memoria) con alias normalizados
   var assignedClientsByPsyc = {};
@@ -5758,6 +5750,8 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
 
   for (var p = 0; p < psycList.length; p++) {
     var pName = psycList[p];
+    var normPsycUpper = (pName || "").toString().trim().toUpperCase();
+    if (excludedFromPanel[normPsycUpper]) continue; // Excluir SOFI, ALEJA, MAPE D, MANU y roles de dirección
     var pSheet = findPsychologistSheet(pName);
     var totalSlots = 0, listos = 0, hechos = 0, aprobados = 0, trouble = 0, refunds = 0;
     var noAprobados = 0, troubleOnly = 0, noHayGente = 0; // NUEVO
@@ -5873,32 +5867,26 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
       noAprobados: noAprobados,     // NUEVO
       troubleOnly: troubleOnly,     // NUEVO
       noHayGente: noHayGente,       // NUEVO
-      fechaEnBlanco: oldestPendingDate ? Utilities.formatDate(oldestPendingDate, CONFIG.TIMEZONE, "yyyy-MM-dd") : "-", // NUEVO
-      estado: estadoPsic            // NUEVO
+      fechaEnBlanco: formatFechaEspanolSupervision(oldestPendingDate),
+      estado: estadoPsic
     });
   }
 
-  // Ordenar por Ranking de Eficiencia (Mayor a menor, desempate por aprobados)
+  // Ordenar psicólogas por matches aprobados (mayor a menor, desempate por total slots)
   psychologistsData.sort(function(a, b) {
-    if (b.eficiencia !== a.eficiencia) return b.eficiencia - a.eficiencia;
     if (b.aprobados !== a.aprobados) return b.aprobados - a.aprobados;
     return b.totalSlots - a.totalSlots;
   });
 
-  // Totales acumulados
+  // Totales acumulados (se preservan intactos para alimentar con exactitud las Tablas 2 a 5)
   var sumSlots = 0, sumListos = 0, sumHechos = 0, sumAprobados = 0, sumTrouble = 0, sumRefunds = 0;
   var sumAssigned = 0, sumProcessed = 0, sumGap = 0;
-  var sumNoAprobados = 0, sumTroubleOnly = 0, sumNoHayGente = 0; // NUEVO
+  var sumNoAprobados = 0, sumTroubleOnly = 0, sumNoHayGente = 0;
 
-  // Cambio 13: Forzar formato numérico plano ("0") en todas las columnas de conteo de la tabla
-  sheet.getRange(10, 2, psychologistsData.length + 1, 9).setNumberFormat("0");
-  sheet.getRange(10, 15, psychologistsData.length + 1, 3).setNumberFormat("0");
-
-  // Escribir datos de la Tabla Unificada
+  // Escribir datos de la Tabla Rendimiento Matchmaker (16 columnas)
   for (var rIdx = 0; rIdx < psychologistsData.length; rIdx++) {
     var pData = psychologistsData[rIdx];
-    var rankingNum = rIdx + 1;
-    var rowNum = 10 + rIdx;
+    var rowNum = 7 + rIdx;
 
     sumSlots += pData.totalSlots;
     sumListos += pData.listos;
@@ -5909,9 +5897,9 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sumAssigned += pData.assigned;
     sumProcessed += pData.processed;
     sumGap += pData.gap;
-    sumNoAprobados += pData.noAprobados; // NUEVO
-    sumTroubleOnly += pData.troubleOnly; // NUEVO
-    sumNoHayGente += pData.noHayGente;   // NUEVO
+    sumNoAprobados += pData.noAprobados;
+    sumTroubleOnly += pData.troubleOnly;
+    sumNoHayGente += pData.noHayGente;
 
     sheet.getRange(rowNum, 1).setValue(pData.name).setFontWeight("bold");
     sheet.getRange(rowNum, 2).setValue(pData.totalSlots).setNumberFormat("0").setHorizontalAlignment("center");
@@ -5923,11 +5911,13 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sheet.getRange(rowNum, 8).setValue(pData.assigned).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 9).setValue(pData.processed).setNumberFormat("0").setHorizontalAlignment("center");
     sheet.getRange(rowNum, 10).setValue(pData.gap).setFontWeight("bold").setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 11).setValue(pData.eficiencia + "%").setFontWeight("bold").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 12).setValue("#" + rankingNum).setFontWeight("bold").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 11).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 12).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 13).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 14).setValue(pData.fechaEnBlanco).setHorizontalAlignment("center");
 
-    // Estilo Nivel de Rendimiento
-    var nivelCell = sheet.getRange(rowNum, 13);
+    // Columna 15: Nivel de Rendimiento (movida al final, pegada a ESTADO)
+    var nivelCell = sheet.getRange(rowNum, 15);
     nivelCell.setValue(pData.nivel).setFontWeight("bold").setHorizontalAlignment("center");
     if (pData.nivel === "Alto") {
       nivelCell.setBackground("#D9EAD3").setFontColor("#274E13");
@@ -5937,26 +5927,8 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
       nivelCell.setBackground("#F4CCCC").setFontColor("#961500");
     }
 
-    // Estilo Observaciones / Estado
-    var obsCell = sheet.getRange(rowNum, 14);
-    obsCell.setValue(pData.observaciones).setFontWeight("bold").setHorizontalAlignment("center");
-    if (pData.observaciones === "Descalificado") {
-      obsCell.setBackground("#F4CCCC").setFontColor("#961500");
-    } else if (pData.observaciones === "Not Approved") {
-      obsCell.setBackground("#FCE5CD").setFontColor("#B45F06");
-    } else if (pData.observaciones === "No hay gente") {
-      obsCell.setBackground("#FFF2CC").setFontColor("#7F6000");
-    } else {
-      obsCell.setFontColor("#888888").setFontWeight("normal");
-    }
-
-    // NUEVO: columnas 15-19 (con formato numérico plano - Cambio 13)
-    sheet.getRange(rowNum, 15).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 16).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 17).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 18).setValue(pData.fechaEnBlanco).setHorizontalAlignment("center");
-
-    var estadoCell = sheet.getRange(rowNum, 19);
+    // Columna 16: ESTADO (semáforo operativo)
+    var estadoCell = sheet.getRange(rowNum, 16);
     estadoCell.setValue(pData.estado).setFontWeight("bold").setHorizontalAlignment("center");
     if (pData.estado === "Al día") {
       estadoCell.setBackground("#D9EAD3").setFontColor("#274E13");
@@ -5969,49 +5941,19 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     }
   }
 
-  // Fila TOTAL EQUIPO
-  var totalRowUnified = 10 + psychologistsData.length;
-  var totalEficiencia = sumSlots > 0 ? Math.round((sumAprobados / sumSlots) * 100) : 0;
-  var teamNivel = totalEficiencia >= 60 ? "Alto" : totalEficiencia >= 20 ? "Medio" : "Bajo";
-
-  sheet.getRange(totalRowUnified, 1).setValue("TOTAL EQUIPO").setFontWeight("bold").setBackground("#E8EAED");
-  sheet.getRange(totalRowUnified, 2).setValue(sumSlots).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 3).setValue(sumListos).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 4).setValue(sumHechos).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 5).setValue(sumAprobados).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 6).setValue(sumTrouble).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 7).setValue(sumRefunds).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 8).setValue(sumAssigned).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 9).setValue(sumProcessed).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 10).setValue(sumGap).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 11).setValue(totalEficiencia + "%").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 12).setValue("-").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  
-  var teamNivelCell = sheet.getRange(totalRowUnified, 13);
-  teamNivelCell.setValue(teamNivel).setFontWeight("bold").setHorizontalAlignment("center");
-  if (teamNivel === "Alto") teamNivelCell.setBackground("#D9EAD3").setFontColor("#274E13");
-  else if (teamNivel === "Medio") teamNivelCell.setBackground("#FFF2CC").setFontColor("#7F6000");
-  else teamNivelCell.setBackground("#F4CCCC").setFontColor("#961500");
-
-  var teamObsStatus = sumGap === 0 ? "✅ Equipo al día" : "⚠️ " + sumGap + " sin trabajar";
-  sheet.getRange(totalRowUnified, 14).setValue(teamObsStatus).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 15).setValue(sumNoAprobados).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 16).setValue(sumTroubleOnly).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 17).setValue(sumNoHayGente).setNumberFormat("0").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  sheet.getRange(totalRowUnified, 18).setValue("-").setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-  var teamEstado = sumGap === 0 ? "Al día" : "Con brecha pendiente";
-  sheet.getRange(totalRowUnified, 19).setValue(teamEstado).setFontWeight("bold").setBackground("#E8EAED").setHorizontalAlignment("center");
-
-  // NUEVO: forzar formato numérico plano (no Porcentaje) en las columnas de conteo,
-  // para que no hereden un formato de % de alguna edición anterior de esas celdas.
-  var numFormatRows = totalRowUnified - 10 + 1;
-  var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 16, 17];
-  for (var pnc = 0; pnc < plainNumberCols.length; pnc++) {
-    sheet.getRange(10, plainNumberCols[pnc], numFormatRows, 1).setNumberFormat("0");
+  // Forzar formato numérico plano ("0") en todas las columnas de conteo
+  if (psychologistsData.length > 0) {
+    var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+    for (var pnc = 0; pnc < plainNumberCols.length; pnc++) {
+      sheet.getRange(7, plainNumberCols[pnc], psychologistsData.length, 1).setNumberFormat("0");
+    }
   }
 
+  // Fila TOTAL EQUIPO: ELIMINADA según feedback de Lina (la tabla pasa a ser de vista individual únicamente).
+  var lastTable1Row = 6 + psychologistsData.length;
+
   // ─── 6. TABLA 2: EMBUDO DE CONVERSIÓN END-TO-END (6 ETAPAS) ─────────────────
-  var startRowT2 = totalRowUnified + 2;
+  var startRowT2 = lastTable1Row + 2;
   sheet.getRange(startRowT2, 1, 1, 6).merge()
     .setValue("🔄 TABLA 2: EMBUDO DE CONVERSIÓN END-TO-END (PIPELINE OPERATIVO)")
     .setFontWeight("bold")
@@ -6196,8 +6138,8 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sheet.getRange(rCurRow, 5).setValue(rObj.prio).setHorizontalAlignment("center").setFontWeight("bold");
   }
 
-  // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a N)
-  var colWidths = [125, 95, 95, 80, 90, 115, 80, 140, 140, 110, 105, 75, 120, 140, 110, 80, 95, 110, 110];
+  // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a P - 16 cols)
+  var colWidths = [125, 95, 95, 80, 90, 90, 80, 140, 140, 100, 120, 80, 95, 160, 130, 110];
   for (var cw = 0; cw < colWidths.length; cw++) {
     sheet.setColumnWidth(cw + 1, colWidths[cw]);
   }
@@ -6227,8 +6169,15 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     }
   }
 
-  Logger.log("✅ Pestaña privada '🔒 SUPERVISIÓN MARÍA' generada y protegida exclusivamente para " + CONFIG.MARIA_EMAIL);
-  ss.toast("Panel de Supervisión MPS generado y actualizado con tabla unificada de 14 columnas.", "Panel Listo", 5);
+  // 12. Actualizar gráfico de barras posicionado al lado de la tabla
+  try {
+    agregarGraficoAprobadosPorPsicologa();
+  } catch (chartErr) {
+    Logger.log("Aviso al actualizar gráfico de barras: " + chartErr.message);
+  }
+
+  Logger.log("✅ Pestaña privada '🔒 SUPERVISIÓN MARÍA' generada con panel Rendimiento Matchmaker.");
+  ss.toast("Panel Rendimiento Matchmaker generado y actualizado.", "Panel Listo", 5);
 }
 
 /**
@@ -8385,7 +8334,7 @@ function instalarTriggerPanelSupervisionDiario() {
 
 /**
  * NUEVO: Agrega/actualiza un gráfico de barras simple ("Matches Aprobados por Psicóloga")
- * debajo de la Tabla 1 Unificada del Panel de Supervisión MPS.
+ * al lado de la Tabla Rendimiento Matchmaker del Panel de Supervisión MPS.
  */
 function agregarGraficoAprobadosPorPsicologa() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -8399,17 +8348,32 @@ function agregarGraficoAprobadosPorPsicologa() {
     }
   }
 
-  var lastDataRow = 9;
-  while (sheet.getRange(lastDataRow + 1, 1).getValue() !== "" && sheet.getRange(lastDataRow + 1, 1).getValue() !== "TOTAL EQUIPO") {
+  // Buscar dinámicamente la fila de inicio de datos (debajo del encabezado 'Psicóloga')
+  var headerRow = -1;
+  for (var r = 1; r <= 15; r++) {
+    var val = (sheet.getRange(r, 1).getValue() || "").toString().trim().toLowerCase();
+    if (val === "psicóloga" || val === "psicologa") {
+      headerRow = r;
+      break;
+    }
+  }
+  if (headerRow === -1) return;
+
+  var firstDataRow = headerRow + 1;
+  var lastDataRow = firstDataRow;
+  while (sheet.getRange(lastDataRow, 1).getValue() !== "" && sheet.getRange(lastDataRow, 1).getValue() !== "TOTAL EQUIPO") {
     lastDataRow++;
   }
-  if (lastDataRow < 10) return;
+  lastDataRow--;
+  if (lastDataRow < firstDataRow) return;
+
+  var numRows = lastDataRow - firstDataRow + 1;
 
   var chart = sheet.newChart()
     .setChartType(Charts.ChartType.BAR)
-    .addRange(sheet.getRange(10, 1, lastDataRow - 9, 1))
-    .addRange(sheet.getRange(10, 5, lastDataRow - 9, 1))
-    .setPosition(9, 21, 0, 0) // NUEVO: columna U (21), fila 9 — a la derecha de la tabla, no debajo, para no pisar las Tablas 2-5
+    .addRange(sheet.getRange(firstDataRow, 1, numRows, 1))
+    .addRange(sheet.getRange(firstDataRow, 5, numRows, 1))
+    .setPosition(5, 18, 0, 0) // Columna R (18), fila 5 — a la derecha de la tabla, no debajo, para no pisar las Tablas 2-5
     .setOption("title", "Matches Aprobados por Psicóloga")
     .setOption("legend", "none")
     .setOption("colors", ["#961500"])
