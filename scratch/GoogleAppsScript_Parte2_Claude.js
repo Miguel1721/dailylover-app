@@ -302,6 +302,7 @@ function claudeSetupCalendarioMensajes() {
 
     var headers = claudeGetSheetHeaders(cal);
     var diaCol = headers["DÍA"] || headers["DIA"];
+    var horaCol = headers["HORA"]; // NUEVO Cambio 17
     var lugarCol = headers["LUGAR"];
     var confCol = headers["CONFIRMACIÓN"] || headers["CONFIRMACION"];
     var diaAntesCol = headers["DIA ANTES"];
@@ -330,12 +331,23 @@ function claudeSetupCalendarioMensajes() {
     }
 
     var diaLetter = claudeColLetter(diaCol);
+    var horaLetter = horaCol ? claudeColLetter(horaCol) : null; // NUEVO Cambio 17
     var lugarLetter = claudeColLetter(lugarCol);
+
+    // NUEVO Cambio 17: arma "fecha y hora" combinando DÍA + HORA si la columna HORA existe;
+    // si no existe (archivo viejo sin migrar), usa solo DÍA como antes.
+    var fechaHoraExpr = function(fila) {
+      var d = diaLetter + fila;
+      if (!horaLetter) return 'TEXT(' + d + ';"dd/mm/yyyy")';
+      var h = horaLetter + fila;
+      return 'TEXT(' + d + ';"dd/mm/yyyy")&" "&IF(' + h + '<>"";TEXT(' + h + ';"hh:mm am/pm");"")';
+    };
 
     var formulaConfirmacion = function(fila) {
       var d = diaLetter + fila, l = lugarLetter + fila;
+      var fh = fechaHoraExpr(fila);
       return '=IF(AND(' + d + '<>"";' + l + '<>"");' +
-        '"Para confirmarte tu date! \uD83D\uDC9B Fecha y hora: "&' + d + '&" en "&' + l + '&CHAR(10)&' +
+        '"Para confirmarte tu date! \uD83D\uDC9B Fecha y hora: "&' + fh + '&" en "&' + l + '&CHAR(10)&' +
         '"La reserva estará a nombre de ' + CLAUDE_NOMBRE_RESERVA + '."&CHAR(10)&' +
         '"El restaurante estará atento para ayudarte a ubicarte y acompañarte con cualquier detalle logístico o de seguridad. "&CHAR(10)&CHAR(10)&' +
         '"Además, ese mismo día en la mañana te escribiremos para estar pendientes de ti y acompañarte *antes, durante y después de la cita*, para que solo tengas que disfrutar la experiencia.\uD83D\uDC8C\uD83D\uDC8C"&CHAR(10)&' +
@@ -344,15 +356,17 @@ function claudeSetupCalendarioMensajes() {
     };
     var formulaDiaAntes = function(fila) {
       var d = diaLetter + fila, l = lugarLetter + fila;
+      var fh = fechaHoraExpr(fila);
       return '=IF(AND(' + d + '<>"";' + l + '<>"");' +
-        '"Para recordarte tu date de mañana! \uD83D\uDC9B Fecha y hora: "&' + d + '&" en "&' + l + '&' +
+        '"Para recordarte tu date de mañana! \uD83D\uDC9B Fecha y hora: "&' + fh + '&" en "&' + l + '&' +
         '" Esperamos tu confirmación para asegurarnos de que la cita este en pie!";'+
         '"")';
     };
     var formulaHoy = function(fila) {
       var d = diaLetter + fila, l = lugarLetter + fila;
+      var fh = fechaHoraExpr(fila);
       return '=IF(AND(' + d + '<>"";' + l + '<>"");' +
-        '"Para recordarte tu date de hoy! \uD83D\uDC9B Fecha y hora: "&' + d + '&" en "&' + l + '&CHAR(10)&' +
+        '"Para recordarte tu date de hoy! \uD83D\uDC9B Fecha y hora: "&' + fh + '&" en "&' + l + '&CHAR(10)&' +
         '"La reserva estará a nombre de ' + CLAUDE_NOMBRE_RESERVA + '!! Por favor avisanos cuando vayas en camino para estar pendiente de ti! Recuerda que hay alguien que te esta esperando, y la puntualidad vale X2!! Disfrútalo muchísimo, es solo una cita!! Avísanos cuando vayas en camino para estar pendiente de tiii!";'+
         '"")';
     };

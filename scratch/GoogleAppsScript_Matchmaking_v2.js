@@ -3583,12 +3583,10 @@ function parseDateToIsoLocal(val) {
 }
 
 /**
- * ─── REORDENAMIENTO CANÓNICO DE PESTAÑA MATCHES (17 COLUMNAS) ────────────────
- * Realiza el movimiento real de dimensiones de columnas en Google Sheets.
- * Orden final exacto:
+ * Reordena las columnas de MATCHES para cumplir estrictamente con el orden canónico:
  * 1. Estado Total | 2. Estado Persona A | 3. Estado Persona B | 4. Persona A | 5. Persona B
- * 6. DÍA | 7. LUGAR | 8. CIUDAD | 9. RESERVA | 10. CONFIRMACIÓN | 11. DIA ANTES | 12. HOY
- * 13. PRESUPUESTO | 14. ELLA | 15. ÉL | 16. ¿REPROGRAMAR? | 17. FECHA CITA REAL
+ * 6. DÍA | 7. HORA | 8. CIUDAD | 9. PRESUPUESTO | 10. LUGAR | 11. RESERVA | 12. CONFIRMACIÓN
+ * 13. DIA ANTES | 14. HOY | 15. ELLA | 16. ÉL | 17. ¿REPROGRAMAR? | 18. FECHA CITA REAL
  */
 function reordenarColumnasMatchesCanonico() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -3673,19 +3671,74 @@ function reordenarColumnasMatchesCanonico() {
     }
   }
 
-  // Cambio 15: Mover '¿REPROGRAMAR?' a su posición canónica (columna 16, antes de FECHA CITA REAL)
+  // Cambio 16: Asegurar columna HORA (nueva) y reordenar el bloque DÍA/HORA/CIUDAD/PRESUPUESTO/LUGAR
   headers = getSheetHeaders(sheet);
-  var colReprogramar = headers["¿REPROGRAMAR?"] || headers["REPROGRAMAR"];
-  if (colReprogramar && colReprogramar !== 16) {
-    sheet.moveColumns(sheet.getRange(1, colReprogramar), 16);
+  var colHora = headers["HORA"];
+  if (!colHora) {
+    var insertAfterCol = sheet.getLastColumn();
+    sheet.insertColumnAfter(insertAfterCol);
+    colHora = insertAfterCol + 1;
+    sheet.getRange(1, colHora).setValue("HORA").setFontWeight("bold").setBackground("#D9D2E9");
   }
 
-  // 6. Eliminar columnas vacías sobrantes después de la columna 17
+  headers = getSheetHeaders(sheet);
+  var colDia = headers["DÍA"] || headers["DIA"];
+  if (colDia && colDia !== 6) {
+    sheet.moveColumns(sheet.getRange(1, colDia), 6);
+  }
+
+  headers = getSheetHeaders(sheet);
+  colHora = headers["HORA"];
+  if (colHora && colHora !== 7) {
+    sheet.moveColumns(sheet.getRange(1, colHora), 7);
+  }
+
+  headers = getSheetHeaders(sheet);
+  var colCiudad = headers["CIUDAD"] || headers["CITY"];
+  if (colCiudad && colCiudad !== 8) {
+    sheet.moveColumns(sheet.getRange(1, colCiudad), 8);
+  }
+
+  headers = getSheetHeaders(sheet);
+  var colPresupuesto = headers["PRESUPUESTO"];
+  if (colPresupuesto && colPresupuesto !== 9) {
+    sheet.moveColumns(sheet.getRange(1, colPresupuesto), 9);
+  }
+
+  headers = getSheetHeaders(sheet);
+  var colLugar = headers["LUGAR"];
+  if (colLugar && colLugar !== 10) {
+    sheet.moveColumns(sheet.getRange(1, colLugar), 10);
+  }
+
+  // Validación de calendario nativo en DÍA (antes era texto libre)
+  headers = getSheetHeaders(sheet);
+  var colDiaFinal = headers["DÍA"] || headers["DIA"];
+  if (colDiaFinal) {
+    var diaDateRule = SpreadsheetApp.newDataValidation()
+      .requireDate()
+      .setAllowInvalid(true)
+      .setHelpText("Haga doble clic para seleccionar la fecha en el calendario interactivo.")
+      .build();
+    var maxRowsDia = Math.min(sheet.getMaxRows(), 5000);
+    if (maxRowsDia > 1) {
+      safeSetDataValidation(sheet.getRange(2, colDiaFinal, maxRowsDia - 1, 1), diaDateRule);
+    }
+  }
+
+  // Cambio 15 (ajustado): Mover '¿REPROGRAMAR?' a su posición canónica (columna 17, antes de FECHA CITA REAL, ahora que hay 18 columnas)
+  headers = getSheetHeaders(sheet);
+  var colReprogramar = headers["¿REPROGRAMAR?"] || headers["REPROGRAMAR"];
+  if (colReprogramar && colReprogramar !== 17) {
+    sheet.moveColumns(sheet.getRange(1, colReprogramar), 17);
+  }
+
+  // 6. Eliminar columnas vacías sobrantes después de la columna 18
   headers = getSheetHeaders(sheet);
   var curLastCol = sheet.getLastColumn();
   var maxCols = sheet.getMaxColumns();
-  if (maxCols > 17 && curLastCol <= 17) {
-    sheet.deleteColumns(18, maxCols - 17);
+  if (maxCols > 18 && curLastCol <= 18) {
+    sheet.deleteColumns(19, maxCols - 18);
   }
 
   // 7. Aplicar formatos y desplegables
@@ -3693,9 +3746,9 @@ function reordenarColumnasMatchesCanonico() {
 
   Logger.log("✅ Reordenamiento canónico de MATCHES completado exitosamente con 100% de datos históricos preservados.");
   try {
-    ss.toast("Estructura canónica de MATCHES (17 columnas) reordenada exitosamente.", "MATCHES Actualizado", 6);
+    ss.toast("Estructura canónica de MATCHES (18 columnas) reordenada exitosamente.", "MATCHES Actualizado", 6);
   } catch (e) {}
-  return { success: true, columns: 17 };
+  return { success: true, columns: 18 };
 }
 
 /**
@@ -3765,7 +3818,7 @@ function ensureMatchesColumnsAndDropdowns() {
   }
 
   // 6. Aplicar Desplegable de ⚙️ RESTAURANTES en la columna LUGAR
-  var lugarCol = headers["LUGAR"] || 7;
+  var lugarCol = headers["LUGAR"] || 10;
   var venueRule = getRestaurantVenueValidationRule(ss);
   if (venueRule && lugarCol && maxRows > 1) {
     safeSetDataValidation(sheet.getRange(2, lugarCol, maxRows - 1, 1), venueRule);
