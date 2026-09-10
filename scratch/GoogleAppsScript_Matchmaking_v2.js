@@ -2658,85 +2658,67 @@ function findPersonDetailsInWorkbook(personCell) {
 
   // 2. Buscar en las 10 pestañas de psicólogas (donde CITY y PREF residen en Col 3 y 4)
   var sheets = ss.getSheets();
-  var matchFromPersonB = null; // Cambio 23: Respaldo si se encuentra como PERSON B (candidato)
-
   for (var sIdx = 0; sIdx < sheets.length; sIdx++) {
     var s = sheets[sIdx];
     var sName = s.getName().trim().toUpperCase();
     if (sName.indexOf(CONFIG.PSYCHOLOGIST_SHEET_PREFIX) === 0 && sName !== "MATCHES") {
       var headers = getSheetHeaders(s);
       var personACol = headers["PERSON A"] || headers["PERSONA A"] || headers["CLIENTE"];
-      var personBCol = headers["PERSON B"] || headers["PERSONA B"] || headers["CANDIDATO"] || headers["MATCH"];
-      var psycBCol = headers["PSICÓLOGA DE B"] || headers["PSICOLOGA DE B"] || headers["PSICOLOGA B"] || headers["PSICÓLOGA B"];
       var cityCol = headers["CITY"] || headers["CIUDAD"] || 3;
       var prefCol = headers["PREF"] || headers["PREFERENCIA"] || 4;
-      if (!personACol && !personBCol) continue;
+      if (!personACol) continue;
 
       var lastRow = Math.min(s.getLastRow(), 2500);
       if (lastRow > 1) {
-        var rtsA = personACol ? s.getRange(2, personACol, lastRow - 1, 1).getRichTextValues() : null;
-        var rtsB = personBCol ? s.getRange(2, personBCol, lastRow - 1, 1).getRichTextValues() : null;
+        var rts = s.getRange(2, personACol, lastRow - 1, 1).getRichTextValues();
         var data = s.getRange(2, 1, lastRow - 1, s.getLastColumn()).getValues();
 
         for (var i = 0; i < data.length; i++) {
-          // 2.A: Buscar en PERSON A (cliente principal de la psicóloga)
-          if (personACol && rtsA) {
-            var rtA = rtsA[i][0];
-            var rowTextA = rtA ? rtA.getText().trim() : (data[i][personACol - 1] || "").toString().trim();
-            var rowLinkA = rtA ? (rtA.getLinkUrl() || "") : "";
-            var rowCrmIdA = extractCrmIdFromUrl(rowLinkA);
+          var rt = rts[i][0];
+          var rowText = rt ? rt.getText().trim() : (data[i][personACol - 1] || "").toString().trim();
+          var rowLink = rt ? (rt.getLinkUrl() || "") : "";
+          var rowCrmId = extractCrmIdFromUrl(rowLink);
 
-            var isMatchA = false;
-            if (targetCrmId && rowCrmIdA && targetCrmId === rowCrmIdA) {
-              isMatchA = true;
-            } else if (targetName && rowTextA && rowTextA.toLowerCase() === targetName) {
-              isMatchA = true;
-            }
-
-            if (isMatchA) {
-              var foundCity = (cityCol && cityCol <= data[i].length) ? (data[i][cityCol - 1] || "").toString().trim() : "";
-              var foundPref = (prefCol && prefCol <= data[i].length) ? (data[i][prefCol - 1] || "").toString().trim() : "";
-              var psycRaw = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
-              return {
-                name: rowTextA || personCell.text,
-                crmId: rowCrmIdA || targetCrmId,
-                city: foundCity,
-                pref: foundPref,
-                psychologist: normalizePsychologistName(psycRaw),
-                source: s.getName()
-              };
-            }
+          var isMatch = false;
+          if (targetCrmId && rowCrmId && targetCrmId === rowCrmId) {
+            isMatch = true;
+          } else if (targetName && rowText && rowText.toLowerCase() === targetName) {
+            isMatch = true;
           }
 
-          // 2.B (Cambio 23): Buscar también en PERSON B (candidato propuesto en la pestaña)
-          if (personBCol && rtsB && !matchFromPersonB) {
-            var rtB = rtsB[i][0];
-            var rowTextB = rtB ? rtB.getText().trim() : (data[i][personBCol - 1] || "").toString().trim();
-            var rowLinkB = rtB ? (rtB.getLinkUrl() || "") : "";
-            var rowCrmIdB = extractCrmIdFromUrl(rowLinkB);
+          if (isMatch) {
+            var foundCity = (cityCol && cityCol <= data[i].length) ? (data[i][cityCol - 1] || "").toString().trim() : "";
+            var foundPref = (prefCol && prefCol <= data[i].length) ? (data[i][prefCol - 1] || "").toString().trim() : "";
+            var psycRaw = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
+            return {
+              name: rowText || personCell.text,
+              crmId: rowCrmId || targetCrmId,
+              city: foundCity,
+              pref: foundPref,
+              psychologist: normalizePsychologistName(psycRaw),
+              source: s.getName()
+            };
+          }
 
+          // Cambio 23: si no coincidió en PERSON A, revisar también PERSON B de esta misma fila
+          var personBColCheck = headers["PERSON B"] || headers["PERSONA B"];
+          if (personBColCheck && personBColCheck <= data[i].length) {
+            var rowTextB = (data[i][personBColCheck - 1] || "").toString().trim();
             var isMatchB = false;
-            if (targetCrmId && rowCrmIdB && targetCrmId === rowCrmIdB) {
-              isMatchB = true;
-            } else if (targetName && rowTextB && rowTextB.toLowerCase() === targetName) {
+            if (targetName && rowTextB && rowTextB.toLowerCase() === targetName) {
               isMatchB = true;
             }
-
             if (isMatchB) {
-              var psycRawB = "";
-              if (psycBCol && psycBCol <= data[i].length) {
-                psycRawB = (data[i][psycBCol - 1] || "").toString().replace(/\(Interno\)/gi, "").trim();
-              }
-              if (!psycRawB) {
-                psycRawB = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
-              }
-              matchFromPersonB = {
+              var foundCityB = (cityCol && cityCol <= data[i].length) ? (data[i][cityCol - 1] || "").toString().trim() : "";
+              var foundPrefB = (prefCol && prefCol <= data[i].length) ? (data[i][prefCol - 1] || "").toString().trim() : "";
+              var psycRawB = sName.replace(CONFIG.PSYCHOLOGIST_SHEET_PREFIX, "").trim();
+              return {
                 name: rowTextB || personCell.text,
-                crmId: rowCrmIdB || targetCrmId,
-                city: "",
-                pref: "",
+                crmId: targetCrmId,
+                city: foundCityB,
+                pref: foundPrefB,
                 psychologist: normalizePsychologistName(psycRawB),
-                source: s.getName() + " (PERSON B)"
+                source: s.getName()
               };
             }
           }
@@ -2787,11 +2769,6 @@ function findPersonDetailsInWorkbook(personCell) {
         }
       }
     }
-  }
-
-  // Cambio 23: Si no se encontró como PERSON A ni en PROFILES, retornar el match encontrado como PERSON B
-  if (matchFromPersonB) {
-    return matchFromPersonB;
   }
 
   return null;
