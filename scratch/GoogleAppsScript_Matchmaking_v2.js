@@ -2639,10 +2639,11 @@ function findPersonDetailsInWorkbook(personCell) {
   var targetCrmId = personCell.crmId || extractCrmIdFromUrl(linkUrl);
 
   // 1. Consultar al backend primero (SSOT en vivo de SmartMatchApp / DB)
+  // Cambio 26: solo cortar acá si el backend trae psicóloga real — si no, seguir al paso 2 (búsqueda local)
   var query = targetCrmId || linkUrl || targetName;
   if (query) {
     var crm = fetchProfileFromBackend(query);
-    if (crm && crm.found) {
+    if (crm && crm.found && crm.psychologist) {
       return {
         name: crm.name || personCell.text,
         crmId: crm.crm_id || targetCrmId,
