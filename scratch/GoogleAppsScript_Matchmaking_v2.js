@@ -3833,7 +3833,103 @@ function ensureMatchesColumnsAndDropdowns() {
     safeSetDataValidation(sheet.getRange(2, lugarCol, maxRows - 1, 1), venueRule);
   }
 
-  Logger.log("✅ Columnas de estado y catálogo de RESTAURANTES asegurados en MATCHES.");
+  // 7. Cambio 19: Desplegables de HORA (cada 30 min), CIUDAD y PRESUPUESTO (desde ⚙️ RESTAURANTES)
+  var colHora = headers["HORA"] || 7;
+  var colCiudad = headers["CIUDAD"] || headers["CITY"] || 8;
+  var colPresupuesto = headers["PRESUPUESTO"] || 9;
+
+  // 7.1 Regla para HORA (intervalos de 30 minutos: 12:00 AM a 11:30 PM)
+  var horasList = [];
+  for (var h = 0; h < 24; h++) {
+    for (var m = 0; m < 60; m += 30) {
+      var ampm = h >= 12 ? "PM" : "AM";
+      var h12 = h % 12;
+      if (h12 === 0) h12 = 12;
+      var mm = (m === 0 ? "00" : "30");
+      horasList.push(h12 + ":" + mm + " " + ampm);
+    }
+  }
+  var horaRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(horasList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // 7.2 Reglas para CIUDAD y PRESUPUESTO desde el catálogo de ⚙️ RESTAURANTES
+  var restSheet = ss.getSheetByName("⚙️ RESTAURANTES");
+  var ciudades = getUniqueColumnValues(restSheet, "CIUDAD");
+  if (ciudades.length === 0) {
+    ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Medellín"];
+  }
+  var ciudadRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(ciudades, true)
+    .setAllowInvalid(true)
+    .build();
+
+  var presupuestos = getUniqueColumnValues(restSheet, "CATEGORÍA PRESUPUESTO");
+  if (presupuestos.length === 0) {
+    presupuestos = getUniqueColumnValues(restSheet, "CATEGORIA PRESUPUESTO");
+  }
+  if (presupuestos.length === 0) {
+    presupuestos = getUniqueColumnValues(restSheet, "PRESUPUESTO");
+  }
+  if (presupuestos.length === 0) {
+    presupuestos = ["Menos de 100k", "100k-200k", "200k-300k", "Más de 300k"];
+  }
+  var presupuestoRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(presupuestos, true)
+    .setAllowInvalid(true)
+    .build();
+
+  if (maxRows > 1) {
+    if (colHora) safeSetDataValidation(sheet.getRange(2, colHora, maxRows - 1, 1), horaRule);
+    if (colCiudad) safeSetDataValidation(sheet.getRange(2, colCiudad, maxRows - 1, 1), ciudadRule);
+    if (colPresupuesto) safeSetDataValidation(sheet.getRange(2, colPresupuesto, maxRows - 1, 1), presupuestoRule);
+  }
+
+  Logger.log("✅ Columnas de estado, HORA, CIUDAD, PRESUPUESTO y catálogo de RESTAURANTES asegurados en MATCHES.");
+}
+
+/**
+ * Cambio 19: Obtiene los valores únicos y limpios de una columna específica en una hoja dada (ignorando fila 1 de encabezados).
+ * Útil para alimentar listas desplegables dinámicas (ej: CIUDAD, CATEGORÍA PRESUPUESTO desde ⚙️ RESTAURANTES).
+ * 
+ * @param {Sheet|string} sheet - La hoja de Google Sheets (objeto Sheet o nombre de la pestaña).
+ * @param {string|number} colIdentifier - Nombre del encabezado o índice numérico (1-based) de la columna.
+ * @return {Array<string>} Lista de valores únicos ordenados alfabéticamente.
+ */
+function getUniqueColumnValues(sheet, colIdentifier) {
+  if (!sheet) return [];
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var targetSheet = (typeof sheet === "string") ? ss.getSheetByName(sheet) : sheet;
+  if (!targetSheet) return [];
+
+  var lastRow = targetSheet.getLastRow();
+  if (lastRow <= 1) return [];
+
+  var colIdx = -1;
+  if (typeof colIdentifier === "number") {
+    colIdx = colIdentifier;
+  } else if (typeof colIdentifier === "string") {
+    var headers = getSheetHeaders(targetSheet);
+    colIdx = headers[colIdentifier] || headers[colIdentifier.toUpperCase()] || headers[colIdentifier.trim()];
+  }
+
+  if (!colIdx || colIdx < 1 || colIdx > targetSheet.getLastColumn()) return [];
+
+  var values = targetSheet.getRange(2, colIdx, lastRow - 1, 1).getValues();
+  var seen = {};
+  var uniqueList = [];
+
+  for (var i = 0; i < values.length; i++) {
+    var val = (values[i][0] || "").toString().trim();
+    if (val && !seen[val]) {
+      seen[val] = true;
+      uniqueList.push(val);
+    }
+  }
+
+  uniqueList.sort();
+  return uniqueList;
 }
 
 /**
@@ -4454,7 +4550,7 @@ function actualizarDesplegablesDinamicos() {
         var matchCol = mHeaders["ESTADO TOTAL"] || mHeaders["MATCH"] || 1;
         var mStatusACol = mHeaders["ESTADO PERSONA A"] || mHeaders["STATUS PERSONA A"] || mHeaders["STATUS A"] || 2;
         var mStatusBCol = mHeaders["ESTADO PERSONA B"] || mHeaders["STATUS PERSONA B"] || mHeaders["STATUS B"] || 3;
-        var mLugarCol = mHeaders["LUGAR"] || 7;
+        var mLugarCol = mHeaders["LUGAR"] || 10;
         var mMaxRows = Math.min(s.getMaxRows(), 5000);
         if (mMaxRows > 1) {
           if (matchCol) safeSetDataValidation(s.getRange(2, matchCol, mMaxRows - 1, 1), matchesRule);
@@ -4462,6 +4558,9 @@ function actualizarDesplegablesDinamicos() {
           if (mStatusBCol) safeSetDataValidation(s.getRange(2, mStatusBCol, mMaxRows - 1, 1), matchesRule);
           if (mLugarCol && venueRule) safeSetDataValidation(s.getRange(2, mLugarCol, mMaxRows - 1, 1), venueRule);
         }
+        try {
+          ensureMatchesColumnsAndDropdowns();
+        } catch (eMCols) {}
       } else if (sName === "CITAS ACEPTADAS" || sName === "CITAS CONFIRMADAS") {
         var cHeaders = getSheetHeaders(s);
         var cStatusCol = cHeaders["ESTADO CITA"] || cHeaders["STATUS"] || 8;
