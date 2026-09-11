@@ -5595,7 +5595,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     ? (" | 📅 Filtro Activo: " + (dtDesde ? Utilities.formatDate(dtDesde, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Inicio") + " a " + (dtHasta ? Utilities.formatDate(dtHasta, CONFIG.TIMEZONE, "yyyy-MM-dd") : "Hoy"))
     : " | 📅 Modo: Histórico Completo";
 
-  sheet.getRange("A2:L2").merge()
+  sheet.getRange("A2:M2").merge()
     .setValue("Actualizado automáticamente: " + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm:ss") + filterText + " | Entorno: SSOT Matchmaking")
     .setFontSize(9)
     .setFontStyle("italic")
@@ -5604,7 +5604,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     .setHorizontalAlignment("left");
 
   // 3. Barra de Filtro de Fechas + botón Recalcular (Fila 3 - fondo gris clarito #F5F5F5, todo a la izquierda)
-  sheet.getRange("A3:L3").setBackground("#F5F5F5");
+  sheet.getRange("A3:M3").setBackground("#F5F5F5");
 
   sheet.getRange("A3:B3").merge()
     .setValue("📅 Filtro de Fechas:")
@@ -5688,7 +5688,7 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
   sheet.setRowHeight(4, 15);
 
   // 6. Título de la Tabla 1 (Fila 5)
-  sheet.getRange("A5:L5").merge()
+  sheet.getRange("A5:M5").merge()
     .setValue("Rendimiento Matchmaker")
     .setFontWeight("bold")
     .setFontSize(12)
@@ -5696,28 +5696,28 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     .setFontColor("#FFFFFF")
     .setHorizontalAlignment("left");
 
-  // Cambio 30: Fila 6 - banner de agrupación por bloques (GESTIÓN DE MATCHES / GESTIÓN DE PERFILES)
-  sheet.getRange(6, 2, 1, 6).merge() // Columnas B-G: Asignados, Hechos, Aprobados, No aprobados, Trouble, No hay gente
+  // Cambio 37: Fila 6 - banners en pastel, rango ampliado por la columna nueva
+  sheet.getRange(6, 2, 1, 7).merge() // Columnas B-H: Tab Profile, Asignados tab Matches, Hechos, Aprobados, No aprobados, Trouble, No hay gente
     .setValue("GESTIÓN DE MATCHES")
     .setFontWeight("bold")
     .setFontSize(9)
-    .setBackground("#4A2545")
-    .setFontColor("#FFFFFF")
+    .setBackground("#F7D9E3")
+    .setFontColor("#5C2A3A")
     .setHorizontalAlignment("center");
 
-  sheet.getRange(6, 8, 1, 3).merge() // Columnas H-J: Sin trabajar, Fecha en blanco, Listos Match
+  sheet.getRange(6, 9, 1, 3).merge() // Columnas I-K: Sin trabajar, Fecha en blanco, Listos Match
     .setValue("GESTIÓN DE PERFILES")
     .setFontWeight("bold")
     .setFontSize(9)
-    .setBackground("#1B365D")
-    .setFontColor("#FFFFFF")
+    .setBackground("#D6EAF8")
+    .setFontColor("#1B4F72")
     .setHorizontalAlignment("center");
 
   sheet.setRowHeight(6, 22);
 
-  // Encabezados de la Tabla 1 (Fila 7) - 12 columnas, orden final agrupado (Cambio 30)
+  // Encabezados de la Tabla 1 (Fila 7) - 13 columnas, con Asignados tab de Matches (Cambio 37)
   var masterHeaders = [
-    "Psicóloga", "Asignados", "Hechos", "Aprobados", "No aprobados", "Trouble", "No hay gente",
+    "Psicóloga", "Tab Profile", "Asignados tab de Matches", "Hechos", "Aprobados", "No aprobados", "Trouble", "No hay gente",
     "Sin trabajar", "Fecha en blanco", "Listos Match", "Refunds", "ESTADO"
   ];
 
@@ -5928,20 +5928,19 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
 
     sheet.getRange(rowNum, 1).setValue(pData.name).setFontWeight("bold");
     sheet.getRange(rowNum, 2).setValue(pData.assigned).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 3).setValue(pData.hechos).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 4).setValue(pData.aprobados).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 5).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 6).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 7).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 8).setValue(pData.gap).setFontWeight("bold").setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 9).setNumberFormat("@").setValue(pData.fechaEnBlanco).setFontSize(8).setHorizontalAlignment("center"); // Cambio 30: letra más chica para que entre sin ensanchar la columna
-    sheet.getRange(rowNum, 10).setValue(pData.listos).setNumberFormat("0").setHorizontalAlignment("center");
-    sheet.getRange(rowNum, 11).setValue(pData.refunds).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 3).setValue(pData.totalSlots).setNumberFormat("0").setHorizontalAlignment("center"); // Cambio 37: Asignados tab de Matches
+    sheet.getRange(rowNum, 4).setValue(pData.hechos).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 5).setValue(pData.aprobados).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 6).setValue(pData.noAprobados).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 7).setValue(pData.troubleOnly).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 8).setValue(pData.noHayGente).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 9).setValue(pData.gap).setFontWeight("bold").setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 10).setNumberFormat("@").setValue(pData.fechaEnBlanco).setFontSize(8).setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 11).setValue(pData.listos).setNumberFormat("0").setHorizontalAlignment("center");
+    sheet.getRange(rowNum, 12).setValue(pData.refunds).setNumberFormat("0").setHorizontalAlignment("center");
 
-    // Cambio 30: "Asignados en su MATCHES" y el "Trouble" combinado ya no se muestran (quedó un solo Trouble, el separado)
-
-    // Columna 12: ESTADO (semáforo operativo)
-    var estadoCell = sheet.getRange(rowNum, 12);
+    // Columna 13: ESTADO (semáforo operativo)
+    var estadoCell = sheet.getRange(rowNum, 13);
     estadoCell.setValue(pData.estado).setFontWeight("bold").setHorizontalAlignment("center");
     if (pData.estado === "Al día") {
       estadoCell.setBackground("#D9EAD3").setFontColor("#274E13");
@@ -5954,11 +5953,11 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     }
   }
 
-  // Forzar formato numérico plano ("0") en todas las columnas de conteo (Cambio 30)
+  // Forzar formato numérico plano ("0") en todas las columnas de conteo (Cambio 37)
   if (psychologistsData.length > 0) {
-    var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 10, 11]; // Cambio 30: renumerado (col 9 es texto, col 12 es ESTADO en texto)
+    var plainNumberCols = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12]; // Cambio 37: renumerado (col 10 es texto, col 13 es ESTADO en texto)
     for (var pnc = 0; pnc < plainNumberCols.length; pnc++) {
-      sheet.getRange(8, plainNumberCols[pnc], psychologistsData.length, 1).setNumberFormat("0"); // Cambio 30: datos ahora empiezan en fila 8
+      sheet.getRange(8, plainNumberCols[pnc], psychologistsData.length, 1).setNumberFormat("0");
     }
   }
 
@@ -6151,8 +6150,8 @@ function generarPanelSupervisionMaria(customDesde, customHasta, isAutomatedRun) 
     sheet.getRange(rCurRow, 5).setValue(rObj.prio).setHorizontalAlignment("center").setFontWeight("bold");
   }
 
-  // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a L - 12 cols, Cambio 30)
-  var colWidths = [110, 75, 60, 70, 75, 60, 75, 70, 90, 75, 60, 80]; // Cambio 30: 12 columnas reordenadas
+  // 10. Ajustar Ancho de Columnas para Visibilidad Perfecta (A a M - 13 cols, Cambio 37)
+  var colWidths = [110, 75, 75, 60, 70, 75, 60, 75, 70, 90, 75, 60, 80]; // Cambio 37: 13 columnas (agregada Asignados tab de Matches)
   for (var cw = 0; cw < colWidths.length; cw++) {
     sheet.setColumnWidth(cw + 1, colWidths[cw]);
   }
@@ -6840,6 +6839,8 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
         sheet.getRange(row, fechaRealCol).setBackground(null).clearNote();
       }
       var curStTotal = (sheet.getRange(row, matchCol).getValue() || "").toString().trim().toUpperCase();
+      // Cambio 36: logging diagnóstico de estado y flujo de promoción
+      Logger.log("Cambio 36 [handleMatchesEdit]: fila " + row + ", col=" + col + " (edición fecha), curStTotal='" + curStTotal + "', fechaStr='" + fechaStr + "'");
       if (curStTotal === "PENDIENTE" || !curStTotal) {
         sheet.getRange(row, matchCol).setValue("cita confirmada").setBackground("#D9EAD3");
         if (statusACol) sheet.getRange(row, statusACol).setValue("cita confirmada").setBackground("#D9EAD3");
@@ -6847,9 +6848,21 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
         curStTotal = "CITA CONFIRMADA";
         // Cambio 34: copiar a la zona de seguimiento manual de arriba, en orden cronológico
         try {
+          Logger.log("Cambio 36 [handleMatchesEdit]: invocando copiarACitasAgendadasArriba tras promover a cita confirmada en fila " + row);
           copiarACitasAgendadasArriba(sheet, row);
         } catch (eCopiar34) {
           Logger.log("Aviso al copiar a zona de seguimiento (Cambio 34): " + eCopiar34.message);
+        }
+      } else {
+        Logger.log("Cambio 36 [handleMatchesEdit]: fila " + row + " curStTotal ya era '" + curStTotal + "' (no PENDIENTE)");
+        // Si ya era cita confirmada/agendada, invocamos igualmente para actualizar o insertar en zona de seguimiento
+        if (curStTotal === "CITA CONFIRMADA" || curStTotal === "AGENDADA" || curStTotal === "CONFIRMADO" || curStTotal === "CITA RESERVADA") {
+          try {
+            Logger.log("Cambio 36 [handleMatchesEdit]: invocando copiarACitasAgendadasArriba para fila con estado existente '" + curStTotal + "' en fila " + row);
+            copiarACitasAgendadasArriba(sheet, row);
+          } catch (eCopiar34b) {
+            Logger.log("Aviso al copiar a zona de seguimiento (Cambio 34/36): " + eCopiar34b.message);
+          }
         }
       }
 
@@ -6896,6 +6909,13 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
         reordenarCitasAceptadas();
       } catch (eSyncLate) {
         Logger.log("Aviso al re-sincronizar tras completar datos de agendamiento: " + eSyncLate.message);
+      }
+      // Cambio 36: actualizar también la zona de seguimiento manual si ya existía la cita
+      try {
+        Logger.log("Cambio 36 [handleMatchesEdit]: actualizando zona de seguimiento tras completar col " + col + " en fila " + row);
+        copiarACitasAgendadasArriba(sheet, row);
+      } catch (eSyncTrackingLate) {
+        Logger.log("Aviso Cambio 36 al actualizar zona de seguimiento tras datos logísticos: " + eSyncTrackingLate.message);
       }
     }
   }
@@ -7028,10 +7048,12 @@ function reordenarCitasAceptadas(citasSheet) {
 // Cambio 34: copia la cita confirmada a la zona de seguimiento manual (filas ~2 a ~1799),
 // insertándola en la posición cronológica correcta (por fecha y hora), en amarillo.
 // NO cambia el color a verde — eso lo sigue haciendo Servicio al Cliente a mano.
+// Cambio 36: logging exhaustivo en cada punto de salida temprana y en inserción/actualización
 var TRACKING_ZONE_END_ROW = 1799; // límite conocido de la zona de seguimiento hoy
 
 function parseFechaTextoLibre(texto) {
   if (!texto) return null;
+  if (texto instanceof Date) return isNaN(texto.getTime()) ? null : texto;
   var meses = {
     "enero": 0, "febrero": 1, "marzo": 2, "abril": 3, "mayo": 4, "junio": 5,
     "julio": 6, "agosto": 7, "septiembre": 8, "octubre": 9, "noviembre": 10, "diciembre": 11
@@ -7042,7 +7064,12 @@ function parseFechaTextoLibre(texto) {
     var idx = t.indexOf(m);
     if (idx >= 0) { mesEncontrado = m; mesIdx = meses[m]; break; }
   }
-  if (mesIdx < 0) return null;
+  if (mesIdx < 0) {
+    if (typeof parseFechaSupervision === "function") {
+      return parseFechaSupervision(texto);
+    }
+    return null;
+  }
   var diaMatch = t.match(/(\d{1,2})/);
   if (!diaMatch) return null;
   var dia = parseInt(diaMatch[1], 10);
@@ -7064,6 +7091,12 @@ function parseFechaTextoLibre(texto) {
 
 function copiarACitasAgendadasArriba(matchesSheet, row) {
   try {
+    Logger.log("Cambio 34: iniciando para fila " + row); // diagnóstico Cambio 36
+    if (row <= TRACKING_ZONE_END_ROW) {
+      Logger.log("Cambio 34: salió temprano, fila " + row + " ya está dentro de la zona de seguimiento manual (filas 2-" + TRACKING_ZONE_END_ROW + ")");
+      return;
+    }
+
     var headers = getSheetHeaders(matchesSheet);
     var matchCol = headers["ESTADO TOTAL"] || 1;
     var statusACol = headers["ESTADO PERSONA A"] || 2;
@@ -7078,19 +7111,33 @@ function copiarACitasAgendadasArriba(matchesSheet, row) {
 
     var cellA = getCellData(matchesSheet, row, personACol);
     var cellB = getCellData(matchesSheet, row, personBCol);
-    if (!cellA || !cellA.text) return;
+    if (!cellA || !cellA.text) {
+      Logger.log("Cambio 34: salió temprano, sin cellA.text en fila " + row + " (col " + personACol + ")");
+      return;
+    }
     var nameA = (cellA.text || "").trim().toLowerCase();
     var nameB = (cellB && cellB.text ? cellB.text.trim().toLowerCase() : "");
 
     var diaRaw = matchesSheet.getRange(row, diaCol).getValue();
     var horaVal = (horaCol ? (matchesSheet.getRange(row, horaCol).getValue() || "") : "").toString().trim();
-    if (!diaRaw) return;
+    Logger.log("Cambio 34: evaluando fila " + row + " con diaRaw: '" + diaRaw + "' (tipo: " + typeof diaRaw + (diaRaw instanceof Date ? ", Date" : "") + "), horaVal: '" + horaVal + "'");
+    if (!diaRaw) {
+      Logger.log("Cambio 34: salió temprano, sin diaRaw en fila " + row + " (col " + diaCol + ")");
+      return;
+    }
 
     var mesesTexto = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
     var fechaObj = (diaRaw instanceof Date) ? diaRaw : parseFechaTextoLibre(diaRaw.toString());
-    if (!fechaObj) return;
+    if (!fechaObj && typeof parseFechaSupervision === "function") {
+      fechaObj = parseFechaSupervision(diaRaw);
+    }
+    if (!fechaObj) {
+      Logger.log("Cambio 34: salió temprano, no se pudo parsear fechaObj de: '" + diaRaw + "' en fila " + row);
+      return;
+    }
 
-    var textoFechaCombinada = fechaObj.getDate() + " de " + mesesTexto[fechaObj.getMonth()] + " a las " + (horaVal || Utilities.formatDate(fechaObj, CONFIG.TIMEZONE, "h:mm a"));
+    var horaStr = horaVal || ((fechaObj.getHours() || fechaObj.getMinutes()) ? Utilities.formatDate(fechaObj, CONFIG.TIMEZONE, "h:mm a") : "");
+    var textoFechaCombinada = fechaObj.getDate() + " de " + mesesTexto[fechaObj.getMonth()] + (horaStr ? " a las " + horaStr : "");
     var fechaHoraComparable = new Date(fechaObj.getFullYear(), fechaObj.getMonth(), fechaObj.getDate());
     if (horaVal) {
       var hm = horaVal.match(/(\d{1,2})(:(\d{2}))?\s*(am|pm)/i);
@@ -7103,6 +7150,7 @@ function copiarACitasAgendadasArriba(matchesSheet, row) {
     }
 
     // 1. Buscar si ya existe esta pareja en la zona de seguimiento (evitar duplicados, mismo criterio que Cambio 33)
+    Logger.log("Cambio 34: buscando si pareja ('" + nameA + "' ↔ '" + nameB + "') ya existe en zona de seguimiento...");
     var zoneData = matchesSheet.getRange(2, personACol, TRACKING_ZONE_END_ROW - 1, personBCol - personACol + 1).getValues();
     for (var i = 0; i < zoneData.length; i++) {
       var zA = (zoneData[i][0] || "").toString().trim().toLowerCase();
@@ -7110,9 +7158,11 @@ function copiarACitasAgendadasArriba(matchesSheet, row) {
       if ((zA === nameA && zB === nameB) || (zA === nameB && zB === nameA)) {
         // Ya existe: actualizar fecha/lugar en esa fila en vez de duplicar
         var existingRow = i + 2;
+        Logger.log("Cambio 34: pareja ya existe en zona de seguimiento, fila " + existingRow + " actualizada");
         if (diaCol) matchesSheet.getRange(existingRow, diaCol).setValue(textoFechaCombinada);
         if (lugarCol) matchesSheet.getRange(existingRow, lugarCol).setValue(matchesSheet.getRange(row, lugarCol).getValue());
         if (cityCol) matchesSheet.getRange(existingRow, cityCol).setValue(matchesSheet.getRange(row, cityCol).getValue());
+        if (presupuestoCol) matchesSheet.getRange(existingRow, presupuestoCol).setValue(matchesSheet.getRange(row, presupuestoCol).getValue());
         return;
       }
     }
@@ -7121,13 +7171,18 @@ function copiarACitasAgendadasArriba(matchesSheet, row) {
     var insertAt = TRACKING_ZONE_END_ROW; // por defecto, al final de la zona si no se puede ubicar antes
     var allDias = matchesSheet.getRange(2, diaCol, TRACKING_ZONE_END_ROW - 1, 1).getValues();
     for (var j = 0; j < allDias.length; j++) {
-      var existingFechaObj = parseFechaTextoLibre((allDias[j][0] || "").toString());
+      var rawCellVal = allDias[j][0];
+      var existingFechaObj = parseFechaTextoLibre((rawCellVal || "").toString());
+      if (!existingFechaObj && rawCellVal && typeof parseFechaSupervision === "function") {
+        existingFechaObj = parseFechaSupervision(rawCellVal);
+      }
       if (existingFechaObj && existingFechaObj > fechaHoraComparable) {
         insertAt = j + 2;
         break;
       }
     }
 
+    Logger.log("Cambio 34: insertando fila nueva en posición " + insertAt + " (fechaHoraComparable: " + Utilities.formatDate(fechaHoraComparable, CONFIG.TIMEZONE, "yyyy-MM-dd HH:mm") + ")");
     // 3. Insertar la fila copiada en amarillo (pendiente de feedback de Servicio al Cliente)
     matchesSheet.insertRowBefore(insertAt);
     var estadoVal = matchesSheet.getRange(row, matchCol).getValue();
@@ -7142,9 +7197,9 @@ function copiarACitasAgendadasArriba(matchesSheet, row) {
     if (lugarCol) matchesSheet.getRange(insertAt, lugarCol).setValue(matchesSheet.getRange(row, lugarCol).getValue());
     matchesSheet.getRange(insertAt, 1, 1, personBCol).setBackground("#FFF2CC");
 
-    Logger.log("Cambio 34: copiada a zona de seguimiento en fila " + insertAt + " para " + cellA.text);
+    Logger.log("Cambio 34: copiada exitosamente a zona de seguimiento en fila " + insertAt + " para " + cellA.text);
   } catch (eCopy) {
-    Logger.log("Aviso Cambio 34 (copiar a zona de seguimiento): " + eCopy.message);
+    Logger.log("Aviso al copiar a zona de seguimiento (Cambio 34/36): " + eCopy.message + (eCopy.stack ? "\n" + eCopy.stack : ""));
   }
 }
 
@@ -8560,8 +8615,8 @@ function agregarGraficoAprobadosPorPsicologa() {
   var chart = sheet.newChart()
     .setChartType(Charts.ChartType.BAR)
     .addRange(sheet.getRange(firstDataRow, 1, numRows, 1))
-    .addRange(sheet.getRange(firstDataRow, 4, numRows, 1)) // Columna 4: Aprobados (sigue igual en el nuevo orden)
-    .setPosition(5, 14, 0, 0) // Columna N (14), fila 5 — a la derecha de las 12 columnas A a L (Cambio 30)
+    .addRange(sheet.getRange(firstDataRow, 5, numRows, 1)) // Columna 5: Aprobados (se corrió un lugar por la columna nueva, Cambio 37)
+    .setPosition(5, 15, 0, 0) // Columna O (15), fila 5 — a la derecha de las 13 columnas A a M (Cambio 37)
     .setOption("title", "Matches Aprobados por Psicóloga")
     .setOption("legend", "none")
     .setOption("colors", ["#961500"])
