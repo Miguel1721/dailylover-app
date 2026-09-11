@@ -49,7 +49,8 @@ checks = [
     ('Cambio 34: Copiar cita confirmada a zona seguimiento cronologico amarillo', 'copiarACitasAgendadasArriba' in v2 and 'parseFechaTextoLibre' in v2 and 'TRACKING_ZONE_END_ROW' in v2 and 'copiarACitasAgendadasArriba(sheet, row)' in v2),
     ('Cambio 35: Columna 19 OBSERVACIONES CS dedicada (evitar pisar PRESUPUESTO)', 'Cambio 35' in v2 and 'OBSERVACIONES CS' in v2 and 'obsCol = 19' in v2 and ('headers["OBSERVACIONES"] || headers["PRESUPUESTO"]' not in v2)),
     ('Cambio 36: Diagnostico y logging exhaustivo en copiarACitasAgendadasArriba', 'Cambio 36' in v2 and 'Cambio 34: iniciando para fila' in v2 and 'Cambio 34: salió temprano, sin diaRaw' in v2 and 'Cambio 34: pareja ya existe en zona de seguimiento' in v2 and 'Cambio 34: insertando fila nueva en posición' in v2),
-    ('Cambio 37: Columna Asignados tab de Matches y banners en pastel', 'Tab Profile' in v2 and 'Asignados tab de Matches' in v2 and '#F7D9E3' in v2 and '#D6EAF8' in v2 and 'pData.totalSlots' in v2 and '.setPosition(5, 15, 0, 0)' in v2)
+    ('Cambio 37: Columna Asignados tab de Matches y banners en pastel', 'Tab Profile' in v2 and 'Asignados tab de Matches' in v2 and '#F7D9E3' in v2 and '#D6EAF8' in v2 and 'pData.totalSlots' in v2 and '.setPosition(5, 15, 0, 0)' in v2),
+    ('Cambio 38: Reporte de status de clientes por psicóloga', 'generarReporteStatusClientesPsicologa' in v2 and 'generarReportesTodasLasPsicologasQueSeVan' in v2 and 'pStatus.indexOf("REFUND") >= 0' in v2 and 'pStatus.indexOf("HECHO") >= 0' in v2 and 'PROFILES ' in v2 and ' (auto)' in v2)
 ]
 
 all_ok = True
@@ -61,7 +62,8 @@ for name, passed in checks:
 
 print('=' * 92)
 if all_ok:
-    print('TODOS LOS CAMBIOS DEL 1 AL 37 ESTAN 100% IMPLEMENTADOS Y VERIFICADOS.')
+    print('TODOS LOS CAMBIOS DEL 1 AL 38 ESTAN 100% IMPLEMENTADOS Y VERIFICADOS.')
 else:
     print('HAY CAMBIOS PENDIENTES O CON DISCREPANCIA.')
+
 

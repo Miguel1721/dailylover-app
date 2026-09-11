@@ -3520,6 +3520,9 @@ function onOpen(e) {
     menu.addItem("⚙️ Reordenar Columnas MATCHES (17 Canónicas)", "reordenarColumnasMatchesCanonico");
     menu.addItem("⚙️ Asegurar Columnas de Estados en MATCHES", "ensureMatchesColumnsAndDropdowns");
     menu.addItem("📅 Sincronizar y Limpiar Citas Aceptadas", "sincronizarTodasLasCitasAceptadas");
+    menu.addSeparator();
+    menu.addItem("📊 Reporte Status Clientes (Psicólogas Salientes)", "generarReportesTodasLasPsicologasQueSeVan");
+    menu.addItem("📊 Reporte Status Clientes (Psicóloga Individual)", "promptGenerarReporteStatusClientesPsicologa");
     menu.addToUi();
     Logger.log("✅ Menú '🔎 Daily Lover' creado exitosamente en onOpen.");
   } catch (menuErr) {
@@ -8623,4 +8626,373 @@ function agregarGraficoAprobadosPorPsicologa() {
     .build();
 
   sheet.insertChart(chart);
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 16. CAMBIO 38: REPORTE DE STATUS DE CLIENTES POR PSICÓLOGA
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * CAMBIO 38: Genera la pestaña 'PROFILES [PSICOLOGA] (auto)' con columnas:
+ * NOMBRE | PLAN | TOTAL CITAS | COMPLETADAS | PENDIENTES | ESTADO
+ *
+ * Reglas de detección e integridad:
+ * 1. Para detectar refund: pStatus.indexOf("REFUND") >= 0 (cubre "REFUND ", "REFUND DONE").
+ * 2. Para detectar cita completada en la pestaña de la psicóloga: pStatus.indexOf("HECHO") >= 0
+ *    (cubre "HECHO ", "HECHO POR MAPE") como señal de completada, junto con MATCHES general.
+ * 3. Usa findPsychologistSheet(psycName) para tolerar espacios como "MATCHES ANA ".
+ * 4. Resuelve el PLAN buscando en la pestaña individual, en 'Clients plans' o en PROFILES.
+ *
+ * @param {string} psycName Nombre de la psicóloga (ej: "STEFFY", "ANA", "JENN", "MAPE D")
+ * @return {Sheet} La hoja creada/actualizada
+ */
+function generarReporteStatusClientesPsicologa(psycName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!psycName || !psycName.toString().trim()) {
+    SpreadsheetApp.getUi().alert("Error", "Debe ingresar el nombre de la psicóloga.", SpreadsheetApp.getUi().ButtonSet.OK);
+    return null;
+  }
+
+  var normPsyc = normalizePsychologistName(psycName.toString().trim());
+  if (!normPsyc) normPsyc = psycName.toString().trim().toUpperCase();
+
+  // Buscar la hoja de la psicóloga usando findPsychologistSheet para tolerar espacios como 'MATCHES ANA '
+  var pSheet = findPsychologistSheet(normPsyc);
+  if (!pSheet) {
+    Logger.log("⚠️ No se encontró la pestaña para la psicóloga: " + normPsyc);
+    SpreadsheetApp.getActiveSpreadsheet().toast("No se encontró la pestaña para la psicóloga: " + normPsyc, "Pestaña No Encontrada", 6);
+    return null;
+  }
+
+  // 1. Cargar catálogo de 'Clients plans' (SSOT de planes contratados)
+  var clientPlanMap = {};
+  var cpSheet = ss.getSheetByName("Clients plans") || ss.getSheetByName("CLIENTS PLANS");
+  if (cpSheet && cpSheet.getLastRow() > 1) {
+    var cpLastRow = cpSheet.getLastRow();
+    var cpLastCol = cpSheet.getLastColumn();
+    var cpData = cpSheet.getRange(1, 1, cpLastRow, cpLastCol).getValues();
+    var cpHeaders = cpData[0];
+    for (var col = 0; col < cpHeaders.length; col += 2) {
+      var planHeader = (cpHeaders[col] || "").toString().trim();
+      if (!planHeader) continue;
+      for (var r = 1; r < cpData.length; r++) {
+        var cName = (cpData[r][col] || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
+        if (cName && !clientPlanMap[cName]) {
+          clientPlanMap[cName] = planHeader;
+        }
+      }
+    }
+  }
+
+  // 2. Cargar citas completadas y refunds desde MATCHES general
+  var completedMatchesByClient = {}; // cleanName -> { partnerName: true }
+  var refundClientsInMatches = {};
+  var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
+  if (matchesSheet && matchesSheet.getLastRow() > 1) {
+    var mHeaders = getSheetHeaders(matchesSheet);
+    var mStCol = mHeaders["ESTADO TOTAL"] || 1;
+    var mPACol = mHeaders["PERSONA A"] || 4;
+    var mPBCol = mHeaders["PERSONA B"] || 5;
+    var mLastRow = matchesSheet.getLastRow();
+    var mData = matchesSheet.getRange(2, 1, mLastRow - 1, Math.max(mStCol, mPACol, mPBCol)).getValues();
+    for (var mi = 0; mi < mData.length; mi++) {
+      var mSt = (mData[mi][mStCol - 1] || "").toString().toUpperCase().trim();
+      var mPA = (mData[mi][mPACol - 1] || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
+      var mPB = (mData[mi][mPBCol - 1] || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
+
+      if (mSt.indexOf("REFUND") >= 0) {
+        if (mPA) refundClientsInMatches[mPA] = true;
+        if (mPB) refundClientsInMatches[mPB] = true;
+      }
+      if (mSt.indexOf("CITA REALIZADA") >= 0 || mSt.indexOf("HECHO") >= 0 || mSt.indexOf("REALIZADA") >= 0) {
+        if (mPA) {
+          if (!completedMatchesByClient[mPA]) completedMatchesByClient[mPA] = {};
+          if (mPB) completedMatchesByClient[mPA][mPB] = true;
+        }
+        if (mPB) {
+          if (!completedMatchesByClient[mPB]) completedMatchesByClient[mPB] = {};
+          if (mPA) completedMatchesByClient[mPB][mPA] = true;
+        }
+      }
+    }
+  }
+
+  // 3. Extraer clientes, planes y estados desde la pestaña individual de la psicóloga
+  var clientsMap = {}; // cleanName -> { displayName, plan, completedPartners: {}, hasRefund: false, hasMatches: false }
+  var pHeaders = getSheetHeaders(pSheet);
+  var pPersonACol = pHeaders["PERSON A"] || pHeaders["PERSONA A"] || pHeaders["CLIENTE"] || 7;
+  var pPersonBCol = pHeaders["PERSON B"] || pHeaders["PERSONA B"] || 8;
+  var pPlanCol = pHeaders["PLAN"] || pHeaders["PLAN TIER"] || 6;
+  var pStatusCol = pHeaders["STATUS"] || pHeaders["ESTADO"] || 10;
+  var pLastRow = pSheet.getLastRow();
+
+  if (pLastRow > 1) {
+    var pMaxCol = Math.max(pPersonACol, pPersonBCol, pPlanCol, pStatusCol);
+    var pData = pSheet.getRange(2, 1, pLastRow - 1, pMaxCol).getValues();
+
+    for (var pi = 0; pi < pData.length; pi++) {
+      var rawA = (pData[pi][pPersonACol - 1] || "").toString().trim();
+      if (!rawA) continue;
+      var cleanA = rawA.toLowerCase().replace(/\s+/g, " ");
+
+      if (!clientsMap[cleanA]) {
+        var rawPlan = (pPlanCol <= pData[pi].length ? (pData[pi][pPlanCol - 1] || "").toString().trim() : "");
+        clientsMap[cleanA] = {
+          displayName: rawA,
+          plan: rawPlan,
+          completedPartners: {},
+          hasRefund: false,
+          hasMatches: true
+        };
+      } else if (!clientsMap[cleanA].plan && pPlanCol <= pData[pi].length) {
+        var rPlan = (pData[pi][pPlanCol - 1] || "").toString().trim();
+        if (rPlan) clientsMap[cleanA].plan = rPlan;
+      }
+
+      var rawB = (pPersonBCol <= pData[pi].length ? (pData[pi][pPersonBCol - 1] || "").toString().trim() : "");
+      var cleanB = rawB.toLowerCase().replace(/\s+/g, " ");
+      var rawStatus = (pStatusCol <= pData[pi].length ? (pData[pi][pStatusCol - 1] || "").toString().toUpperCase().trim() : "");
+
+      // Detección de REFUND en la pestaña individual (indexOf cubre "REFUND ", "REFUND DONE")
+      if (rawStatus.indexOf("REFUND") >= 0) {
+        clientsMap[cleanA].hasRefund = true;
+      }
+
+      // Detección de CITA COMPLETADA en la pestaña individual (indexOf cubre "HECHO ", "HECHO POR MAPE")
+      if (rawStatus.indexOf("HECHO") >= 0) {
+        if (cleanB) {
+          clientsMap[cleanA].completedPartners[cleanB] = true;
+        } else {
+          clientsMap[cleanA].completedPartners["__hecho_slot_" + pi] = true;
+        }
+      }
+    }
+  }
+
+  // 4. Incorporar clientes asignados en PROFILES que aún no tengan slots creados en la pestaña
+  var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
+  if (profSheet && profSheet.getLastRow() > 1) {
+    var profHeaders = getSheetHeaders(profSheet);
+    var prNameCol = profHeaders["FULLNAME"] || profHeaders["FULL NAME"] || profHeaders["NOMBRE"] || 2;
+    var prRespCol = profHeaders["RESPONSABLE"] || profHeaders["PSICOLOGA"] || 4;
+    var prPlanCol = profHeaders["PLAN"] || 0;
+    var prLastRow = profSheet.getLastRow();
+    var prMax = Math.max(prNameCol, prRespCol, prPlanCol || 1);
+    var profData = profSheet.getRange(2, 1, prLastRow - 1, prMax).getValues();
+
+    for (var pr = 0; pr < profData.length; pr++) {
+      var cRaw = (profData[pr][prNameCol - 1] || "").toString().trim();
+      var rRaw = (profData[pr][prRespCol - 1] || "").toString().trim();
+      if (!cRaw || !rRaw) continue;
+
+      var nPsyc = normalizePsychologistName(rRaw);
+      if (nPsyc === normPsyc) {
+        var cClean = cRaw.toLowerCase().replace(/\s+/g, " ");
+        if (!clientsMap[cClean]) {
+          var prPlan = (prPlanCol ? (profData[pr][prPlanCol - 1] || "").toString().trim() : "");
+          clientsMap[cClean] = {
+            displayName: cRaw,
+            plan: prPlan,
+            completedPartners: {},
+            hasRefund: false,
+            hasMatches: false
+          };
+        }
+      }
+    }
+  }
+
+  // Función auxiliar interna para determinar número total de citas según el plan
+  function obtenerTotalCitasPorPlan(rawPlan) {
+    if (!rawPlan) return 1;
+    var p = rawPlan.toString().toUpperCase().trim();
+    if (p.indexOf("195K") >= 0 || p.indexOf("VIP") >= 0 || p.indexOf("EXPERIENCE") >= 0) return 4;
+    if (p.indexOf("150K") >= 0 || p.indexOf("PREMIUM") >= 0 || p.indexOf("98K") >= 0 || p.indexOf("ESTANDAR") >= 0 || p.indexOf("ESTÁNDAR") >= 0) return 3;
+    if (p.indexOf("65K (2") >= 0 || p.indexOf("2 DATES") >= 0 || p.indexOf("2 CITAS") >= 0 || p.indexOf("DOS DATE") >= 0) return 2;
+    if (p.indexOf("65K (1") >= 0 || p.indexOf("1 DATE") >= 0 || p.indexOf("1 CITA") >= 0 || p.indexOf("40K") >= 0 || p.indexOf("BASICO") >= 0 || p.indexOf("BÁSICO") >= 0) return 1;
+    if (typeof resolvePlanSlots === "function") {
+      var s = resolvePlanSlots(rawPlan);
+      if (s > 0) return s;
+    }
+    return 1;
+  }
+
+  // 5. Procesar filas del reporte
+  var rowsReporte = [];
+  var cleanKeys = Object.keys(clientsMap);
+
+  for (var k = 0; k < cleanKeys.length; k++) {
+    var cKey = cleanKeys[k];
+    var item = clientsMap[cKey];
+
+    // Resolver plan: si no vino en su pestaña, buscar en 'Clients plans'
+    var finalPlan = item.plan;
+    if (!finalPlan || finalPlan === "-" || finalPlan.indexOf("/") >= 0) {
+      if (clientPlanMap[cKey]) {
+        finalPlan = clientPlanMap[cKey];
+      } else {
+        finalPlan = "-";
+      }
+    }
+
+    var totalCitas = obtenerTotalCitasPorPlan(finalPlan);
+
+    // Integrar citas completadas y refund desde MATCHES general
+    if (completedMatchesByClient[cKey]) {
+      for (var partnerName in completedMatchesByClient[cKey]) {
+        item.completedPartners[partnerName] = true;
+      }
+    }
+    if (refundClientsInMatches[cKey]) {
+      item.hasRefund = true;
+    }
+
+    var completadas = Object.keys(item.completedPartners).length;
+    var pendientes = Math.max(0, totalCitas - completadas);
+    var estado = "PENDIENTE";
+
+    if (item.hasRefund) {
+      estado = "REFUND";
+      pendientes = 0;
+    } else if (completadas >= totalCitas && totalCitas > 0) {
+      estado = "COMPLETADO";
+      pendientes = 0;
+    } else if (completadas > 0) {
+      estado = "EN PROCESO";
+    } else if (item.hasMatches) {
+      estado = "EN PROCESO";
+    } else {
+      estado = "PENDIENTE";
+    }
+
+    rowsReporte.push({
+      nombre: item.displayName,
+      plan: finalPlan,
+      totalCitas: totalCitas,
+      completadas: completadas,
+      pendientes: pendientes,
+      estado: estado
+    });
+  }
+
+  // Ordenar: primero EN PROCESO y PENDIENTE, luego COMPLETADO y REFUND; alfabético secundario
+  var statusOrder = { "EN PROCESO": 1, "PENDIENTE": 2, "COMPLETADO": 3, "REFUND": 4 };
+  rowsReporte.sort(function(a, b) {
+    var oA = statusOrder[a.estado] || 5;
+    var oB = statusOrder[b.estado] || 5;
+    if (oA !== oB) return oA - oB;
+    return a.nombre.localeCompare(b.nombre);
+  });
+
+  // 6. Escribir la pestaña PROFILES [PSICOLOGA] (auto)
+  var targetSheetName = "PROFILES " + normPsyc + " (auto)";
+  var targetSheet = ss.getSheetByName(targetSheetName);
+  if (targetSheet) {
+    targetSheet.clear();
+  } else {
+    targetSheet = ss.insertSheet(targetSheetName);
+  }
+
+  // Encabezados solicitados
+  var headersReporte = ["NOMBRE", "PLAN", "TOTAL CITAS", "COMPLETADAS", "PENDIENTES", "ESTADO"];
+  targetSheet.getRange(1, 1, 1, headersReporte.length)
+    .setValues([headersReporte])
+    .setFontWeight("bold")
+    .setBackground("#1B365D")
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center");
+  targetSheet.setRowHeight(1, 32);
+
+  if (rowsReporte.length > 0) {
+    var outValues = [];
+    for (var r = 0; r < rowsReporte.length; r++) {
+      var itemR = rowsReporte[r];
+      outValues.push([
+        itemR.nombre,
+        itemR.plan,
+        itemR.totalCitas,
+        itemR.completadas,
+        itemR.pendientes,
+        itemR.estado
+      ]);
+    }
+    targetSheet.getRange(2, 1, outValues.length, headersReporte.length).setValues(outValues);
+
+    // Formato numérico plano en columnas TOTAL CITAS, COMPLETADAS, PENDIENTES
+    targetSheet.getRange(2, 3, outValues.length, 3).setNumberFormat("0").setHorizontalAlignment("center");
+
+    // Colores por ESTADO en columna 6
+    for (var f = 0; f < rowsReporte.length; f++) {
+      var cellEst = targetSheet.getRange(f + 2, 6);
+      cellEst.setFontWeight("bold").setHorizontalAlignment("center");
+      var estVal = rowsReporte[f].estado;
+      if (estVal === "COMPLETADO") {
+        cellEst.setBackground("#D9EAD3").setFontColor("#274E13");
+      } else if (estVal === "EN PROCESO") {
+        cellEst.setBackground("#FFF2CC").setFontColor("#7F6000");
+      } else if (estVal === "REFUND") {
+        cellEst.setBackground("#F4CCCC").setFontColor("#961500");
+      } else {
+        cellEst.setBackground("#EFEFEF").setFontColor("#555555");
+      }
+    }
+  }
+
+  // Anchos de columna
+  targetSheet.setColumnWidth(1, 230); // NOMBRE
+  targetSheet.setColumnWidth(2, 150); // PLAN
+  targetSheet.setColumnWidth(3, 100); // TOTAL CITAS
+  targetSheet.setColumnWidth(4, 110); // COMPLETADAS
+  targetSheet.setColumnWidth(5, 100); // PENDIENTES
+  targetSheet.setColumnWidth(6, 130); // ESTADO
+  targetSheet.setFrozenRows(1);
+
+  Logger.log("✅ Reporte para " + normPsyc + " generado exitosamente en pestaña '" + targetSheetName + "' con " + rowsReporte.length + " clientes.");
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    "Reporte generado en '" + targetSheetName + "' (" + rowsReporte.length + " clientes).",
+    "Reporte Generado",
+    6
+  );
+  return targetSheet;
+}
+
+/**
+ * CAMBIO 38: Genera reportes de status para todas las psicólogas salientes:
+ * STEFFY, ANA, JENN, MAPE D
+ */
+function generarReportesTodasLasPsicologasQueSeVan() {
+  var psicologasSalientes = ["STEFFY", "ANA", "JENN", "MAPE D"];
+  var reportadas = [];
+  for (var i = 0; i < psicologasSalientes.length; i++) {
+    var p = psicologasSalientes[i];
+    try {
+      var s = generarReporteStatusClientesPsicologa(p);
+      if (s) reportadas.push(p);
+    } catch (eRep) {
+      Logger.log("Error generando reporte para " + p + ": " + eRep.message);
+    }
+  }
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    "Reportes generados para: " + reportadas.join(", "),
+    "Reportes Completados",
+    7
+  );
+}
+
+/**
+ * Prompt interactivo para generar reporte de status de clientes de una psicóloga específica.
+ */
+function promptGenerarReporteStatusClientesPsicologa() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt(
+    "📊 Reporte de Status de Clientes por Psicóloga",
+    "Ingrese el nombre de la psicóloga (ej: STEFFY, ANA, JENN, MAPE D):",
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (response.getSelectedButton() === ui.Button.OK) {
+    var pName = response.getResponseText();
+    if (pName && pName.trim()) {
+      generarReporteStatusClientesPsicologa(pName.trim());
+    }
+  }
 }
