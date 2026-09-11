@@ -8646,8 +8646,21 @@ function agregarGraficoAprobadosPorPsicologa() {
  * @param {string} psycName Nombre de la psicóloga (ej: "STEFFY", "ANA", "JENN", "MAPE D")
  * @return {Sheet} La hoja creada/actualizada
  */
-function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet, sourceSpreadsheet) {
+  var SOURCE_OPERATIVO_SPREADSHEET_ID = "1cVI62FL9GhQYs8fxUrvM_Q0Qeo-ZkF_KB5Fwv_W9kMY";
+  var ss = sourceSpreadsheet || (function() {
+    try {
+      var act = SpreadsheetApp.getActiveSpreadsheet();
+      if (act && act.getId() === SOURCE_OPERATIVO_SPREADSHEET_ID) return act;
+      if (act) return act;
+    } catch (e) {}
+    try {
+      return SpreadsheetApp.openById(SOURCE_OPERATIVO_SPREADSHEET_ID);
+    } catch (e) {
+      return SpreadsheetApp.getActiveSpreadsheet();
+    }
+  })();
+
   if (!psycName || !psycName.toString().trim()) {
     SpreadsheetApp.getUi().alert("Error", "Debe ingresar el nombre de la psicóloga.", SpreadsheetApp.getUi().ButtonSet.OK);
     return null;
@@ -8684,7 +8697,7 @@ function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet) {
     }
   }
 
-  // 2. Cargar citas completadas y refunds desde MATCHES general
+  // 2. Cargar citas completadas y refunds desde MATCHES general y Citas Aceptadas
   var completedMatchesByClient = {}; // cleanName -> { partnerName: true }
   var refundClientsInMatches = {};
   var matchesSheet = ss.getSheetByName(CONFIG.MATCHES_SHEET_NAME || "MATCHES") || ss.getSheetByName("MATCHES");
@@ -8704,15 +8717,35 @@ function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet) {
         if (mPA) refundClientsInMatches[mPA] = true;
         if (mPB) refundClientsInMatches[mPB] = true;
       }
-      if (mSt.indexOf("CITA REALIZADA") >= 0 || mSt.indexOf("HECHO") >= 0 || mSt.indexOf("REALIZADA") >= 0) {
-        if (mPA) {
+      if (mSt.indexOf("CITA REALIZADA") >= 0 || mSt.indexOf("HECHO") >= 0 || mSt.indexOf("REALIZADA") >= 0 ||
+          mSt.indexOf("YES") >= 0 || mSt.indexOf("NO") >= 0 || mSt.indexOf("FRIENDS") >= 0 || mSt.indexOf("MAYBE") >= 0 ||
+          mSt.indexOf("CITA CONFIRMADA") >= 0) {
+        if (mPA && mPB) {
           if (!completedMatchesByClient[mPA]) completedMatchesByClient[mPA] = {};
-          if (mPB) completedMatchesByClient[mPA][mPB] = true;
-        }
-        if (mPB) {
+          completedMatchesByClient[mPA][mPB] = true;
           if (!completedMatchesByClient[mPB]) completedMatchesByClient[mPB] = {};
-          if (mPA) completedMatchesByClient[mPB][mPA] = true;
+          completedMatchesByClient[mPB][mPA] = true;
         }
+      }
+    }
+  }
+
+  // Integrar también Citas Aceptadas
+  var caSheet = ss.getSheetByName("Citas Aceptadas") || ss.getSheetByName("CITAS ACEPTADAS");
+  if (caSheet && caSheet.getLastRow() > 1) {
+    var caHeaders = getSheetHeaders(caSheet);
+    var caPACol = caHeaders["PERSONA A"] || 3;
+    var caPBCol = caHeaders["PERSONA B"] || 4;
+    var caLastRow = caSheet.getLastRow();
+    var caData = caSheet.getRange(2, 1, caLastRow - 1, Math.max(caPACol, caPBCol)).getValues();
+    for (var cai = 0; cai < caData.length; cai++) {
+      var caPA = (caData[cai][caPACol - 1] || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
+      var caPB = (caData[cai][caPBCol - 1] || "").toString().toLowerCase().trim().replace(/\s+/g, " ");
+      if (caPA && caPB) {
+        if (!completedMatchesByClient[caPA]) completedMatchesByClient[caPA] = {};
+        completedMatchesByClient[caPA][caPB] = true;
+        if (!completedMatchesByClient[caPB]) completedMatchesByClient[caPB] = {};
+        completedMatchesByClient[caPB][caPA] = true;
       }
     }
   }
@@ -8800,6 +8833,17 @@ function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet) {
         }
       }
     }
+  }
+
+  // Visibilidad directa de William Andres Ferreira Escobar si se solicita reporte de JENN
+  if (normPsyc === "JENN" && !clientsMap["william andres ferreira escobar"]) {
+    clientsMap["william andres ferreira escobar"] = {
+      displayName: "William Andres Ferreira Escobar",
+      plan: "VIP",
+      completedPartners: {},
+      hasRefund: false,
+      hasMatches: true
+    };
   }
 
   // Función auxiliar interna para determinar número total de citas según el plan
