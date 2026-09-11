@@ -1,0 +1,178 @@
+[
+  {
+    "id_par": 1,
+    "label": "Par Cruzado 1 (Julián & Laura)",
+    "p1": {
+      "id": 924,
+      "name": "Julián Cárdenas",
+      "gender": "Hombre",
+      "age": 34
+    },
+    "p2": {
+      "id": 2832,
+      "name": "Laura Méndez",
+      "gender": "Mujer",
+      "age": 35
+    },
+    "evaluation": {
+      "score": 10,
+      "veredicto": "NO RECOMENDADO",
+      "analisis": "Los objetivos de relación de Julián (busca una relación seria formal) y Laura (explícitamente 'todo menos una relación seria') son fundamentalmente opuestos. Adicionalmente, sus posturas políticas representan un 'no negociable' explícito para ambos (Julián es de izquierda con conciencia de clase, Laura no tolera parejas 'amigas de Petro' por incomodidad familiar).",
+      "deal_breakers": [
+        "Incompatibilidad en el tipo de relación buscada (Julián busca relación formal tras terapia, Laura busca citas ligeras post-divorcio)",
+        "Incompatibilidad ideológica/política (Julián es de izquierda, Laura exige 'cero extremadamente izquierdoso o petrista')",
+        "Afinidad canina fundamental para Laura (perra Duna es no negociable, postura de Julián no especificada)",
+        "Estatura (Laura exige mínimo 1.75m-1.80m, mientras en la ficha de Julián la psicóloga anota contextura baja)"
+      ],
+      "puntos_fuertes": [
+        "Ubicación geográfica en Bogotá Norte muy compatible (Cedritos vs Batán / Calle 122)",
+        "Ambos se encuentran dentro del rango de edad deseado por el otro (34 y 35 años)"
+      ]
+    }
+  },
+  {
+    "id_par": 2,
+    "label": "Par Cruzado 2 (Manuel & Natalia)",
+    "p1": {
+      "id": 2804,
+      "name": "Manuel Alejandro Beltrán Cárdenas",
+      "gender": "Hombre",
+      "age": 29
+    },
+    "p2": {
+      "id": 2772,
+      "name": "Natalia Castro",
+      "gender": "Mujer",
+      "age": 28
+    },
+    "evaluation": {
+      "score": 15,
+      "veredicto": "NO RECOMENDADO",
+      "analisis": "A pesar de una edad y formación académica compatible (ambos abogados), existen múltiples 'no negociables' explícitos de Natalia que Manuel incumple (tiempo de soltería insuficiente, manejo financiero). Adicionalmente, Manuel busca una mujer extrovertida que contraste con él, mientras Natalia es introvertida y rutinaria.",
+      "deal_breakers": [
+        "Natalia no quiere personas recién salidas de una relación (Manuel lleva apenas 5 meses soltero tras relación de 1.5 años)",
+        "Natalia exige estabilidad económica similar o mejor (Manuel reconoce créditos grandes por compras impulsivas)",
+        "Manuel busca personalidad extrovertida y fuerte (Natalia es introvertida al inicio, muy hogareña y rutinaria)",
+        "Distancia logística (Manuel busca evitar distancias largas; Chía a Calle 80 / Unicentro de Occidente es compleja)",
+        "Estatura: Natalia busca alguien igual o más alto que ella (1.70m), mientras el ideal de Manuel es 1.60m"
+      ],
+      "puntos_fuertes": [
+        "Ambos son abogados profesionales con metas claras y valores familiares compartidos",
+        "Ambos evitan conflictos y valoran la tranquilidad en el hogar"
+      ]
+    }
+  },
+  {
+    "id_par": 3,
+    "label": "Par Cruzado 3 (Esteban & Laura)",
+    "p1": {
+      "id": 2915,
+      "name": "Esteban Baquero Moreno",
+      "gender": "Hombre",
+      "age": 30
+    },
+    "p2": {
+      "id": 2832,
+      "name": "Laura Méndez",
+      "gender": "Mujer",
+      "age": 35
+    },
+    "evaluation": {
+      "score": 15,
+      "veredicto": "NO RECOMENDADO",
+      "analisis": "Existe una incompatibilidad fundamental en los objetivos de relación a corto plazo y la situación familiar de Esteban no se alinea con la preferencia de Laura de no vincularse con parejas que tengan hijos. Estos son dos deal-breakers cruciales para ambos.",
+      "deal_breakers": [
+        "Diferencia fundamental en metas (Esteban busca construir a largo plazo con una mujer admirable, Laura busca cero formalidad)",
+        "Paternidad activa (Esteban es padre de dos mellizas de 4 años vs Laura prefiere parejas sin hijos)"
+      ],
+      "puntos_fuertes": [
+        "Ambos son no fumadores y apasionados por los perros (Esteban tiene a Tony, Laura a Duna)",
+        "Ambos valoran la independencia personal y rechazan el control posesivo"
+      ]
+    }
+  },
+  {
+    "id_par": 4,
+    "label": "Par Cruzado 4 (Esteban & Natalia)",
+    "p1": {
+      "id": 2915,
+      "name": "Esteban Baquero Moreno",
+      "gender": "Hombre",
+      "age": 30
+    },
+    "p2": {
+      "id": 2772,
+      "name": "Natalia Castro",
+      "gender": "Mujer",
+      "age": 28
+    },
+    "evaluation": {
+      "score": 15,
+      "veredicto": "NO RECOMENDADO",
+      "analisis": "Natalia tiene como no negociable explícito 'No personas con hijos pequeños por el vínculo con la expareja', y Esteban tiene mellizas de 4 años que ve quincenalmente. Además, sus estilos de comunicación son opuestos: ella huye de debates y él busca una mujer con carácter que lo rete y debata.",
+      "deal_breakers": [
+        "Paternidad de hijas pequeñas (Natalia rechaza parejas con niños pequeños para no ser paño de lágrimas de exparejas)",
+        "Dinámica conversacional (Natalia detesta personas que debatan todo; Esteban busca ser retado y debatido intelectualmente)"
+      ],
+      "puntos_fuertes": [
+        "Ambos buscan una relación seria y estable a largo plazo",
+        "Rango de edad compatible y Esteban cuenta con la estabilidad económica deseada por Natalia"
+      ]
+    }
+  },
+  {
+    "id_par": 5,
+    "label": "Par Cruzado 5 (Julián & Natalia)",
+    "p1": {
+      "id": 924,
+      "name": "Julián Cárdenas",
+      "gender": "Hombre",
+      "age": 34
+    },
+    "p2": {
+      "id": 2772,
+      "name": "Natalia Castro",
+      "gender": "Mujer",
+      "age": 28
+    },
+    "evaluation": {
+      "score": 10,
+      "veredicto": "NO RECOMENDADO",
+      "analisis": "La principal incompatibilidad reside en el consumo recreativo de sustancias de Julián, un claro no negociable para Natalia. Además, la distancia geográfica (Cedritos vs Calle 80) es un factor que la psicóloga de Julián prohibió expresamente tras quejas previas por logística.",
+      "deal_breakers": [
+        "Consumo recreativo de sustancias (Julián) vs regla estricta de CERO drogas (Natalia)",
+        "Distancia física (Julián exige Norte de Bogotá / Cedritos vs Natalia vive en Calle 80 / Unicentro de Occidente)"
+      ],
+      "puntos_fuertes": [
+        "Ambos buscan una relación seria y estable tras un largo periodo de soltería",
+        "Ambos valoran profundamente la lealtad y la unión familiar"
+      ]
+    }
+  },
+  {
+    "id_par": 6,
+    "label": "Par Real Aprobado Agencia (Marcelo & Lizeth)",
+    "p1": {
+      "id": "marcelo",
+      "name": "Marcelo Ponce Bravo",
+      "gender": "Hombre",
+      "age": 42
+    },
+    "p2": {
+      "id": "lizeth",
+      "name": "Lizeth Benítez",
+      "gender": "Mujer",
+      "age": 31
+    },
+    "evaluation": {
+      "score": 93,
+      "veredicto": "RECOMENDADO",
+      "analisis": "Sus visiones sobre el futuro, que incluyen una relación seria a largo plazo, matrimonio y el deseo mutuo de tener hijos juntos por primera vez (sin hijos previos de ninguno), se alinean de manera excepcional. Ambos son profesionales consolidados, maduros, solventes y cumplen con las expectativas de estilo de vida del otro.",
+      "deal_breakers": [],
+      "puntos_fuertes": [
+        "Visión idéntica de vida a largo plazo: matrimonio y deseo mutuo de ser padres juntos por primera vez (sin hijos previos, no negociable clave de ambos)",
+        "Excelente alineación en madurez, ambición profesional, solvencia económica independiente y alta valoración de la familia"
+      ]
+    }
+  }
+]
