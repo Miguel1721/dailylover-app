@@ -8646,7 +8646,7 @@ function agregarGraficoAprobadosPorPsicologa() {
  * @param {string} psycName Nombre de la psicóloga (ej: "STEFFY", "ANA", "JENN", "MAPE D")
  * @return {Sheet} La hoja creada/actualizada
  */
-function generarReporteStatusClientesPsicologa(psycName) {
+function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!psycName || !psycName.toString().trim()) {
     SpreadsheetApp.getUi().alert("Error", "Debe ingresar el nombre de la psicóloga.", SpreadsheetApp.getUi().ButtonSet.OK);
@@ -8884,13 +8884,14 @@ function generarReporteStatusClientesPsicologa(psycName) {
     return a.nombre.localeCompare(b.nombre);
   });
 
-  // 6. Escribir la pestaña PROFILES [PSICOLOGA] (auto)
-  var targetSheetName = "PROFILES " + normPsyc + " (auto)";
-  var targetSheet = ss.getSheetByName(targetSheetName);
+  // 6. Escribir la pestaña PROFILES [PSICOLOGA] en el Google Sheet externo dedicado
+  var targetSS = targetSpreadsheet || obtenerOCrearSheetReporteSeparado();
+  var targetSheetName = "PROFILES " + normPsyc;
+  var targetSheet = targetSS.getSheetByName(targetSheetName);
   if (targetSheet) {
     targetSheet.clear();
   } else {
-    targetSheet = ss.insertSheet(targetSheetName);
+    targetSheet = targetSS.insertSheet(targetSheetName);
   }
 
   // Encabezados solicitados
@@ -8901,7 +8902,7 @@ function generarReporteStatusClientesPsicologa(psycName) {
     .setBackground("#1B365D")
     .setFontColor("#FFFFFF")
     .setHorizontalAlignment("center");
-  targetSheet.setRowHeight(1, 32);
+  targetSheet.setRowHeight(1, 34);
 
   if (rowsReporte.length > 0) {
     var outValues = [];
@@ -8947,9 +8948,9 @@ function generarReporteStatusClientesPsicologa(psycName) {
   targetSheet.setColumnWidth(6, 130); // ESTADO
   targetSheet.setFrozenRows(1);
 
-  Logger.log("✅ Reporte para " + normPsyc + " generado exitosamente en pestaña '" + targetSheetName + "' con " + rowsReporte.length + " clientes.");
+  Logger.log("✅ Reporte para " + normPsyc + " generado exitosamente en Sheet externo: '" + targetSS.getUrl() + "', pestaña '" + targetSheetName + "' (" + rowsReporte.length + " clientes).");
   SpreadsheetApp.getActiveSpreadsheet().toast(
-    "Reporte generado en '" + targetSheetName + "' (" + rowsReporte.length + " clientes).",
+    "Reporte generado para " + normPsyc + " en Sheet externo (" + rowsReporte.length + " clientes).",
     "Reporte Generado",
     6
   );
@@ -8957,26 +8958,55 @@ function generarReporteStatusClientesPsicologa(psycName) {
 }
 
 /**
- * CAMBIO 38: Genera reportes de status para todas las psicólogas salientes:
- * STEFFY, ANA, JENN, MAPE D
+ * CAMBIO 38: Obtiene o crea el Google Sheet externo dedicado para los reportes de status de clientes.
+ * Utiliza el ID configurado o guardado en ScriptProperties; si no existe, crea uno nuevo.
+ */
+function obtenerOCrearSheetReporteSeparado() {
+  var dedicatedId = "1LRhB6eFG07LCo5QrPFKilt1Op7XMeO_RxU28MyO2BSY";
+  var props = PropertiesService.getScriptProperties();
+  var savedId = props.getProperty("REPORTE_PSICOLOGAS_EXTERNAL_SPREADSHEET_ID") || dedicatedId;
+
+  if (savedId) {
+    try {
+      var existingSS = SpreadsheetApp.openById(savedId);
+      if (existingSS) return existingSS;
+    } catch (e) {
+      Logger.log("⚠️ No se pudo abrir spreadsheet con ID " + savedId + ": " + e.message);
+    }
+  }
+
+  // Si no está disponible, crear uno nuevo
+  var newSS = SpreadsheetApp.create("📊 Reporte Status Clientes Psicólogas - Revisión Lina");
+  props.setProperty("REPORTE_PSICOLOGAS_EXTERNAL_SPREADSHEET_ID", newSS.getId());
+  Logger.log("✅ Creado nuevo Google Sheet para reportes: " + newSS.getUrl());
+  return newSS;
+}
+
+/**
+ * CAMBIO 38: Genera reportes de status para todas las psicólogas salientes
+ * (STEFFY, ANA, JENN, MAPE D) en el Google Sheet externo separado para revisión de Lina.
  */
 function generarReportesTodasLasPsicologasQueSeVan() {
   var psicologasSalientes = ["STEFFY", "ANA", "JENN", "MAPE D"];
+  var targetSS = obtenerOCrearSheetReporteSeparado();
   var reportadas = [];
   for (var i = 0; i < psicologasSalientes.length; i++) {
     var p = psicologasSalientes[i];
     try {
-      var s = generarReporteStatusClientesPsicologa(p);
+      var s = generarReporteStatusClientesPsicologa(p, targetSS);
       if (s) reportadas.push(p);
     } catch (eRep) {
       Logger.log("Error generando reporte para " + p + ": " + eRep.message);
     }
   }
+  var url = targetSS.getUrl();
   SpreadsheetApp.getActiveSpreadsheet().toast(
-    "Reportes generados para: " + reportadas.join(", "),
-    "Reportes Completados",
-    7
+    "Reportes completados para: " + reportadas.join(", ") + " en Sheet externo: " + url,
+    "Reportes Listos",
+    10
   );
+  Logger.log("🔗 Reportes completados exitosamente en: " + url);
+  return url;
 }
 
 /**
@@ -8992,7 +9022,8 @@ function promptGenerarReporteStatusClientesPsicologa() {
   if (response.getSelectedButton() === ui.Button.OK) {
     var pName = response.getResponseText();
     if (pName && pName.trim()) {
-      generarReporteStatusClientesPsicologa(pName.trim());
+      var targetSS = obtenerOCrearSheetReporteSeparado();
+      generarReporteStatusClientesPsicologa(pName.trim(), targetSS);
     }
   }
 }
