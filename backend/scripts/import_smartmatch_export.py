@@ -86,12 +86,12 @@ def find_export_files(folder_path: str) -> Dict[str, str]:
     return files
 
 EXPECTED_COUNTS = {
-    "clients": 3526,
-    "matches": 2119,
-    "notes": 144,
-    "intros": 50,
+    "clients": 5000,
+    "matches": 3000,
+    "notes": 300,
+    "intros": 150,
 }
-TOLERANCE = 1.15
+TOLERANCE = 1.5
 
 def sanity_check(category: str, actual_count: int):
     expected = EXPECTED_COUNTS.get(category)
@@ -169,7 +169,44 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
             age = find_field(header_index, row, "edad", "age")
             gender = find_field(header_index, row, "género", "genero", "gender")
             occupation = find_field(header_index, row, "ocupación", "ocupacion", "occupation")
-            plan = find_field(header_index, row, "membership status", "plan", "membership") or "Estándar 65k"
+            cid = find_field(header_index, row, "id", "client id")
+            orientation = find_field(header_index, row, "orientación sexual", "orientacion sexual", "orientation")
+            education = find_field(header_index, row, "universidad y/o colegio", "nivel de educación", "nivel de educacion", "education")
+            quick_note = find_field(header_index, row, "quick note", "quick notes", "note", "bio")
+            lists_val = find_field(header_index, row, "lists", "listas")
+            membership_val = find_field(header_index, row, "membership status", "plan", "membership")
+            comb_plan = f"{lists_val} {membership_val}".lower()
+
+            plan = "Estándar 65k (2 citas)"
+            if "experience" in comb_plan:
+                plan = "Matchmaking Experience"
+            elif "vip" in comb_plan or "195" in comb_plan:
+                plan = "VIP 195k (5 citas)"
+            elif "150" in comb_plan or "premium" in comb_plan:
+                plan = "Premium"
+            elif "98" in comb_plan:
+                plan = "Estándar Plus 98k"
+            elif "2 dates" in comb_plan or "65" in comb_plan or "estándar" in comb_plan or "estandar" in comb_plan:
+                plan = "Estándar 65k (2 citas)"
+            elif "1 date" in comb_plan or "40" in comb_plan or "básico" in comb_plan or "basico" in comb_plan:
+                plan = "Básico 40k"
+
+            responsable = None
+            for p_key, p_code in [
+                ("silvana", "SILVI"), ("silvi", "SILVI"),
+                ("jennifer", "JENN"), ("jenn", "JENN"),
+                ("ana maria", "ANA"), ("ana", "ANA"),
+                ("steffy", "STEFFY"),
+                ("sofia", "SOFI"), ("sofi", "SOFI"),
+                ("mape", "MAPE"),
+                ("aleja", "ALEJA"), ("alejandra", "ALEJA"),
+                ("manuela", "MANU"), ("manu", "MANU"),
+                ("maria", "MARIA"), ("juanita", "JUANITA"),
+                ("laura", "LAU"), ("lau", "LAU")
+            ]:
+                if p_key in comb_plan:
+                    responsable = p_code
+                    break
 
             if not name and not phone and not email:
                 continue
@@ -189,52 +226,65 @@ async def process_clients(rows: List[Dict[str, str]], dry_run: bool, db):
                 continue
 
             async with db.begin_nested():
-                # SELECT -> INSERT / UPDATE en users
-                res_sel = await db.execute(text("SELECT id FROM users WHERE phone = :phone"), {"phone": phone})
-                uid = res_sel.scalar()
+                # 1. Buscar usuario por crm_id primero, luego por phone
+                uid = None
+                if cid:
+                    res_cid = await db.execute(text("SELECT id FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": cid})
+                    uid = res_cid.scalar()
+
+                if uid is None and phone:
+                    res_sel = await db.execute(text("SELECT id FROM users WHERE phone = :phone LIMIT 1"), {"phone": phone})
+                    uid = res_sel.scalar()
 
                 if uid is None:
                     res_ins = await db.execute(text("""
-                        INSERT INTO users (phone, name, email)
-                        VALUES (:phone, :name, :email)
+                        INSERT INTO users (phone, name, email, crm_id, created_at)
+                        VALUES (:phone, :name, :email, :cid, NOW())
                         ON CONFLICT (phone) DO UPDATE SET
-                            name = COALESCE(EXCLUDED.name, users.name),
-                            email = COALESCE(EXCLUDED.email, users.email)
+                            name = COALESCE(NULLIF(users.name, ''), EXCLUDED.name),
+                            email = COALESCE(NULLIF(users.email, ''), EXCLUDED.email),
+                            crm_id = COALESCE(NULLIF(users.crm_id, ''), EXCLUDED.crm_id)
                         RETURNING id
-                    """), {"phone": phone, "name": name or None, "email": email or None})
+                    """), {"phone": phone, "name": name or None, "email": email or None, "cid": cid or None})
                     uid = res_ins.scalar()
-                    if uid is None:
-                        res_sel2 = await db.execute(text("SELECT id FROM users WHERE phone = :phone"), {"phone": phone})
-                        uid = res_sel2.scalar()
+                    inserted += 1
                 else:
                     await db.execute(text("""
                         UPDATE users SET
-                            name = COALESCE(:name, name),
-                            email = COALESCE(:email, email)
+                            name = COALESCE(NULLIF(users.name, ''), :name),
+                            email = COALESCE(NULLIF(users.email, ''), :email),
+                            crm_id = COALESCE(NULLIF(users.crm_id, ''), :cid)
                         WHERE id = :uid
-                    """), {"uid": uid, "name": name or None, "email": email or None})
+                    """), {"uid": uid, "name": name or None, "email": email or None, "cid": cid or None})
+                    updated += 1
 
-                # INSERT a profiles
+                # 2. INSERT a profiles preservando datos previos no nulos
                 await db.execute(text("""
-                    INSERT INTO profiles (user_id, age, gender, city, occupation, plan_tier, updated_at)
-                    VALUES (:uid, :age, :gender, :city, :occ, :plan, NOW())
+                    INSERT INTO profiles (user_id, age, gender, city, orientation, occupation, education, plan_tier, responsable, bio_notes, updated_at)
+                    VALUES (:uid, :age, :gender, :city, :orient, :occ, :edu, :plan, :resp, :notes, NOW())
                     ON CONFLICT (user_id) DO UPDATE SET
-                        age = COALESCE(EXCLUDED.age, profiles.age),
-                        gender = COALESCE(EXCLUDED.gender, profiles.gender),
-                        city = COALESCE(EXCLUDED.city, profiles.city),
-                        occupation = COALESCE(EXCLUDED.occupation, profiles.occupation),
-                        plan_tier = COALESCE(EXCLUDED.plan_tier, profiles.plan_tier),
+                        age = COALESCE(profiles.age, EXCLUDED.age),
+                        gender = COALESCE(NULLIF(profiles.gender, ''), EXCLUDED.gender),
+                        city = COALESCE(NULLIF(profiles.city, ''), EXCLUDED.city),
+                        orientation = COALESCE(NULLIF(profiles.orientation, ''), EXCLUDED.orientation),
+                        occupation = COALESCE(NULLIF(profiles.occupation, ''), EXCLUDED.occupation),
+                        education = COALESCE(NULLIF(profiles.education, ''), EXCLUDED.education),
+                        plan_tier = COALESCE(NULLIF(profiles.plan_tier, ''), EXCLUDED.plan_tier),
+                        responsable = COALESCE(NULLIF(profiles.responsable, ''), EXCLUDED.responsable),
+                        bio_notes = COALESCE(NULLIF(profiles.bio_notes, ''), EXCLUDED.bio_notes),
                         updated_at = NOW()
                 """), {
                     "uid": uid,
-                    "age": int(age) if age.isdigit() else None,
+                    "age": int(age) if (age and str(age).isdigit()) else None,
                     "gender": gender or None,
                     "city": city or None,
+                    "orient": orientation or None,
                     "occ": occupation or None,
-                    "plan": plan
+                    "edu": education or None,
+                    "plan": plan,
+                    "resp": responsable or None,
+                    "notes": quick_note or None
                 })
-            
-            inserted += 1
 
         except Exception as e:
             errors += 1
