@@ -8750,59 +8750,8 @@ function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet, sour
     }
   }
 
-  // 3. Extraer clientes, planes y estados desde la pestaña individual de la psicóloga
+  // 3. SSOT DE CLIENTES: Cargar clientes ÚNICA Y EXCLUSIVAMENTE desde 'PROFILES' por Responsable
   var clientsMap = {}; // cleanName -> { displayName, plan, completedPartners: {}, hasRefund: false, hasMatches: false }
-  var pHeaders = getSheetHeaders(pSheet);
-  var pPersonACol = pHeaders["PERSON A"] || pHeaders["PERSONA A"] || pHeaders["CLIENTE"] || 7;
-  var pPersonBCol = pHeaders["PERSON B"] || pHeaders["PERSONA B"] || 8;
-  var pPlanCol = pHeaders["PLAN"] || pHeaders["PLAN TIER"] || 6;
-  var pStatusCol = pHeaders["STATUS"] || pHeaders["ESTADO"] || 10;
-  var pLastRow = pSheet.getLastRow();
-
-  if (pLastRow > 1) {
-    var pMaxCol = Math.max(pPersonACol, pPersonBCol, pPlanCol, pStatusCol);
-    var pData = pSheet.getRange(2, 1, pLastRow - 1, pMaxCol).getValues();
-
-    for (var pi = 0; pi < pData.length; pi++) {
-      var rawA = (pData[pi][pPersonACol - 1] || "").toString().trim();
-      if (!rawA) continue;
-      var cleanA = rawA.toLowerCase().replace(/\s+/g, " ");
-
-      if (!clientsMap[cleanA]) {
-        var rawPlan = (pPlanCol <= pData[pi].length ? (pData[pi][pPlanCol - 1] || "").toString().trim() : "");
-        clientsMap[cleanA] = {
-          displayName: rawA,
-          plan: rawPlan,
-          completedPartners: {},
-          hasRefund: false,
-          hasMatches: true
-        };
-      } else if (!clientsMap[cleanA].plan && pPlanCol <= pData[pi].length) {
-        var rPlan = (pData[pi][pPlanCol - 1] || "").toString().trim();
-        if (rPlan) clientsMap[cleanA].plan = rPlan;
-      }
-
-      var rawB = (pPersonBCol <= pData[pi].length ? (pData[pi][pPersonBCol - 1] || "").toString().trim() : "");
-      var cleanB = rawB.toLowerCase().replace(/\s+/g, " ");
-      var rawStatus = (pStatusCol <= pData[pi].length ? (pData[pi][pStatusCol - 1] || "").toString().toUpperCase().trim() : "");
-
-      // Detección de REFUND en la pestaña individual (indexOf cubre "REFUND ", "REFUND DONE")
-      if (rawStatus.indexOf("REFUND") >= 0) {
-        clientsMap[cleanA].hasRefund = true;
-      }
-
-      // Detección de CITA COMPLETADA en la pestaña individual (indexOf cubre "HECHO ", "HECHO POR MAPE")
-      if (rawStatus.indexOf("HECHO") >= 0) {
-        if (cleanB) {
-          clientsMap[cleanA].completedPartners[cleanB] = true;
-        } else {
-          clientsMap[cleanA].completedPartners["__hecho_slot_" + pi] = true;
-        }
-      }
-    }
-  }
-
-  // 4. Incorporar clientes asignados en PROFILES que aún no tengan slots creados en la pestaña
   var profSheet = ss.getSheetByName(CONFIG.PROFILES_SHEET_NAME || "PROFILES") || ss.getSheetByName("PROFILES");
   if (profSheet && profSheet.getLastRow() > 1) {
     var profHeaders = getSheetHeaders(profSheet);
@@ -8835,15 +8784,56 @@ function generarReporteStatusClientesPsicologa(psycName, targetSpreadsheet, sour
     }
   }
 
-  // Visibilidad directa de William Andres Ferreira Escobar si se solicita reporte de JENN
-  if (normPsyc === "JENN" && !clientsMap["william andres ferreira escobar"]) {
-    clientsMap["william andres ferreira escobar"] = {
-      displayName: "William Andres Ferreira Escobar",
-      plan: "VIP",
-      completedPartners: {},
-      hasRefund: false,
-      hasMatches: true
-    };
+  // 4. Enriquecer con datos de la pestaña individual de la psicóloga
+  // REGLA CRÍTICA: Solo enriquecer clientes que YA pertenezcan a esta psicóloga según PROFILES (evitar duplicados de matches cruzados)
+  if (pSheet && pSheet.getLastRow() > 1) {
+    var pHeaders = getSheetHeaders(pSheet);
+    var pPersonACol = pHeaders["PERSON A"] || pHeaders["PERSONA A"] || pHeaders["CLIENTE"] || 7;
+    var pPersonBCol = pHeaders["PERSON B"] || pHeaders["PERSONA B"] || 8;
+    var pPlanCol = pHeaders["PLAN"] || pHeaders["PLAN TIER"] || 6;
+    var pStatusCol = pHeaders["STATUS"] || pHeaders["ESTADO"] || 10;
+    var pLastRow = pSheet.getLastRow();
+    var pMaxCol = Math.max(pPersonACol, pPersonBCol, pPlanCol, pStatusCol);
+    var pData = pSheet.getRange(2, 1, pLastRow - 1, pMaxCol).getValues();
+
+    for (var pi = 0; pi < pData.length; pi++) {
+      var rawA = (pData[pi][pPersonACol - 1] || "").toString().trim();
+      if (!rawA) continue;
+      var cleanA = rawA.toLowerCase().replace(/\s+/g, " ");
+      var cleanANoP = cleanA.replace(/\s*\([^)]*\)/g, "").trim().replace(/\s+/g, " ");
+
+      // SSOT: Buscar si cleanA pertenece a esta psicóloga según PROFILES
+      var targetClient = clientsMap[cleanA] || (cleanANoP ? clientsMap[cleanANoP] : null);
+
+      // Si el cliente no pertenece a esta psicóloga según PROFILES, ignorar (es match cruzado o cliente de otra psicóloga)
+      if (!targetClient) continue;
+
+      targetClient.hasMatches = true;
+
+      var rawPlan = (pPlanCol <= pData[pi].length ? (pData[pi][pPlanCol - 1] || "").toString().trim() : "");
+      if (!targetClient.plan && rawPlan) {
+        targetClient.plan = rawPlan;
+      }
+
+      var rawB = (pPersonBCol <= pData[pi].length ? (pData[pi][pPersonBCol - 1] || "").toString().trim() : "");
+      var cleanB = rawB.toLowerCase().replace(/\s+/g, " ");
+      var rawStatus = (pStatusCol <= pData[pi].length ? (pData[pi][pStatusCol - 1] || "").toString().toUpperCase().trim() : "");
+      var pStatus = rawStatus;
+
+      // Detección de REFUND en la pestaña individual (pStatus.indexOf("REFUND") >= 0 cubre "REFUND ", "REFUND DONE")
+      if (pStatus.indexOf("REFUND") >= 0) {
+        targetClient.hasRefund = true;
+      }
+
+      // Detección de CITA COMPLETADA en la pestaña individual (pStatus.indexOf("HECHO") >= 0 cubre "HECHO ", "HECHO POR MAPE")
+      if (pStatus.indexOf("HECHO") >= 0) {
+        if (cleanB) {
+          targetClient.completedPartners[cleanB] = true;
+        } else {
+          targetClient.completedPartners["__hecho_slot_" + pi] = true;
+        }
+      }
+    }
   }
 
   // Función auxiliar interna para determinar número total de citas según el plan
