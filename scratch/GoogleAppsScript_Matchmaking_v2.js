@@ -5371,7 +5371,9 @@ function calcularTiempoRespuestaGeneralCS(matchesSheet) {
 
   try {
     var headers = getSheetHeaders(matchesSheet);
-    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+    // Cambio 35: leer de OBSERVACIONES CS (19) en vez de PRESUPUESTO
+    var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACIONES CS"] || 19;
+    if (obsCol > matchesSheet.getMaxColumns()) return result;
     var lastRow = matchesSheet.getLastRow();
     var data = matchesSheet.getRange(2, obsCol, lastRow - 1, 1).getValues();
 
@@ -6204,7 +6206,17 @@ function insertMatchInLowerZone(matchesSheet, matchData) {
   var diaCol = headers["DÍA"] || headers["DIA"] || 6;
   var lugarCol = headers["LUGAR"] || 7;
   var cityCol = headers["CIUDAD"] || headers["CITY"] || 8;
-  var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+  // Cambio 35: usar columna 19 dedicada para trazabilidad CS en vez de pisar PRESUPUESTO
+  var obsCol = headers["OBSERVACIONES"];
+  if (!obsCol) {
+    obsCol = 19;
+    if (matchesSheet.getMaxColumns() < obsCol) {
+      matchesSheet.insertColumnsAfter(matchesSheet.getMaxColumns(), obsCol - matchesSheet.getMaxColumns());
+    }
+    if (!matchesSheet.getRange(1, obsCol).getValue()) {
+      matchesSheet.getRange(1, obsCol).setValue("OBSERVACIONES CS").setFontWeight("bold").setBackground("#D9D2E9");
+    }
+  }
   var fechaRealCol = headers["FECHA CITA REAL"] || 17;
 
   // Usar última fila REAL con datos para evitar escribir después de cientos de filas vacías
@@ -6582,7 +6594,8 @@ function actualizarAlertas15DiasMatches() {
     var diaCol = headers["DÍA"] || headers["DIA"] || 7;
     var lugarCol = headers["LUGAR"] || headers["RESTAURANTE"] || 10;
     var cityCol = headers["CIUDAD"] || headers["CITY"] || 6;
-    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 9;
+    // Cambio 35: leer de OBSERVACIONES CS (19) en vez de PRESUPUESTO
+    var obsCol = headers["OBSERVACIONES"] || headers["OBSERVACIONES CS"] || 19;
     var fechaRealCol = headers["FECHA CITA REAL"] || 16;
 
     var totalSheetCols = matchesSheet.getLastColumn();
@@ -6703,7 +6716,18 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
     }
 
     // ── TIEMPO DE RESPUESTA SERVICIO AL CLIENTE (Primer cambio que se aleja de pendiente) ──
-    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+    // Cambio 35: MATCHES no tiene columna OBSERVACIONES real — usar una columna dedicada
+    // fuera de las 18 canónicas (columna 19), creándola si no existe, en vez de pisar PRESUPUESTO.
+    var obsCol = headers["OBSERVACIONES"];
+    if (!obsCol) {
+      obsCol = 19;
+      if (sheet.getMaxColumns() < obsCol) {
+        sheet.insertColumnsAfter(sheet.getMaxColumns(), obsCol - sheet.getMaxColumns());
+      }
+      if (!sheet.getRange(1, obsCol).getValue()) {
+        sheet.getRange(1, obsCol).setValue("OBSERVACIONES CS").setFontWeight("bold").setBackground("#D9D2E9");
+      }
+    }
     if (editUpper && editUpper !== "PENDIENTE") {
       registrarRespuestaServicioCliente(sheet, row, obsCol);
     }
@@ -6778,7 +6802,18 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
     }
 
     // ── TIEMPO DE RESPUESTA SERVICIO AL CLIENTE (Primer cambio que se aleja de pendiente) ──
-    var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+    // Cambio 35: MATCHES no tiene columna OBSERVACIONES real — usar una columna dedicada
+    // fuera de las 18 canónicas (columna 19), creándola si no existe, en vez de pisar PRESUPUESTO.
+    var obsCol = headers["OBSERVACIONES"];
+    if (!obsCol) {
+      obsCol = 19;
+      if (sheet.getMaxColumns() < obsCol) {
+        sheet.insertColumnsAfter(sheet.getMaxColumns(), obsCol - sheet.getMaxColumns());
+      }
+      if (!sheet.getRange(1, obsCol).getValue()) {
+        sheet.getRange(1, obsCol).setValue("OBSERVACIONES CS").setFontWeight("bold").setBackground("#D9D2E9");
+      }
+    }
     if (statusUpper && statusUpper !== "PENDIENTE") {
       registrarRespuestaServicioCliente(sheet, row, obsCol);
     }
@@ -6820,7 +6855,17 @@ function handleMatchesEdit(sheet, row, col, newValue, oldValue) {
 
       updateMatchesRowColor(sheet, row, fechaStr, curStTotal);
 
-      var obsCol = headers["OBSERVACIONES"] || headers["PRESUPUESTO"] || 13;
+      // Cambio 35: usar columna 19 dedicada para trazabilidad CS en vez de pisar PRESUPUESTO
+      var obsCol = headers["OBSERVACIONES"];
+      if (!obsCol) {
+        obsCol = 19;
+        if (sheet.getMaxColumns() < obsCol) {
+          sheet.insertColumnsAfter(sheet.getMaxColumns(), obsCol - sheet.getMaxColumns());
+        }
+        if (!sheet.getRange(1, obsCol).getValue()) {
+          sheet.getRange(1, obsCol).setValue("OBSERVACIONES CS").setFontWeight("bold").setBackground("#D9D2E9");
+        }
+      }
       registrarRespuestaServicioCliente(sheet, row, obsCol);
 
       try {
