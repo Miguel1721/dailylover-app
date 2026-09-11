@@ -7031,13 +7031,16 @@ function syncMatchToCitasAceptadas(matchesSheet, row) {
   var realLastRow = getRealLastDataRow(citasSheet, cPersonACol);
   var foundRow = -1;
 
+  var cellAtextTrim = (cellA.text || "").trim().toLowerCase();
+  var cellBtextTrim = (cellB && cellB.text ? cellB.text.trim().toLowerCase() : "");
+
   if (realLastRow > 1) {
     var cData = citasSheet.getRange(2, 1, realLastRow - 1, Math.max(cPersonACol, cPersonBCol)).getValues();
     for (var i = 0; i < cData.length; i++) {
       var cA = (cData[i][cPersonACol - 1] || "").toString().trim().toLowerCase();
       var cB = (cData[i][cPersonBCol - 1] || "").toString().trim().toLowerCase();
-      if ((cA === cellA.text.toLowerCase() && cB === (cellB ? cellB.text.toLowerCase() : "")) ||
-          (cA === (cellB ? cellB.text.toLowerCase() : "") && cB === cellA.text.toLowerCase())) {
+      if ((cA === cellAtextTrim && cB === cellBtextTrim) ||
+          (cA === cellBtextTrim && cB === cellAtextTrim)) {
         foundRow = i + 2;
         break;
       }
