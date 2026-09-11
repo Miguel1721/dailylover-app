@@ -1719,19 +1719,37 @@ function ejecutarPuestaAPuntoInicialManual() {
  * Extrae texto, RichTextValue y fórmula de una celda para preservar hipervínculos.
  */
 function getCellData(sheet, row, col) {
-  if (!col) return null;
-  var range = sheet.getRange(row, col);
-  var formula = range.getFormula();
-  var richText = range.getRichTextValue();
-  var value = range.getValue();
-  var text = richText ? richText.getText() : (value !== null && value !== undefined ? value.toString().trim() : "");
+  if (!col || !sheet || !row || row < 1 || col < 1) return null;
+  try {
+    var range = sheet.getRange(row, col);
+    var formula = "";
+    try { formula = range.getFormula() || ""; } catch (eF) {}
+    var richText = null;
+    try { richText = range.getRichTextValue(); } catch (eR) {}
+    var value = null;
+    try { value = range.getValue(); } catch (eV) {}
+    var text = richText ? richText.getText() : (value !== null && value !== undefined ? value.toString().trim() : "");
 
-  return {
-    text: text,
-    value: value,
-    richText: richText,
-    formula: formula
-  };
+    return {
+      text: text,
+      value: value,
+      richText: richText,
+      formula: formula
+    };
+  } catch (e) {
+    Logger.log("Error en getCellData (Fila " + row + ", Col " + col + "): " + e.message);
+    try {
+      var fallbackVal = sheet.getRange(row, col).getValue();
+      return {
+        text: fallbackVal !== null && fallbackVal !== undefined ? fallbackVal.toString().trim() : "",
+        value: fallbackVal,
+        richText: null,
+        formula: ""
+      };
+    } catch (e2) {
+      return null;
+    }
+  }
 }
 
 /**
@@ -3076,11 +3094,22 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var respCol = headers["RESPONSABLE"] || headers["PSICOLOGA"] || 4;
   var slotsCol = headers["SLOTS CREADOS"] || headers["SLOTS"] || headers["STATUS SLOTS"];
 
-  // Si no existe la columna SLOTS CREADOS en PROFILES, crearla en Col F (6)
+  // Cambio 31: Limpiar validaciones de datos heredadas antes de crear la columna SLOTS CREADOS en PROFILES.
+  // Resuelve el bug donde validaciones heredadas (ej. dropdowns copiados de Responsable a Col F)
+  // bloqueaban la escritura de estado y la generación de slots hacia la psicóloga (ej. Andrea Del Valle -> JENN).
   if (!slotsCol) {
     slotsCol = 6;
+    try {
+      sheet.getRange(1, slotsCol, sheet.getMaxRows(), 1).clearDataValidations();
+    } catch (eVal) {
+      Logger.log("Aviso al limpiar validaciones en columna SLOTS CREADOS: " + eVal.message);
+    }
     sheet.getRange(1, slotsCol).setValue("SLOTS CREADOS").setFontWeight("bold").setBackground("#D9D2E9");
-    Logger.log("Columna SLOTS CREADOS no existía. Creada en Columna " + slotsCol);
+    Logger.log("Columna SLOTS CREADOS no existía. Creada en Columna " + slotsCol + " tras limpiar validaciones heredadas.");
+  } else {
+    try {
+      sheet.getRange(row, slotsCol).clearDataValidations();
+    } catch (eValRow) {}
   }
 
   // ── 0. REGLA: PROHIBIR BORRAR PERSONA A EN PROFILES ─────────────────────
@@ -3195,7 +3224,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(row, respCol)
       .setBackground("#FFF2CC")
       .setNote("Psicóloga no reconocida. Seleccione una de las 10 oficiales: JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA.");
-    sheet.getRange(row, slotsCol).setValue("PENDIENTE PSICÓLOGA").setBackground("#FFF2CC");
+    sheet.getRange(row, slotsCol).clearDataValidations().setValue("PENDIENTE PSICÓLOGA").setBackground("#FFF2CC");
     return;
   } else {
     // Si era un alias (ej: Mape -> MAPE D), corregir en celda
@@ -3212,7 +3241,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     sheet.getRange(row, respCol)
       .setBackground("#FFF2CC")
       .setNote("No se encontró la pestaña 'MATCHES " + cleanPsyc + "'.");
-    sheet.getRange(row, slotsCol).setValue("ERROR PESTAÑA PSICÓLOGA").setBackground("#F4CCCC");
+    sheet.getRange(row, slotsCol).clearDataValidations().setValue("ERROR PESTAÑA PSICÓLOGA").setBackground("#F4CCCC");
     return;
   }
   Logger.log("Pestaña de psicóloga encontrada: '" + psycSheet.getName() + "'");
@@ -3339,7 +3368,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     Logger.log("Resultado de checkExistingSlots: " + (alreadyExistsReason ? "'" + alreadyExistsReason + "'" : "null (limpio)"));
 
     if (alreadyExistsReason) {
-      sheet.getRange(row, slotsCol).setValue(alreadyExistsReason).setBackground("#D9EAD3");
+      sheet.getRange(row, slotsCol).clearDataValidations().setValue(alreadyExistsReason).setBackground("#D9EAD3");
       SpreadsheetApp.getActiveSpreadsheet().toast("Aviso: " + alreadyExistsReason + " para " + personAName, "Detección de Duplicado", 6);
       return;
     }
@@ -3378,6 +3407,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   if (!crmProfile || !crmProfile.found || !numSlots) {
     Logger.log("AVISO: Perfil sin plan válido en CRM. Marcando fila en amarillo #FFF2CC");
     sheet.getRange(row, slotsCol)
+      .clearDataValidations()
       .setValue("PENDIENTE PLAN (CRM)")
       .setBackground("#FFF2CC")
       .setNote("El perfil en CRM no tiene un plan válido asignado (Básico: 2 slots, Premium: 3 slots, VIP: 4 slots, Matchmaking Experience: 4 slots). No se crearon slots.");
@@ -3454,6 +3484,7 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
     // 9. MARCAR COMO COMPLETADO EN PROFILES (Verde oficial #D9EAD3)
     var todayStr = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, "yyyy-MM-dd");
     sheet.getRange(row, slotsCol)
+      .clearDataValidations()
       .setValue(numSlots + " SLOTS CREADOS (" + todayStr + " - " + cleanPsyc + ")")
       .setBackground("#D9EAD3")
       .clearNote();
