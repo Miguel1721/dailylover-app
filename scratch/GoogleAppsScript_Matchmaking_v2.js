@@ -3421,34 +3421,8 @@ function handleProfilesEdit(sheet, row, col, newValue, oldValue) {
   var ciudad = crmProfile.city || "";
   var pref = crmProfile.pref || ""; // NUNCA default a "hetero"
 
-  // ── 7.5 REGLA BLOQUEANTE: MÁXIMO 1 CLIENTE ABIERTO POR PSICÓLOGA EN PROFILES ──
-  var unclosedClient = getUnclosedClientForPsychologist(psycSheet, personAName);
-  if (unclosedClient) {
-    Logger.log("🚨 BLOQUEO PROFILES: " + cleanPsyc + " ya tiene un cliente sin tocar: '" + unclosedClient + "'");
-    
-    var alertLockKey = "alert_prof_" + sheet.getName() + "_" + row + "_" + cleanPsyc;
-    var cache = CacheService.getScriptCache();
-    if (cache && cache.get(alertLockKey)) {
-      Logger.log("⚠️ Modal de cliente abierto ya mostrado recientemente para " + alertLockKey + ". Omitiendo modal duplicado.");
-      sheet.deleteRow(row);
-      return;
-    }
-    if (cache) cache.put(alertLockKey, "1", 6);
-
-    var alertMsg = "⚠️ BLOQUEO DE CLIENTE ABIERTO:\n\n" +
-                   "La psicóloga " + cleanPsyc + " ya tiene un cliente abierto sin tocar: '" + unclosedClient + "'.\n\n" +
-                   "Cada psicóloga solo puede tener 1 cliente sin tocar a la vez en PROFILES.\n" +
-                   "Debe cambiar el estado o trabajar el cliente actual antes de ingresar a '" + personAName + "'.\n\n" +
-                   "La fila ingresada será eliminada de PROFILES.";
-    try {
-      SpreadsheetApp.getUi().alert("Límite de Cliente Abierto", alertMsg, SpreadsheetApp.getUi().ButtonSet.OK);
-    } catch (uiErr) {}
-    
-    // Borrar la fila completa para no acumular basura en PROFILES
-    sheet.deleteRow(row);
-    SpreadsheetApp.getActiveSpreadsheet().toast("⚠️ Fila eliminada: " + cleanPsyc + " ya tiene a '" + unclosedClient + "' sin tocar.", "Cliente Pendiente", 8);
-    return;
-  }
+  // Cambio 32: Se elimina la regla de "1 cliente abierto por psicóloga" en PROFILES (sección 7.5).
+  // Las psicólogas pueden tener múltiples clientes asignados en proceso sin que se bloquee ni se borre la fila.
 
   // 8. GENERACIÓN DE SLOTS CON LOCK DE SEGURIDAD
   Logger.log("Iniciando creación de " + numSlots + " slots en pestaña '" + psycSheet.getName() + "' con ScriptLock...");
