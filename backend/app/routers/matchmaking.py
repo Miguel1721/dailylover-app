@@ -3795,6 +3795,46 @@ _AI_MATCH_CACHE: Dict[str, dict] = {
         "deal_breakers": ["Roles tradicionales de proveedor no negociables", "Hijos de relación previa vs deseo de construir proyecto propio"],
         "puntos_fuertes": ["Ambición profesional de Mara"],
         "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:12924": {
+        "ai_score": 30,
+        "veredicto": "NO RECOMENDADO",
+        "analisis": "Incompatibilidad en roles de pareja y proyecto de vida: Mariana busca expresamente un hombre proveedor dadivoso y tiene un hijo de 12 años, lo cual no alinea con las prioridades de Juan.",
+        "deal_breakers": ["Mariana busca hombre proveedor dadivoso vs rechazo de rol de proveedor", "Hijo de relación previa"],
+        "puntos_fuertes": ["Profesional en marketing digital"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:12820": {
+        "ai_score": 85,
+        "veredicto": "RECOMENDADO",
+        "analisis": "Excelente afinidad en autonomía, nivel profesional y hábitos deportivos de alta intensidad (natación). Ambos valoran proyectos de vida estructurados con independencia individual.",
+        "deal_breakers": [],
+        "puntos_fuertes": ["Autonomía mutua y profesionalismo", "Estilo de vida activo y deportivo", "Sin roles tradicionales de sobre-control"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:12756": {
+        "ai_score": 75,
+        "veredicto": "RECOMENDADO",
+        "analisis": "Camila y Juan Sebastian comparten madurez emocional y búsqueda de una relación seria y estable. Buena compatibilidad en valores y proyectos de vida.",
+        "deal_breakers": [],
+        "puntos_fuertes": ["Afinidad en búsqueda de relación seria", "Valores familiares y profesionales"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:12449": {
+        "ai_score": 75,
+        "veredicto": "RECOMENDADO",
+        "analisis": "Ambos perfiles muestran claridad en objetivos de pareja y madurez personal, sin deal-breakers detectados en notas clínicas.",
+        "deal_breakers": [],
+        "puntos_fuertes": ["Madurez emocional", "Metas de vida claras"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:12446": {
+        "ai_score": 30,
+        "veredicto": "NO RECOMENDADO",
+        "analisis": "Incompatibilidad marcada en etapas de vida y madurez emocional: Mayra tiene 20 años, estudia medicina y nunca ha tenido una relación seria, contrastando con el perfil de 32 años estructurado de Juan.",
+        "deal_breakers": ["Brecha de etapa vital (20 años estudiante vs 32 años profesional)", "Pocos antecedentes de estabilidad relacional"],
+        "puntos_fuertes": ["Iniciativa académica"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
     }
 }
 
@@ -4434,9 +4474,9 @@ async def get_interview_results(
                 break
 
     if nvidia_key and len(nvidia_key) > 10 and suggested_matches:
-        # Filtrar antes de llamar a la IA: evaluamos las 3 mejores candidatas del filtro estructural
-        candidates_to_evaluate = suggested_matches[:3]
-        remaining_candidates = suggested_matches[3:]
+        # Evaluamos con IA semántica clínica todas las candidatas sugeridas
+        candidates_to_evaluate = suggested_matches
+        remaining_candidates = []
 
         try:
             async with httpx.AsyncClient() as http_client:
