@@ -31,7 +31,7 @@ async def main():
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     service = build('sheets', 'v4', credentials=creds)
-    sheet_id = "1g2sFJnfn0H9CGSYKLQkGyif2uaRlhim8PKZ0lAb-cfk"
+    sheet_id = os.environ.get("AGOSTO27_SHEET_ID", "1tCV7lIE-uypmDELyNz9bWdS95DEzCHO9EUbCszVa9co")
 
     result = service.spreadsheets().values().get(
         spreadsheetId=sheet_id,
