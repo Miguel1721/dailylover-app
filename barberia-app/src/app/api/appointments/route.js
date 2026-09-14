@@ -14,6 +14,8 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url)
     const barberId = searchParams.get('barberId')
     const dateParam = searchParams.get('date')
+    const startDateParam = searchParams.get('startDate')
+    const endDateParam = searchParams.get('endDate')
     const status = searchParams.get('status')
 
     const where = { tenantId }
@@ -21,7 +23,14 @@ export async function GET(request) {
     if (barberId) where.barberId = barberId
 
     if (dateParam) {
-      const { start, end } = getColombiaDateRange(dateParam, dateParam)
+      const start = new Date(`${dateParam}T00:00:00.000Z`)
+      const end = new Date(`${dateParam}T23:59:59.999Z`)
+      where.date = { gte: start, lte: end }
+    } else if (startDateParam || endDateParam) {
+      const s = startDateParam || endDateParam
+      const e = endDateParam || startDateParam
+      const start = new Date(`${s}T00:00:00.000Z`)
+      const end = new Date(`${e}T23:59:59.999Z`)
       where.date = { gte: start, lte: end }
     }
 

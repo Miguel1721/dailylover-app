@@ -50,7 +50,14 @@ export async function GET(request) {
         select: { commissionAmount: true, isPaid: true },
       }),
       prisma.appointment.findMany({
-        where: { tenantId, date: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
+        where: {
+          tenantId,
+          date: {
+            gte: new Date(start.toISOString().slice(0, 10) + 'T00:00:00.000Z'),
+            lte: new Date(end.toISOString().slice(0, 10) + 'T23:59:59.999Z'),
+          },
+          status: { not: 'CANCELLED' }
+        },
         select: { id: true },
       }),
     ])

@@ -35,12 +35,7 @@ def get_gemini_api_key():
     3. Servidor VPS de producción (si hay llaves SSH configuradas)
     Retorna None si no se encuentra configurada.
     """
-    # 1. Variable de entorno
-    key = os.getenv('GEMINI_API_KEY', '').strip()
-    if key and not key.startswith('your') and len(key) > 20:
-        return key
-
-    # 2. Leer del archivo .env local
+    # 1. Leer del archivo .env local
     env_file = os.path.join(os.path.dirname(__file__), '..', '.env')
     if os.path.exists(env_file):
         with open(env_file, 'r', encoding='utf-8', errors='ignore') as f:
@@ -49,6 +44,11 @@ def get_gemini_api_key():
                     val = line.strip().split('=', 1)[1].strip().strip('"\'')
                     if val and not val.startswith('your') and len(val) > 20:
                         return val
+
+    # 2. Variable de entorno
+    key = os.getenv('GEMINI_API_KEY', '').strip()
+    if key and not key.startswith('your') and len(key) > 20:
+        return key
 
     # 3. Fallback: fetch directo desde VPS de producción si tenemos llave SSH
     try:

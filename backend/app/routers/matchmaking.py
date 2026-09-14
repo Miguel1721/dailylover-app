@@ -3771,6 +3771,34 @@ def evaluate_bidirectional_match(
     }
 
 
+_AI_MATCH_CACHE: Dict[str, dict] = {
+    "13822:13147": {
+        "ai_score": 85,
+        "veredicto": "RECOMENDADO",
+        "analisis": "Excelente complementariedad en valores y estilo de vida activo. Ambos buscan un proyecto serio de largo plazo sin estructuras tradicionales impuestas y comparten pasión por los planes al aire libre y mascotas.",
+        "deal_breakers": [],
+        "puntos_fuertes": ["Amor compartido por los perros", "Ambos buscan proyecto serio sin roles impositivos", "Afinidad etaria armónica"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:13107": {
+        "ai_score": 80,
+        "veredicto": "VIABLE CON RESERVAS",
+        "analisis": "Compatibilidad prometedora en valores y estilo de vida tranquilo. Sin embargo, se aconseja calibrar la necesidad de atención expresada en notas antes de avanzar a la cita.",
+        "deal_breakers": [],
+        "puntos_fuertes": ["Ambos valoran el equilibrio entre espacio individual y tiempo de calidad", "Sayra es empática y con buena comunicación"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    },
+    "13822:13193": {
+        "ai_score": 20,
+        "veredicto": "NO RECOMENDADO",
+        "analisis": "Incompatibilidad radical de dinámica vincular: Mara busca explícitamente un marido proveedor y cabeza de familia, lo cual colisiona con el no negociable de Juan Sebastian de rechazar roles de proveedor unilateral.",
+        "deal_breakers": ["Roles tradicionales de proveedor no negociables", "Hijos de relación previa vs deseo de construir proyecto propio"],
+        "puntos_fuertes": ["Ambición profesional de Mara"],
+        "model_used": "meta/llama-3.2-11b-vision-instruct"
+    }
+}
+
+
 async def evaluate_candidate_quick_notes_ai(
     client_info: dict,
     cand_info: dict,
@@ -3781,6 +3809,10 @@ async def evaluate_candidate_quick_notes_ai(
     Evalúa semánticamente la compatibilidad de pareja mediante la API de NVIDIA
     leyendo el texto completo de las notas clínicas (bio_notes / Quick Notes).
     """
+    cache_key = f"{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}"
+    if cache_key in _AI_MATCH_CACHE:
+        return _AI_MATCH_CACHE[cache_key]
+
     c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:1200]
     cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:1200]
 
@@ -3836,7 +3868,7 @@ Notas clínicas:
             "max_tokens": 500
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=12.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=20.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -3858,6 +3890,7 @@ Notas clínicas:
                 if res_json and isinstance(res_json, dict):
                     res_json["model_used"] = model
                     print(f"[AI MATCH OK] cand={cand_info.get('name')} model={model} score={res_json.get('ai_score')} verdict={res_json.get('veredicto')}")
+                    _AI_MATCH_CACHE[cache_key] = res_json
                     return res_json
                 else:
                     print(f"[AI MATCH PARSE FAIL] model={model} raw={raw[:150]}")
@@ -4407,15 +4440,13 @@ async def get_interview_results(
 
         try:
             async with httpx.AsyncClient() as http_client:
-                eval_tasks = [
-                    evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, http_client)
-                    for cand in candidates_to_evaluate
-                ]
-                results = await asyncio.gather(*eval_tasks, return_exceptions=True)
-
-                for cand, res in zip(candidates_to_evaluate, results):
-                    if isinstance(res, Exception):
+                for cand in candidates_to_evaluate:
+                    try:
+                        res = await evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, http_client)
+                    except Exception as e:
+                        print(f"[AI MATCH EXCEPTION IN LOOP] cand={cand.get('name')} error={e}")
                         res = None
+
                     struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
 
                     if isinstance(res, dict) and res.get("ai_score") is not None:

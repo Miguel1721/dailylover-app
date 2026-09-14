@@ -252,13 +252,13 @@ export default function AppointmentsPage() {
       )}
 
       {/* New Appointment Modal */}
-      {showNewModal && <NewAppointmentModal barbers={barbers} onClose={() => setShowNewModal(false)} onSave={() => { setShowNewModal(false); loadAppointments() }} />}
+      {showNewModal && <NewAppointmentModal barbers={barbers} initialDate={selectedDate} onClose={() => setShowNewModal(false)} onSave={() => { setShowNewModal(false); loadAppointments() }} />}
     </div>
   )
 }
 
-function NewAppointmentModal({ barbers, onClose, onSave }) {
-  const [form, setForm] = useState({ clientName: '', clientPhone: '', barberId: '', date: format(new Date(), 'yyyy-MM-dd'), timeSlot: '', serviceIds: [], notes: '' })
+function NewAppointmentModal({ barbers, initialDate, onClose, onSave }) {
+  const [form, setForm] = useState({ clientName: '', clientPhone: '', barberId: '', date: initialDate || format(new Date(), 'yyyy-MM-dd'), timeSlot: '', serviceIds: [], notes: '' })
   const [services, setServices] = useState([])
   const [availableSlots, setAvailableSlots] = useState([])
   const [loading, setLoading] = useState(false)
