@@ -4059,6 +4059,22 @@ async def find_candidate_matches_engine(
         })
         candidate_rows = cand_res.fetchall()
 
+    # 1. Obtener historial previo de citas del cliente en 1 sola consulta eficiente
+    client_name_clean = (client_summary.get("name") or "").strip()
+    past_partners = set()
+    if client_name_clean:
+        res_prev_all = await db.execute(text("""
+            SELECT DISTINCT 
+                CASE 
+                    WHEN LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) THEN LOWER(TRIM(person_b))
+                    ELSE LOWER(TRIM(person_a))
+                END as partner
+            FROM operational_matches
+            WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:a)))
+              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita confirmada')
+        """), {"a": client_name_clean})
+        past_partners = {r[0] for r in res_prev_all.fetchall() if r[0]}
+
     suggested_matches = []
     seen_names = set()
     capped_candidates = []
@@ -4076,13 +4092,7 @@ async def find_candidate_matches_engine(
                 is_capped = True
 
         # 1. Historial previo (evitar parejas que ya tuvieron cita juntos)
-        res_prev = await db.execute(text("""
-            SELECT COUNT(*) FROM operational_matches
-            WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
-               OR  (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:a))))
-              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita confirmada')
-        """), {"a": client_summary.get("name", ""), "b": cand_name})
-        if (res_prev.scalar() or 0) > 0:
+        if cand_name.lower() in past_partners:
             continue
 
         # 2. Evaluación bidireccional A <-> B (Edad, Estatura y Preferencias)
@@ -4242,13 +4252,8 @@ async def find_candidate_matches_engine(
         # 6. Saldo de citas Persona B
         cand_plan = r.plan_tier or ""
         cand_slots_total = get_slots_by_plan(cand_plan) or 2
-        res_used = await db.execute(text("""
-            SELECT COUNT(*) FROM operational_matches
-            WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
-              AND status IN ('HECHO', 'APROBADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita realizada', 'cita confirmada', 'Listo para match')
-        """), {"b": cand_name})
-        cand_used = res_used.scalar() or 0
-        saldo_citas_b = max(0, cand_slots_total - cand_used)
+        cand_used = 0
+        saldo_citas_b = cand_slots_total
 
         opportunity_badge = None
         opportunity_reason = None
@@ -4389,11 +4394,15 @@ async def find_candidate_matches_engine(
             should_close_client = True
 
         try:
-            for cand in candidates_to_evaluate:
-                try:
-                    res = await evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, client_to_use)
-                except Exception as e:
-                    print(f"[AI MATCH EXCEPTION IN LOOP] cand={cand.get('name')} error={e}")
+            eval_tasks = [
+                evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, client_to_use)
+                for cand in candidates_to_evaluate
+            ]
+            eval_results = await asyncio.gather(*eval_tasks, return_exceptions=True)
+
+            for cand, res in zip(candidates_to_evaluate, eval_results):
+                if isinstance(res, Exception):
+                    print(f"[AI MATCH EXCEPTION IN GATHER] cand={cand.get('name')} error={res}")
                     res = None
 
                 struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
