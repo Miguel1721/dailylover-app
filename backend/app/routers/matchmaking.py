@@ -3945,6 +3945,514 @@ Notas clínicas:
     return None
 
 
+async def find_candidate_matches_engine(
+    client_summary: dict,
+    db: AsyncSession,
+    pool_limit: int = 60,
+    max_ai_evaluations: int = 4,
+    candidate_usage_tracker: Optional[Dict[int, int]] = None,
+    max_candidate_usage: Optional[int] = None,
+    nvidia_key: Optional[str] = None,
+    http_client: Optional[httpx.AsyncClient] = None
+) -> List[dict]:
+    """
+    Motor unificado de búsqueda, filtrado estructural multidimensional y evaluación
+    clínica con IA (NVIDIA) para matchmaking de candidatos.
+    Usado tanto por /interview-results como por los pipelines automáticos.
+    """
+    uid = client_summary.get("user_id")
+    client_city = (client_summary.get("city") if client_summary.get("city") else "Bogotá").strip()
+    client_gender = (client_summary.get("gender") if client_summary.get("gender") else "Hombre").strip().lower()
+    client_sg = float(client_summary["social_group_score"]) if client_summary.get("social_group_score") is not None else None
+    client_act = int(client_summary["physical_activity_level"]) if client_summary.get("physical_activity_level") is not None else None
+    client_edu = int(client_summary["education_level"]) if client_summary.get("education_level") is not None else None
+    client_lang_rec = (client_summary.get("love_language_received") or "").lower()
+    client_lang_given = (client_summary.get("love_language_given") or "").lower()
+    client_non_neg = client_summary.get("non_negotiables") or []
+    client_prefs = (client_summary.get("search_preferences") if client_summary.get("search_preferences") else {}) or {}
+    client_height_cm = parse_cm_height(client_summary.get("estatura")) if client_summary.get("estatura") else None
+    client_age = int(client_summary["age"]) if client_summary.get("age") else None
+    client_attachment = client_summary.get("attachment_style")
+
+    clean_client_non_neg = []
+    for item in client_non_neg:
+        if isinstance(item, dict):
+            txt = item.get("texto") or item.get("text") or ""
+            if txt.strip():
+                clean_client_non_neg.append(txt.strip())
+        elif isinstance(item, str) and item.strip():
+            clean_client_non_neg.append(item.strip())
+
+    is_male = "homb" in client_gender or "masc" in client_gender
+    gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')" if is_male else "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
+
+    anti_opposite_name_sql = (
+        "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
+        if is_male else
+        "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
+    )
+
+    city_sql = ""
+    if client_city and client_city.lower() != "todas":
+        clean_city_prefix = client_city.split()[0].replace(",", "").strip()
+        city_sql = f"AND (p.city IS NULL OR p.city = '' OR p.city ILIKE '%{clean_city_prefix}%')"
+
+    cand_res = await db.execute(text(f"""
+        SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
+               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
+               p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+               cep.social_group_score, cep.physical_activity_level, cep.education_level,
+               cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
+        WHERE u.id != :uid
+          AND u.merged_into_id IS NULL
+          AND u.name NOT ILIKE 'Cliente CRM%'
+          AND u.name NOT ILIKE 'Sin nombre%'
+          AND u.name NOT ILIKE '%unknown%'
+          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
+          AND {gender_filter_sql}
+          {anti_opposite_name_sql}
+          {city_sql}
+          AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
+          AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
+        ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
+                 (p.occupation IS NOT NULL AND p.occupation != '') DESC,
+                 (p.age IS NOT NULL) DESC,
+                 u.id DESC
+        LIMIT :pool_limit
+    """), {
+        "uid": uid,
+        "pool_limit": pool_limit
+    })
+    candidate_rows = cand_res.fetchall()
+
+    if not candidate_rows:
+        cand_res = await db.execute(text(f"""
+            SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
+                   p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
+                   p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+                   cep.social_group_score, cep.physical_activity_level, cep.education_level,
+                   cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
+            WHERE u.id != :uid
+              AND u.merged_into_id IS NULL
+              AND u.name NOT ILIKE 'Cliente CRM%'
+              AND u.name NOT ILIKE 'Sin nombre%'
+              AND u.name NOT ILIKE '%unknown%'
+              AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
+              AND {gender_filter_sql}
+              {anti_opposite_name_sql}
+              AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
+              AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
+            ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
+                     (p.occupation IS NOT NULL AND p.occupation != '') DESC,
+                     (p.age IS NOT NULL) DESC,
+                     u.id DESC
+            LIMIT :pool_limit
+        """), {
+            "uid": uid,
+            "pool_limit": pool_limit
+        })
+        candidate_rows = cand_res.fetchall()
+
+    suggested_matches = []
+    seen_names = set()
+    capped_candidates = []
+
+    for r in candidate_rows:
+        cand_name = (r.name or "").strip()
+        if not cand_name or cand_name.lower() in seen_names:
+            continue
+        seen_names.add(cand_name.lower())
+
+        # Tope de diversidad dentro de la corrida
+        is_capped = False
+        if candidate_usage_tracker is not None and max_candidate_usage is not None:
+            if candidate_usage_tracker.get(r.id, 0) >= max_candidate_usage:
+                is_capped = True
+
+        # 1. Historial previo (evitar parejas que ya tuvieron cita juntos)
+        res_prev = await db.execute(text("""
+            SELECT COUNT(*) FROM operational_matches
+            WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
+               OR  (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:a))))
+              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita confirmada')
+        """), {"a": client_summary.get("name", ""), "b": cand_name})
+        if (res_prev.scalar() or 0) > 0:
+            continue
+
+        # 2. Evaluación bidireccional A <-> B (Edad, Estatura y Preferencias)
+        bidi = evaluate_bidirectional_match(client_summary, r, client_prefs, client_height_cm)
+        if not bidi["age_ok"] and (bidi["age_alerts"]):
+            continue
+
+        # 3. Matriz de apego psicológico
+        raw_apego = getattr(r, "apego", None)
+        cand_attachment = parse_attachment_style(raw_apego)
+        has_real_attachment = bool(raw_apego and cand_attachment and cand_attachment != "No especificado")
+        client_has_attachment = bool(client_attachment and client_attachment != "No especificado")
+        if has_real_attachment and client_has_attachment:
+            attachment_eval = evaluate_attachment_compatibility(client_attachment, cand_attachment)
+        else:
+            cand_attachment = cand_attachment if has_real_attachment else "No especificado"
+            attachment_eval = {
+                "type": "unspecified",
+                "label": "Pendiente de evaluación",
+                "clinical_note": "Apego aún no evaluado en entrevista clínica.",
+                "badge_color": "#E8EAED",
+                "badge_text": "Apego: Pendiente"
+            }
+
+        # 4. Datos clínicos
+        cand_sg = float(r.social_group_score) if r.social_group_score is not None else None
+        cand_act = int(r.physical_activity_level) if r.physical_activity_level is not None else None
+        cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
+        cand_lang_raw = r.love_language_given or getattr(r, "love_language", None)
+        cand_lang = str(cand_lang_raw).strip() if cand_lang_raw and str(cand_lang_raw).strip() else "No especificado"
+        cand_bio_clean = (r.bio_notes or "").strip()
+        cand_eval_age = int(r.age) if r.age else None
+        if not cand_eval_age and cand_bio_clean:
+            m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
+            if m_age:
+                try:
+                    cand_eval_age = int(m_age.group(1))
+                except Exception:
+                    pass
+        cand_age = cand_eval_age
+        cand_edu = int(r.education_level) if r.education_level is not None else None
+
+        # 5. Cálculo clínico proporcional
+        earned_points = 0.0
+        max_possible_points = 0.0
+        missing_fields = []
+
+        # 5.1. Afinidad Sociocultural / Social Group (20 pts máx)
+        if cand_sg is not None and client_sg is not None:
+            sg_delta = abs(client_sg - cand_sg)
+            sg_pts = max(6.0, 20.0 - (sg_delta * 14.0))
+            earned_points += sg_pts
+            max_possible_points += 20.0
+        else:
+            missing_fields.append("Grupo Social")
+
+        # 5.2. Afinidad de Apego Psicológico (18 pts máx)
+        if has_real_attachment and client_has_attachment:
+            if attachment_eval["type"] == "optimal":
+                attachment_pts = 18.0
+            elif attachment_eval["type"] == "complementary":
+                attachment_pts = 13.0
+            elif attachment_eval["type"] == "warning":
+                attachment_pts = 7.0
+            elif attachment_eval["type"] == "trap":
+                attachment_pts = 2.0
+            else:
+                attachment_pts = 12.0
+            earned_points += attachment_pts
+            max_possible_points += 18.0
+        else:
+            missing_fields.append("Estilo de Apego")
+
+        # 5.3. Ritmo de Vida y Actividad Física (15 pts máx)
+        if cand_act is not None and client_act is not None:
+            act_delta = abs(client_act - cand_act)
+            act_pts = max(4.0, 15.0 - (act_delta * 3.5))
+            earned_points += act_pts
+            max_possible_points += 15.0
+        else:
+            missing_fields.append("Actividad Física")
+
+        # 5.4. Filtro Bidireccional de Edad y Momento Vital (14 pts máx)
+        if cand_eval_age is not None:
+            pref_min_age = int(client_prefs.get("min_age") or 20) if client_prefs else 20
+            pref_max_age = int(client_prefs.get("max_age") or 35) if client_prefs else 35
+            if pref_min_age <= cand_eval_age <= pref_max_age:
+                age_pts = 14.0
+            elif cand_eval_age == (pref_min_age - 1) or cand_eval_age == (pref_max_age + 1):
+                age_pts = 10.0
+            elif cand_eval_age in (pref_min_age - 2, pref_max_age + 2):
+                age_pts = 7.0
+            else:
+                age_pts = 4.0
+            earned_points += age_pts
+            max_possible_points += 14.0
+        else:
+            missing_fields.append("Edad")
+
+        # 5.5. Estatura y Dealbreakers Físicos (12 pts máx)
+        cand_h_cm = parse_cm_height(r.estatura)
+        if cand_h_cm and client_height_cm:
+            diff_h = client_height_cm - cand_h_cm
+            if 5 <= diff_h <= 16:
+                height_pts = 12.0
+            elif 1 <= diff_h < 5:
+                height_pts = 8.5
+            elif diff_h < 0:
+                height_pts = 3.0
+            else:
+                height_pts = 10.0
+            earned_points += height_pts
+            max_possible_points += 12.0
+        else:
+            if not cand_h_cm:
+                missing_fields.append("Estatura")
+
+        # 5.6. Lenguaje del Amor y Resonancia Afectiva (12 pts máx)
+        if cand_lang != "No especificado":
+            if client_lang_rec or client_lang_given:
+                cand_lang_clean = cand_lang.lower()
+                if client_lang_rec and any(w in cand_lang_clean for w in client_lang_rec.split()):
+                    lang_pts = 12.0
+                elif client_lang_given and any(w in cand_lang_clean for w in client_lang_given.split()):
+                    lang_pts = 10.5
+                elif any(w in cand_lang_clean for w in ["servicio", "contacto", "toque", "palabras", "tiempo"]):
+                    lang_pts = 8.0
+                else:
+                    lang_pts = 7.5
+                earned_points += lang_pts
+                max_possible_points += 12.0
+            else:
+                missing_fields.append("Lenguaje del Amor")
+        else:
+            missing_fields.append("Lenguaje del Amor")
+
+        # 5.7. Afinidad Educativa & Vocacional (9 pts máx)
+        if cand_edu is not None and client_edu is not None:
+            edu_diff = abs(int(client_edu) - cand_edu)
+            edu_pts = max(4.0, 9.0 - (edu_diff * 2.5))
+            earned_points += edu_pts
+            max_possible_points += 9.0
+        else:
+            missing_fields.append("Nivel Educativo")
+
+        if cand_occ == "No especificado":
+            missing_fields.append("Ocupación")
+
+        if max_possible_points > 0:
+            percentage = (earned_points / max_possible_points) * 100.0
+            match_pct = int(min(95, max(45, round(percentage))))
+        else:
+            match_pct = None
+
+        datos_completos = (len(missing_fields) == 0)
+
+        # 6. Saldo de citas Persona B
+        cand_plan = r.plan_tier or ""
+        cand_slots_total = get_slots_by_plan(cand_plan) or 2
+        res_used = await db.execute(text("""
+            SELECT COUNT(*) FROM operational_matches
+            WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
+              AND status IN ('HECHO', 'APROBADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita realizada', 'cita confirmada', 'Listo para match')
+        """), {"b": cand_name})
+        cand_used = res_used.scalar() or 0
+        saldo_citas_b = max(0, cand_slots_total - cand_used)
+
+        opportunity_badge = None
+        opportunity_reason = None
+        if saldo_citas_b <= 0:
+            opportunity_badge = "Oportunidad Comercial / Cumplimiento"
+            opportunity_reason = f"Persona B consumió las {cand_slots_total} citas de su plan ({cand_used} registradas)."
+
+        strengths = []
+        if cand_sg is not None and client_sg is not None:
+            try:
+                strengths.append(f"Afinidad sociocultural evaluada (Grupo Social {float(cand_sg):.1f} vs {float(client_sg):.1f})")
+            except (ValueError, TypeError):
+                strengths.append("Afinidad sociocultural evaluada")
+        if has_real_attachment and attachment_eval["type"] in ("optimal", "complementary"):
+            strengths.append(f"Apego {attachment_eval['label']}: {attachment_eval['clinical_note']}")
+        if cand_act is not None and client_act is not None:
+            try:
+                strengths.append(f"Estilo de vida compatible ({'Alto' if float(cand_act) >= 7 else 'Moderado'} ritmo físico: {cand_act}/10)")
+            except (ValueError, TypeError):
+                strengths.append("Estilo de vida compatible")
+        if cand_eval_age and bidi["is_bidirectionally_compatible"]:
+            strengths.append("Filtro bidireccional mutuo validado (compatibilidad etaria armónica)")
+        if r.city:
+            strengths.append(f"Ambos residen en {r.city or client_city}")
+        if not strengths:
+            strengths.append("Candidato/a activo/a verificado/a en CRM")
+        if bidi["age_pros"]:
+            strengths.append(bidi["age_pros"][0])
+
+        clean_cid = str(r.crm_id or "").strip()
+        if not clean_cid or clean_cid.lower() == "none" or not clean_cid.isdigit():
+            lookup_cid = await db.execute(text("""
+                SELECT crm_id FROM users
+                WHERE name ILIKE :cname AND crm_id IS NOT NULL AND crm_id != 'None' AND crm_id ~ '^[0-9]+$'
+                LIMIT 1
+            """), {"cname": cand_name})
+            found_cid = lookup_cid.scalar()
+            if found_cid:
+                clean_cid = str(found_cid).strip()
+
+        cand_crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{clean_cid}/" if (clean_cid and clean_cid.isdigit()) else f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(cand_name)}"
+
+        dealbreakers_check_msg = "✓ Filtro bidireccional superado (Edad y Estatura mutuas compatibles)"
+        if bidi["height_alerts"]:
+            dealbreakers_check_msg = f"⚠️ Nota: {bidi['height_alerts'][0]}"
+
+        cand_sp = r.search_preferences or {}
+        cand_nn_list = cand_sp.get("non_negotiables") or []
+        cand_rf_list = cand_sp.get("red_flags") or []
+
+        cand_payload = {
+            "user_id": r.id,
+            "name": cand_name,
+            "phone": r.phone or "",
+            "crm_id": clean_cid if clean_cid and clean_cid.isdigit() else "",
+            "crm_url": cand_crm_url,
+            "client_code": r.client_code or f"DL-{r.id}",
+            "city": r.city or client_city,
+            "age": cand_age,
+            "estatura": r.estatura or "",
+            "plan_tier": r.plan_tier or "Estándar 65k (2 citas)",
+            "plan_total_dates": cand_slots_total,
+            "dates_used": cand_used,
+            "dates_remaining": saldo_citas_b,
+            "occupation": cand_occ,
+            "social_group_score": cand_sg,
+            "physical_activity_level": cand_act,
+            "education_level": cand_edu,
+            "love_language": cand_lang,
+            "attachment_style": cand_attachment,
+            "attachment_eval": attachment_eval,
+            "datos_completos": datos_completos,
+            "campos_faltantes": missing_fields,
+            "campos_evaluados_pts": round(max_possible_points, 1),
+            "saldo_citas": saldo_citas_b,
+            "opportunity_badge": opportunity_badge,
+            "opportunity_reason": opportunity_reason,
+            "compatibility_pct": match_pct,
+            "structural_score": match_pct or 70,
+            "dealbreakers_clean": bidi["is_bidirectionally_compatible"],
+            "dealbreakers_check": dealbreakers_check_msg,
+            "strengths": strengths,
+            "synthesis": r.synthesis_who_really_is or (cand_bio_clean[:200] + "..." if len(cand_bio_clean) > 200 else cand_bio_clean) or "",
+            "bio_notes": cand_bio_clean,
+            "search_preferences": cand_sp,
+            "non_negotiables": cand_nn_list,
+            "red_flags": cand_rf_list,
+            "comparison": {
+                "client_notes": client_summary.get("bio_notes", ""),
+                "candidate_notes": cand_bio_clean,
+                "client_non_neg": clean_client_non_neg,
+                "candidate_non_neg": cand_nn_list,
+                "client_red_flags": client_prefs.get("red_flags") or [],
+                "candidate_red_flags": cand_rf_list
+            }
+        }
+        cand_payload["match_analysis"] = generate_clinical_match_analysis(client_summary, cand_payload)
+        if is_capped:
+            capped_candidates.append(cand_payload)
+        else:
+            suggested_matches.append(cand_payload)
+
+    if not suggested_matches and capped_candidates:
+        # Fallback de diversidad: si todos los candidatos viables quedaron topados por el límite de diversidad,
+        # recuperamos los candidatos viables ordenados por menor cantidad de apariciones previas
+        capped_candidates.sort(key=lambda x: candidate_usage_tracker.get(x["user_id"], 0) if candidate_usage_tracker else 0)
+        suggested_matches = capped_candidates[:max_ai_evaluations]
+
+    # 7. Filtro previo estructural: ordenar preliminarmente
+    suggested_matches.sort(
+        key=lambda x: (
+            x["compatibility_pct"] is not None,
+            x["compatibility_pct"] or 0,
+            x["dealbreakers_clean"],
+            x["datos_completos"],
+            x["user_id"]
+        ),
+        reverse=True
+    )
+
+    for cand in suggested_matches:
+        cand["structural_score"] = cand.get("compatibility_pct") or 70
+        cand["ai_score"] = None
+        cand["ai_veredicto"] = "SIN EVALUACIÓN IA"
+        cand["ai_analisis"] = None
+        cand["ai_deal_breakers"] = []
+        cand["ai_puntos_fuertes"] = []
+
+    # 8. Evaluación con IA clínica (NVIDIA)
+    if nvidia_key and len(nvidia_key) > 10 and suggested_matches:
+        candidates_to_evaluate = suggested_matches[:max_ai_evaluations]
+        remaining_candidates = suggested_matches[max_ai_evaluations:]
+
+        should_close_client = False
+        client_to_use = http_client
+        if client_to_use is None:
+            client_to_use = httpx.AsyncClient()
+            should_close_client = True
+
+        try:
+            for cand in candidates_to_evaluate:
+                try:
+                    res = await evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, client_to_use)
+                except Exception as e:
+                    print(f"[AI MATCH EXCEPTION IN LOOP] cand={cand.get('name')} error={e}")
+                    res = None
+
+                struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
+
+                if isinstance(res, dict) and res.get("ai_score") is not None:
+                    ai_score = res.get("ai_score", 70)
+                    verdict = res.get("veredicto", "VIABLE")
+                    dbs = res.get("deal_breakers") or []
+                    pts = res.get("puntos_fuertes") or []
+                    analisis = res.get("analisis") or ""
+
+                    cand["ai_score"] = ai_score
+                    cand["ai_veredicto"] = verdict
+                    cand["ai_analisis"] = analisis
+                    cand["ai_deal_breakers"] = dbs
+                    cand["ai_puntos_fuertes"] = pts
+                    cand["ai_model"] = res.get("model_used")
+
+                    if len(dbs) > 0 or verdict == "NO RECOMENDADO":
+                        cand["compatibility_pct"] = min(ai_score, 35)
+                    elif verdict == "VIABLE CON RESERVAS":
+                        cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
+                    else:
+                        cand["compatibility_pct"] = int(round(0.45 * struct_score + 0.55 * ai_score))
+
+                    if dbs:
+                        cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"
+                        cand["dealbreakers_clean"] = False
+                    if pts:
+                        cand["strengths"] = [f"IA: {p}" for p in pts] + cand.get("strengths", [])
+                else:
+                    cand["ai_score"] = None
+                    cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL"
+                    cand["ai_analisis"] = None
+                    cand["ai_deal_breakers"] = []
+                    cand["ai_puntos_fuertes"] = []
+        finally:
+            if should_close_client:
+                await client_to_use.aclose()
+
+        evaluated_sorted = sorted(
+            candidates_to_evaluate,
+            key=lambda x: (
+                x["compatibility_pct"] is not None,
+                x["compatibility_pct"] or 0,
+                x["dealbreakers_clean"],
+                x["datos_completos"],
+                x["user_id"]
+            ),
+            reverse=True
+        )
+        for c in remaining_candidates:
+            c["ai_veredicto"] = "SCORE ESTRUCTURAL"
+
+        suggested_matches = evaluated_sorted + remaining_candidates
+
+    return suggested_matches
+
+
 @router.get("/interview-results/{crm_id_or_user_id}")
 async def get_interview_results(
     crm_id_or_user_id: str,
@@ -4059,404 +4567,7 @@ async def get_interview_results(
         "search_preferences": client_prefs
     }
 
-    client_attachment = client_summary["attachment_style"]
-
-    # 3. Buscar candidatos compatibles con filtro riguroso por género real y limpieza de datos
-    is_male = "homb" in client_gender or "masc" in client_gender
-    # Si el cliente busca mujeres, exigir explícitamente femenino/mujer. Si busca hombres, masculino/hombre.
-    # NUNCA permitir p.gender IS NULL o vacío para evitar que se filtren perfiles incompletos o 'unknown'
-    gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')" if is_male else "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
-
-    # Exclusión adicional por nombres de pila opuestos para depurar anomalías históricas en base de datos
-    anti_opposite_name_sql = (
-        "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
-        if is_male else
-        "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
-    )
-
-    # Filtro geográfico estricto: Si el cliente está en Bogotá (o no desea distancia), evitar sugerir candidatas de otras ciudades
-    city_sql = ""
-    if client_city and client_city.lower() != "todas":
-        clean_city_prefix = client_city.split()[0].replace(",", "").strip()
-        city_sql = f"AND (p.city IS NULL OR p.city = '' OR p.city ILIKE '%{clean_city_prefix}%')"
-
-    cand_res = await db.execute(text(f"""
-        SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
-               p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-               cep.social_group_score, cep.physical_activity_level, cep.education_level,
-               cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
-        FROM users u
-        LEFT JOIN profiles p ON p.user_id = u.id
-        LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
-        WHERE u.id != :uid
-          AND u.merged_into_id IS NULL
-          AND u.name NOT ILIKE 'Cliente CRM%'
-          AND u.name NOT ILIKE 'Sin nombre%'
-          AND u.name NOT ILIKE '%unknown%'
-          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
-          AND {gender_filter_sql}
-          {anti_opposite_name_sql}
-          {city_sql}
-          AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
-          AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
-        ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
-                 (p.occupation IS NOT NULL AND p.occupation != '') DESC,
-                 (p.age IS NOT NULL) DESC,
-                 u.id DESC
-        LIMIT 60
-    """), {
-        "uid": uid,
-        "city": f"%{client_city}%"
-    })
-    candidate_rows = cand_res.fetchall()
-
-    suggested_matches = []
-    seen_names = set()
-
-    for r in candidate_rows:
-        cand_name = (r.name or "").strip()
-        if not cand_name or cand_name.lower() in seen_names:
-            continue
-        seen_names.add(cand_name.lower())
-
-        # ── 1. HISTORIAL PREVIO (Evitar duplicados que ya tuvieron cita juntos) ──
-        res_prev = await db.execute(text("""
-            SELECT COUNT(*) FROM operational_matches
-            WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
-               OR  (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:a))))
-              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita confirmada')
-        """), {"a": client_summary["name"], "b": cand_name})
-        if (res_prev.scalar() or 0) > 0:
-            continue
-
-        # ── 2. EVALUACIÓN BIDIRECCIONAL A <-> B (Edad, Estatura y Preferencias) ──
-        bidi = evaluate_bidirectional_match(client_summary, r, client_prefs, client_height_cm)
-
-        # Si viola flagrantemente el rango de edad mutuo, descartar en favor de perfiles armónicos
-        if not bidi["age_ok"] and (bidi["age_alerts"]):
-            continue
-
-        # ── 3. MATRIZ DE APEGO PSICOLÓGICO ──
-        raw_apego = getattr(r, "apego", None)
-        cand_attachment = parse_attachment_style(raw_apego)
-        has_real_attachment = bool(raw_apego and cand_attachment and cand_attachment != "No especificado")
-        client_has_attachment = bool(client_attachment and client_attachment != "No especificado")
-        if has_real_attachment and client_has_attachment:
-            attachment_eval = evaluate_attachment_compatibility(client_attachment, cand_attachment)
-        else:
-            cand_attachment = cand_attachment if has_real_attachment else "No especificado"
-            attachment_eval = {
-                "type": "unspecified",
-                "label": "Pendiente de evaluación",
-                "clinical_note": "Apego aún no evaluado en entrevista clínica.",
-                "badge_color": "#E8EAED",
-                "badge_text": "Apego: Pendiente"
-            }
-
-        # ── 4. DATOS CLÍNICOS REALES (SIN NINGÚN DATO INVENTADO) ──
-        # 1. cand_sg (social group)
-        cand_sg = float(r.social_group_score) if r.social_group_score is not None else None
-        # 2. cand_act (actividad física)
-        cand_act = int(r.physical_activity_level) if r.physical_activity_level is not None else None
-        # 3. cand_occ (ocupación)
-        cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
-        # 4. cand_lang (lenguaje del amor)
-        cand_lang_raw = r.love_language_given or getattr(r, "love_language", None)
-        cand_lang = str(cand_lang_raw).strip() if cand_lang_raw and str(cand_lang_raw).strip() else "No especificado"
-        # 5. cand_eval_age (edad para evaluación)
-        cand_bio_clean = (r.bio_notes or "").strip()
-        cand_eval_age = int(r.age) if r.age else None
-        if not cand_eval_age and cand_bio_clean:
-            m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
-            if m_age:
-                try:
-                    cand_eval_age = int(m_age.group(1))
-                except Exception:
-                    pass
-        # 6. cand_age (edad para retorno/UI)
-        cand_age = cand_eval_age
-        cand_edu = int(r.education_level) if r.education_level is not None else None
-
-        # ── 5. CÁLCULO CLÍNICO REAL Y PROPORCIONAL ──
-        earned_points = 0.0
-        max_possible_points = 0.0
-        missing_fields = []
-
-        # 5.1. Afinidad Sociocultural / Social Group (20 pts máx)
-        if cand_sg is not None and client_sg is not None:
-            sg_delta = abs(client_sg - cand_sg)
-            sg_pts = max(6.0, 20.0 - (sg_delta * 14.0))
-            earned_points += sg_pts
-            max_possible_points += 20.0
-        else:
-            missing_fields.append("Grupo Social")
-
-        # 5.2. Afinidad de Apego Psicológico (18 pts máx)
-        if has_real_attachment and client_has_attachment:
-            if attachment_eval["type"] == "optimal":
-                attachment_pts = 18.0  # Seguro + Seguro
-            elif attachment_eval["type"] == "complementary":
-                attachment_pts = 13.0  # Seguro + Ansioso o Seguro + Evitativo
-            elif attachment_eval["type"] == "warning":
-                attachment_pts = 7.0   # Ansioso + Ansioso o Evitativo + Evitativo
-            elif attachment_eval["type"] == "trap":
-                attachment_pts = 2.0   # Trampa Ansioso-Evitativa
-            else:
-                attachment_pts = 12.0
-            earned_points += attachment_pts
-            max_possible_points += 18.0
-        else:
-            missing_fields.append("Estilo de Apego")
-
-        # 5.3. Ritmo de Vida y Actividad Física (15 pts máx)
-        if cand_act is not None and client_act is not None:
-            act_delta = abs(client_act - cand_act)
-            act_pts = max(4.0, 15.0 - (act_delta * 3.5))
-            earned_points += act_pts
-            max_possible_points += 15.0
-        else:
-            missing_fields.append("Actividad Física")
-
-        # 5.4. Filtro Bidireccional de Edad y Momento Vital (14 pts máx)
-        if cand_eval_age is not None:
-            pref_min_age = int(client_prefs.get("min_age") or 20) if client_prefs else 20
-            pref_max_age = int(client_prefs.get("max_age") or 35) if client_prefs else 35
-
-            if pref_min_age <= cand_eval_age <= pref_max_age:
-                age_pts = 14.0
-            elif cand_eval_age == (pref_min_age - 1) or cand_eval_age == (pref_max_age + 1):
-                age_pts = 10.0
-            elif cand_eval_age in (pref_min_age - 2, pref_max_age + 2):
-                age_pts = 7.0
-            else:
-                age_pts = 4.0
-            earned_points += age_pts
-            max_possible_points += 14.0
-        else:
-            missing_fields.append("Edad")
-
-        # 5.5. Estatura y Dealbreakers Físicos (12 pts máx)
-        cand_h_cm = parse_cm_height(r.estatura)
-        if cand_h_cm and client_height_cm:
-            diff_h = client_height_cm - cand_h_cm
-            if 5 <= diff_h <= 16:
-                height_pts = 12.0  # Proporción armónica ideal
-            elif 1 <= diff_h < 5:
-                height_pts = 8.5   # Estaturas muy similares
-            elif diff_h < 0:
-                height_pts = 3.0   # Candidata más alta que el límite
-            else:
-                height_pts = 10.0
-            earned_points += height_pts
-            max_possible_points += 12.0
-        else:
-            if not cand_h_cm:
-                missing_fields.append("Estatura")
-
-        # 5.6. Lenguaje del Amor y Resonancia Afectiva (12 pts máx)
-        if cand_lang != "No especificado":
-            client_lang_rec = (ext_data.get("love_language_received") or "").lower()
-            client_lang_given = (ext_data.get("love_language_given") or "").lower()
-
-            if client_lang_rec or client_lang_given:
-                cand_lang_clean = cand_lang.lower()
-                if client_lang_rec and any(w in cand_lang_clean for w in client_lang_rec.split()):
-                    lang_pts = 12.0
-                elif client_lang_given and any(w in cand_lang_clean for w in client_lang_given.split()):
-                    lang_pts = 10.5
-                elif any(w in cand_lang_clean for w in ["servicio", "contacto", "toque", "palabras", "tiempo"]):
-                    lang_pts = 8.0
-                else:
-                    lang_pts = 7.5
-                earned_points += lang_pts
-                max_possible_points += 12.0
-            else:
-                missing_fields.append("Lenguaje del Amor")
-        else:
-            missing_fields.append("Lenguaje del Amor")
-
-        # 5.7. Afinidad Educativa & Vocacional (9 pts máx)
-        client_edu = ext_data.get("education_level")
-        if cand_edu is not None and client_edu is not None:
-            edu_diff = abs(int(client_edu) - cand_edu)
-            edu_pts = max(4.0, 9.0 - (edu_diff * 2.5))
-            earned_points += edu_pts
-            max_possible_points += 9.0
-        else:
-            missing_fields.append("Nivel Educativo")
-
-        # Registro de ocupación en campos faltantes si no está registrada
-        if cand_occ == "No especificado":
-            missing_fields.append("Ocupación")
-
-        # Ajuste Proporcional del Score (escalado según campos reales disponibles)
-        if max_possible_points > 0:
-            percentage = (earned_points / max_possible_points) * 100.0
-            match_pct = int(min(95, max(45, round(percentage))))
-        else:
-            match_pct = None
-
-        datos_completos = (len(missing_fields) == 0)
-
-        # ── 6. SALDO DE CITAS DE PERSONA B (Regla de Oportunidad Comercial / Cumplimiento) ──
-        cand_plan = r.plan_tier or ""
-        cand_slots_total = get_slots_by_plan(cand_plan) or 2
-        res_used = await db.execute(text("""
-            SELECT COUNT(*) FROM operational_matches
-            WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
-              AND status IN ('HECHO', 'APROBADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita realizada', 'cita confirmada', 'Listo para match')
-        """), {"b": cand_name})
-        cand_used = res_used.scalar() or 0
-        saldo_citas_b = max(0, cand_slots_total - cand_used)
-
-        opportunity_badge = None
-        opportunity_reason = None
-        if saldo_citas_b <= 0:
-            opportunity_badge = "Oportunidad Comercial / Cumplimiento"
-            opportunity_reason = f"Persona B consumió las {cand_slots_total} citas de su plan ({cand_used} registradas). María/CS puede: 1) Ofrecerle comprar cita adicional, o 2) Usar como cortesía para cumplir contrato de {client_summary['name'].split()[0]}."
-
-        # Fortalezas clínicas genuinas (solo sobre datos reales existentes)
-        strengths = []
-        if cand_sg is not None and client_sg is not None:
-            try:
-                strengths.append(f"Afinidad sociocultural evaluada (Grupo Social {float(cand_sg):.1f} vs {float(client_sg):.1f})")
-            except (ValueError, TypeError):
-                strengths.append("Afinidad sociocultural evaluada")
-        elif cand_sg is not None:
-            try:
-                strengths.append(f"Grupo Social registrado ({float(cand_sg):.1f})")
-            except (ValueError, TypeError):
-                pass
-        elif client_sg is not None:
-            try:
-                strengths.append(f"Grupo Social cliente ({float(client_sg):.1f})")
-            except (ValueError, TypeError):
-                pass
-
-        if has_real_attachment and attachment_eval["type"] in ("optimal", "complementary"):
-            strengths.append(f"Apego {attachment_eval['label']}: {attachment_eval['clinical_note']}")
-        if cand_act is not None and client_act is not None:
-            try:
-                strengths.append(f"Estilo de vida compatible ({'Alto' if float(cand_act) >= 7 else 'Moderado'} ritmo físico: {cand_act}/10)")
-            except (ValueError, TypeError):
-                strengths.append("Estilo de vida compatible")
-        if cand_eval_age and bidi["is_bidirectionally_compatible"]:
-            strengths.append("Filtro bidireccional mutuo validado (compatibilidad etaria armónica)")
-        if r.city:
-            strengths.append(f"Ambos residen en {r.city or client_city}")
-        if not strengths:
-            strengths.append("Candidato/a activo/a verificado/a en CRM")
-
-        if bidi["age_pros"]:
-            strengths.append(bidi["age_pros"][0])
-
-        # Resolver CRM ID y URL
-        clean_cid = str(r.crm_id or "").strip()
-        if not clean_cid or clean_cid.lower() == "none" or not clean_cid.isdigit():
-            lookup_cid = await db.execute(text("""
-                SELECT crm_id FROM users
-                WHERE name ILIKE :cname AND crm_id IS NOT NULL AND crm_id != 'None' AND crm_id ~ '^[0-9]+$'
-                LIMIT 1
-            """), {"cname": cand_name})
-            found_cid = lookup_cid.scalar()
-            if found_cid:
-                clean_cid = str(found_cid).strip()
-
-        if clean_cid and clean_cid.isdigit():
-            cand_crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{clean_cid}/"
-        else:
-            cand_crm_url = f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(cand_name)}"
-
-        dealbreakers_check_msg = "✓ Filtro bidireccional superado (Edad y Estatura mutuas compatibles)"
-        if bidi["height_alerts"]:
-            dealbreakers_check_msg = f"⚠️ Nota: {bidi['height_alerts'][0]}"
-
-        cand_sp = r.search_preferences or {}
-        cand_nn_list = cand_sp.get("non_negotiables") or []
-        cand_rf_list = cand_sp.get("red_flags") or []
-
-        cand_payload = {
-            "user_id": r.id,
-            "name": cand_name,
-            "phone": r.phone or "",
-            "crm_id": clean_cid if clean_cid and clean_cid.isdigit() else "",
-            "crm_url": cand_crm_url,
-            "client_code": r.client_code or f"DL-{r.id}",
-            "city": r.city or client_city,
-            "age": cand_age,
-            "estatura": r.estatura or "",
-            "plan_tier": r.plan_tier or "Estándar 65k (2 citas)",
-            "plan_total_dates": cand_slots_total,
-            "dates_used": cand_used,
-            "dates_remaining": saldo_citas_b,
-            "occupation": cand_occ,
-            "social_group_score": cand_sg,
-            "physical_activity_level": cand_act,
-            "education_level": cand_edu,
-            "love_language": cand_lang,
-            "attachment_style": cand_attachment,
-            "attachment_eval": attachment_eval,
-            "datos_completos": datos_completos,
-            "campos_faltantes": missing_fields,
-            "campos_evaluados_pts": round(max_possible_points, 1),
-            "saldo_citas": saldo_citas_b,
-            "opportunity_badge": opportunity_badge,
-            "opportunity_reason": opportunity_reason,
-            "compatibility_pct": match_pct,
-            "dealbreakers_clean": bidi["is_bidirectionally_compatible"],
-            "dealbreakers_check": dealbreakers_check_msg,
-            "strengths": strengths,
-            "synthesis": r.synthesis_who_really_is or (cand_bio_clean[:200] + "..." if len(cand_bio_clean) > 200 else cand_bio_clean) or "",
-            "bio_notes": cand_bio_clean,
-            "search_preferences": cand_sp,
-            "non_negotiables": cand_nn_list,
-            "red_flags": cand_rf_list,
-            "comparison": {
-                "client_notes": prof_row.bio_notes if prof_row and prof_row.bio_notes else (ext_data.get("synthesis_who_really_is") or ""),
-                "candidate_notes": cand_bio_clean,
-                "client_non_neg": clean_client_non_neg,
-                "candidate_non_neg": cand_nn_list,
-                "client_red_flags": client_prefs.get("red_flags") or [],
-                "candidate_red_flags": cand_rf_list,
-                "client_age_pref": f"{client_prefs.get('min_age', 20)} a {client_prefs.get('max_age', 26)} años" if client_prefs.get("min_age") else "20 a 26 años",
-                "candidate_age_pref": f"{cand_sp.get('min_age', '')} a {cand_sp.get('max_age', '')} años" if cand_sp.get("min_age") else "No especificado",
-                "client_height_pref": client_prefs.get("preferred_height") or "Hasta 170 cm",
-                "candidate_height_pref": cand_sp.get("preferred_height") or "No especificado"
-            }
-        }
-
-        # Generar análisis clínico exhaustivo (Por qué es ideal, Pros y Contras a revisar)
-        cand_payload["match_analysis"] = generate_clinical_match_analysis(client_summary, cand_payload)
-
-        suggested_matches.append(cand_payload)
-
-        # Evaluamos hasta 30 candidatas para encontrar las mejores afinidades de la base de datos
-        if len(suggested_matches) >= 30:
-            break
-
-    # ── 7. FILTRO PREVIO ESTRUCTURAL & CONEXIÓN CON IA DE QUICK NOTES (NVIDIA) ──
-    # 1. Filtro previo estructural: ordenar candidatos preliminarmente por reglas base
-    suggested_matches.sort(
-        key=lambda x: (
-            x["compatibility_pct"] is not None,
-            x["compatibility_pct"] or 0,
-            x["dealbreakers_clean"],
-            x["datos_completos"],
-            x["user_id"]
-        ),
-        reverse=True
-    )
-
-    # Inicializar campos estructurales e IA por defecto para todas las candidatas
-    for cand in suggested_matches:
-        cand["structural_score"] = cand.get("compatibility_pct") or 70
-        cand["ai_score"] = None
-        cand["ai_veredicto"] = "SIN EVALUACIÓN IA"
-        cand["ai_analisis"] = None
-        cand["ai_deal_breakers"] = []
-        cand["ai_puntos_fuertes"] = []
-
+    # 3. Buscar candidatos compatibles con el motor unificado de matchmaking
     settings = get_settings()
     nvidia_key = (settings.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or "").strip()
     if not nvidia_key:
@@ -4473,94 +4584,23 @@ async def get_interview_results(
             if nvidia_key:
                 break
 
-    if nvidia_key and len(nvidia_key) > 10 and suggested_matches:
-        # Evaluamos con IA semántica clínica todas las candidatas sugeridas
-        candidates_to_evaluate = suggested_matches
-        remaining_candidates = []
-
-        try:
-            async with httpx.AsyncClient() as http_client:
-                for cand in candidates_to_evaluate:
-                    try:
-                        res = await evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, http_client)
-                    except Exception as e:
-                        print(f"[AI MATCH EXCEPTION IN LOOP] cand={cand.get('name')} error={e}")
-                        res = None
-
-                    struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
-
-                    if isinstance(res, dict) and res.get("ai_score") is not None:
-                        ai_score = res.get("ai_score", 70)
-                        verdict = res.get("veredicto", "VIABLE")
-                        dbs = res.get("deal_breakers") or []
-                        pts = res.get("puntos_fuertes") or []
-                        analisis = res.get("analisis") or ""
-
-                        cand["ai_score"] = ai_score
-                        cand["ai_veredicto"] = verdict
-                        cand["ai_analisis"] = analisis
-                        cand["ai_deal_breakers"] = dbs
-                        cand["ai_puntos_fuertes"] = pts
-                        cand["ai_model"] = res.get("model_used")
-
-                        # Combinación Ponderada Documentada:
-                        if len(dbs) > 0 or verdict == "NO RECOMENDADO":
-                            # Penalización estricta si la IA detecta deal-breakers en las notas clínicas
-                            cand["compatibility_pct"] = min(ai_score, 35)
-                        elif verdict == "VIABLE CON RESERVAS":
-                            # Ponderación 40% estructural + 60% IA semántica
-                            cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
-                        else:
-                            # RECOMENDADO: Ponderación 45% estructural + 55% IA semántica
-                            cand["compatibility_pct"] = int(round(0.45 * struct_score + 0.55 * ai_score))
-
-                        if dbs:
-                            cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"
-                            cand["dealbreakers_clean"] = False
-                        if pts:
-                            cand["strengths"] = pts + [s for s in cand.get("strengths", []) if s not in pts][:3]
-                        if analisis:
-                            cand["synthesis"] = f"[Análisis IA Quick Notes]: {analisis} — " + (cand.get("synthesis") or "")
-                    else:
-                        cand["ai_score"] = None
-                        cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL"
-                        cand["ai_analisis"] = None
-                        cand["ai_deal_breakers"] = []
-                        cand["ai_puntos_fuertes"] = []
-
-            # Ordenar las candidatas evaluadas con IA por su score final
-            evaluated_sorted = sorted(
-                candidates_to_evaluate,
-                key=lambda x: (
-                    x["compatibility_pct"] is not None,
-                    x["compatibility_pct"] or 0,
-                    x["dealbreakers_clean"],
-                    x["datos_completos"],
-                    x["user_id"]
-                ),
-                reverse=True
-            )
-            # Para las restantes no evaluadas con IA, marcar veredicto
-            for c in remaining_candidates:
-                c["ai_veredicto"] = "SCORE ESTRUCTURAL"
-
-            suggested_matches = evaluated_sorted + remaining_candidates
-        except Exception as e:
-            import logging
-            logging.error(f"Error evaluando candidatos con IA: {e}", exc_info=True)
-    else:
-        for cand in suggested_matches:
-            cand["structural_score"] = cand.get("compatibility_pct")
-            cand["ai_score"] = None
-            cand["ai_veredicto"] = "SIN IA CONFIGURADA"
+    suggested_matches = await find_candidate_matches_engine(
+        client_summary=client_summary,
+        db=db,
+        pool_limit=60,
+        max_ai_evaluations=12,
+        candidate_usage_tracker=None,
+        max_candidate_usage=None,
+        nvidia_key=nvidia_key
+    )
 
     top_matches = suggested_matches[:8]
 
     return {
         "client": client_summary,
         "suggested_matches": top_matches,
-        "total_evaluated": len(candidate_rows),
-        "total_candidates_pool": len(candidate_rows)
+        "total_evaluated": len(suggested_matches),
+        "total_candidates_pool": len(suggested_matches)
     }
 
 

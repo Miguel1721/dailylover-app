@@ -7,7 +7,8 @@ from app.config import get_settings
 from app.routers.matchmaking import (
     resolve_client_user, evaluate_bidirectional_match,
     evaluate_attachment_compatibility, parse_attachment_style,
-    parse_cm_height, get_slots_by_plan, evaluate_candidate_quick_notes_ai
+    parse_cm_height, get_slots_by_plan, evaluate_candidate_quick_notes_ai,
+    find_candidate_matches_engine
 )
 import httpx
 
@@ -64,10 +65,12 @@ async def get_already_processed_rows(db):
     res = await db.execute(text("SELECT DISTINCT sheet_row FROM august27_ai_match_proposals"))
     return set(r[0] for r in res.fetchall())
 
-async def process_client(client_info, db, nvidia_key, http_client):
+async def process_client(client_info, db, nvidia_key, http_client, candidate_usage_tracker=None, max_candidate_usage=4):
     """
-    Procesa un cliente individual: busca candidatas estructurales, evalúa las mejores con IA clínica,
-    y retorna la lista de filas formateadas para Google Sheets y Postgres.
+    Procesa un cliente individual usando el motor unificado find_candidate_matches_engine
+    con selección de pool de 60 candidatos, filtro estructural multidimensional,
+    evaluación clínica de IA y control de tope de diversidad.
+    Retorna la lista de filas formateadas para Google Sheets y Postgres.
     """
     uid = client_info["db_id"]
     user_row = await resolve_client_user(str(uid), db)
@@ -82,7 +85,6 @@ async def process_client(client_info, db, nvidia_key, http_client):
     """), {"uid": uid})
     prof_row = prof_res.fetchone()
 
-    # Perfil extendido
     ext_res = await db.execute(text("SELECT * FROM client_extended_profile WHERE user_id = :uid LIMIT 1"), {"uid": uid})
     ext_row = ext_res.fetchone()
     ext_data = dict(ext_row._mapping) if ext_row else {}
@@ -90,96 +92,59 @@ async def process_client(client_info, db, nvidia_key, http_client):
     client_city = (prof_row.city if prof_row and prof_row.city else "Bogotá").strip()
     client_gender = (prof_row.gender if prof_row and prof_row.gender else "Hombre").strip().lower()
     client_age = int(prof_row.age) if prof_row and prof_row.age else None
+    if not client_age and prof_row and prof_row.bio_notes:
+        m_c_age = re.search(r'(\d{2})\s*a[ñn]os', prof_row.bio_notes, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', prof_row.bio_notes, re.IGNORECASE)
+        if m_c_age:
+            try:
+                client_age = int(m_c_age.group(1))
+            except Exception:
+                pass
+
     client_prefs = (prof_row.search_preferences if prof_row and prof_row.search_preferences else {}) or {}
-    client_height_cm = parse_cm_height(prof_row.estatura) if prof_row and prof_row.estatura else None
     client_sg = float(ext_data["social_group_score"]) if ext_data.get("social_group_score") is not None else None
     client_act = int(ext_data["physical_activity_level"]) if ext_data.get("physical_activity_level") is not None else None
+    client_edu = int(ext_data["education_level"]) if ext_data.get("education_level") is not None else None
     client_attachment = parse_attachment_style(prof_row.apego if prof_row else None)
 
     client_summary = {
         "user_id": user_row.id,
         "name": user_row.name,
-        "gender": (prof_row.gender if prof_row and prof_row.gender else "Hombre"),
+        "phone": user_row.phone or "",
+        "crm_id": str(user_row.crm_id or "") if user_row.crm_id else "",
+        "client_code": user_row.client_code or f"DL-{user_row.id}",
         "city": client_city,
+        "gender": prof_row.gender if prof_row else "Hombre",
         "age": client_age,
+        "estatura": prof_row.estatura if prof_row and prof_row.estatura else "",
         "occupation": prof_row.occupation if prof_row and prof_row.occupation else "",
+        "plan_tier": prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)",
+        "responsable": prof_row.responsable if prof_row and prof_row.responsable else (ext_data.get("updated_by") or "Psicóloga"),
         "attachment_style": client_attachment,
+        "social_group_score": client_sg,
+        "education_level": client_edu,
+        "physical_activity_level": client_act,
+        "social_energy_level": ext_data.get("social_energy_level"),
+        "love_language_given": ext_data.get("love_language_given") or "No especificado",
+        "love_language_received": ext_data.get("love_language_received") or "No especificado",
+        "non_negotiables": ext_data.get("non_negotiables") or [],
+        "synthesis_who_really_is": ext_data.get("synthesis_who_really_is", ""),
         "bio_notes": prof_row.bio_notes if prof_row and prof_row.bio_notes else "",
-        "search_preferences": client_prefs,
-        "non_negotiables": ext_data.get("non_negotiables") or []
+        "search_preferences": client_prefs
     }
 
-    is_male = "homb" in client_gender or "masc" in client_gender
-    gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')" if is_male else "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
-    anti_opposite_name_sql = (
-        "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
-        if is_male else
-        "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
+    # 2. Ejecutar motor unificado con pool de 60 y tope de diversidad
+    matches = await find_candidate_matches_engine(
+        client_summary=client_summary,
+        db=db,
+        pool_limit=60,
+        max_ai_evaluations=3,
+        candidate_usage_tracker=candidate_usage_tracker,
+        max_candidate_usage=max_candidate_usage,
+        nvidia_key=nvidia_key,
+        http_client=http_client
     )
-    city_sql = ""
-    if client_city and client_city.lower() != "todas":
-        clean_city_prefix = client_city.split()[0].replace(",", "").strip()
-        city_sql = f"AND (p.city IS NULL OR p.city = '' OR p.city ILIKE '%{clean_city_prefix}%')"
 
-    # Buscar hasta 30 candidatos potenciales en base de datos
-    cand_res = await db.execute(text(f"""
-        SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
-               p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-               cep.social_group_score, cep.physical_activity_level, cep.education_level,
-               cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
-        FROM users u
-        LEFT JOIN profiles p ON p.user_id = u.id
-        LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
-        WHERE u.id != :uid
-          AND u.merged_into_id IS NULL
-          AND u.name NOT ILIKE 'Cliente CRM%'
-          AND u.name NOT ILIKE 'Sin nombre%'
-          AND u.name NOT ILIKE '%unknown%'
-          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
-          AND {gender_filter_sql}
-          {anti_opposite_name_sql}
-          {city_sql}
-          AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
-          AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
-        ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
-                 (p.occupation IS NOT NULL AND p.occupation != '') DESC,
-                 (p.age IS NOT NULL) DESC,
-                 u.id DESC
-        LIMIT 30
-    """), {"uid": uid})
-    cand_rows = cand_res.fetchall()
-
-    if not cand_rows:
-        # Fallback sin filtro estricto de ciudad si la ciudad no tiene inventario
-        cand_res = await db.execute(text(f"""
-            SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-                   p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
-                   p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-                   cep.social_group_score, cep.physical_activity_level, cep.education_level,
-                   cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
-            FROM users u
-            LEFT JOIN profiles p ON p.user_id = u.id
-            LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
-            WHERE u.id != :uid
-              AND u.merged_into_id IS NULL
-              AND u.name NOT ILIKE 'Cliente CRM%'
-              AND u.name NOT ILIKE 'Sin nombre%'
-              AND u.name NOT ILIKE '%unknown%'
-              AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
-              AND {gender_filter_sql}
-              {anti_opposite_name_sql}
-              AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
-              AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
-            ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
-                     (p.occupation IS NOT NULL AND p.occupation != '') DESC,
-                     (p.age IS NOT NULL) DESC,
-                     u.id DESC
-            LIMIT 20
-        """), {"uid": uid})
-        cand_rows = cand_res.fetchall()
-
-    if not cand_rows:
+    if not matches:
         return [{
             "sheet_row": client_info["sheet_row"],
             "client_name": client_info["sheet_name"],
@@ -192,100 +157,33 @@ async def process_client(client_info, db, nvidia_key, http_client):
             "candidate_crm_id": "",
             "punctuation": "",
             "status": "SIN MATCH VIABLE",
-            "points_to_consider": f"SIN MATCH VIABLE - SUPPLY GAP: No hay inventario de candidatos activos en {client_city} que cumplan criterios básicos de género y estado.",
+            "points_to_consider": f"SIN MATCH VIABLE - SUPPLY GAP: No hay candidatos compatibles en {client_city} que cumplan los criterios básicos o filtros estructurales mutuos.",
             "strong_points": ""
         }]
 
-    # Filtrar historial previo y ordenar por afinidad estructural
-    viable_cands = []
-    seen_names = set()
-    for r in cand_rows:
-        cname = (r.name or "").strip()
-        if not cname or cname.lower() in seen_names:
-            continue
-        seen_names.add(cname.lower())
-
-        # Descartar si ya tuvieron cita juntos
-        prev = await db.execute(text("""
-            SELECT COUNT(*) FROM operational_matches
-            WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
-               OR  (LOWER(TRIM(person_a)) = LOWER(TRIM(:b)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:a))))
-              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita confirmada')
-        """), {"a": user_row.name, "b": cname})
-        if (prev.scalar() or 0) > 0:
-            continue
-
-        bidi = evaluate_bidirectional_match(client_summary, r, client_prefs, client_height_cm)
-        if not bidi["age_ok"] and bidi["age_alerts"]:
-            continue
-
-        # Score estructural básico
-        struct_pts = 70
-        if r.bio_notes and len(r.bio_notes) > 100:
-            struct_pts += 10
-        if r.city and client_city and r.city.lower() == client_city.lower():
-            struct_pts += 10
-        if bidi["is_bidirectionally_compatible"]:
-            struct_pts += 5
-
-        viable_cands.append({
-            "cand_row": r,
-            "struct_score": min(95, struct_pts),
-            "bidi": bidi
-        })
-
-    if not viable_cands:
-        return [{
-            "sheet_row": client_info["sheet_row"],
-            "client_name": client_info["sheet_name"],
-            "client_user_id": uid,
-            "client_crm_id": client_info["crm_id"] or "",
-            "dates_pend": client_info["dates_pend"],
-            "responsable": client_info["responsable"],
-            "candidate_name": "",
-            "candidate_user_id": None,
-            "candidate_crm_id": "",
-            "punctuation": "",
-            "status": "SIN MATCH VIABLE",
-            "points_to_consider": f"SIN MATCH VIABLE - INCOMPATIBILIDAD MUTUA: Los candidatos en {client_city} violan el rango de edad/estatura mutuo o ya tuvieron cita previa.",
-            "strong_points": ""
-        }]
-
-    # Tomar las mejores 2 o 3 candidatas para evaluar con IA Clínica
-    viable_cands.sort(key=lambda x: x["struct_score"], reverse=True)
-    top_candidates = viable_cands[:2]
-
+    # Tomar los 2 mejores candidatos
+    top_matches = matches[:2]
     results = []
-    for item in top_candidates:
-        r = item["cand_row"]
-        cand_name = r.name.strip()
-        cand_bio = (r.bio_notes or "").strip()
 
-        cand_payload = {
-            "name": cand_name,
-            "age": r.age,
-            "city": r.city or client_city,
-            "occupation": r.occupation or "",
-            "attachment_style": parse_attachment_style(r.apego),
-            "gender": ("Mujer" if is_male else "Hombre"),
-            "bio_notes": cand_bio,
-            "search_preferences": r.search_preferences or {},
-            "non_negotiables": []
-        }
+    for cand in top_matches:
+        cand_uid = cand["user_id"]
+        cand_name = cand["name"]
 
-        ai_res = await evaluate_candidate_quick_notes_ai(client_summary, cand_payload, nvidia_key, http_client)
-        if not ai_res:
-            ai_res = {}
-        ai_score = ai_res.get("ai_score") or item["struct_score"]
-        verdict = ai_res.get("veredicto") or "VIABLE"
-        dbs = ai_res.get("deal_breakers") or []
-        puntos = ai_res.get("puntos_fuertes") or []
-        analisis = ai_res.get("analisis") or ""
+        # Actualizar contador de uso de candidato para la corrida
+        if candidate_usage_tracker is not None:
+            candidate_usage_tracker[cand_uid] = candidate_usage_tracker.get(cand_uid, 0) + 1
 
-        # Escalar puntuación a 1-10
-        punct_10 = str(max(1, min(10, round(ai_score / 10.0))))
+        # Score y veredicto
+        # compatibility_pct contiene la mezcla ponderada (45% estructural + 55% IA)
+        score_val = cand.get("compatibility_pct") or cand.get("structural_score") or 70
+        punct_10 = str(max(1, min(10, round(score_val / 10.0))))
 
-        # Puntos a considerar / dealbreakers
+        verdict = cand.get("ai_veredicto") or "VIABLE"
+        dbs = cand.get("ai_deal_breakers") or []
+        puntos = cand.get("ai_puntos_fuertes") or []
+        analisis = cand.get("ai_analisis") or cand.get("match_analysis") or ""
+
+        # Puntos a considerar
         points_to_consider = ""
         if dbs:
             points_to_consider = f"⚠️ Dealbreakers / Puntos de atención: {'; '.join(dbs)}. "
@@ -293,17 +191,27 @@ async def process_client(client_info, db, nvidia_key, http_client):
             points_to_consider = "Viable con reservas: verificar disponibilidad o expectativas mutuas. "
         else:
             points_to_consider = "Sin dealbreakers detectados en las notas clínicas. "
+
+        if not cand.get("dealbreakers_clean") and cand.get("dealbreakers_check"):
+            points_to_consider += f"{cand['dealbreakers_check']}. "
+
         if analisis:
             points_to_consider += f"Contexto clínico: {analisis}"
 
         # Puntos fuertes
-        strong_points = ""
+        strong_parts = []
         if puntos:
-            strong_points = f"Puntos fuertes: {'; '.join(puntos)}. "
-        if r.occupation:
-            strong_points += f"Ocupación: {r.occupation}. "
-        if r.city:
-            strong_points += f"Ubicación: {r.city}. "
+            strong_parts.append(f"Puntos fuertes: {'; '.join(puntos)}.")
+        if cand.get("occupation") and cand.get("occupation") != "No especificado":
+            strong_parts.append(f"Ocupación: {cand['occupation']}.")
+        if cand.get("city"):
+            strong_parts.append(f"Ubicación: {cand['city']}.")
+        strengths = cand.get("strengths") or []
+        if strengths:
+            strong_parts.append(f"Afinidad: {'; '.join(strengths[:2])}.")
+
+        strong_points = " ".join(strong_parts).strip()
+        status_val = "PROPOSED" if verdict != "NO RECOMENDADO" else "NO RECOMENDADO"
 
         results.append({
             "sheet_row": client_info["sheet_row"],
@@ -313,10 +221,10 @@ async def process_client(client_info, db, nvidia_key, http_client):
             "dates_pend": client_info["dates_pend"],
             "responsable": client_info["responsable"],
             "candidate_name": cand_name,
-            "candidate_user_id": r.id,
-            "candidate_crm_id": str(r.crm_id or "") if r.crm_id else "",
+            "candidate_user_id": cand_uid,
+            "candidate_crm_id": str(cand.get("crm_id") or "") if cand.get("crm_id") else "",
             "punctuation": punct_10,
-            "status": "PROPOSED" if verdict != "NO RECOMENDADO" else "NO RECOMENDADO",
+            "status": status_val,
             "points_to_consider": points_to_consider.strip(),
             "strong_points": strong_points.strip()
         })
@@ -419,6 +327,19 @@ async def main():
         already_processed = await get_already_processed_rows(db)
         print(f"Filas ya procesadas previamente en BD: {len(already_processed)}")
 
+        # Rastrear uso de candidatos para garantizar tope de diversidad (máximo 4 apariciones)
+        candidate_usage_tracker = {}
+        usage_res = await db.execute(text("""
+            SELECT candidate_user_id, COUNT(*)
+            FROM august27_ai_match_proposals
+            WHERE candidate_user_id IS NOT NULL AND status = 'PROPOSED'
+            GROUP BY candidate_user_id
+        """))
+        for urow in usage_res.fetchall():
+            if urow[0] is not None:
+                candidate_usage_tracker[urow[0]] = int(urow[1])
+        print(f"Candidatos ya con propuestas en BD: {len(candidate_usage_tracker)}")
+
         # Emparejar con base de datos
         matched_clients = []
         for p in valid_pending:
@@ -476,7 +397,11 @@ async def main():
                 print(f"[{i}/{total_to_process}] Procesando fila {client['sheet_row']}: '{client['sheet_name']}' (ID {client['db_id']})...")
 
                 try:
-                    proposals = await process_client(client, db, nvidia_key, http_client)
+                    proposals = await process_client(
+                        client, db, nvidia_key, http_client,
+                        candidate_usage_tracker=candidate_usage_tracker,
+                        max_candidate_usage=4
+                    )
                 except Exception as ex:
                     print(f"  ERROR procesando cliente {client['sheet_name']}: {ex}")
                     continue
