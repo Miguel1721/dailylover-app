@@ -15,18 +15,19 @@ Este manual regula la **gestión de capacidad instalada, el control financiero d
 
 ### 2.1 Carga Máxima por Psicóloga
 Para mantener un análisis clínico riguroso y evitar el agotamiento del equipo, cada psicóloga debe gestionar un cupo balanceado:
-* **Capacidad óptima:** 30 clientes activos simultáneos.
-* **Capacidad máxima permitida:** 45 clientes activos simultáneos.
-* **Límite crítico:** Al alcanzar 45 clientes, el sistema bloquea automáticamente la asignación de nuevos clientes a esa psicóloga hasta que complete citas o cierre casos.
+* **Capacidad óptima de referencia:** 30 clientes activos simultáneos.
+* **Capacidad máxima de referencia:** 45 clientes activos simultáneos.
+* **Gobierno de asignación:** El sistema **no** bloquea automáticamente nuevas asignaciones — el seguimiento de carga y balanceo se hace a través del panel `🔒 SUPERVISIÓN MARÍA` (Supervisión MPS).
 
 ### 2.2 Cuotas de Búsqueda por Tipo de Plan (Slots)
-La membresía de cada cliente determina el número de slots de emparejamiento activos que el sistema y la psicóloga deben procesar:
+La membresía de cada cliente determina el número de slots de emparejamiento activos que el sistema y la psicóloga deben procesar (verificado según `resolvePlanSlots()` en el sistema):
 
-| Plan Contratado | Citas Garantizadas | Slots de Búsqueda Asignados | Plazo Máximo de Servicio |
-| :--- | :---: | :---: | :---: |
-| **Plan Básico** | 1 cita | 2 slots | 30 días calendario |
-| **Plan Plus** | 3 citas | 6 slots | 90 días calendario |
-| **Plan Premium / VIP**| 6 citas | 10 slots | 180 días calendario |
+| Plan Contratado | Slots de Búsqueda Asignados |
+| :--- | :---: |
+| **Básico (40k)** | 2 slots |
+| **Estándar (65k)** | 3 slots |
+| **VIP (195k)** | 4 slots |
+| **Matchmaking Experience** | 4 slots — **exclusivo de MAPE D**, el sistema reasigna automáticamente cualquier cliente con este plan a ella |
 
 ---
 

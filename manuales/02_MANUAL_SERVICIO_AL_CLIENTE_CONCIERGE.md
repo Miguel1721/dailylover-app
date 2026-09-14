@@ -56,16 +56,18 @@ Se envía al día siguiente a las 11:00 AM.
 ## 4. PROCEDIMIENTO TÉCNICO EN GOOGLE SHEETS (`MATCHES`)
 
 ### 4.1 La Guardia de Integridad (Evitar Promociones Prematuras)
-El script de automatización (`onEditInstallable`) vigila la fila en la zona inferior de `MATCHES`.  
-**Regla Absoluta:** La cita **NO** debe promoverse arriba al calendario si falta cualquiera de estos 5 datos:
+El script de automatización (`onEditInstallable` / `verificarYPromoverSiEstaListo`) vigila la fila en la zona inferior de `MATCHES`.  
+**Regla Absoluta:** La cita **NO** debe promoverse arriba al calendario si el proceso de agendamiento y confirmación logística está incompleto. Se requiere el diligenciamiento íntegro de:
 1. `Estado Persona A` = "cita confirmada"
 2. `Estado Persona B` = "cita confirmada"
 3. `DÍA` = Fecha válida y seleccionada
-4. `HORA` = Hora válida seleccionada (ej. 7:00 PM)
-5. `LUGAR / RESTAURANTE` = Nombre de restaurante confirmado
+4. `HORA` = Hora válida seleccionada (rango 11:00 AM - 10:00 PM cada 30 min)
+5. `CIUDAD` = Ciudad confirmada (ej. Bogotá, Medellín, Cali) — activa el catálogo de restaurantes aliados
+6. `PRESUPUESTO` = Categoría de presupuesto acordada (ej. Menos de 200k, 200k - 300k, Más de 300k)
+7. `LUGAR / RESTAURANTE` = Nombre de restaurante confirmado (seleccionado del menú dependiente filtrado por Ciudad y Presupuesto)
 
 ### 4.2 Subida al Calendario Superior
-Una vez completados los 5 campos:
+Una vez completados todos los campos requeridos:
 * El script inserta automáticamente una fila nueva dentro del bloque del día correspondiente (ej. 12 de septiembre).
 * La cita se posiciona **en orden cronológico ascendente** (ej. 7:00 PM se inserta antes de 7:30 PM).
 * Se inyectan de forma automática las fórmulas de WhatsApp en las columnas L (`CONFIRMACIÓN`), M (`DÍA ANTES`) y N (`HOY`).
