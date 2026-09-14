@@ -1000,7 +1000,12 @@ function appendNewRetryRow(sheet, headers, data) {
 
   var fColRet = headers["FECHA DE ENTREVISTA"] || headers["FECHA ENTREVISTA"] || headers["FECHA"] || headers["DATE"];
   if (fColRet) sheet.getRange(newRow, fColRet).setValue("");
-  if (headers["STATUS"]) sheet.getRange(newRow, headers["STATUS"]).setValue(data.status);
+  if (headers["STATUS"]) {
+    var statusRange = sheet.getRange(newRow, headers["STATUS"]).setValue(data.status);
+    if (data.status === "NOT APPROVED") {
+      statusRange.setBackground("#F4CCCC");
+    }
+  }
 
   if (headers["OBSERVACIONES"]) sheet.getRange(newRow, headers["OBSERVACIONES"]).setValue(data.observaciones);
   if (headers["OBSERVACION"]) sheet.getRange(newRow, headers["OBSERVACION"]).setValue(data.observaciones);
@@ -2527,6 +2532,8 @@ function appendPrioritySlotRow(sheet, headers, data) {
     var statusRange = sheet.getRange(newRow, headers["STATUS"]).setValue(initialStatus);
     if (data.status === "REVISAR") {
       statusRange.setBackground("#D9D2E9");
+    } else if (data.status === "NOT APPROVED") {
+      statusRange.setBackground("#F4CCCC");
     }
   }
 
@@ -5291,7 +5298,7 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
               personACell: cellA,
               personBCell: null,
               fecha: "",
-              status: "Listo para match",
+              status: "NOT APPROVED",
               observaciones: motivoRechazo
             });
           }
@@ -5309,7 +5316,7 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
               personACell: cellB,
               personBCell: null,
               fecha: "",
-              status: "Listo para match",
+              status: "NOT APPROVED",
               observaciones: motivoRechazo
             });
           }
@@ -7304,13 +7311,100 @@ function parseFechaTextoLibre(texto) {
 }
 
 function copiarACitasAgendadasArriba(matchesSheet, row) {
-  // Cambio 34/36/40: Redirige a la guardia de integridad y promoción ordenada por hora en el calendario superior
-  Logger.log("Cambio 34: iniciando para fila " + row);
-  Logger.log("Cambio 40: copiarACitasAgendadasArriba redirigiendo a verificarYPromoverSiEstaListo en fila " + row);
   try {
-    verificarYPromoverSiEstaListo(matchesSheet, row, false);
+    Logger.log("Cambio 34: iniciando para fila " + row);
+    var headers = getSheetHeaders(matchesSheet);
+    var matchCol = headers["ESTADO TOTAL"] || 1;
+    var statusACol = headers["ESTADO PERSONA A"] || 2;
+    var statusBCol = headers["ESTADO PERSONA B"] || 3;
+    var personACol = headers["PERSONA A"] || headers["PERSON A"] || 4;
+    var personBCol = headers["PERSONA B"] || headers["PERSON B"] || 5;
+    var diaCol = headers["DÍA"] || headers["DIA"] || 6;
+    var horaCol = headers["HORA"] || 7;
+    var cityCol = headers["CIUDAD"] || 8;
+    var presupuestoCol = headers["PRESUPUESTO"] || 9;
+    var lugarCol = headers["LUGAR"] || 10;
+
+    var cellA = getCellData(matchesSheet, row, personACol);
+    var cellB = getCellData(matchesSheet, row, personBCol);
+    if (!cellA || !cellA.text) {
+      Logger.log("Cambio 34: salió temprano, sin cellA.text");
+      return;
+    }
+    var nameA = (cellA.text || "").trim().toLowerCase();
+    var nameB = (cellB && cellB.text ? cellB.text.trim().toLowerCase() : "");
+
+    var diaRaw = matchesSheet.getRange(row, diaCol).getValue();
+    var horaVal = (horaCol ? (matchesSheet.getRange(row, horaCol).getValue() || "") : "").toString().trim();
+    if (!diaRaw) {
+      Logger.log("Cambio 34: salió temprano, sin diaRaw");
+      return;
+    }
+
+    var mesesTexto = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    var fechaObj = (diaRaw instanceof Date) ? diaRaw : parseFechaTextoLibre(diaRaw.toString());
+    if (!fechaObj) {
+      Logger.log("Cambio 34: salió temprano, no se pudo parsear fechaObj de: " + diaRaw);
+      return;
+    }
+
+    var textoFechaCombinada = fechaObj.getDate() + " de " + mesesTexto[fechaObj.getMonth()] + " a las " + (horaVal || Utilities.formatDate(fechaObj, CONFIG.TIMEZONE, "h:mm a"));
+    var fechaHoraComparable = new Date(fechaObj.getFullYear(), fechaObj.getMonth(), fechaObj.getDate());
+    if (horaVal) {
+      var hm = horaVal.match(/(\d{1,2})(:(\d{2}))?\s*(am|pm)/i);
+      if (hm) {
+        var h = parseInt(hm[1], 10);
+        if (/pm/i.test(hm[4]) && h < 12) h += 12;
+        if (/am/i.test(hm[4]) && h === 12) h = 0;
+        fechaHoraComparable.setHours(h, hm[3] ? parseInt(hm[3], 10) : 0);
+      }
+    }
+
+    // 1. Buscar si ya existe esta pareja en la zona de seguimiento (evitar duplicados, mismo criterio que Cambio 33)
+    var zoneData = matchesSheet.getRange(2, personACol, TRACKING_ZONE_END_ROW - 1, personBCol - personACol + 1).getValues();
+    for (var i = 0; i < zoneData.length; i++) {
+      var zA = (zoneData[i][0] || "").toString().trim().toLowerCase();
+      var zB = (zoneData[i][personBCol - personACol] || "").toString().trim().toLowerCase();
+      if ((zA === nameA && zB === nameB) || (zA === nameB && zB === nameA)) {
+        // Ya existe: actualizar fecha/lugar en esa fila en vez de duplicar
+        var existingRow = i + 2;
+        if (diaCol) matchesSheet.getRange(existingRow, diaCol).setValue(textoFechaCombinada);
+        if (lugarCol) matchesSheet.getRange(existingRow, lugarCol).setValue(matchesSheet.getRange(row, lugarCol).getValue());
+        if (cityCol) matchesSheet.getRange(existingRow, cityCol).setValue(matchesSheet.getRange(row, cityCol).getValue());
+        Logger.log("Cambio 34: pareja ya existe en zona de seguimiento, fila " + existingRow + " actualizada");
+        return;
+      }
+    }
+
+    // 2. Buscar la posición cronológica correcta dentro de la zona
+    var insertAt = TRACKING_ZONE_END_ROW; // por defecto, al final de la zona si no se puede ubicar antes
+    var allDias = matchesSheet.getRange(2, diaCol, TRACKING_ZONE_END_ROW - 1, 1).getValues();
+    for (var j = 0; j < allDias.length; j++) {
+      var existingFechaObj = parseFechaTextoLibre((allDias[j][0] || "").toString());
+      if (existingFechaObj && existingFechaObj > fechaHoraComparable) {
+        insertAt = j + 2;
+        break;
+      }
+    }
+
+    // 3. Insertar la fila copiada en amarillo (pendiente de feedback de Servicio al Cliente)
+    Logger.log("Cambio 34: insertando fila nueva en posición " + insertAt);
+    matchesSheet.insertRowBefore(insertAt);
+    var estadoVal = matchesSheet.getRange(row, matchCol).getValue();
+    matchesSheet.getRange(insertAt, matchCol).setValue(estadoVal);
+    if (statusACol) matchesSheet.getRange(insertAt, statusACol).setValue(matchesSheet.getRange(row, statusACol).getValue());
+    if (statusBCol) matchesSheet.getRange(insertAt, statusBCol).setValue(matchesSheet.getRange(row, statusBCol).getValue());
+    if (cellA.richText) matchesSheet.getRange(insertAt, personACol).setRichTextValue(cellA.richText); else matchesSheet.getRange(insertAt, personACol).setValue(cellA.text);
+    if (cellB && cellB.richText) matchesSheet.getRange(insertAt, personBCol).setRichTextValue(cellB.richText); else if (cellB) matchesSheet.getRange(insertAt, personBCol).setValue(cellB.text);
+    matchesSheet.getRange(insertAt, diaCol).setValue(textoFechaCombinada);
+    if (cityCol) matchesSheet.getRange(insertAt, cityCol).setValue(matchesSheet.getRange(row, cityCol).getValue());
+    if (presupuestoCol) matchesSheet.getRange(insertAt, presupuestoCol).setValue(matchesSheet.getRange(row, presupuestoCol).getValue());
+    if (lugarCol) matchesSheet.getRange(insertAt, lugarCol).setValue(matchesSheet.getRange(row, lugarCol).getValue());
+    matchesSheet.getRange(insertAt, 1, 1, personBCol).setBackground("#FFF2CC");
+
+    Logger.log("Cambio 34: copiada a zona de seguimiento en fila " + insertAt + " para " + cellA.text);
   } catch (eCopy) {
-    Logger.log("Aviso Cambio 34/36 (copiar a zona de seguimiento): " + eCopy.message);
+    Logger.log("Aviso Cambio 34 (copiar a zona de seguimiento): " + eCopy.message);
   }
 }
 /**
@@ -7486,7 +7580,7 @@ function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, reject
       slotIndex: 1,
       totalSlots: 1,
       observaciones: noteMsg,
-      status: "Listo para match"
+      status: "NOT APPROVED"
     });
     countRetornadas++;
     Logger.log("✅ Persona A (" + cellA.text + ") retornada a 'MATCHES " + psycA + "'");
@@ -7516,7 +7610,7 @@ function returnCandidatesToPsychologists(matchesSheet, row, cellA, cellB, reject
         slotIndex: 1,
         totalSlots: 1,
         observaciones: noteMsg,
-        status: "Listo para match"
+        status: "NOT APPROVED"
       });
       countRetornadas++;
       Logger.log("✅ Persona B (" + cellB.text + ") retornada a 'MATCHES " + psycB + "'");

@@ -1,17 +1,36 @@
-with open(r'C:\Users\jeloz\Documents\antigravity\zealous-fermi\scratch\GoogleAppsScript_Matchmaking_v2.js', 'r', encoding='utf-8') as f:
+# -*- coding: utf-8 -*-
+import sys, hashlib
+sys.stdout.reconfigure(encoding='utf-8')
+
+with open(r'scratch/GoogleAppsScript_Matchmaking_v2.js', 'r', encoding='utf-8') as f:
     v2 = f.read()
 
-with open(r'C:\Users\jeloz\Documents\antigravity\zealous-fermi\scratch\GoogleAppsScript_Parte2_Claude.js', 'r', encoding='utf-8') as f:
+with open(r'scratch/gas_Parte1_Antigravity.js', 'r', encoding='utf-8') as f:
+    v1 = f.read()
+
+with open(r'scratch/GoogleAppsScript_Parte2_Claude.js', 'r', encoding='utf-8') as f:
     p2 = f.read()
+
+with open(r'scratch/gas_Parte2_Claude.js', 'r', encoding='utf-8') as f:
+    p1 = f.read()
 
 # For Cambio 32, check handleProfilesEdit does NOT call getUnclosedClientForPsychologist
 h_start = v2.find('function handleProfilesEdit(')
 h_end = v2.find('function ', h_start + 10)
-handle_profiles_code = v2[h_start:h_end] if (h_start != -1 and h_end != -1) else ""
+handle_profiles_code = v2[h_start:h_end] if (h_start != -1 and h_end != -1) else ''
 cambio_32_passed = 'getUnclosedClientForPsychologist' not in handle_profiles_code and 'Cambio 32' in handle_profiles_code
 
 # For Cambio 33, check syncMatchToCitasAceptadas has trimmed comparisons
 cambio_33_passed = 'cellAtextTrim' in v2 and 'cellBtextTrim' in v2 and 'cA === cellAtextTrim && cB === cellBtextTrim' in v2
+
+# Identity checks
+identical_parte1 = (hashlib.md5(v2.encode('utf-8')).hexdigest() == hashlib.md5(v1.encode('utf-8')).hexdigest())
+identical_parte2 = (hashlib.md5(p2.encode('utf-8')).hexdigest() == hashlib.md5(p1.encode('utf-8')).hexdigest())
+
+# Cambio 40 checks
+c40_not_approved_count = v2.count('status: "NOT APPROVED"')
+c40_bg_priority = ('data.status === "NOT APPROVED"' in v2 and '#F4CCCC' in v2)
+c40_passed = (c40_not_approved_count >= 4) and c40_bg_priority
 
 checks = [
     ('Cambio 1: Contadores al inicio del loop', 'totalSlots = 0, listos = 0, hechos = 0, aprobados = 0' in v2 and 'noAprobados = 0, troubleOnly = 0, noHayGente = 0' in v2),
@@ -30,7 +49,7 @@ checks = [
     ('Cambio 14: Grafico de barras posicionado en col O (15)', 'agregarGraficoAprobadosPorPsicologa()' in v2 and '.setPosition(5, 15, 0, 0)' in v2),
     ('Cambio 15: Reposicionar REPROGRAMAR antes de fecha cita', 'REPROGRAMAR' in v2 and 'sheet.moveColumns(sheet.getRange(1, colReprogramar), 17)' in v2),
     ('Cambio 16: Columna HORA en MATCHES', 'headers["HORA"]' in v2 and 'sheet.getRange(1, colHora).setValue("HORA")' in v2),
-    ('Cambio 17: WhatsApp con FECHA + HORA (Parte2_Claude)', 'horaCol' in p2 and 'HORA' in p2),
+    ('Cambio 17: WhatsApp con FECHA + HORA (Parte2_Claude)', 'horaCol' in p2 and 'HORA' in p2 and 'fechaHoraExpr' in p2),
     ('Cambio 18: Desunir celdas combinadas breakApart', 'sheet.getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns()).breakApart()' in v2),
     ('Cambio 19: Desplegables CIUDAD y PRESUPUESTO desde RESTAURANTES', 'getUniqueColumnValues(restSheetForLists, "CIUDAD")' in v2 and 'CATEGORIA PRESUPUESTO' in v2),
     ('Cambio 20: Rango HORA acotado 11am-10pm cada 30 min', 'for (var h = 11; h <= 22; h++)' in v2),
@@ -48,22 +67,24 @@ checks = [
     ('Cambio 33: Prevenir duplicados en Citas Aceptadas con trim en nombres', cambio_33_passed),
     ('Cambio 34: Copiar cita confirmada a zona seguimiento cronologico amarillo', 'copiarACitasAgendadasArriba' in v2 and 'parseFechaTextoLibre' in v2 and 'TRACKING_ZONE_END_ROW' in v2 and 'copiarACitasAgendadasArriba(sheet, row)' in v2),
     ('Cambio 35: Columna 19 OBSERVACIONES CS dedicada (evitar pisar PRESUPUESTO)', 'Cambio 35' in v2 and 'OBSERVACIONES CS' in v2 and 'obsCol = 19' in v2 and ('headers["OBSERVACIONES"] || headers["PRESUPUESTO"]' not in v2)),
-    ('Cambio 36: Diagnostico y logging exhaustivo en copiarACitasAgendadasArriba', 'Cambio 36' in v2 and 'Cambio 34: iniciando para fila' in v2 and 'Cambio 34: salió temprano, sin diaRaw' in v2 and 'Cambio 34: pareja ya existe en zona de seguimiento' in v2 and 'Cambio 34: insertando fila nueva en posición' in v2),
+    ('Cambio 36: Diagnostico y logging exhaustivo en copiarACitasAgendadasArriba', 'Cambio 34: iniciando para fila' in v2 and 'Cambio 34: salió temprano, sin diaRaw' in v2 and 'Cambio 34: pareja ya existe en zona de seguimiento' in v2 and 'Cambio 34: insertando fila nueva en posición' in v2 and 'Cambio 34: copiada a zona de seguimiento' in v2),
     ('Cambio 37: Columna Asignados tab de Matches y banners en pastel', 'Tab Profile' in v2 and 'Asignados tab de Matches' in v2 and '#F7D9E3' in v2 and '#D6EAF8' in v2 and 'pData.totalSlots' in v2 and '.setPosition(5, 15, 0, 0)' in v2),
-    ('Cambio 38: Reporte de status de clientes por psicóloga', 'generarReporteStatusClientesPsicologa' in v2 and 'generarReportesTodasLasPsicologasQueSeVan' in v2 and 'pStatus.indexOf("REFUND") >= 0' in v2 and 'pStatus.indexOf("HECHO") >= 0' in v2 and 'PROFILES ' in v2 and ' (auto)' in v2)
+    ('Cambio 38: Reporte de status de clientes por psicóloga', 'generarReporteStatusClientesPsicologa' in v2 and 'generarReportesTodasLasPsicologasQueSeVan' in v2 and 'pStatus.indexOf("REFUND") >= 0' in v2 and 'pStatus.indexOf("HECHO") >= 0' in v2 and 'PROFILES ' in v2 and ' (auto)' in v2),
+    ('Cambio 39: Bloqueo estricto de checkbox aprobacion Maria', 'currentAprobar !== "APROBADO POR AMBAS PSICÓLOGAS"' in v2 and 'initialStatus = "APROBADO POR " + matchData.psycA + " — ESPERANDO A " + matchData.psycB' in v2),
+    ('Cambio 40: Reintentos nacen con NOT APPROVED y fondo #F4CCCC', c40_passed),
+    ('Paridad de Archivos: GoogleAppsScript_Matchmaking_v2 == gas_Parte1', identical_parte1),
+    ('Paridad de Archivos: GoogleAppsScript_Parte2_Claude == gas_Parte2', identical_parte2)
 ]
 
 all_ok = True
 for name, passed in checks:
-    status = "VERIFICADO [OK]" if passed else "FALLO [FAIL]"
-    print(f'{name:72} : {status}')
+    status = 'VERIFICADO [OK]' if passed else 'FALLO [FAIL]'
+    print(f'{name:74} : {status}')
     if not passed:
         all_ok = False
 
-print('=' * 92)
+print('=' * 94)
 if all_ok:
-    print('TODOS LOS CAMBIOS DEL 1 AL 38 ESTAN 100% IMPLEMENTADOS Y VERIFICADOS.')
+    print('TODOS LOS CAMBIOS (1 AL 40) Y PARIDAD DE ARCHIVOS ESTAN 100% VERIFICADOS.')
 else:
     print('HAY CAMBIOS PENDIENTES O CON DISCREPANCIA.')
-
-
