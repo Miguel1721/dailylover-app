@@ -8,18 +8,21 @@ export default function CrmPersonLink({ name, crmId, style = {}, showIcon = true
 
   const cleanName = String(name).trim()
 
-  let crmUrl = `https://dailylover.smartmatchapp.com/app/clients?search=${encodeURIComponent(cleanName)}`
+  let crmUrl = `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(cleanName)}`
 
-  if (crmId) {
-    if (String(crmId).startsWith('http')) {
-      crmUrl = String(crmId).trim()
-    } else {
-      crmUrl = `https://dailylover.smartmatchapp.com/client/${String(crmId).trim()}`
+  const rawCid = crmId ? String(crmId).trim() : ''
+  const isInvalidCid = !rawCid || ['none', 'null', 'undefined'].includes(rawCid.toLowerCase())
+
+  if (!isInvalidCid) {
+    if (rawCid.startsWith('http')) {
+      crmUrl = rawCid
+    } else if (/^\d+$/.test(rawCid)) {
+      crmUrl = `https://dailylover.smartmatchapp.com/#!/client/${rawCid}/`
     }
   } else if (cleanName.startsWith('http')) {
     crmUrl = cleanName
   } else if (/^\d+$/.test(cleanName)) {
-    crmUrl = `https://dailylover.smartmatchapp.com/client/${cleanName}`
+    crmUrl = `https://dailylover.smartmatchapp.com/#!/client/${cleanName}/`
   }
 
   return (

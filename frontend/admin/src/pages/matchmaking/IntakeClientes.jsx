@@ -502,7 +502,26 @@ export default function IntakeClientes() {
                   <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12 }}>
                     {c.created_at || '—'}
                   </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                  <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button
+                      onClick={() => navigate(`/matchmaking/entrevista?user_id=${encodeURIComponent(c.crm_id || c.person_a)}`)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        background: 'rgba(150, 21, 0, 0.12)',
+                        border: '1px solid rgba(150, 21, 0, 0.3)',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 12,
+                        color: '#ff8a80',
+                        cursor: 'pointer',
+                        marginRight: 6
+                      }}
+                      title="Abrir Entrevista Clínica (Datos Objetivos, Percepción y Resultados de Match)"
+                    >
+                      🎙️ Entrevista
+                    </button>
                     <button
                       onClick={() => navigate(`/matchmaking/mis-matches?search=${encodeURIComponent(c.person_a)}`)}
                       style={{

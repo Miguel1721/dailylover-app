@@ -33,11 +33,14 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
   defaultDateObj.setDate(defaultDateObj.getDate() + 2)
   const defaultDateStr = defaultDateObj.toISOString().slice(0, 10)
   
-  const [selectedDate, setSelectedDate] = useState(initialDate ? initialDate.slice(0, 10) : defaultDateStr)
+  const rawDateStr = String(initialDate || '').trim()
+  const isValidDate = /^\d{4}-\d{2}-\d{2}/.test(rawDateStr)
+  const [selectedDate, setSelectedDate] = useState(isValidDate ? rawDateStr.slice(0, 10) : defaultDateStr)
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   
   // Filtro 3: Hora
-  const [selectedTime, setSelectedTime] = useState(initialDate && initialDate.length > 11 ? initialDate.slice(11, 16) : '19:30')
+  const isValidTime = rawDateStr.length >= 16 && /^\d{2}:\d{2}/.test(rawDateStr.slice(11, 16))
+  const [selectedTime, setSelectedTime] = useState(isValidTime ? rawDateStr.slice(11, 16) : '19:30')
   const [showTimeModal, setShowTimeModal] = useState(false)
 
   // Filtro 4: Presupuesto
@@ -154,9 +157,9 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16
     }} onClick={onClose}>
       <div style={{
-        background: '#160F11', border: '1px solid var(--border-color)', borderRadius: 16,
+        background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 16,
         padding: 24, maxWidth: 840, width: '100%', maxHeight: '90vh', overflowY: 'auto',
-        boxShadow: '0 12px 50px rgba(0,0,0,0.7)', color: 'var(--text-primary)'
+        boxShadow: '0 12px 50px rgba(0,0,0,0.5)', color: 'var(--text-primary)'
       }} onClick={e => e.stopPropagation()}>
 
         {/* Encabezado del Modal */}
@@ -167,7 +170,7 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
               Filtrar y Seleccionar Restaurante de Cita
             </h2>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Pareja: <strong style={{ color: '#fff' }}>{match?.person_a}</strong> × <strong style={{ color: '#fff' }}>{match?.person_b}</strong>
+              Pareja: <strong style={{ color: 'var(--color-primary)' }}>{match?.person_a}</strong> × <strong style={{ color: 'var(--color-primary)' }}>{match?.person_b}</strong>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
@@ -314,12 +317,12 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
                     }}
                     style={{
                       padding: 12, borderRadius: 8, cursor: 'pointer', transition: 'all 0.15s ease',
-                      border: isSelected ? '2px solid var(--color-primary)' : '1px solid rgba(150,21,0,0.15)',
-                      background: isSelected ? 'rgba(150,21,0,0.15)' : 'rgba(255,255,255,0.02)'
+                      border: isSelected ? '2px solid var(--color-primary)' : '1px solid var(--border-color)',
+                      background: isSelected ? 'rgba(150,21,0,0.1)' : 'var(--bg-base)'
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: isSelected ? '#fff' : 'var(--text-primary)' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: isSelected ? 'var(--color-primary)' : 'var(--text-primary)' }}>
                         {r.name}
                       </div>
                       {isSelected && <CheckCircle size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />}

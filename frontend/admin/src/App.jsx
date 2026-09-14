@@ -40,7 +40,15 @@ import AprobadosMaria from './pages/matchmaking/AprobadosMaria'
 import CitasAgendadas from './pages/matchmaking/CitasAgendadas'
 import AprobacionesCruzadas from './pages/matchmaking/AprobacionesCruzadas'
 import TodosLosMatches from './pages/matchmaking/TodosLosMatches'
-import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye } from 'lucide-react'
+import DatosObjetivos from './pages/matchmaking/DatosObjetivos'
+import PercepcionPsicologa from './pages/matchmaking/PercepcionPsicologa'
+import EntrevistaHub from './pages/matchmaking/EntrevistaHub'
+import SupervisionMaria from './pages/matchmaking/SupervisionMaria'
+import Prioritarios from './pages/matchmaking/Prioritarios'
+import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
+import AgendadorCalendly from './pages/public/AgendadorCalendly'
+import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame } from 'lucide-react'
 
 
 
@@ -228,19 +236,22 @@ function Sidebar({ isOpen, onClose }) {
     ...(isPsyc || isMaria ? [{ to: '/', icon: Heart, label: isMaria ? 'Panel Clínico (Psicólogas)' : 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
-    ...(isPsyc || isMaria ? [{ to: '/agenda', icon: Calendar, label: isMaria ? 'Agenda de Entrevistas' : 'Mi Agenda de Entrevistas', module: 'clientes', action: 'view' }] : []),
     ...(!isLina ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
   ]
 
   const matchmakingItems = [
+    ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión María', module: 'matching', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
+    ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/datos-objetivos', icon: ClipboardList, label: '📋 Datos Objetivos', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/percepcion-psicologa', icon: Brain, label: '🧠 Percepción Psicóloga', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : 'Aprobados por María', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'MATCHES (Todas las Psicólogas)' : 'MATCHES', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: Headphones, label: isCs ? 'Citas por Agendar' : 'Aprobados por María (CS)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: 'Citas Aceptadas', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/aprobaciones-cruzadas', icon: ShieldCheck, label: 'Aprobaciones Cruzadas (A ↔ B)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/matchmaking/todos-los-matches', icon: Sparkles, label: 'Todos los Matches (Lookbook)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: 'Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
@@ -304,7 +315,7 @@ function Sidebar({ isOpen, onClose }) {
   }
 
   return (
-    <aside className={`sidebar ${isOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <aside className={`sidebar ${isOpen ? 'open' : 'collapsed'}`} style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <NavLink to={homePath} onClick={handleLinkClick} style={{ textDecoration: 'none' }}>
           <span style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: 18 }}>Daily Lover</span>
@@ -312,9 +323,9 @@ function Sidebar({ isOpen, onClose }) {
         </NavLink>
         <button 
           onClick={onClose} 
-          className="mobile-menu-btn" 
-          style={{ border: 'none', marginRight: 0, width: 28, height: 28 }}
-          title="Cerrar Menú"
+          className="sidebar-close-btn" 
+          style={{ border: 'none', marginRight: 0 }}
+          title="Cerrar barra lateral"
         >
           <X size={18} />
         </button>
@@ -411,7 +422,18 @@ function HomeRoute() {
 function AppContent() {
   const { token, user, isOriginalAdmin, previewRole, setPreviewRole } = useAuth()
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebar_open')
+      if (saved !== null) return saved === 'true'
+      return window.innerWidth > 1024
+    }
+    return true
+  })
+
+  useEffect(() => {
+    localStorage.setItem('sidebar_open', String(sidebarOpen))
+  }, [sidebarOpen])
 
   useEffect(() => {
     if (theme === 'light') {
@@ -430,16 +452,22 @@ function AppContent() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/evaluacion-cita" element={<EvaluacionCita />} />
+      <Route path="/agendar/:psicologaSlug" element={<AgendadorCalendly />} />
+      <Route path="/agendar" element={<AgendadorCalendly />} />
+      <Route path="/reservar" element={<AgendadorCalendly />} />
+      <Route path="/sala/:sessionId" element={<SalaVideollamada />} />
       <Route
         path="/*"
         element={
           token ? (
             <div className="app">
               <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-              <div 
-                className={`sidebar-overlay-backdrop ${sidebarOpen ? 'show' : ''}`} 
-                onClick={() => setSidebarOpen(false)} 
-              />
+              {sidebarOpen && (
+                <div 
+                  className="sidebar-overlay-backdrop show" 
+                  onClick={() => setSidebarOpen(false)} 
+                />
+              )}
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
                 <header style={{
                   height: 56,
@@ -447,16 +475,16 @@ function AppContent() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '0 32px',
+                  padding: '0 24px',
                   background: 'var(--bg-sidebar)',
                   flexShrink: 0
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <button
-                      onClick={() => setSidebarOpen(true)}
-                      className="mobile-menu-btn"
-                      aria-label="Abrir Menú"
-                      title="Abrir Menú"
+                      onClick={() => setSidebarOpen(prev => !prev)}
+                      className="sidebar-toggle-btn"
+                      aria-label={sidebarOpen ? "Ocultar menú lateral" : "Mostrar menú lateral"}
+                      title={sidebarOpen ? "Ocultar menú lateral" : "Mostrar menú lateral"}
                     >
                       <Menu size={18} />
                     </button>
@@ -551,12 +579,22 @@ function AppContent() {
                     <Route path="/auditoria-psicologas" element={<ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute>} />
                     <Route path="/clientes" element={<ProtectedRoute module="clientes" action="view"><Clientes /></ProtectedRoute>} />
 
-                    <Route path="/agenda" element={<ProtectedRoute module="clientes" action="view"><AgendaPsicologa /></ProtectedRoute>} />
+                    <Route path="/agenda" element={<ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute>} />
+                    <Route path="/matchmaking/calendario" element={<ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute>} />
+                    <Route path="/matchmaking/sala/:sessionId" element={<ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute>} />
                     <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
                     <Route path="/cms/eventos" element={<ProtectedRoute module="eventos" action="view"><CmsEventos /></ProtectedRoute>} />
                     <Route path="/cms/ciudades" element={<ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />
                     
+                    {/* Formularios Nuevos & Entrevista Clínica */}
+                    <Route path="/matchmaking/datos-objetivos" element={<ProtectedRoute module="matching" action="view"><DatosObjetivos /></ProtectedRoute>} />
+                    <Route path="/matchmaking/percepcion-psicologa" element={<ProtectedRoute module="matching" action="view"><PercepcionPsicologa /></ProtectedRoute>} />
+                    <Route path="/matchmaking/entrevista" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute>} />
+                    <Route path="/entrevista" element={<Navigate to="/matchmaking/entrevista" replace />} />
+                    <Route path="/datos-objetivos" element={<Navigate to="/matchmaking/datos-objetivos" replace />} />
+                    <Route path="/percepcion-psicologa" element={<Navigate to="/matchmaking/percepcion-psicologa" replace />} />
+
                     {/* 4 Páginas Independientes de Matchmaking Operativo */}
                     <Route path="/matchmaking/mis-matches" element={<ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute>} />
                     <Route path="/matchmaking/aprobados-maria" element={<ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute>} />
@@ -565,14 +603,19 @@ function AppContent() {
                     <Route path="/matchmaking/todos-los-matches" element={<ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute>} />
                     
                     <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
+                    <Route path="/matchmaking/prioritarios" element={<ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute>} />
                     <Route path="/matchmaking/refunds" element={<ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute>} />
+                    <Route path="/matchmaking/supervision-maria" element={<ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute>} />
 
                     {/* Redirecciones de compatibilidad */}
+                    <Route path="/prioritarios" element={<Navigate to="/matchmaking/prioritarios" replace />} />
+                    <Route path="/corazoncito" element={<Navigate to="/matchmaking/prioritarios" replace />} />
+                    <Route path="/supervision-maria" element={<Navigate to="/matchmaking/supervision-maria" replace />} />
+                    <Route path="/supervision" element={<Navigate to="/matchmaking/supervision-maria" replace />} />
                     <Route path="/matching-manual" element={<Navigate to="/matchmaking/mis-matches" replace />} />
                     <Route path="/matching" element={<Navigate to="/matchmaking/todos-los-matches" replace />} />
                     <Route path="/matchmaking/aprobacion" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
                     <Route path="/matchmaking/pendientes" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
-                    <Route path="/matchmaking/calendario" element={<Navigate to="/matchmaking/citas-agendadas" replace />} />
                     
                     {/* Personal */}
                     <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />

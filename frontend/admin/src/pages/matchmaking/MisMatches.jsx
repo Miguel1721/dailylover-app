@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin, Tag, ShieldCheck, History, ExternalLink, AlertCircle, X, Check, Clock } from 'lucide-react'
+import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin, Tag, ShieldCheck, History, ExternalLink, AlertCircle, X, Check, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
@@ -351,6 +351,23 @@ export default function MisMatches() {
   const [feedbackMsg, setFeedbackMsg] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState('')
   const [historyTarget, setHistoryTarget] = useState(null)
+  const [viewMode, setViewMode] = useState('mine') // 'mine' | 'cross_review'
+  const [crossReviewCount, setCrossReviewCount] = useState(0)
+
+  // Modos de visualización ergonómica (Sheets vs Cómodo)
+  const [density, setDensity] = useState(() => localStorage.getItem('matches_density') || 'compact')
+  const [quickFilter, setQuickFilter] = useState('all') // 'all' | 'prioritarios' | 'sin_b' | 'listos' | 'pausa' | 'aprobados'
+  const [syncStatus, setSyncStatus] = useState('synced') // 'synced' | 'saving' | 'error'
+
+  const toggleDensity = () => {
+    setDensity(prev => {
+      const next = prev === 'compact' ? 'comfortable' : 'compact'
+      localStorage.setItem('matches_density', next)
+      return next
+    })
+  }
+
+  const isCompact = density === 'compact'
 
   // Modal para ingresar cliente nuevo
   const [showIntakeModal, setShowIntakeModal] = useState(false)
@@ -378,7 +395,7 @@ export default function MisMatches() {
 
   const fetchMatches = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/my-matches?`
+    let url = `${API}/api/v1/matchmaking/my-matches?view_mode=${viewMode}&`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (statusFilter && statusFilter !== 'all') url += `status_filter=${encodeURIComponent(statusFilter)}&`
     if (cityFilter && cityFilter !== 'all') url += `city=${encodeURIComponent(cityFilter)}&`
@@ -392,27 +409,93 @@ export default function MisMatches() {
       .then(r => r.json())
       .then(data => {
         setMatches(data.matches || [])
+        if (data.cross_review_count !== undefined) {
+          setCrossReviewCount(data.cross_review_count)
+        }
         setLoading(false)
       })
       .catch(err => {
         console.error('Error fetching matches:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, token])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, token])
 
   useEffect(() => {
     fetchMatches()
   }, [fetchMatches])
 
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 50
+  const pageSize = isCompact ? 75 : 50
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, quickFilter])
 
-  const totalPages = Math.ceil(matches.length / pageSize) || 1
-  const paginatedMatches = matches.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const handleApproveCross = async (match) => {
+    setSavingId(match.id)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/approve-cross`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observations_b: "" })
+      })
+      if (res.ok) {
+        setFeedbackMsg(`✓ Visto bueno registrado. El match queda listo para la aprobación de María.`)
+        setTimeout(() => setFeedbackMsg(''), 4000)
+        fetchMatches()
+      } else {
+        alert('Error al dar visto bueno al match cruzado')
+      }
+    } catch(e) {
+      alert('Error de conexión')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleRejectCross = async (match) => {
+    const reason = window.prompt(`Motivo de rechazo de la propuesta para ${match.person_b}:`, "No compatible")
+    if (reason === null) return
+    setSavingId(match.id)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/reject-cross`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rejection_reason: reason })
+      })
+      if (res.ok) {
+        setFeedbackMsg(`✕ Propuesta rechazada. Se liberó a ${match.person_b} y se creó un nuevo intento para ${match.person_a}.`)
+        setTimeout(() => setFeedbackMsg(''), 4000)
+        fetchMatches()
+      } else {
+        alert('Error al rechazar propuesta')
+      }
+    } catch(e) {
+      alert('Error de conexión')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const displayedMatches = matches.filter(m => {
+    if (quickFilter === 'prioritarios') return m.is_priority
+    if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
+    if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo')
+    if (quickFilter === 'pausa') return (m.status || '').toUpperCase().includes('PAUSA')
+    if (quickFilter === 'aprobados') return m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')
+    return true
+  })
+
+  const totalPages = Math.ceil(displayedMatches.length / pageSize) || 1
+  const paginatedMatches = displayedMatches.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
+  // Métricas para píldoras de acceso rápido
+  const totalCount = matches.length
+  const prioritariosCount = matches.filter(m => m.is_priority).length
+  const listosCount = matches.filter(m => (m.status || '').toLowerCase().includes('listo')).length
+  const sinBCount = matches.filter(m => !m.person_b || m.person_b.trim() === '').length
+  const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
+  const aprobadosCount = matches.filter(m => m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')).length
 
   const handleUpdateField = async (matchId, field, value, matchRow) => {
     let finalValue = value
@@ -420,22 +503,24 @@ export default function MisMatches() {
     // Si se edita Persona B, resolver CRM y chequear duplicados
     if (field === 'person_b' && value) {
       const isUrlOrId = value.includes('http') || value.includes('smartmatchapp') || value.includes('client/') || value.includes('profile/') || /^\d{3,}$/.test(value.trim())
-      if (isUrlOrId) {
-        try {
-          const resRes = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ url_or_query: value })
-          })
-          if (resRes.ok) {
-            const dataRes = await resRes.json()
-            if (dataRes.name) {
-              finalValue = dataRes.name
-            }
+      if (!isUrlOrId) {
+        alert('⚠️ Operación Bloqueada: Es OBLIGATORIO ingresar el enlace directo de SmartMatchApp (ej: https://dailylover.smartmatchapp.com/#!/client/...) o el ID CRM de Persona B. El sistema bloquea nombres en texto plano sin enlace.')
+        return
+      }
+      try {
+        const resRes = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ url_or_query: value })
+        })
+        if (resRes.ok) {
+          const dataRes = await resRes.json()
+          if (dataRes.name) {
+            finalValue = dataRes.name
           }
-        } catch (e) {
-          // ignore
         }
+      } catch (e) {
+        // ignore
       }
 
       // Check Duplicates / Conflicts en vivo
@@ -461,6 +546,7 @@ export default function MisMatches() {
     }
 
     setSavingId(matchId)
+    setSyncStatus('saving')
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}`, {
         method: 'PATCH',
@@ -473,16 +559,19 @@ export default function MisMatches() {
 
       const data = await res.json()
       if (!res.ok) {
+        setSyncStatus('error')
         alert(data.detail || 'Error al actualizar')
       } else {
         setMatches(prev => prev.map(m => m.id === matchId ? { ...m, [field]: finalValue } : m))
         setFeedbackMsg('Actualizado correctamente')
+        setSyncStatus('synced')
         setTimeout(() => setFeedbackMsg(''), 2500)
         if (field === 'status' && value === 'HECHO') {
           fetchMatches()
         }
       }
     } catch (e) {
+      setSyncStatus('error')
       alert('Error de conexión al actualizar')
     } finally {
       setSavingId(null)
@@ -492,7 +581,12 @@ export default function MisMatches() {
   const handleCreateIntake = async (e) => {
     e.preventDefault()
     if (!intakeData.person_a.trim()) {
-      alert('Debes ingresar el nombre o enlace de Persona A')
+      alert('Debes ingresar el enlace de SmartMatchApp o CRM ID de Persona A')
+      return
+    }
+    const isUrlOrIdA = intakeData.person_a.includes('http') || intakeData.person_a.includes('smartmatchapp') || intakeData.person_a.includes('client/') || intakeData.person_a.includes('profile/') || /^\d{3,}$/.test(intakeData.person_a.trim())
+    if (!isUrlOrIdA) {
+      alert('⚠️ Operación Bloqueada: Es OBLIGATORIO ingresar la URL de SmartMatchApp o ID CRM para Persona A. No se permiten nombres en texto plano sin enlace.')
       return
     }
     setCreatingIntake(true)
@@ -591,6 +685,65 @@ export default function MisMatches() {
         </div>
       )}
 
+      {/* Selector de Modo: Mis Clientes vs Matches Cruzados (Psicóloga B) */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 18, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+        <button
+          onClick={() => { setViewMode('mine'); setCurrentPage(1) }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 18px',
+            borderRadius: 8,
+            border: viewMode === 'mine' ? '1px solid #B8324F' : '1px solid var(--border-color)',
+            background: viewMode === 'mine' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+            color: viewMode === 'mine' ? '#B8324F' : 'var(--text-secondary)',
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          <User size={16} />
+          Mis Clientes (Persona A)
+        </button>
+
+        <button
+          onClick={() => { setViewMode('cross_review'); setCurrentPage(1) }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 18px',
+            borderRadius: 8,
+            border: viewMode === 'cross_review' ? '1px solid #B8324F' : '1px solid var(--border-color)',
+            background: viewMode === 'cross_review' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+            color: viewMode === 'cross_review' ? '#B8324F' : 'var(--text-secondary)',
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            position: 'relative'
+          }}
+        >
+          <ShieldCheck size={16} />
+          Matches Cruzados por Revisar (Psicóloga B)
+          {crossReviewCount > 0 && (
+            <span style={{
+              background: '#B8324F',
+              color: '#FFFFFF',
+              borderRadius: 20,
+              padding: '2px 7px',
+              fontSize: 11,
+              fontWeight: 800,
+              marginLeft: 4
+            }}>
+              {crossReviewCount}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Selector de Píldoras por Psicóloga */}
       {isAdmin && (
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
@@ -630,6 +783,46 @@ export default function MisMatches() {
           ))}
         </div>
       )}
+
+      {/* Barra de Filtros Rápidos de 1-Clic (Mentalidad Sheets) */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Vistas Rápidas:
+        </span>
+        {[
+          { id: 'all', label: `Todos (${totalCount})`, activeBg: '#B8324F', activeColor: '#FFFFFF' },
+          { id: 'prioritarios', label: `⚡ Prioritarios (${prioritariosCount})`, activeBg: '#FFE599', activeColor: '#7F6000' },
+          { id: 'listos', label: `🟡 Listos para Match (${listosCount})`, activeBg: '#FFE599', activeColor: '#7F6000' },
+          { id: 'sin_b', label: `⏳ Sin Persona B (${sinBCount})`, activeBg: '#D9D2E9', activeColor: '#351C75' },
+          { id: 'pausa', label: `⏸️ En Pausa (${enPausaCount})`, activeBg: '#F9CB9C', activeColor: '#783F04' },
+          { id: 'aprobados', label: `🔒 Aprobados (${aprobadosCount})`, activeBg: '#B6D7A8', activeColor: '#274E13' },
+        ].map(pill => {
+          const isActive = quickFilter === pill.id
+          return (
+            <button
+              key={pill.id}
+              onClick={() => setQuickFilter(pill.id)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '4px 10px',
+                borderRadius: 20,
+                border: isActive ? `1px solid ${pill.activeColor}` : '1px solid var(--border-color)',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: isActive ? pill.activeBg : 'var(--bg-card)',
+                color: isActive ? pill.activeColor : 'var(--text-secondary)',
+                boxShadow: isActive ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {pill.label}
+            </button>
+          )
+        })}
+      </div>
 
       {/* Filtros Bar */}
       <div style={{
@@ -762,11 +955,11 @@ export default function MisMatches() {
           </select>
         </div>
 
-        <div style={{ position: 'relative', flex: '1 1 200px' }}>
+        <div style={{ position: 'relative', flex: '1 1 180px' }}>
           <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             type="text"
-            placeholder="Buscar por Persona A, Persona B o Ciudad..."
+            placeholder="Buscar Persona A, B o Ciudad..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             style={{
@@ -783,9 +976,61 @@ export default function MisMatches() {
           />
         </div>
 
+        {/* Indicador de Sincronización Automática en la Nube */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '5px 10px',
+          borderRadius: 16,
+          fontSize: 11,
+          fontWeight: 600,
+          background: syncStatus === 'saving' ? 'rgba(245,158,11,0.15)' : syncStatus === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(39,174,96,0.12)',
+          color: syncStatus === 'saving' ? '#D97706' : syncStatus === 'error' ? '#EF4444' : '#27AE60',
+          border: `1px solid ${syncStatus === 'saving' ? 'rgba(245,158,11,0.3)' : syncStatus === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(39,174,96,0.25)'}`,
+          whiteSpace: 'nowrap'
+        }}>
+          {syncStatus === 'saving' ? (
+            <>
+              <RefreshCw size={11} className="animate-spin" /> Guardando...
+            </>
+          ) : syncStatus === 'error' ? (
+            <>
+              <AlertTriangle size={11} /> Error de guardado
+            </>
+          ) : (
+            <>
+              <Check size={12} /> Sincronizado en BD ✓
+            </>
+          )}
+        </div>
+
+        {/* Toggle de Densidad: Cómoda vs Compacta (Sheets) */}
+        <button
+          onClick={toggleDensity}
+          title={isCompact ? 'Cambiar a Vista Cómoda' : 'Cambiar a Vista Compacta (Sheets)'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            borderRadius: 6,
+            border: isCompact ? '1px solid #B8324F' : '1px solid var(--border-color)',
+            background: isCompact ? 'rgba(184,50,79,0.12)' : 'var(--bg-base)',
+            color: isCompact ? '#B8324F' : 'var(--text-primary)',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          {isCompact ? '⊟ Vista Compacta (Sheets)' : '⊞ Vista Cómoda'}
+        </button>
+
         <button
           onClick={fetchMatches}
-          title="Refrescar"
+          title="Refrescar datos"
           style={{
             background: 'none',
             border: '1px solid var(--border-color)',
@@ -801,27 +1046,198 @@ export default function MisMatches() {
         </button>
       </div>
 
-      {/* Main Table */}
+      {/* Main Table — Con Sticky Header y Contenedor Scrollable */}
       <div style={{
         background: 'var(--bg-card)',
         borderRadius: 10,
         border: '1px solid var(--border-color)',
         overflowX: 'auto',
-        WebkitOverflowScrolling: 'touch'
+        maxHeight: 'calc(100vh - 220px)',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        position: 'relative'
       }}>
-        <table style={{ width: '100%', minWidth: 1250, borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
-              <th style={{ padding: '12px 10px', fontWeight: 600 }}>CIUDAD</th>
-              <th style={{ padding: '12px 8px', fontWeight: 600 }}>PREF</th>
-              <th style={{ padding: '12px 10px', fontWeight: 600 }}>PLAN</th>
-              <th style={{ padding: '12px 12px', fontWeight: 600 }}>PERSONA A</th>
-              <th style={{ padding: '12px 12px', fontWeight: 600, minWidth: 220 }}>PERSONA B (PROPUESTA)</th>
-              <th style={{ padding: '12px 10px', fontWeight: 600 }}>PSICÓLOGA DE B</th>
-              <th style={{ padding: '12px 10px', fontWeight: 600 }}>FECHA</th>
-              <th style={{ padding: '12px 12px', fontWeight: 600 }}>STATUS</th>
-              <th style={{ padding: '12px 8px', fontWeight: 600, textAlign: 'center' }}>APROBADO</th>
-              <th style={{ padding: '12px 12px', fontWeight: 600 }}>OBSERVACIONES</th>
+        {viewMode === 'cross_review' ? (
+          <table style={{ width: '100%', minWidth: 1200, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
+            <thead>
+              <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, width: 60 }}># ID</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>PROPUESTO POR</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>PERSONA A (CLIENTE DE COLEGA)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>MI CANDIDATO / CLIENTE (PERSONA B)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>CIUDAD / PREF / PLAN</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>OBSERVACIONES</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, textAlign: 'center' }}>ESTADO</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, textAlign: 'center' }}>VISTO BUENO / ACCIÓN</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    Cargando matches cruzados...
+                  </td>
+                </tr>
+              ) : paginatedMatches.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    <ShieldCheck size={32} style={{ color: '#10B981', margin: '0 auto 8px', display: 'block' }} />
+                    No tienes matches cruzados pendientes por revisar como Psicóloga B.
+                  </td>
+                </tr>
+              ) : (
+                paginatedMatches.map((m) => {
+                  const prefCfg = PREF_COLORS[m.pref] || (m.pref ? { bg: '#F3F3F3', color: '#333' } : { bg: '#FFF2CC', color: '#7F6000' })
+                  const planCfg = PLAN_COLORS[m.plan_tier] || (m.plan_tier ? { bg: '#F3F3F3', color: '#434343' } : { bg: '#FFF2CC', color: '#7F6000' })
+                  const statusCfg = STATUS_COLORS[m.status] || { bg: '#FFF2CC', color: '#7F6000' }
+
+                  return (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--border-color)', background: 'transparent' }}>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>
+                        {m.id}
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>
+                        <span style={{
+                          background: 'rgba(184, 50, 79, 0.12)',
+                          color: '#B8324F',
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 800
+                        }}>
+                          Psic. {m.psychologist_name}
+                        </span>
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 600 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id} />
+                          <button
+                            onClick={() => setHistoryTarget(m.person_a_crm_id || m.person_a)}
+                            title="Ver historial de Persona A"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                          >
+                            <History size={13} />
+                          </button>
+                        </div>
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, color: 'var(--color-primary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <CrmPersonLink name={m.person_b} crmId={m.person_b_crm_id} />
+                          <button
+                            onClick={() => setHistoryTarget(m.person_b_crm_id || m.person_b)}
+                            title="Ver historial de Persona B"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                          >
+                            <History size={13} />
+                          </button>
+                        </div>
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px' }}>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>{m.city || '—'}</span>
+                          {m.pref && (
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: prefCfg.bg, color: prefCfg.color }}>
+                              {m.pref}
+                            </span>
+                          )}
+                          {m.plan_tier && (
+                            <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: planCfg.bg, color: planCfg.color }}>
+                              {m.plan_tier}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', fontSize: 12, color: 'var(--text-secondary)', maxWidth: 260 }}>
+                        {m.observations || 'Sin observaciones'}
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', textAlign: 'center' }}>
+                        <select
+                          value={m.status || 'REVISAR'}
+                          onChange={e => handleUpdateField(m.id, 'status', e.target.value, m)}
+                          disabled={savingId === m.id}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-color)',
+                            background: statusCfg.bg,
+                            color: statusCfg.color,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="REVISAR">REVISAR</option>
+                          <option value="HECHO">HECHO (Aprobar)</option>
+                          <option value="NO MATCH/CAMBIAR">NO MATCH/CAMBIAR</option>
+                          <option value="RECHAZADO">RECHAZADO</option>
+                          <option value="TROUBLE">TROUBLE</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                          <button
+                            onClick={() => handleApproveCross(m)}
+                            disabled={savingId === m.id || m.status === 'HECHO'}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              background: m.status === 'HECHO' ? 'rgba(39, 174, 96, 0.2)' : '#27AE60',
+                              color: m.status === 'HECHO' ? '#27AE60' : '#FFFFFF',
+                              border: 'none',
+                              borderRadius: 6,
+                              padding: '5px 10px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: m.status === 'HECHO' ? 'default' : 'pointer'
+                            }}
+                            title="Dar visto bueno como Psicóloga B (pasa a aprobación de María)"
+                          >
+                            <Check size={12} /> {m.status === 'HECHO' ? 'Aprobado ✓' : 'Visto Bueno'}
+                          </button>
+                          <button
+                            onClick={() => handleRejectCross(m)}
+                            disabled={savingId === m.id}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              background: 'rgba(239, 68, 68, 0.15)',
+                              color: '#EF4444',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              borderRadius: 6,
+                              padding: '5px 10px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                            title="Rechazar propuesta (libera candidato y genera reintento a la psicóloga)"
+                          >
+                            <X size={12} /> Rechazar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table style={{ width: '100%', minWidth: 1250, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
+            <thead>
+              <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>CIUDAD</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 6px' : '12px 8px', fontWeight: 700 }}>PREF</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>PLAN</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>PERSONA A</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, minWidth: 220 }}>PERSONA B (PROPUESTA)</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>PSICÓLOGA DE B</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>FECHA</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>STATUS</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 6px' : '12px 8px', fontWeight: 700, textAlign: 'center' }}>APROBADO</th>
+              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>OBSERVACIONES</th>
             </tr>
           </thead>
           <tbody>
@@ -854,24 +1270,24 @@ export default function MisMatches() {
                     }}
                   >
                     {/* CIUDAD */}
-                    <td style={{ padding: '10px 10px', fontWeight: 500 }}>
+                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px', fontWeight: 500, fontSize: isCompact ? 12 : 13 }}>
                       {m.city ? (
                         <span>{m.city}</span>
                       ) : (
-                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '2px 5px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '1px 4px', borderRadius: 3, fontSize: isCompact ? 9 : 10, fontWeight: 700 }}>
                           Falta ciudad
                         </span>
                       )}
                     </td>
 
                     {/* PREF */}
-                    <td style={{ padding: '10px 8px' }}>
+                    <td style={{ padding: isCompact ? '4px 6px' : '10px 8px' }}>
                       {m.pref ? (
                         <span style={{
                           display: 'inline-block',
-                          padding: '2px 7px',
-                          borderRadius: 4,
-                          fontSize: 10,
+                          padding: isCompact ? '1px 5px' : '2px 7px',
+                          borderRadius: 3,
+                          fontSize: isCompact ? 9 : 10,
                           fontWeight: 700,
                           textTransform: 'uppercase',
                           background: prefCfg.bg,
@@ -880,39 +1296,40 @@ export default function MisMatches() {
                           {m.pref}
                         </span>
                       ) : (
-                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '2px 5px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '1px 4px', borderRadius: 3, fontSize: isCompact ? 9 : 10, fontWeight: 700 }}>
                           Falta pref
                         </span>
                       )}
                     </td>
 
                     {/* PLAN */}
-                    <td style={{ padding: '10px 10px' }}>
+                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px' }}>
                       {m.plan_tier ? (
                         <span style={{
                           display: 'inline-block',
-                          padding: '2px 7px',
-                          borderRadius: 4,
-                          fontSize: 11,
+                          padding: isCompact ? '1px 5px' : '2px 7px',
+                          borderRadius: 3,
+                          fontSize: isCompact ? 10 : 11,
                           fontWeight: 600,
                           background: planCfg.bg,
-                          color: planCfg.color
+                          color: planCfg.color,
+                          whiteSpace: 'nowrap'
                         }}>
                           {m.plan_tier}
                         </span>
                       ) : (
-                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '2px 5px', borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '1px 4px', borderRadius: 3, fontSize: isCompact ? 9 : 10, fontWeight: 700 }}>
                           Falta plan
                         </span>
                       )}
                     </td>
 
                     {/* PERSONA A */}
-                    <td style={{ padding: '10px 12px' }}>
+                    <td style={{ padding: isCompact ? '4px 10px' : '10px 12px', fontSize: isCompact ? 12 : 13 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id} />
                         {m.is_priority && (
-                          <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#FFE599', color: '#7F6000', fontWeight: 800 }}>
+                          <span style={{ fontSize: isCompact ? 8 : 9, padding: '1px 4px', borderRadius: 3, background: '#FFE599', color: '#7F6000', fontWeight: 800 }}>
                             ⚡ PRIORITARIO
                           </span>
                         )}
@@ -921,13 +1338,13 @@ export default function MisMatches() {
                           title="Ver historial de Persona A"
                           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
                         >
-                          <History size={13} />
+                          <History size={isCompact ? 12 : 13} />
                         </button>
                       </div>
                     </td>
 
                     {/* PERSONA B - EDITABLE */}
-                    <td style={{ padding: '8px 12px', minWidth: 220 }}>
+                    <td style={{ padding: isCompact ? '3px 10px' : '8px 12px', minWidth: isCompact ? 200 : 220 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <input
                           type="text"
@@ -944,12 +1361,13 @@ export default function MisMatches() {
                           }}
                           style={{
                             width: '100%',
-                            padding: '5px 8px',
-                            borderRadius: 6,
+                            padding: isCompact ? '3px 6px' : '5px 8px',
+                            height: isCompact ? 26 : 32,
+                            borderRadius: 4,
                             border: '1px solid var(--border-color)',
                             background: isLocked ? 'var(--bg-card-hover)' : 'var(--bg-base)',
                             color: 'var(--text-primary)',
-                            fontSize: 12,
+                            fontSize: isCompact ? 11 : 12,
                             fontWeight: 600,
                             outline: 'none',
                             boxSizing: 'border-box'
@@ -961,20 +1379,20 @@ export default function MisMatches() {
                             title={`Ver historial de ${m.person_b}`}
                             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
                           >
-                            <History size={13} />
+                            <History size={isCompact ? 12 : 13} />
                           </button>
                         )}
                       </div>
                     </td>
 
                     {/* PSICÓLOGA DE B (CRUCE INFORMATIVO) */}
-                    <td style={{ padding: '10px 10px' }}>
+                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px' }}>
                       {m.psychologist_b ? (
                         <span style={{
                           display: 'inline-block',
-                          padding: '2px 8px',
-                          borderRadius: 4,
-                          fontSize: 11,
+                          padding: isCompact ? '1px 5px' : '2px 8px',
+                          borderRadius: 3,
+                          fontSize: isCompact ? 10 : 11,
                           fontWeight: 700,
                           background: 'rgba(184, 50, 79, 0.12)',
                           color: '#B8324F'
@@ -982,30 +1400,30 @@ export default function MisMatches() {
                           {m.psychologist_b}
                         </span>
                       ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: isCompact ? 10 : 11 }}>—</span>
                       )}
                     </td>
 
                     {/* FECHA */}
-                    <td style={{ padding: '10px 10px', fontSize: 11, color: 'var(--text-secondary)' }}>
+                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px', fontSize: isCompact ? 10 : 11, color: 'var(--text-secondary)' }}>
                       {m.fecha}
                     </td>
 
                     {/* STATUS */}
-                    <td style={{ padding: '8px 10px' }}>
+                    <td style={{ padding: isCompact ? '3px 8px' : '8px 10px' }}>
                       {isLocked ? (
                         <span style={{
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 4,
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          fontSize: 11,
+                          padding: isCompact ? '2px 5px' : '3px 8px',
+                          borderRadius: 3,
+                          fontSize: isCompact ? 10 : 11,
                           fontWeight: 700,
                           background: statusCfg.bg,
                           color: statusCfg.color
                         }}>
-                          <Lock size={11} /> {m.status}
+                          <Lock size={isCompact ? 10 : 11} /> {m.status}
                         </span>
                       ) : (
                         <select
@@ -1013,12 +1431,13 @@ export default function MisMatches() {
                           onChange={e => handleUpdateField(m.id, 'status', e.target.value, m)}
                           style={{
                             width: '100%',
-                            padding: '4px 6px',
-                            borderRadius: 4,
+                            padding: isCompact ? '2px 4px' : '4px 6px',
+                            height: isCompact ? 24 : 28,
+                            borderRadius: 3,
                             border: `1px solid ${statusCfg.bg}`,
                             background: statusCfg.bg,
                             color: statusCfg.color,
-                            fontSize: 11,
+                            fontSize: isCompact ? 10 : 11,
                             fontWeight: 700,
                             cursor: 'pointer',
                             outline: 'none'
@@ -1034,10 +1453,10 @@ export default function MisMatches() {
                     </td>
 
                     {/* APROBADO POR MARÍA */}
-                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                    <td style={{ padding: isCompact ? '4px 6px' : '10px 8px', textAlign: 'center' }}>
                       {isLocked ? (
                         <span title="Aprobado por María (Fila Bloqueada)" style={{ display: 'inline-flex', color: '#274E13' }}>
-                          <Lock size={15} />
+                          <Lock size={isCompact ? 13 : 15} />
                         </span>
                       ) : (
                         <span style={{ color: 'var(--text-muted)' }}>—</span>
@@ -1045,7 +1464,7 @@ export default function MisMatches() {
                     </td>
 
                     {/* OBSERVACIONES */}
-                    <td style={{ padding: '8px 12px', minWidth: 180 }}>
+                    <td style={{ padding: isCompact ? '3px 10px' : '8px 12px', minWidth: isCompact ? 150 : 180 }}>
                       <input
                         type="text"
                         defaultValue={m.observations || ''}
@@ -1060,12 +1479,13 @@ export default function MisMatches() {
                         }}
                         style={{
                           width: '100%',
-                          padding: '5px 8px',
+                          padding: isCompact ? '3px 6px' : '5px 8px',
+                          height: isCompact ? 26 : 32,
                           borderRadius: 4,
                           border: '1px solid var(--border-color)',
                           background: 'var(--bg-base)',
                           color: 'var(--text-primary)',
-                          fontSize: 12,
+                          fontSize: isCompact ? 11 : 12,
                           outline: 'none',
                           boxSizing: 'border-box'
                         }}
@@ -1077,7 +1497,73 @@ export default function MisMatches() {
             )}
           </tbody>
         </table>
+        )}
       </div>
+
+      {/* Barra de Paginación */}
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 14,
+          padding: '10px 16px',
+          background: 'var(--bg-card)',
+          borderRadius: 8,
+          border: '1px solid var(--border-color)',
+          fontSize: 12,
+          color: 'var(--text-secondary)'
+        }}>
+          <div>
+            Mostrando <strong style={{ color: 'var(--text-primary)' }}>{((currentPage - 1) * pageSize) + 1}</strong> - <strong style={{ color: 'var(--text-primary)' }}>{Math.min(currentPage * pageSize, displayedMatches.length)}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{displayedMatches.length}</strong> {viewMode === 'cross_review' ? 'matches cruzados' : 'matches'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: currentPage === 1 ? 'rgba(255,255,255,0.03)' : 'var(--bg-base)',
+                color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <ChevronLeft size={14} /> Anterior
+            </button>
+            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '6px 12px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: currentPage === totalPages ? 'rgba(255,255,255,0.03)' : 'var(--bg-base)',
+                color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              Siguiente <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal Historial */}
       {historyTarget && (

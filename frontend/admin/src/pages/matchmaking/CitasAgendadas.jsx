@@ -295,23 +295,66 @@ export default function CitasAgendadas() {
                   <tr key={c.calendar_id || c.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>{c.calendar_id || c.id}</td>
                     <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
-                      📅 {c.scheduled_date || 'Por definir'}
+                      <button
+                        onClick={() => {
+                          setRescheduleModalItem({ ...c, _isDirectAssign: true })
+                        }}
+                        title="Clic para cambiar o asignar fecha y hora"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: (c.scheduled_date || c.date_time) && (c.scheduled_date || c.date_time) !== 'Por definir' ? 'var(--color-primary)' : '#D97706',
+                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          textAlign: 'left',
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                      >
+                        📅 {c.scheduled_date || c.date_time || 'Por definir'}
+                      </button>
                     </td>
                     <td style={{ padding: '12px 16px', fontWeight: 700 }}>
-                      <CrmPersonLink name={c.person_a} />
+                      <CrmPersonLink name={c.person_a} crmId={c.person_a_crm_id} />
                     </td>
                     <td style={{ padding: '12px 16px', fontWeight: 700 }}>
-                      <CrmPersonLink name={c.person_b} />
+                      <CrmPersonLink name={c.person_b} crmId={c.person_b_crm_id} />
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                      📍 {c.venue || 'Restaurante por confirmar'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: c.venue && !c.venue.toLowerCase().includes('por definir') ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                          📍 {c.venue && !c.venue.toLowerCase().includes('por definir') ? c.venue : 'Restaurante por definir'}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setRescheduleModalItem({ ...c, _isDirectAssign: true })
+                          }}
+                          style={{
+                            background: 'rgba(184, 50, 79, 0.12)',
+                            color: '#B8324F',
+                            border: '1px solid rgba(184, 50, 79, 0.3)',
+                            borderRadius: 4,
+                            padding: '2px 6px',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap'
+                          }}
+                          title="Abrir filtros para escoger restaurante y horario"
+                        >
+                          {c.venue && !c.venue.toLowerCase().includes('por definir') ? 'Cambiar' : 'Asignar'}
+                        </button>
+                      </div>
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>
                       {c.city || 'Bogotá'}
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <button
-                        onClick={() => handleUpdateDate(c.calendar_id, { reservation_confirmed: !c.reservation_confirmed })}
+                        onClick={() => handleUpdateDate(c.calendar_id || c.id, { reservation_confirmed: !c.reservation_confirmed })}
                         style={{
                           padding: '4px 10px',
                           borderRadius: 6,
@@ -329,10 +372,10 @@ export default function CitasAgendadas() {
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <button
-                          onClick={() => copyToClipboard(c.msg_confirmation || `Hola! Tu cita está confirmada para ${c.scheduled_date} en ${c.venue}.`, 'confirmación', c.calendar_id)}
+                          onClick={() => copyToClipboard(c.msg_confirmation || `Hola! Tu cita está confirmada para ${c.scheduled_date || c.date_time} en ${c.venue}.`, 'confirmación', c.calendar_id || c.id)}
                           style={{
-                            background: copiedId === `${c.calendar_id}-confirmación` ? '#10B981' : 'var(--bg-base)',
-                            color: copiedId === `${c.calendar_id}-confirmación` ? '#fff' : 'var(--text-primary)',
+                            background: copiedId === `${c.calendar_id || c.id}-confirmación` ? '#10B981' : 'var(--bg-base)',
+                            color: copiedId === `${c.calendar_id || c.id}-confirmación` ? '#fff' : 'var(--text-primary)',
                             border: '1px solid var(--border-color)',
                             borderRadius: 6,
                             padding: '4px 8px',
@@ -348,10 +391,10 @@ export default function CitasAgendadas() {
                           <Copy size={11} /> Confirmación
                         </button>
                         <button
-                          onClick={() => copyToClipboard(c.msg_day_before || `Hola! Recordatorio: Mañana tienes tu cita a las ${c.scheduled_date} en ${c.venue}.`, 'día antes', c.calendar_id)}
+                          onClick={() => copyToClipboard(c.msg_day_before || `Hola! Recordatorio: Mañana tienes tu cita a las ${c.scheduled_date || c.date_time} en ${c.venue}.`, 'día antes', c.calendar_id || c.id)}
                           style={{
-                            background: copiedId === `${c.calendar_id}-día antes` ? '#10B981' : 'var(--bg-base)',
-                            color: copiedId === `${c.calendar_id}-día antes` ? '#fff' : 'var(--text-primary)',
+                            background: copiedId === `${c.calendar_id || c.id}-día antes` ? '#10B981' : 'var(--bg-base)',
+                            color: copiedId === `${c.calendar_id || c.id}-día antes` ? '#fff' : 'var(--text-primary)',
                             border: '1px solid var(--border-color)',
                             borderRadius: 6,
                             padding: '4px 8px',
@@ -367,10 +410,10 @@ export default function CitasAgendadas() {
                           <Copy size={11} /> Día Antes
                         </button>
                         <button
-                          onClick={() => copyToClipboard(c.msg_day_of || `Hola! Hoy es el día de tu cita a las ${c.scheduled_date} en ${c.venue}. Que disfrutes mucho!`, 'hoy', c.calendar_id)}
+                          onClick={() => copyToClipboard(c.msg_day_of || `Hola! Hoy es el día de tu cita a las ${c.scheduled_date || c.date_time} en ${c.venue}. Que disfrutes mucho!`, 'hoy', c.calendar_id || c.id)}
                           style={{
-                            background: copiedId === `${c.calendar_id}-hoy` ? '#10B981' : 'var(--bg-base)',
-                            color: copiedId === `${c.calendar_id}-hoy` ? '#fff' : 'var(--text-primary)',
+                            background: copiedId === `${c.calendar_id || c.id}-hoy` ? '#10B981' : 'var(--bg-base)',
+                            color: copiedId === `${c.calendar_id || c.id}-hoy` ? '#fff' : 'var(--text-primary)',
                             border: '1px solid var(--border-color)',
                             borderRadius: 6,
                             padding: '4px 8px',
@@ -389,7 +432,7 @@ export default function CitasAgendadas() {
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                       <button
-                        onClick={() => setRescheduleModalItem(c)}
+                        onClick={() => setRescheduleModalItem({ ...c, _isDirectAssign: false })}
                         style={{
                           background: 'rgba(217,119,6,0.15)',
                           color: '#D97706',
@@ -418,15 +461,21 @@ export default function CitasAgendadas() {
       {rescheduleModalItem && (
         <RestaurantFilterModal
           match={rescheduleModalItem}
-          initialDate={rescheduleModalItem.scheduled_date}
-          initialVenue={rescheduleModalItem.venue}
+          initialDate={rescheduleModalItem.scheduled_date || rescheduleModalItem.date_time}
+          initialVenue={rescheduleModalItem.venue && !rescheduleModalItem.venue.toLowerCase().includes('por definir') ? rescheduleModalItem.venue : ''}
           onClose={() => setRescheduleModalItem(null)}
-          onConfirm={(newDateTime, newVenue) => handleUpdateDate(rescheduleModalItem.calendar_id, {
-            reschedule: true,
-            new_scheduled_date: newDateTime,
-            venue: newVenue,
-            reschedule_reason: 'Actualización de fecha/restaurante desde filtro'
-          })}
+          onConfirm={(newDateTime, newVenue) => {
+            const isDirect = rescheduleModalItem._isDirectAssign
+            const targetId = rescheduleModalItem.calendar_id || rescheduleModalItem.id
+            return handleUpdateDate(targetId, {
+              reschedule: !isDirect,
+              date_time: newDateTime,
+              scheduled_date: newDateTime,
+              new_scheduled_date: newDateTime,
+              venue: newVenue,
+              reschedule_reason: isDirect ? 'Asignación de restaurante y fecha' : 'Reprogramación de cita'
+            })
+          }}
         />
       )}
     </div>

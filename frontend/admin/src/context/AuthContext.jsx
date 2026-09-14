@@ -20,7 +20,38 @@ export function AuthProvider({ children }) {
       .then(res => res.json())
       .then(data => setConfig(data))
       .catch(err => console.error("Error loading config:", err))
-      .finally(() => setLoading(false))
+
+    // Automatically refresh user role and permissions from DB
+    const tokenToUse = localStorage.getItem('dl_token')
+    if (tokenToUse) {
+      fetch(`${API}/api/v1/auth/me`, {
+        headers: { 'Authorization': `Bearer ${tokenToUse}` }
+      })
+        .then(res => {
+          if (res.ok) return res.json()
+          return null
+        })
+        .then(freshUser => {
+          if (freshUser) {
+            const isAdm = freshUser.email && (
+              freshUser.email.toLowerCase().includes('admin') ||
+              freshUser.email.toLowerCase().includes('maria') ||
+              freshUser.email.toLowerCase().includes('miguel')
+            )
+            const roleToAssign = freshUser.role || (isAdm ? 'Super Admin' : 'Sin Asignar')
+            const updated = {
+              ...freshUser,
+              role: roleToAssign
+            }
+            localStorage.setItem('dl_user', JSON.stringify(updated))
+            setUser(updated)
+          }
+        })
+        .catch(err => console.error("Error refreshing user:", err))
+        .finally(() => setLoading(false))
+    } else {
+      setLoading(false)
+    }
   }, [])
 
   const handleSetPreviewRole = (role) => {
@@ -37,6 +68,7 @@ export function AuthProvider({ children }) {
     user && (
       user.role === 'Admin' ||
       user.role === 'Super Admin' ||
+      user.role === 'SUPERADMIN' ||
       (user.role && user.role.toLowerCase().includes('admin')) ||
       (user.email && (
         user.email.toLowerCase().includes('admin') ||
@@ -46,30 +78,37 @@ export function AuthProvider({ children }) {
     )
   )
 
-  const effectiveRole = previewRole || user?.role || ''
+  const effectiveRole = previewRole || user?.role || (isOriginalAdmin ? 'Super Admin' : '')
 
   const effectiveUser = user ? {
     ...user,
-    role: effectiveRole,
-    name: previewRole ? `${user.name} [Ver como: ${previewRole}]` : user.name,
+    role: effectiveRole || (isOriginalAdmin ? 'Super Admin' : user.role || 'Sin Asignar'),
+    name: previewRole ? `${user.name || user.email} [Ver como: ${previewRole}]` : (user.name || user.email),
     isPreview: Boolean(previewRole)
   } : null
 
   const hasPermission = (module, action) => {
     if (!user) return false
 
-    const role = previewRole || user?.role || ''
-    const isSuperOrAdmin = !previewRole && (
-      user.role === 'Admin' ||
-      user.role === 'Super Admin' ||
-      (user.role && user.role.toLowerCase().includes('admin'))
-    )
-
-    if (isSuperOrAdmin || role === 'María') {
-      return true // Acceso completo de supervisión
+    // Admins and Maria Paula always have full access when not simulating
+    if (!previewRole && isOriginalAdmin) {
+      return true
     }
 
-    if (role === 'Psicóloga' || role.toLowerCase().includes('psicolog') || role.toLowerCase().includes('matchmaker')) {
+    const role = previewRole || user?.role || (isOriginalAdmin ? 'Super Admin' : '')
+
+    // Admin and Super Admin roles have total access
+    if (
+      role === 'Admin' ||
+      role === 'Super Admin' ||
+      role === 'SUPERADMIN' ||
+      role === 'María' ||
+      (typeof role === 'string' && role.toLowerCase().includes('admin'))
+    ) {
+      return true
+    }
+
+    if (role === 'Psicóloga' || (typeof role === 'string' && (role.toLowerCase().includes('psicolog') || role.toLowerCase().includes('matchmaker')))) {
       if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos'].includes(module)) {
         return false
       }
@@ -97,8 +136,10 @@ export function AuthProvider({ children }) {
       return false
     }
 
-    // Fallback normal
+    // Default safety: allow matching and dashboard view so nobody is ever locked out
     if (module === 'matching' && action === 'view') return true
+    if (module === 'dashboard' && action === 'view') return true
+
     const permissionKey = `${module}.${action}`
     return user.permissions?.includes(permissionKey) || false
   }

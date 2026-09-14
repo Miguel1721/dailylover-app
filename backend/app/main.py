@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from app.config import get_settings, Settings
-from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking
+from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking, scheduling
 import structlog
 import os
 
@@ -101,6 +101,49 @@ async def startup_seed():
             await db.execute(text("""
                 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS photo_url VARCHAR(500);
             """))
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS client_extended_profile (
+                    id SERIAL PRIMARY KEY,
+                    user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+                    crm_id VARCHAR(50),
+                    social_group_score NUMERIC(3,1),
+                    education_level INT,
+                    mobility_travel INT,
+                    physical_activity_level INT,
+                    social_energy_level INT,
+                    life_structure_level INT,
+                    weekend_style TEXT[],
+                    religion_importance INT,
+                    political_self_placement VARCHAR(20),
+                    kids_importance INT,
+                    traditionalism_level INT,
+                    punctuality VARCHAR(50),
+                    presentation_camera BOOLEAN,
+                    presentation_style VARCHAR(50),
+                    presentation_background VARCHAR(50),
+                    speaking_confidence INT,
+                    conversation_lead INT,
+                    emotional_processing INT,
+                    months_single INT,
+                    self_awareness INT,
+                    love_language_given VARCHAR(50),
+                    love_language_received VARCHAR(50),
+                    love_language_flexibility INT,
+                    non_negotiables JSONB,
+                    physical_complexion TEXT[],
+                    physical_importance INT,
+                    physical_traits_notes TEXT,
+                    behavioral_risk_level INT,
+                    flags_notes TEXT,
+                    synthesis_who_really_is VARCHAR(250),
+                    synthesis_first_date_behavior VARCHAR(250),
+                    synthesis_best_match_type VARCHAR(250),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_by VARCHAR(100)
+                );
+                CREATE INDEX IF NOT EXISTS idx_client_ext_user_id ON client_extended_profile(user_id);
+                CREATE INDEX IF NOT EXISTS idx_client_ext_crm_id ON client_extended_profile(crm_id);
+            """))
             await db.commit()
 
 
@@ -141,6 +184,7 @@ app.include_router(vendors.router)
 app.include_router(reports.router)
 app.include_router(webhooks.router)
 app.include_router(matchmaking.router)
+app.include_router(scheduling.router)
 
 # ─── STATIC FILES (Admin Panel & App Preview) ─────────────────────────────────
 

@@ -176,12 +176,18 @@ async def process_webhook_payload(event_type: str, data: dict):
             # 1. EVENTOS DE CLIENTE (client.created, client.updated, client_profile_updated, client_preferences_updated, user.created, user.updated)
             if any(k in event_type.lower() for k in ["client", "user", "profile", "preference"]):
                 crm_id = str(data.get("id") or data.get("client_id") or data.get("user_id") or "").strip()
-                phone = str(data.get("phone") or data.get("mobile") or data.get("telefono") or "").strip()
-                name = str(data.get("name") or data.get("full_name") or data.get("nombre") or "").strip()
-                email = str(data.get("email") or data.get("correo") or "").strip()
+                phone = str(data.get("phone") or data.get("mobile") or data.get("telefono") or data.get("prof_190") or data.get("prof_phone") or "").strip()
+                name = str(data.get("name") or data.get("full_name") or data.get("nombre") or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or "").strip()
+                email = str(data.get("email") or data.get("correo") or data.get("prof_180") or data.get("prof_email") or "").strip()
                 city = str(data.get("city") or data.get("ciudad") or "").strip()
+                if not city and data.get("prof_191"):
+                    p191 = data.get("prof_191")
+                    if isinstance(p191, dict):
+                        city = str(p191.get("city") or "").strip()
+                    elif isinstance(p191, str):
+                        city = p191.strip()
 
-                # Extraer orientación de campos de SmartMatchApp (ej. pref_65)
+                # Extraer orientación de campos de SmartMatchApp (ej. pref_65 o prof_193)
                 orientation = ""
                 pref_65 = data.get("pref_65")
                 if isinstance(pref_65, list) and len(pref_65) > 0 and isinstance(pref_65[0], dict):
@@ -194,6 +200,35 @@ async def process_webhook_payload(event_type: str, data: dict):
                         orientation = "lesb"
                     elif "bi" in choice_label.lower():
                         orientation = "bi"
+                elif data.get("prof_193"):
+                    p193 = data.get("prof_193")
+                    lbl = p193.get("choice_label", "") if isinstance(p193, dict) else str(p193)
+                    if "hetero" in lbl.lower():
+                        orientation = "hetero"
+                    elif "gay" in lbl.lower() or "homo" in lbl.lower():
+                        orientation = "gay"
+                    elif "lesb" in lbl.lower():
+                        orientation = "lesb"
+                    elif "bi" in lbl.lower():
+                        orientation = "bi"
+
+                # Extraer género
+                gender = data.get("gender") or data.get("genero") or ""
+                if not gender and data.get("prof_192"):
+                    p192 = data.get("prof_192")
+                    gender = p192.get("choice_label", "") if isinstance(p192, dict) else str(p192)
+
+                # Extraer edad / fecha nacimiento
+                age = data.get("age") or data.get("edad")
+                if not age and data.get("prof_194"):
+                    try:
+                        b_year = int(str(data.get("prof_194"))[:4])
+                        from datetime import datetime as dt_now
+                        age = dt_now.now().year - b_year
+                    except Exception:
+                        pass
+
+                occupation = data.get("occupation") or data.get("profesion") or data.get("prof_199")
 
                 if crm_id or phone or email or name:
                     # Normalizar teléfono si existe
@@ -216,13 +251,45 @@ async def process_webhook_payload(event_type: str, data: dict):
 
                     if existing_user:
                         user_id = existing_user[0]
-                        await db.execute(text("""
-                            UPDATE users SET
-                                name = COALESCE(NULLIF(:name, ''), users.name),
-                                email = COALESCE(NULLIF(:email, ''), users.email),
-                                crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id)
-                            WHERE id = :uid
-                        """), {"uid": user_id, "name": name, "email": email, "cid": crm_id})
+                        # Si el teléfono ya pertenece a otro registro en users, unificar crm_id en el registro original
+                        if phone and not phone.startswith("+57300000"):
+                            res_p = await db.execute(text("SELECT id FROM users WHERE phone = :p AND id != :uid LIMIT 1"), {"p": phone, "uid": user_id})
+                            other_u = res_p.fetchone()
+                            if other_u:
+                                other_id = other_u[0]
+                                await db.execute(text("""
+                                    UPDATE users SET
+                                        crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id),
+                                        email = COALESCE(NULLIF(:email, ''), users.email)
+                                    WHERE id = :oid
+                                """), {"cid": crm_id, "email": email, "oid": other_id})
+                                user_id = other_id
+                            else:
+                                await db.execute(text("""
+                                    UPDATE users SET
+                                        name = CASE 
+                                            WHEN (users.name LIKE 'Cliente CRM%' OR users.name IS NULL OR users.name = '') AND NULLIF(:name, '') IS NOT NULL THEN :name
+                                            ELSE COALESCE(NULLIF(:name, ''), users.name)
+                                        END,
+                                        phone = CASE
+                                            WHEN (users.phone LIKE '+57300000%' OR users.phone LIKE '+57399999%') AND NULLIF(:phone, '') IS NOT NULL AND :phone NOT LIKE '+57300000%' THEN :phone
+                                            ELSE users.phone
+                                        END,
+                                        email = COALESCE(NULLIF(:email, ''), users.email),
+                                        crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id)
+                                    WHERE id = :uid
+                                """), {"uid": user_id, "name": name, "phone": phone, "email": email, "cid": crm_id})
+                        else:
+                            await db.execute(text("""
+                                UPDATE users SET
+                                    name = CASE 
+                                        WHEN (users.name LIKE 'Cliente CRM%' OR users.name IS NULL OR users.name = '') AND NULLIF(:name, '') IS NOT NULL THEN :name
+                                        ELSE COALESCE(NULLIF(:name, ''), users.name)
+                                    END,
+                                    email = COALESCE(NULLIF(:email, ''), users.email),
+                                    crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id)
+                                WHERE id = :uid
+                            """), {"uid": user_id, "name": name, "email": email, "cid": crm_id})
                     else:
                         result = await db.execute(text("""
                             INSERT INTO users (phone, name, email, crm_id, created_at)
@@ -242,10 +309,12 @@ async def process_webhook_payload(event_type: str, data: dict):
 
                     # Extraer Plan de SmartMatchApp (membership, package, contract, custom fields)
                     plan_val = None
+                    added_l = data.get("added_to_list")
                     raw_plan = (
                         data.get("plan_tier") or data.get("plan") or data.get("membership") or
                         data.get("membership_tier") or data.get("package") or data.get("contract") or
-                        data.get("plan_name") or data.get("membership_name") or ""
+                        data.get("plan_name") or data.get("membership_name") or
+                        (added_l.get("name") if isinstance(added_l, dict) else "") or ""
                     )
                     # Inspeccionar también si viene como dict o choice
                     if isinstance(raw_plan, dict):
@@ -292,11 +361,11 @@ async def process_webhook_payload(event_type: str, data: dict):
                             updated_at = NOW()
                     """), {
                         "uid": user_id,
-                        "age": data.get("age") or data.get("edad"),
-                        "gender": data.get("gender") or data.get("genero"),
+                        "age": age or data.get("age") or data.get("edad"),
+                        "gender": gender or data.get("gender") or data.get("genero") or "",
                         "city": city or data.get("city") or data.get("ciudad") or "",
                         "orientation": orientation or "",
-                        "occupation": data.get("occupation") or data.get("profesion"),
+                        "occupation": occupation or data.get("occupation") or data.get("profesion") or "",
                         "plan": plan_val or "",
                         "notes": data.get("notes") or data.get("bio") or data.get("observaciones")
                     })

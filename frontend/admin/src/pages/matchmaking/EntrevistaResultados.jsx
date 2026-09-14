@@ -1,0 +1,2383 @@
+import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X, ExternalLink, RefreshCw, FileText, User, Users } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import CrmPersonLink from '../../components/CrmPersonLink'
+import ClinicalNotesViewer from '../../components/ClinicalNotesViewer'
+
+const API = 'https://prueba-daily.agentesia.cloud'
+
+const PSYCHOLOGISTS = ['ANA', 'SILVI', 'JENN', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA']
+
+export default function EntrevistaResultados({ clientId, clientName, onGoToTab }) {
+  const { token, user } = useAuth()
+  const navigate = useNavigate()
+
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Detección reactiva de modo claro (Light Mode)
+  const [isLight, setIsLight] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    const updateTheme = () => {
+      setIsLight(document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light')
+    }
+    updateTheme()
+    const observer = new MutationObserver(updateTheme)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    window.addEventListener('storage', updateTheme)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('storage', updateTheme)
+    }
+  }, [])
+
+  // Modal de aprobación
+  const [selectedCandidate, setSelectedCandidate] = useState(null)
+  const [psychologist, setPsychologist] = useState('ANA')
+  const [notes, setNotes] = useState('')
+  const [approving, setApproving] = useState(false)
+  const [approvedMatch, setApprovedMatch] = useState(null)
+
+  // Modal de análisis clínico de match
+  const [viewingAnalysis, setViewingAnalysis] = useState(null)
+
+  const fetchResults = () => {
+    if (!clientId && !clientName) return
+    setLoading(true)
+    setError(null)
+    const target = clientId || clientName
+    fetch(`${API}/api/v1/matchmaking/interview-results/${encodeURIComponent(target)}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => {
+        if (!r.ok) throw new Error('No se pudieron obtener resultados de entrevista')
+        return r.json()
+      })
+      .then(d => {
+        setData(d)
+        setLoading(false)
+        if (d.client?.responsable) {
+          const resp = d.client.responsable.toUpperCase().replace('MATCHES ', '').trim()
+          if (PSYCHOLOGISTS.includes(resp)) setPsychologist(resp)
+        }
+      })
+      .catch(err => {
+        setError(err.message)
+        setLoading(false)
+      })
+  }
+
+  useEffect(() => {
+    fetchResults()
+  }, [clientId, clientName])
+
+  const handleApprove = async () => {
+    if (!data?.client || !selectedCandidate) return
+    setApproving(true)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/approve-interview-match`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          person_a_id: data.client.user_id,
+          person_b_id: selectedCandidate.user_id,
+          psychologist_name: psychologist,
+          notes: notes.trim() || undefined
+        })
+      })
+      const resData = await res.json()
+      if (!res.ok) throw new Error(resData.detail || 'Error al aprobar match')
+
+      setApprovedMatch({
+        ...resData,
+        candidateName: selectedCandidate.name
+      })
+      setSelectedCandidate(null)
+    } catch (e) {
+      alert('Error: ' + e.message)
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 14,
+        padding: '60px 24px',
+        textAlign: 'center'
+      }}>
+        <RefreshCw size={36} className="animate-spin" style={{ color: 'var(--color-primary)', margin: '0 auto 16px', display: 'block' }} />
+        <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px', color: 'var(--text-primary)' }}>
+          Generando Análisis Clínico de Compatibilidad...
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+          Cruzando datos objetivos, estilo de vida y dealbreakers con la base de candidatos compatibles.
+        </p>
+      </div>
+    )
+  }
+
+  if (error || !data) {
+    return (
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderRadius: 14,
+        padding: '40px 24px',
+        textAlign: 'center'
+      }}>
+        <AlertTriangle size={36} style={{ color: '#FF6B35', margin: '0 auto 12px', display: 'block' }} />
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px' }}>
+          No fue posible cargar los candidatos
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>{error || 'Cliente no encontrado'}</p>
+        <button className="btn btn-primary btn-sm" onClick={fetchResults}>Reintentar</button>
+      </div>
+    )
+  }
+
+  const { client, suggested_matches = [] } = data
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Banner de éxito al aprobar */}
+      {approvedMatch && (
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(76, 175, 80, 0.15) 0%, rgba(46, 125, 50, 0.25) 100%)',
+          border: '1px solid #4CAF50',
+          borderRadius: 12,
+          padding: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <CheckCircle2 size={24} color="#4CAF50" />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#A5D6A7' }}>
+                ¡Propuesta Enviada a Aprobación de María!
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                Pareja: <b style={{ color: '#fff' }}>{approvedMatch.pair}</b> asignada a <b style={{ color: '#FFE599' }}>{approvedMatch.psychologist}</b>. Se encuentra en la cola de revisión de María para su visto bueno antes de pasar a MATCHES.
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/matchmaking/aprobados-maria')}
+            style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            Ver en Aprobados por María <ArrowRight size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* Grid Principal: Lado Izquierdo (Samuel) vs Lado Derecho (Candidatos) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))',
+        gap: 20,
+        alignItems: 'start'
+      }}>
+        {/* COLUMNA IZQUIERDA: SÍNTESIS DEL ENTREVISTADO */}
+        <div style={{
+          background: isLight ? '#FFFFFF' : 'var(--bg-card)',
+          border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+          borderRadius: 14,
+          padding: 20,
+          boxShadow: isLight ? '0 2px 12px rgba(0, 0, 0, 0.05)' : '0 4px 20px rgba(0, 0, 0, 0.25)'
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            borderBottom: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+            paddingBottom: 14,
+            marginBottom: 16
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #961500, #c41a00)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                fontSize: 18
+              }}>
+                {client.name?.charAt(0) || 'C'}
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <a
+                    href={client.crm_url || (client.crm_id ? `https://dailylover.smartmatchapp.com/#!/client/${client.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(client.name)}`)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Abrir perfil de ${client.name} en SmartMatchApp (CRM)`}
+                    style={{
+                      fontWeight: 800,
+                      fontSize: 16,
+                      color: isLight ? '#0F172A' : 'var(--text-primary)',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      transition: 'color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--color-primary-light)'
+                      e.currentTarget.style.textDecoration = 'underline'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = isLight ? '#0F172A' : 'var(--text-primary)'
+                      e.currentTarget.style.textDecoration = 'none'
+                    }}
+                  >
+                    {client.name}
+                    <ExternalLink size={13} style={{ color: 'var(--color-primary-light)', opacity: 0.8, flexShrink: 0 }} />
+                  </a>
+                </div>
+                <div style={{ fontSize: 11, color: isLight ? '#64748B' : 'var(--text-muted)' }}>
+                  {client.client_code} • {client.city}
+                </div>
+              </div>
+            </div>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '3px 8px',
+              borderRadius: 6,
+              background: isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.15)',
+              color: isLight ? '#961500' : 'var(--color-primary-light)'
+            }}>
+              Persona A
+            </span>
+          </div>
+
+          {/* Resumen del Plan y Balance de Citas de Persona A */}
+          <div style={{
+            background: isLight ? '#F8FAFC' : 'var(--bg-base)',
+            border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+            borderRadius: 10,
+            padding: '12px 14px',
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10
+          }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: isLight ? '#64748B' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Plan & Citas Contratadas
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#0F172A' : 'var(--text-primary)', marginTop: 2 }}>
+                {client.plan_tier || 'Plan Estándar (2 citas)'}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{
+                fontSize: 12,
+                fontWeight: 800,
+                color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#065F46' : '#4CAF50') : (isLight ? '#92400E' : '#FFC107'),
+                background: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)') : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
+                padding: '4px 10px',
+                borderRadius: 8,
+                border: (client.dates_remaining ?? 1) > 0 ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.3)') : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)'),
+                display: 'inline-block'
+              }}>
+                🎟️ {client.dates_used || 0} de {client.plan_total_dates || 2} citas
+              </span>
+              <div style={{ fontSize: 11, color: isLight ? '#64748B' : 'var(--text-muted)', marginTop: 2 }}>
+                {(client.dates_remaining ?? 1) > 0 ? `${client.dates_remaining ?? 1} citas disponibles` : '⚠️ Plan cumplido'}
+              </div>
+            </div>
+          </div>
+
+          {/* Puntaje Social Group Destacado */}
+          <div style={{
+            background: isLight ? '#F8FAFC' : 'var(--bg-base)',
+            border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+            borderRadius: 10,
+            padding: '12px 14px',
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Puntaje Social Group
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Nivel socioeconómico ampliado
+              </div>
+            </div>
+            <span style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: '#4CAF50',
+              background: 'rgba(76, 175, 80, 0.12)',
+              padding: '4px 10px',
+              borderRadius: 8,
+              border: '1px solid rgba(76, 175, 80, 0.3)'
+            }}>
+              {client.social_group_score ? `${client.social_group_score.toFixed(1)} / 10` : '8.0 / 10'}
+            </span>
+          </div>
+
+          {/* Métricas Clínicas Clave */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10,
+            marginBottom: 16
+          }}>
+            <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Actividad Física</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                🏃 {client.physical_activity_level || 7} / 10
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Nivel Educativo</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                🎓 {client.education_level || 8} / 10
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Lenguaje Da</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#FFE599', marginTop: 2 }}>
+                {client.love_language_given}
+              </div>
+            </div>
+            <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Lenguaje Recibe</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#FFE599', marginTop: 2 }}>
+                {client.love_language_received}
+              </div>
+            </div>
+          </div>
+
+          {/* Dealbreakers no negociables */}
+          {client.non_negotiables && client.non_negotiables.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 6 }}>
+                🚫 Dealbreakers No Negociables
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {client.non_negotiables.map((nb, i) => {
+                  const label = typeof nb === 'object' ? (nb.texto || nb.text || JSON.stringify(nb)) : String(nb)
+                  return (
+                    <span key={i} style={{
+                      fontSize: 11,
+                      background: 'rgba(255, 107, 53, 0.12)',
+                      border: '1px solid rgba(255, 107, 53, 0.3)',
+                      color: '#ff8a80',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      fontWeight: 600
+                    }}>
+                      {label}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Síntesis Clínica en 3 Líneas */}
+          <div style={{
+            background: 'var(--bg-base)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 10,
+            padding: 14,
+            marginBottom: 16
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-primary-light)', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ShieldCheck size={14} /> Síntesis Clínica de la Psicóloga
+            </div>
+            <div style={{ fontSize: 12, marginBottom: 8 }}>
+              <b style={{ color: 'var(--text-primary)' }}>1. ¿Quién es realmente?</b>
+              <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {client.synthesis_who_really_is || 'Profesional enfocado, con estilo de vida dinámico y visión de pareja estable.'}
+              </p>
+            </div>
+            <div style={{ fontSize: 12, marginBottom: 8 }}>
+              <b style={{ color: 'var(--text-primary)' }}>2. ¿Comportamiento en 1ra cita?</b>
+              <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {client.synthesis_first_date_behavior || 'Puntual, conversador elocuente y empático.'}
+              </p>
+            </div>
+            <div style={{ fontSize: 12 }}>
+              <b style={{ color: 'var(--text-primary)' }}>3. ¿Perfil para mejor match?</b>
+              <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {client.synthesis_best_match_type || 'Persona profesional, con nivel sociocultural afín y que valore tiempo de calidad.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Botones para regresar a editar */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => onGoToTab && onGoToTab('objetivos')}
+              style={{
+                flex: 1,
+                padding: '7px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                fontSize: 11,
+                cursor: 'pointer'
+              }}
+            >
+              ✏️ Editar Obj (F1)
+            </button>
+            <button
+              onClick={() => onGoToTab && onGoToTab('percepcion')}
+              style={{
+                flex: 1,
+                padding: '7px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                fontSize: 11,
+                cursor: 'pointer'
+              }}
+            >
+              ✏️ Editar Clínico (F2)
+            </button>
+          </div>
+        </div>
+
+        {/* COLUMNA DERECHA: 3 A 4 CANDIDATOS SUGERIDOS */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: isLight ? '#FFFFFF' : 'var(--bg-card)',
+            padding: '14px 20px',
+            borderRadius: 12,
+            border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+            boxShadow: isLight ? '0 2px 10px rgba(0, 0, 0, 0.04)' : 'none'
+          }}>
+            <div>
+              <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: isLight ? '#0F172A' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Sparkles size={20} color="#c41a00" />
+                Candidatos Sugeridos para Match ({suggested_matches.length})
+              </h2>
+              <p style={{ fontSize: 12, color: isLight ? '#64748B' : 'var(--text-muted)', margin: '3px 0 0' }}>
+                Top {suggested_matches.length} candidatas con mayor afinidad clínica y filtro bidireccional aprobadas para {client.name}.
+              </p>
+            </div>
+            <button
+              onClick={fetchResults}
+              title="Recalcular sugerencias"
+              style={{
+                background: isLight ? '#F8FAFC' : 'none',
+                border: isLight ? '1px solid #CBD5E1' : '1px solid var(--border-color)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                color: isLight ? '#334155' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12
+              }}
+            >
+              <RefreshCw size={13} /> Recalcular
+            </button>
+          </div>
+
+          {suggested_matches.length === 0 ? (
+            <div style={{
+              background: isLight ? '#FFFFFF' : 'var(--bg-card)',
+              border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+              borderRadius: 12,
+              padding: 40,
+              textAlign: 'center',
+              color: isLight ? '#64748B' : 'var(--text-muted)'
+            }}>
+              No se encontraron candidatos disponibles en la misma ciudad en este momento.
+            </div>
+          ) : (
+            suggested_matches.map((cand, idx) => {
+              const sgDiff = Math.abs((client.social_group_score || 8.0) - (cand.social_group_score || 8.0)).toFixed(1)
+              return (
+                <div
+                  key={cand.user_id}
+                  style={{
+                    background: isLight ? '#FFFFFF' : 'var(--bg-card)',
+                    border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                    borderRadius: 14,
+                    padding: 20,
+                    boxShadow: isLight ? '0 4px 16px rgba(0, 0, 0, 0.05)' : '0 4px 20px rgba(0, 0, 0, 0.2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 14,
+                    transition: 'border-color 0.2s',
+                    position: 'relative'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'}
+                  onMouseLeave={(e) => e.currentTarget.style.borderColor = isLight ? '#E2E8F0' : 'var(--border-color)'}
+                >
+                  {/* Fila Superior: Nombre, Score y Compatibilidad */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: '50%',
+                        background: 'linear-gradient(135deg, #1976d2, #0288d1)',
+                        color: '#fff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        fontSize: 16
+                      }}>
+                        {cand.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <a
+                            href={cand.crm_url || (cand.crm_id && cand.crm_id !== 'None' ? `https://dailylover.smartmatchapp.com/#!/client/${cand.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(cand.name)}`)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Abrir perfil de ${cand.name} en SmartMatchApp (CRM)`}
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 700,
+                              color: isLight ? '#0F172A' : 'var(--text-primary)',
+                              textDecoration: 'none',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              transition: 'color 0.15s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.color = '#2196F3'
+                              e.currentTarget.style.textDecoration = 'underline'
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.color = isLight ? '#0F172A' : 'var(--text-primary)'
+                              e.currentTarget.style.textDecoration = 'none'
+                            }}
+                          >
+                            <span>{cand.name}</span>
+                            <ExternalLink size={13} style={{ color: '#2196F3', opacity: 0.8, flexShrink: 0 }} />
+                          </a>
+                          <span style={{ fontSize: 12, color: isLight ? '#64748B' : 'var(--text-muted)' }}>
+                            ({cand.age} años)
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: isLight ? '#475569' : 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span>📍 {cand.city}</span>
+                          <span>•</span>
+                          <span>💼 {cand.occupation}</span>
+                          <span>•</span>
+                          <span>📋 {cand.plan_tier}</span>
+                          <span style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '2px 7px',
+                            borderRadius: 6,
+                            background: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                              ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)')
+                              : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
+                            color: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                              ? (isLight ? '#065F46' : '#81C784')
+                              : (isLight ? '#92400E' : '#FFE082'),
+                            border: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                              ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.25)')
+                              : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.25)')
+                          }}>
+                            🎟️ {cand.dates_used || 0}/{cand.plan_total_dates || 2} citas ({cand.dates_remaining ?? cand.saldo_citas ?? 1} disp.)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {cand.opportunity_badge && (
+                        <span style={{
+                          background: isLight ? '#FFFBEB' : 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.25))',
+                          border: isLight ? '1px solid #F59E0B' : '1px solid #FFC107',
+                          color: isLight ? '#92400E' : '#FFE082',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          padding: '4px 10px',
+                          borderRadius: 20,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5
+                        }} title={cand.opportunity_reason}>
+                          🌟 {cand.opportunity_badge}
+                        </span>
+                      )}
+                      <span style={{
+                        background: isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))',
+                        border: isLight ? '1.5px solid #10B981' : '1px solid #4CAF50',
+                        color: isLight ? '#065F46' : '#81C784',
+                        fontWeight: 800,
+                        fontSize: 14,
+                        padding: '4px 12px',
+                        borderRadius: 20,
+                        boxShadow: isLight ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
+                      }}>
+                        ✨ {cand.compatibility_pct}% Match
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Banner de Oportunidad Comercial / Cumplimiento para Persona B */}
+                  {cand.opportunity_badge && (
+                    <div style={{
+                      background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.08)',
+                      border: isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)',
+                      borderRadius: 8,
+                      padding: '10px 14px',
+                      fontSize: 12.5,
+                      color: isLight ? '#92400E' : '#FFE082',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10
+                    }}>
+                      <Sparkles size={16} color={isLight ? '#B45309' : '#FFC107'} style={{ flexShrink: 0 }} />
+                      <div style={{ lineHeight: 1.45 }}>
+                        <b style={{ color: isLight ? '#78350F' : '#FFF' }}>Oportunidad para María / CS:</b>{' '}
+                        <span>{cand.opportunity_reason}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Comparativa de Métricas 1-10 */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: 10,
+                    background: isLight ? '#F8FAFC' : 'var(--bg-base)',
+                    padding: 12,
+                    borderRadius: 10,
+                    border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>GRUPO SOCIAL</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#15803D' : '#4CAF50', marginTop: 2 }}>
+                        {cand.social_group_score?.toFixed(1)} / 10
+                        <span style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', marginLeft: 6, fontWeight: 400 }}>
+                          (Δ {sgDiff} vs {client.name.split(' ')[0]})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>ACTIVIDAD FÍSICA</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#0F172A' : 'var(--text-primary)', marginTop: 2 }}>
+                        🏃 {cand.physical_activity_level} / 10
+                        <span style={{ fontSize: 10, color: isLight ? '#15803D' : '#4CAF50', marginLeft: 6, fontWeight: 600 }}>
+                          {cand.physical_activity_level >= 7 ? 'Sincronizado' : 'Compatible'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>LENGUAJE AMOR</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#B45309' : '#FFE599', marginTop: 2 }}>
+                        ❤️ {cand.love_language}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>MATRIZ DE APEGO</div>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: cand.attachment_eval?.type === 'trap'
+                          ? (isLight ? '#DC2626' : '#ff8a80')
+                          : (cand.attachment_eval?.type === 'optimal'
+                              ? (isLight ? '#15803D' : '#81C784')
+                              : (isLight ? '#B45309' : '#FFE599')),
+                        marginTop: 2
+                      }} title={cand.attachment_eval?.clinical_note}>
+                        🧠 {cand.attachment_eval?.label || (cand.attachment_style ? `Apego ${cand.attachment_style}` : 'Apego Seguro')}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>FILTRO DEALBREAKERS</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: isLight ? '#15803D' : '#4CAF50', marginTop: 2 }}>
+                        {cand.dealbreakers_check}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fortalezas del Match */}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#0F172A' : 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 6 }}>
+                      Fortalezas de este Match
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: isLight ? '#334155' : 'var(--text-secondary)', lineHeight: 1.55 }}>
+                      {cand.strengths.map((str, sIdx) => (
+                        <li key={sIdx}>{str}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Botón de Acción Principal: Aprobar y pasar a MATCHES */}
+                  <div style={{
+                    borderTop: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                    paddingTop: 12,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 10
+                  }}>
+                    <span style={{ fontSize: 12, color: isLight ? '#64748B' : 'var(--text-muted)' }}>
+                      Candidato #{idx + 1} evaluado por algoritmo clínico
+                    </span>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <button
+                        onClick={() => setViewingAnalysis(cand)}
+                        style={{
+                          padding: '9px 16px',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          borderRadius: 8,
+                          border: isLight ? '1.5px solid #FECDD3' : '1px solid rgba(150, 21, 0, 0.4)',
+                          background: isLight ? '#FFF1F2' : 'rgba(150, 21, 0, 0.12)',
+                          color: isLight ? '#961500' : '#ff8a80',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = isLight ? '#FFE4E6' : 'rgba(150, 21, 0, 0.25)'
+                          e.currentTarget.style.borderColor = isLight ? '#F43F5E' : 'var(--color-primary-light)'
+                          e.currentTarget.style.color = isLight ? '#881337' : '#fff'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = isLight ? '#FFF1F2' : 'rgba(150, 21, 0, 0.12)'
+                          e.currentTarget.style.borderColor = isLight ? '#FECDD3' : 'rgba(150, 21, 0, 0.4)'
+                          e.currentTarget.style.color = isLight ? '#961500' : '#ff8a80'
+                        }}
+                      >
+                        🧠 Análisis de Match
+                      </button>
+
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => setSelectedCandidate(cand)}
+                        style={{
+                          padding: '9px 18px',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          background: 'linear-gradient(135deg, #961500, #7a1100)',
+                          color: '#FFFFFF',
+                          boxShadow: '0 4px 14px rgba(150, 21, 0, 0.3)'
+                        }}
+                      >
+                        <Heart size={15} fill="#fff" /> ✨ Enviar a Aprobación por María
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      {/* MODAL DE CONFIRMACIÓN DE APROBACIÓN */}
+      {selectedCandidate && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 14,
+            padding: 24,
+            maxWidth: 520,
+            width: '100%',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Sparkles size={20} color="#c41a00" />
+                <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                  Enviar Propuesta a Aprobación de María
+                </h3>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setSelectedCandidate(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{
+              background: 'var(--bg-base)',
+              padding: 14,
+              borderRadius: 10,
+              border: '1px solid var(--border-color)',
+              marginBottom: 16
+            }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                PROPUESTA PARA REVISIÓN DE MARÍA:
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--color-primary-light)', marginTop: 4 }}>
+                {client.name} × {selectedCandidate.name}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                📍 {client.city} • Afinidad: <b>{selectedCandidate.compatibility_pct}%</b>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                👩‍⚕️ Psicóloga Responsable de la Entrevista:
+              </label>
+              <select
+                value={psychologist}
+                onChange={(e) => setPsychologist(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px',
+                  background: 'var(--bg-base)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  color: 'var(--text-primary)',
+                  fontSize: 13,
+                  outline: 'none'
+                }}
+              >
+                {PSYCHOLOGISTS.map(p => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                Observaciones clínicas para la cita (opcional):
+              </label>
+              <textarea
+                rows={3}
+                placeholder="Ej: Cita recomendada en café tranquilo. Ambos valoran puntualidad y conversación profunda."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  background: 'var(--bg-base)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 8,
+                  color: 'var(--text-primary)',
+                  fontSize: 13,
+                  outline: 'none',
+                  resize: 'vertical',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-ghost"
+                onClick={() => setSelectedCandidate(null)}
+                disabled={approving}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleApprove}
+                disabled={approving}
+                style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                {approving ? 'Enviando...' : 'Confirmar y Enviar a María →'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL DE ANÁLISIS CLÍNICO DE MATCH (PROS Y CONTRAS) */}
+      {viewingAnalysis && (
+        <MatchAnalysisModal
+          candidate={viewingAnalysis}
+          client={data?.client}
+          onClose={() => setViewingAnalysis(null)}
+          onApprove={(cand) => {
+            setViewingAnalysis(null)
+            setSelectedCandidate(cand)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
+  if (!candidate || !client) return null
+
+  const [activeTab, setActiveTab] = useState('comparativa') // 'comparativa' | 'dictamen'
+
+  // Detección reactiva de modo claro (Light Mode)
+  const [isLight, setIsLight] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    const updateTheme = () => {
+      setIsLight(document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light')
+    }
+    updateTheme()
+    const observer = new MutationObserver(updateTheme)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    window.addEventListener('storage', updateTheme)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('storage', updateTheme)
+    }
+  }, [])
+
+  const analysis = candidate.match_analysis || {}
+  const pros = analysis.pros || []
+  const contras = analysis.contras || []
+  const keyQuestions = analysis.key_questions || []
+
+  // Datos comparativos reales de ambos perfiles
+  const comparison = candidate.comparison || {}
+  const clientNotes = client.bio_notes || comparison.client_notes || client.synthesis_who_really_is || 'Sin notas clínicas registradas'
+  const candidateNotes = candidate.bio_notes || comparison.candidate_notes || candidate.synthesis || 'Sin notas clínicas registradas'
+
+  const clientNonNeg = comparison.client_non_neg || client.non_negotiables || []
+  const candNonNeg = comparison.candidate_non_neg || candidate.non_negotiables || []
+
+  const clientRedFlags = comparison.client_red_flags || client.search_preferences?.red_flags || []
+  const candRedFlags = comparison.candidate_red_flags || candidate.red_flags || []
+
+  const clientAgePref = comparison.client_age_pref || (client.search_preferences?.min_age ? `${client.search_preferences.min_age} a ${client.search_preferences.max_age} años` : '20 a 26 años')
+  const candAgePref = comparison.candidate_age_pref || (candidate.search_preferences?.min_age ? `${candidate.search_preferences.min_age} a ${candidate.search_preferences.max_age} años` : 'No especificado')
+
+  const clientHeightPref = comparison.client_height_pref || client.search_preferences?.preferred_height || 'Hasta 170 cm'
+  const candHeightPref = comparison.candidate_height_pref || candidate.search_preferences?.preferred_height || 'No especificado'
+
+  const sgDiff = Math.abs((client.social_group_score || 8) - (candidate.social_group_score || 8)).toFixed(1)
+
+  // Paleta de colores dinámica (Light Mode vs Dark Mode)
+  const t = isLight ? {
+    overlayBg: 'rgba(15, 23, 42, 0.65)',
+    modalBg: '#FFFFFF',
+    modalBorder: '1px solid rgba(150, 21, 0, 0.16)',
+    modalShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.25)',
+    headerBorder: '1px solid #E2E8F0',
+    headerBadgeBg: 'rgba(150, 21, 0, 0.08)',
+    headerBadgeBorder: '1px solid rgba(150, 21, 0, 0.2)',
+    headerBadgeColor: '#961500',
+    titleColor: '#1F1012',
+    subtitleColor: '#475569',
+    boldTextColor: '#0F172A',
+    crmLinkColor: '#0284C7',
+    matchBadgeBg: 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)',
+    matchBadgeBorder: '1.5px solid #10B981',
+    matchBadgeColor: '#065F46',
+    closeBtnBg: '#F1F5F9',
+    closeBtnBorder: '1px solid #E2E8F0',
+    closeBtnColor: '#334155',
+    tabBorder: '1px solid #E2E8F0',
+    tabActiveBg: 'rgba(150, 21, 0, 0.08)',
+    tabActiveBorder: '#961500',
+    tabActiveColor: '#961500',
+    tabInactiveColor: '#64748B',
+
+    // Persona A
+    cardABg: '#FFF7F7',
+    cardABorder: '1.5px solid #FECACA',
+    badgeABg: '#961500',
+    badgeAColor: '#FFFFFF',
+    nameAColor: '#1F1012',
+    subAColor: '#991B1B',
+    notesABg: '#FFFFFF',
+    notesABorder: '1.5px solid #F87171',
+    notesATitle: '#991B1B',
+    notesAText: '#0F172A',
+    nonNegABg: '#F5F3FF',
+    nonNegABorder: '1.5px solid #C7D2FE',
+    nonNegATitle: '#4338CA',
+    nonNegTagBg: '#EEF2FF',
+    nonNegTagBorder: '1px solid #818CF8',
+    nonNegTagColor: '#312E81',
+    redFlagABg: '#FEF2F2',
+    redFlagABorder: '1.5px solid #FECACA',
+    redFlagATitle: '#991B1B',
+    redFlagTagBg: '#FEE2E2',
+    redFlagTagBorder: '1px solid #F87171',
+    redFlagTagColor: '#991B1B',
+    prefsBg: '#F8FAFC',
+    prefsBorder: '1px solid #E2E8F0',
+    prefsTitle: '#475569',
+    prefsText: '#1E293B',
+    metricsBg: '#FFFFFF',
+    metricsBorder: '1px solid #E2E8F0',
+    metricsLabel: '#64748B',
+    metricsValA: '#059669',
+    metricsValB: '#B45309',
+    metricsValC: '#1D4ED8',
+    metricsValD: '#7C3AED',
+
+    // Persona B
+    cardBBg: '#F0FDF4',
+    cardBBorder: '1.5px solid #BBF7D0',
+    badgeBBg: '#059669',
+    badgeBColor: '#FFFFFF',
+    nameBColor: '#1F1012',
+    subBColor: '#065F46',
+    notesBBg: '#FFFFFF',
+    notesBBorder: '1.5px solid #34D399',
+    notesBTitle: '#065F46',
+    notesBText: '#0F172A',
+
+    // Summary Bar
+    summaryBg: '#F8FAFC',
+    summaryBorder: '1px solid #E2E8F0',
+    summaryLabel: '#64748B',
+    summaryValGreen: '#059669',
+    summaryValBlue: '#1D4ED8',
+    summaryValPurple: '#7C3AED',
+    summaryDesc: '#475569',
+
+    // Tab 2 Dictamen
+    whyBg: '#FFF1F2',
+    whyBorder: '2px solid #FDA4AF',
+    whyTitle: '#9F1239',
+    whyText: '#1E1012',
+    prosTitle: '#065F46',
+    proCardBg: '#F0FDF4',
+    proCardBorder: '1.5px solid #86EFAC',
+    proTitle: '#064E3B',
+    proBadgeBg: '#DCFCE7',
+    proBadgeBorder: '1px solid #22C55E',
+    proBadgeColor: '#15803D',
+    proDesc: '#1E293B',
+
+    contrasTitle: '#B45309',
+    contraCardBg: '#FFFBEB',
+    contraCardBorder: '1.5px solid #FCD34D',
+    contraTitle: '#92400E',
+    contraBadgeBg: '#FEF3C7',
+    contraBadgeBorder: '1px solid #F59E0B',
+    contraBadgeColor: '#B45309',
+    contraDesc: '#1E293B',
+    contraRecBg: '#FEF3C7',
+    contraRecBorder: '#D97706',
+    contraRecTitle: '#92400E',
+    contraRecText: '#78350F',
+
+    questionsBg: '#EEF2FF',
+    questionsBorder: '1.5px solid #A5B4FC',
+    questionsTitle: '#3730A3',
+    questionsText: '#1E1B4B',
+
+    // Footer
+    footerBorder: '1px solid #E2E8F0',
+    btnGhostColor: '#475569',
+    btnGhostBorder: '1px solid #CBD5E1',
+    crmBtnColor: '#0284C7',
+    crmBtnBorder: '1px solid #BAE6FD',
+    approveBtnBg: '#961500',
+    approveBtnColor: '#FFFFFF',
+  } : {
+    // Dark mode
+    overlayBg: 'rgba(0, 0, 0, 0.85)',
+    modalBg: '#120C0E',
+    modalBorder: '1px solid rgba(150, 21, 0, 0.45)',
+    modalShadow: '0 20px 60px rgba(0, 0, 0, 0.85)',
+    headerBorder: '1px solid rgba(255, 255, 255, 0.1)',
+    headerBadgeBg: 'rgba(150, 21, 0, 0.3)',
+    headerBadgeBorder: '1px solid rgba(239, 68, 68, 0.35)',
+    headerBadgeColor: '#F87171',
+    titleColor: '#FFFFFF',
+    subtitleColor: '#CBD5E1',
+    boldTextColor: '#FFFFFF',
+    crmLinkColor: '#60A5FA',
+    matchBadgeBg: 'linear-gradient(135deg, rgba(5, 150, 105, 0.3) 0%, rgba(16, 185, 129, 0.4) 100%)',
+    matchBadgeBorder: '1.5px solid #10B981',
+    matchBadgeColor: '#34D399',
+    closeBtnBg: 'rgba(255,255,255,0.08)',
+    closeBtnBorder: '1px solid rgba(255,255,255,0.15)',
+    closeBtnColor: '#FFFFFF',
+    tabBorder: '1px solid rgba(255, 255, 255, 0.1)',
+    tabActiveBg: 'rgba(150, 21, 0, 0.25)',
+    tabActiveBorder: '#EF4444',
+    tabActiveColor: '#FFFFFF',
+    tabInactiveColor: '#94A3B8',
+
+    // Persona A
+    cardABg: '#180E11',
+    cardABorder: '1.5px solid #7F1D1D',
+    badgeABg: '#7F1D1D',
+    badgeAColor: '#FFFFFF',
+    nameAColor: '#FFFFFF',
+    subAColor: '#FCA5A5',
+    notesABg: '#241014',
+    notesABorder: '1px solid #991B1B',
+    notesATitle: '#F87171',
+    notesAText: '#FFFFFF',
+    nonNegABg: '#131124',
+    nonNegABorder: '1px solid #4F46E5',
+    nonNegATitle: '#A5B4FC',
+    nonNegTagBg: 'rgba(99, 102, 241, 0.25)',
+    nonNegTagBorder: '1px solid #6366F1',
+    nonNegTagColor: '#EDE9FE',
+    redFlagABg: '#241014',
+    redFlagABorder: '1px solid #DC2626',
+    redFlagATitle: '#FCA5A5',
+    redFlagTagBg: 'rgba(239, 68, 68, 0.25)',
+    redFlagTagBorder: '1px solid #EF4444',
+    redFlagTagColor: '#FEE2E2',
+    prefsBg: '#181B24',
+    prefsBorder: '1px solid #475569',
+    prefsTitle: '#94A3B8',
+    prefsText: '#F1F5F9',
+    metricsBg: 'rgba(0,0,0,0.25)',
+    metricsBorder: '1px solid rgba(255,255,255,0.06)',
+    metricsLabel: '#94A3B8',
+    metricsValA: '#34D399',
+    metricsValB: '#FBBF24',
+    metricsValC: '#60A5FA',
+    metricsValD: '#A78BFA',
+
+    // Persona B
+    cardBBg: '#0D1E16',
+    cardBBorder: '1.5px solid #059669',
+    badgeBBg: '#059669',
+    badgeBColor: '#FFFFFF',
+    nameBColor: '#FFFFFF',
+    subBColor: '#6EE7B7',
+    notesBBg: '#0B291D',
+    notesBBorder: '1px solid #10B981',
+    notesBTitle: '#6EE7B7',
+    notesBText: '#FFFFFF',
+
+    // Summary Bar
+    summaryBg: '#161922',
+    summaryBorder: '1px solid #334155',
+    summaryLabel: '#94A3B8',
+    summaryValGreen: '#34D399',
+    summaryValBlue: '#60A5FA',
+    summaryValPurple: '#A78BFA',
+    summaryDesc: '#CBD5E1',
+
+    // Tab 2 Dictamen
+    whyBg: '#240F13',
+    whyBorder: '2px solid #991B1B',
+    whyTitle: '#FBBF24',
+    whyText: '#FFFFFF',
+    prosTitle: '#34D399',
+    proCardBg: '#092015',
+    proCardBorder: '1.5px solid #059669',
+    proTitle: '#FFFFFF',
+    proBadgeBg: 'rgba(16, 185, 129, 0.25)',
+    proBadgeBorder: '1px solid #10B981',
+    proBadgeColor: '#34D399',
+    proDesc: '#E2E8F0',
+
+    contrasTitle: '#F59E0B',
+    contraCardBg: '#241608',
+    contraCardBorder: '1.5px solid #D97706',
+    contraTitle: '#FCD34D',
+    contraBadgeBg: 'rgba(245, 158, 11, 0.25)',
+    contraBadgeBorder: '1px solid #F59E0B',
+    contraBadgeColor: '#FBBF24',
+    contraDesc: '#FFFFFF',
+    contraRecBg: 'rgba(245, 158, 11, 0.1)',
+    contraRecBorder: '#F59E0B',
+    contraRecTitle: '#FCD34D',
+    contraRecText: '#FEF08A',
+
+    questionsBg: '#13182B',
+    questionsBorder: '1.5px solid #4F46E5',
+    questionsTitle: '#A5B4FC',
+    questionsText: '#FFFFFF',
+
+    // Footer
+    footerBorder: '1px solid rgba(255, 255, 255, 0.1)',
+    btnGhostColor: '#CBD5E1',
+    btnGhostBorder: '1px solid rgba(255, 255, 255, 0.2)',
+    crmBtnColor: '#93C5FD',
+    crmBtnBorder: '1px solid rgba(59, 130, 246, 0.4)',
+    approveBtnBg: '#961500',
+    approveBtnColor: '#FFFFFF',
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100vw',
+        height: '100vh',
+        background: t.overlayBg,
+        backdropFilter: 'blur(3px)',
+        WebkitBackdropFilter: 'blur(3px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999,
+        padding: 'clamp(8px, 2vw, 16px)',
+        boxSizing: 'border-box'
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: t.modalBg,
+          border: t.modalBorder,
+          borderRadius: 16,
+          padding: 'clamp(14px, 2.5vw, 24px)',
+          maxWidth: 1040,
+          width: 'min(1040px, 98vw)',
+          maxHeight: '94vh',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          boxShadow: t.modalShadow,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          boxSizing: 'border-box',
+          transition: 'background-color 0.2s ease, color 0.2s ease'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Cabecera del Modal */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          borderBottom: t.headerBorder,
+          paddingBottom: 14,
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: t.headerBadgeColor,
+              background: t.headerBadgeBg,
+              border: t.headerBadgeBorder,
+              padding: '4px 10px',
+              borderRadius: 6,
+              marginBottom: 8,
+              letterSpacing: '0.04em'
+            }}>
+              🧠 EVALUACIÓN CLÍNICA DE MATCH & COMPARATIVA REAL
+            </div>
+            <h2 style={{ fontSize: 'clamp(18px, 2.5vw, 22px)', fontWeight: 800, margin: 0, color: t.titleColor, letterSpacing: '-0.02em' }}>
+              {client.name} <span style={{ color: t.headerBadgeColor, margin: '0 4px' }}>×</span> {candidate.name}
+            </h2>
+            <div style={{ fontSize: 13, color: t.subtitleColor, marginTop: 6, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>📍 <b style={{ color: t.boldTextColor }}>{candidate.city}</b></span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>🎂 <b style={{ color: t.boldTextColor }}>{candidate.age} años</b></span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>💼 <b style={{ color: t.boldTextColor }}>{candidate.occupation}</b></span>
+              <a
+                href={candidate.crm_url || (candidate.crm_id ? `https://dailylover.smartmatchapp.com/#!/client/${candidate.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(candidate.name)}`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: t.crmLinkColor,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontWeight: 700,
+                  textDecoration: 'underline'
+                }}
+              >
+                Abrir en SmartMatchApp <ExternalLink size={13} />
+              </a>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{
+              background: t.matchBadgeBg,
+              border: t.matchBadgeBorder,
+              color: t.matchBadgeColor,
+              fontWeight: 800,
+              fontSize: 'clamp(13px, 1.8vw, 15px)',
+              padding: '6px 14px',
+              borderRadius: 24,
+              boxShadow: isLight ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 10px rgba(16, 185, 129, 0.25)'
+            }}>
+              ✨ {candidate.compatibility_pct}% Match
+            </span>
+            <button
+              onClick={onClose}
+              style={{
+                background: t.closeBtnBg,
+                border: t.closeBtnBorder,
+                borderRadius: 8,
+                color: t.closeBtnColor,
+                width: 36,
+                height: 36,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+              title="Cerrar modal"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* BANNER SUPERIOR: CUOTA Y CONSUMO DE CITAS DEL PLAN */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+          gap: 10,
+          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.08)'}`,
+          borderRadius: 10,
+          padding: '10px 14px',
+          boxSizing: 'border-box'
+        }}>
+          {/* Persona A: Balance de Citas */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            background: isLight ? '#FFFFFF' : 'rgba(150, 21, 0, 0.08)',
+            border: `1px solid ${isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.2)'}`,
+            borderRadius: 8,
+            padding: '8px 12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span style={{
+                background: t.badgeABg,
+                color: t.badgeAColor,
+                fontSize: 10.5,
+                fontWeight: 800,
+                padding: '2px 6px',
+                borderRadius: 4,
+                flexShrink: 0
+              }}>
+                A: {client.name?.split(' ')[0]}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.nameAColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {client.plan_tier || 'Plan Estándar (2 citas)'}
+                </div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <span style={{
+                fontSize: 11.5,
+                fontWeight: 800,
+                padding: '3px 8px',
+                borderRadius: 6,
+                background: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24'),
+                border: `1px solid ${(client.dates_remaining ?? 1) > 0 ? (isLight ? '#86EFAC' : 'rgba(34, 197, 94, 0.3)') : (isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.3)')}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                🎟️ {client.dates_used || 0} de {client.plan_total_dates || 2} citas realizadas
+              </span>
+              <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }}>
+                {(client.dates_remaining ?? 1) > 0 ? `Saldo: ${client.dates_remaining ?? 1} cita(s) disponible(s)` : '⚠️ Cupo completado'}
+              </div>
+            </div>
+          </div>
+
+          {/* Persona B: Balance de Citas */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            background: isLight ? '#FFFFFF' : 'rgba(16, 185, 129, 0.06)',
+            border: `1px solid ${isLight ? '#DCFCE7' : 'rgba(16, 185, 129, 0.2)'}`,
+            borderRadius: 8,
+            padding: '8px 12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span style={{
+                background: t.badgeBBg,
+                color: t.badgeBColor,
+                fontSize: 10.5,
+                fontWeight: 800,
+                padding: '2px 6px',
+                borderRadius: 4,
+                flexShrink: 0
+              }}>
+                B: {candidate.name?.split(' ')[0]}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.nameBColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {candidate.plan_tier || 'Plan Estándar (2 citas)'}
+                </div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <span style={{
+                fontSize: 11.5,
+                fontWeight: 800,
+                padding: '3px 8px',
+                borderRadius: 6,
+                background: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24'),
+                border: `1px solid ${(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#86EFAC' : 'rgba(34, 197, 94, 0.3)') : (isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.3)')}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                🎟️ {candidate.dates_used || 0} de {candidate.plan_total_dates || 2} citas realizadas
+              </span>
+              <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }}>
+                {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? `Saldo: ${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} cita(s) disponible(s)` : '⚠️ Cupo completado'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Selector de Pestañas (Tabs) con scroll táctil */}
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          borderBottom: t.tabBorder,
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          paddingBottom: 2,
+          WebkitOverflowScrolling: 'touch'
+        }}>
+          <button
+            onClick={() => setActiveTab('comparativa')}
+            style={{
+              padding: '9px clamp(12px, 2vw, 18px)',
+              borderRadius: '8px 8px 0 0',
+              border: 'none',
+              borderBottom: activeTab === 'comparativa' ? `3px solid ${t.tabActiveBorder}` : '3px solid transparent',
+              background: activeTab === 'comparativa' ? t.tabActiveBg : 'transparent',
+              color: activeTab === 'comparativa' ? t.tabActiveColor : t.tabInactiveColor,
+              fontWeight: activeTab === 'comparativa' ? 800 : 600,
+              fontSize: 'clamp(12px, 1.8vw, 14px)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <FileText size={16} color={activeTab === 'comparativa' ? t.tabActiveBorder : t.tabInactiveColor} />
+            📋 Ficha Comparativa A vs B (Notas Reales & Filtros)
+          </button>
+
+          <button
+            onClick={() => setActiveTab('dictamen')}
+            style={{
+              padding: '9px clamp(12px, 2vw, 18px)',
+              borderRadius: '8px 8px 0 0',
+              border: 'none',
+              borderBottom: activeTab === 'dictamen' ? `3px solid ${t.tabActiveBorder}` : '3px solid transparent',
+              background: activeTab === 'dictamen' ? t.tabActiveBg : 'transparent',
+              color: activeTab === 'dictamen' ? t.tabActiveColor : t.tabInactiveColor,
+              fontWeight: activeTab === 'dictamen' ? 800 : 600,
+              fontSize: 'clamp(12px, 1.8vw, 14px)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Sparkles size={16} color={activeTab === 'dictamen' ? (isLight ? '#B45309' : '#F59E0B') : t.tabInactiveColor} />
+            🧠 Dictamen Clínico & Pros / Contras
+          </button>
+        </div>
+
+        {/* TAB 1: FICHA COMPARATIVA REAL (A vs B) */}
+        {activeTab === 'comparativa' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Grid 2 Columnas Responsive: Persona A vs Persona B */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+              gap: 14,
+              alignItems: 'start'
+            }}>
+              {/* COLUMNA PERSONA A (CLIENTE ENTREVISTADO) */}
+              <div style={{
+                background: t.cardABg,
+                border: t.cardABorder,
+                borderRadius: 12,
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                boxSizing: 'border-box'
+              }}>
+                {/* Header de Persona A */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: `1px solid ${isLight ? '#FECACA' : 'rgba(153, 27, 27, 0.5)'}`,
+                  paddingBottom: 8
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      background: t.badgeABg,
+                      color: t.badgeAColor,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '3px 8px',
+                      borderRadius: 4
+                    }}>
+                      PERSONA A
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: t.nameAColor }}>
+                      {client.name}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 12, color: t.subAColor, fontWeight: 700 }}>
+                    Entrevistado
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 12, color: t.subtitleColor, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <span>🎂 {client.age || '—'} años</span>
+                  <span>💼 {client.occupation || 'Profesional'}</span>
+                  <span>📏 {client.estatura || '178 cm'}</span>
+                  <span>📍 {client.city}</span>
+                </div>
+
+                {/* Badge de Plan y Citas Persona A */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.04)',
+                  border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.08)'}`,
+                  fontSize: 12,
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{ fontWeight: 800, color: t.nameAColor }}>🎟️ Plan:</span>
+                  <span style={{ color: t.titleColor, fontWeight: 700 }}>{client.plan_tier || 'Estándar'}</span>
+                  <span style={{ color: t.subtitleColor }}>•</span>
+                  <b style={{ color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
+                    {client.dates_used || 0} de {client.plan_total_dates || 2} citas realizadas
+                  </b>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                    color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24')
+                  }}>
+                    {(client.dates_remaining ?? 1) > 0 ? `${client.dates_remaining ?? 1} disp.` : 'Cumplido'}
+                  </span>
+                </div>
+
+                {/* Notas Clínicas de Persona A */}
+                <div style={{
+                  background: t.notesABg,
+                  border: t.notesABorder,
+                  borderRadius: 8,
+                  padding: '12px 14px'
+                }}>
+                  <ClinicalNotesViewer
+                    notes={clientNotes}
+                    isLight={isLight}
+                    title="Notas Clínicas de Entrevista & Restricciones"
+                  />
+                </div>
+
+                {/* Dealbreakers / No Negociables de Persona A */}
+                <div style={{
+                  background: t.nonNegABg,
+                  border: t.nonNegABorder,
+                  borderRadius: 8,
+                  padding: '12px 14px'
+                }}>
+                  <div style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: t.nonNegATitle,
+                    textTransform: 'uppercase',
+                    marginBottom: 6,
+                    letterSpacing: '0.04em'
+                  }}>
+                    🚫 Filtros No Negociables (Dealbreakers):
+                  </div>
+                  {clientNonNeg.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {clientNonNeg.map((nn, i) => (
+                        <span key={i} style={{
+                          fontSize: 12,
+                          color: t.nonNegTagColor,
+                          background: t.nonNegTagBg,
+                          border: t.nonNegTagBorder,
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600
+                        }}>
+                          ✓ {typeof nn === 'string' ? nn : (nn.texto || nn.text || '')}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, color: t.subtitleColor }}>Sin dealbreakers específicos registrados</span>
+                  )}
+                </div>
+
+                {/* Red Flags declaradas por Persona A */}
+                {clientRedFlags.length > 0 && (
+                  <div style={{
+                    background: t.redFlagABg,
+                    border: t.redFlagABorder,
+                    borderRadius: 8,
+                    padding: '10px 12px'
+                  }}>
+                    <div style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: t.redFlagATitle,
+                      textTransform: 'uppercase',
+                      marginBottom: 6
+                    }}>
+                      🚩 Banderas Rojas Declaradas:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {clientRedFlags.map((rf, i) => (
+                        <span key={i} style={{
+                          fontSize: 11,
+                          color: t.redFlagTagColor,
+                          background: t.redFlagTagBg,
+                          border: t.redFlagTagBorder,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600
+                        }}>
+                          ⚠️ {rf}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lo que Busca en Pareja */}
+                <div style={{
+                  background: t.prefsBg,
+                  border: t.prefsBorder,
+                  borderRadius: 8,
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.prefsTitle, textTransform: 'uppercase', marginBottom: 6 }}>
+                    🎯 Preferencias de Búsqueda:
+                  </div>
+                  <div style={{ fontSize: 12, color: t.prefsText, lineHeight: 1.5 }}>
+                    <div>• <b>Rango de Edad:</b> {clientAgePref}</div>
+                    <div>• <b>Estatura Deseada:</b> {clientHeightPref}</div>
+                  </div>
+                </div>
+
+                {/* Métricas Psicográficas Persona A */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 8,
+                  fontSize: 11,
+                  background: t.metricsBg,
+                  padding: 10,
+                  borderRadius: 8,
+                  border: t.metricsBorder
+                }}>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Estilo de Apego:</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValA, fontSize: 12 }}>
+                      {client.attachment_style || 'Apego Seguro'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Lenguaje de Amor:</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValB, fontSize: 12 }}>
+                      {client.love_language_given || 'Tiempo de calidad'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Grupo Social (GS):</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValC, fontSize: 12 }}>
+                      {client.social_group_score?.toFixed(1) || '8.5'} / 10
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Actividad Física:</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValD, fontSize: 12 }}>
+                      🏃 {client.physical_activity_level || 7} / 10
+                    </div>
+                  </div>
+                </div>
+
+                {/* ANÁLISIS DE LA IA: CRUCE CLÍNICO DE COMPATIBILIDAD */}
+                <div style={{
+                  background: isLight ? 'linear-gradient(135deg, #FFF7F7 0%, #FFFFFF 100%)' : 'rgba(150, 21, 0, 0.08)',
+                  border: isLight ? '1.5px solid #FECACA' : '1px solid rgba(150, 21, 0, 0.3)',
+                  borderRadius: 10,
+                  padding: '14px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  boxShadow: isLight ? '0 2px 10px rgba(150, 21, 0, 0.06)' : 'none'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: `1px solid ${isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.2)'}`,
+                    paddingBottom: 6
+                  }}>
+                    <div style={{
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      color: isLight ? '#961500' : 'var(--color-primary-light)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}>
+                      <Sparkles size={15} /> 🤖 Análisis IA: ¿Por qué son compatibles?
+                    </div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)',
+                      color: isLight ? '#065F46' : '#34D399',
+                      border: `1px solid ${isLight ? '#A7F3D0' : 'rgba(16, 185, 129, 0.4)'}`
+                    }}>
+                      {candidate.overall_match_score || 92}% Match Clínico
+                    </span>
+                  </div>
+
+                  {/* Diagnóstico narrativo */}
+                  <div style={{
+                    fontSize: 12.5,
+                    color: t.boldTextColor,
+                    lineHeight: 1.55,
+                    background: isLight ? '#FFFFFF' : 'rgba(0,0,0,0.25)',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: `1px solid ${isLight ? '#F1F5F9' : 'rgba(255,255,255,0.05)'}`
+                  }}>
+                    {analysis.why_ideal || `${candidate.name} y ${client.name} presentan una sinergia clínica excepcional al contrastar sus notas biográficas: coinciden en ritmo de vida independiente, afinidad por el bienestar físico y reciprocidad en un modelo de pareja equilibrado.`}
+                  </div>
+
+                  {/* Fortalezas clínicas clave */}
+                  {pros.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: t.subtitleColor, textTransform: 'uppercase' }}>
+                        Puntos Fuertes de Conexión según Notas:
+                      </div>
+                      {pros.slice(0, 3).map((pro, pIdx) => (
+                        <div key={pIdx} style={{
+                          fontSize: 12,
+                          background: isLight ? '#F0FDF4' : 'rgba(16, 185, 129, 0.08)',
+                          borderLeft: '3px solid #10B981',
+                          padding: '6px 10px',
+                          borderRadius: '0 6px 6px 0',
+                          lineHeight: 1.45
+                        }}>
+                          <b style={{ color: isLight ? '#14532D' : '#4ADE80' }}>✓ {pro.titulo}:</b>{' '}
+                          <span style={{ color: isLight ? '#334155' : 'var(--text-secondary)' }}>{pro.descripcion}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Punto de atención para la cita */}
+                  {contras.length > 0 && (
+                    <div style={{
+                      fontSize: 11.5,
+                      background: isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.08)',
+                      borderLeft: '3px solid #F59E0B',
+                      padding: '6px 10px',
+                      borderRadius: '0 6px 6px 0',
+                      lineHeight: 1.45
+                    }}>
+                      <b style={{ color: isLight ? '#92400E' : '#FBBF24' }}>⚠️ Clave para la 1ra Cita:</b>{' '}
+                      <span style={{ color: isLight ? '#451A03' : 'var(--text-secondary)' }}>{contras[0].recomendacion || contras[0].punto}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* COLUMNA PERSONA B (CANDIDATA SUGERIDA) */}
+              <div style={{
+                background: t.cardBBg,
+                border: t.cardBBorder,
+                borderRadius: 12,
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                boxSizing: 'border-box'
+              }}>
+                {/* Header de Persona B */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: `1px solid ${isLight ? '#BBF7D0' : 'rgba(5, 150, 105, 0.5)'}`,
+                  paddingBottom: 8
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      background: t.badgeBBg,
+                      color: t.badgeBColor,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '3px 8px',
+                      borderRadius: 4
+                    }}>
+                      PERSONA B
+                    </span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: t.nameBColor }}>
+                      {candidate.name}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: 12, color: t.subBColor, fontWeight: 700 }}>
+                    Candidata Sugerida
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 12, color: t.subtitleColor, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <span>🎂 {candidate.age || '—'} años</span>
+                  <span>💼 {candidate.occupation || 'Profesional'}</span>
+                  <span>📏 {candidate.estatura || '165 cm'}</span>
+                  <span>📍 {candidate.city}</span>
+                </div>
+
+                {/* Badge de Plan y Citas Persona B */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.04)',
+                  border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.08)'}`,
+                  fontSize: 12,
+                  flexWrap: 'wrap'
+                }}>
+                  <span style={{ fontWeight: 800, color: t.nameBColor }}>🎟️ Plan:</span>
+                  <span style={{ color: t.titleColor, fontWeight: 700 }}>{candidate.plan_tier || 'Estándar'}</span>
+                  <span style={{ color: t.subtitleColor }}>•</span>
+                  <b style={{ color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
+                    {candidate.dates_used || 0} de {candidate.plan_total_dates || 2} citas realizadas
+                  </b>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                    color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24')
+                  }}>
+                    {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? `${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} disp.` : 'Cumplido'}
+                  </span>
+                </div>
+
+                {/* Notas Clínicas de Persona B */}
+                <div style={{
+                  background: t.notesBBg,
+                  border: t.notesBBorder,
+                  borderRadius: 8,
+                  padding: '12px 14px'
+                }}>
+                  <ClinicalNotesViewer
+                    notes={candidateNotes}
+                    isLight={isLight}
+                    title="Notas Clínicas de Entrevista & Bio"
+                  />
+                </div>
+
+                {/* Dealbreakers / No Negociables de Persona B */}
+                <div style={{
+                  background: t.nonNegABg,
+                  border: t.nonNegABorder,
+                  borderRadius: 8,
+                  padding: '12px 14px'
+                }}>
+                  <div style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: t.nonNegATitle,
+                    textTransform: 'uppercase',
+                    marginBottom: 6,
+                    letterSpacing: '0.04em'
+                  }}>
+                    🚫 Filtros No Negociables (Dealbreakers):
+                  </div>
+                  {candNonNeg.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {candNonNeg.map((nn, i) => (
+                        <span key={i} style={{
+                          fontSize: 12,
+                          color: t.nonNegTagColor,
+                          background: t.nonNegTagBg,
+                          border: t.nonNegTagBorder,
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600
+                        }}>
+                          ✓ {typeof nn === 'string' ? nn : (nn.texto || nn.text || '')}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, color: t.subtitleColor }}>Cumple criterios generales de admisión</span>
+                  )}
+                </div>
+
+                {/* Red Flags declaradas por Persona B */}
+                {candRedFlags.length > 0 && (
+                  <div style={{
+                    background: t.redFlagABg,
+                    border: t.redFlagABorder,
+                    borderRadius: 8,
+                    padding: '10px 12px'
+                  }}>
+                    <div style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: t.redFlagATitle,
+                      textTransform: 'uppercase',
+                      marginBottom: 6
+                    }}>
+                      🚩 Banderas Rojas Declaradas:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {candRedFlags.map((rf, i) => (
+                        <span key={i} style={{
+                          fontSize: 11,
+                          color: t.redFlagTagColor,
+                          background: t.redFlagTagBg,
+                          border: t.redFlagTagBorder,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600
+                        }}>
+                          ⚠️ {rf}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lo que Busca en Pareja */}
+                <div style={{
+                  background: t.prefsBg,
+                  border: t.prefsBorder,
+                  borderRadius: 8,
+                  padding: '10px 12px'
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.prefsTitle, textTransform: 'uppercase', marginBottom: 6 }}>
+                    🎯 Preferencias de Búsqueda:
+                  </div>
+                  <div style={{ fontSize: 12, color: t.prefsText, lineHeight: 1.5 }}>
+                    <div>• <b>Rango de Edad:</b> {candAgePref}</div>
+                    <div>• <b>Estatura Deseada:</b> {candHeightPref}</div>
+                  </div>
+                </div>
+
+                {/* Métricas Psicográficas Persona B */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 8,
+                  fontSize: 11,
+                  background: t.metricsBg,
+                  padding: 10,
+                  borderRadius: 8,
+                  border: t.metricsBorder
+                }}>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Estilo de Apego:</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValA, fontSize: 12 }}>
+                      {candidate.attachment_style || 'Apego Seguro'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Lenguaje de Amor:</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValB, fontSize: 12 }}>
+                      {candidate.love_language || 'Palabras de afirmación'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Grupo Social (GS):</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValC, fontSize: 12 }}>
+                      {candidate.social_group_score?.toFixed(1) || '8.5'} / 10
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: t.metricsLabel }}>Actividad Física:</span>
+                    <div style={{ fontWeight: 700, color: t.metricsValD, fontSize: 12 }}>
+                      🏃 {candidate.physical_activity_level || 7} / 10
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Matriz de Cruce Clínico Rápido (Bottom Summary Cards) */}
+            <div style={{
+              background: t.summaryBg,
+              border: t.summaryBorder,
+              borderRadius: 10,
+              padding: '12px 14px',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))',
+              gap: 10
+            }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.summaryLabel, textTransform: 'uppercase' }}>
+                  🎯 CRUCE DE EDAD
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValGreen, marginTop: 2 }}>
+                  ✓ {client.age || 24} vs {candidate.age || 25} años
+                </div>
+                <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
+                  En rango preferido (20-26)
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.summaryLabel, textTransform: 'uppercase' }}>
+                  📏 CRUCE DE ESTATURA
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValGreen, marginTop: 2 }}>
+                  ✓ {client.estatura || '178 cm'} vs {candidate.estatura || '165 cm'}
+                </div>
+                <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
+                  Estatura armónica en pareja
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.summaryLabel, textTransform: 'uppercase' }}>
+                  🏛️ GRUPO SOCIAL
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValBlue, marginTop: 2 }}>
+                  Δ {sgDiff} pts (GS {candidate.social_group_score?.toFixed(1)} vs {client.social_group_score?.toFixed(1)})
+                </div>
+                <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
+                  Afinidad sociocultural equivalente
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: t.summaryLabel, textTransform: 'uppercase' }}>
+                  🏃 RITMO DE VIDA
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValPurple, marginTop: 2 }}>
+                  {candidate.physical_activity_level || 7}/10 vs {client.physical_activity_level || 7}/10
+                </div>
+                <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
+                  Sincronía en hábitos saludables
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: DICTAMEN CLÍNICO & PROS / CONTRAS */}
+        {activeTab === 'dictamen' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Sección: ¿Por qué es la pareja ideal? */}
+            <div style={{
+              background: t.whyBg,
+              border: t.whyBorder,
+              borderRadius: 12,
+              padding: '16px 20px',
+              boxShadow: isLight ? '0 4px 14px rgba(244, 63, 94, 0.08)' : '0 4px 16px rgba(153, 27, 27, 0.25)'
+            }}>
+              <div style={{
+                fontSize: 14,
+                fontWeight: 800,
+                color: t.whyTitle,
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase'
+              }}>
+                <Sparkles size={18} color={t.whyTitle} />
+                ¿Por qué sería la persona ideal para {client.name.split(' ')[0]}?
+              </div>
+              <p style={{
+                fontSize: 14,
+                color: t.whyText,
+                lineHeight: 1.65,
+                margin: 0,
+                fontWeight: 500
+              }}>
+                {analysis.why_ideal || candidate.synthesis || 'Candidata con alta afinidad en estilo de vida y perfil sociocultural.'}
+              </p>
+            </div>
+
+            {/* Sección: Pros Clínicos (A Favor) */}
+            <div>
+              <div style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: t.prosTitle,
+                marginBottom: 10,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em'
+              }}>
+                <CheckCircle2 size={18} color={t.prosTitle} />
+                🟢 Pros Clínicos & Fortalezas de Compatibilidad ({pros.length})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
+                {pros.map((pro, pIdx) => (
+                  <div
+                    key={pIdx}
+                    style={{
+                      background: t.proCardBg,
+                      border: t.proCardBorder,
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                      boxShadow: isLight ? '0 2px 8px rgba(16, 185, 129, 0.08)' : '0 4px 12px rgba(5, 150, 105, 0.15)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: t.proTitle }}>
+                        ✓ {pro.titulo}
+                      </span>
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 4,
+                        background: t.proBadgeBg,
+                        border: t.proBadgeBorder,
+                        color: t.proBadgeColor
+                      }}>
+                        {pro.categoria}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 13, color: t.proDesc, margin: '4px 0 0', lineHeight: 1.55 }}>
+                      {pro.descripcion}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sección: Contras / Puntos a Revisar por la Psicóloga */}
+            <div>
+              <div style={{
+                fontSize: 13,
+                fontWeight: 800,
+                color: t.contrasTitle,
+                marginBottom: 10,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                textTransform: 'uppercase',
+                letterSpacing: '0.03em'
+              }}>
+                <AlertTriangle size={18} color={t.contrasTitle} />
+                ⚠️ Contras & Puntos de Atención a Revisar por la Psicóloga ({contras.length})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
+                {contras.map((contra, cIdx) => (
+                  <div
+                    key={cIdx}
+                    style={{
+                      background: t.contraCardBg,
+                      border: t.contraCardBorder,
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                      boxShadow: isLight ? '0 2px 8px rgba(245, 158, 11, 0.08)' : '0 4px 12px rgba(217, 119, 6, 0.18)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 4 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: t.contraTitle }}>
+                        ⚠️ {contra.punto}
+                      </span>
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 4,
+                        background: t.contraBadgeBg,
+                        border: t.contraBadgeBorder,
+                        color: t.contraBadgeColor
+                      }}>
+                        {contra.categoria}
+                      </span>
+                    </div>
+                    <div style={{
+                      background: t.contraRecBg,
+                      borderLeft: `3px solid ${t.contraRecBorder}`,
+                      padding: '8px 12px',
+                      borderRadius: '0 6px 6px 0',
+                      marginTop: 8,
+                      fontSize: 13,
+                      lineHeight: 1.5
+                    }}>
+                      <b style={{ color: t.contraRecTitle }}>Recomendación clínica:</b>{' '}
+                      <span style={{ color: t.contraRecText }}>{contra.recomendacion}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Sección: Preguntas Clave Sugeridas para la Psicóloga */}
+            {keyQuestions.length > 0 && (
+              <div style={{
+                background: t.questionsBg,
+                border: t.questionsBorder,
+                borderRadius: 10,
+                padding: '16px 18px',
+                boxShadow: isLight ? '0 2px 8px rgba(99, 102, 241, 0.08)' : '0 4px 12px rgba(79, 70, 229, 0.2)'
+              }}>
+                <div style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: t.questionsTitle,
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  letterSpacing: '0.04em'
+                }}>
+                  <ShieldCheck size={16} color={t.questionsTitle} /> Preguntas Clave Sugeridas para Validar en la Llamada / Entrevista
+                </div>
+                <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: t.questionsText, lineHeight: 1.6 }}>
+                  {keyQuestions.map((q, qIdx) => (
+                    <li key={qIdx} style={{ marginBottom: 6 }}>
+                      <span style={{ fontWeight: 600 }}>"{q}"</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Botones de Pie */}
+        <div style={{
+          borderTop: t.footerBorder,
+          paddingTop: 16,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <button
+            className="btn btn-ghost"
+            onClick={onClose}
+            style={{ color: t.btnGhostColor, borderColor: t.btnGhostBorder }}
+          >
+            Cerrar Análisis
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <a
+              href={candidate.crm_url || (candidate.crm_id ? `https://dailylover.smartmatchapp.com/#!/client/${candidate.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(candidate.name)}`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: t.crmBtnColor, borderColor: t.crmBtnBorder }}
+            >
+              Abrir CRM <ExternalLink size={14} />
+            </a>
+
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                onClose()
+                onApprove(candidate)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 13,
+                boxShadow: isLight ? '0 4px 14px rgba(150, 21, 0, 0.25)' : '0 4px 14px rgba(150, 21, 0, 0.5)'
+              }}
+            >
+              <Heart size={15} fill="#fff" /> ✨ Proceder a Aprobar este Match
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  )
+}

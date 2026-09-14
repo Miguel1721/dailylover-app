@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Search, Eye, ChevronLeft, ChevronRight, History, User, Heart, MapPin, Briefcase, GraduationCap, Sparkles, BookOpen, UserCheck, Phone, Cake, Ruler, Shield, Smile, Filter } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import ClinicalNotesViewer from '../components/ClinicalNotesViewer'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
@@ -440,20 +441,12 @@ function ClienteModal({ cliente, token, onClose }) {
             </div>
 
 
-            {p.bio_notes ? (
-              <div style={{ background: 'var(--bg-base)', padding: 16, borderRadius: 12, border: '1px solid rgba(150,21,0,0.2)', marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  <BookOpen size={15} /> EVALUACIÓN & NOTAS CLÍNICAS DE LA PSICÓLOGA:
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-                  "{p.bio_notes}"
-                </div>
-              </div>
-            ) : (
-              <div style={{ background: 'var(--bg-base)', padding: 14, borderRadius: 10, border: '1px solid var(--border-color)', marginBottom: 16, fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <BookOpen size={16} /> Este cliente no registra notas clínicas extensas en la ficha.
-              </div>
-            )}
+            <div style={{ marginBottom: 16 }}>
+              <ClinicalNotesViewer
+                notes={p.bio_notes}
+                title="Evaluación & Notas Clínicas de la Psicóloga"
+              />
+            </div>
 
             {lifestyleBadges && (
               <div style={{ marginBottom: 16 }}>
