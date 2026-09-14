@@ -140,9 +140,44 @@ async def startup_seed():
                     synthesis_best_match_type VARCHAR(250),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_by VARCHAR(100)
-                );
-                CREATE INDEX IF NOT EXISTS idx_client_ext_user_id ON client_extended_profile(user_id);
-                CREATE INDEX IF NOT EXISTS idx_client_ext_crm_id ON client_extended_profile(crm_id);
+                )
+            """))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS idx_client_ext_user_id ON client_extended_profile(user_id)"))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS idx_client_ext_crm_id ON client_extended_profile(crm_id)"))
+
+            # Ensure tables for Agosto 27 AI Matchmaking Pipeline
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS august27_ai_match_proposals (
+                    id SERIAL PRIMARY KEY,
+                    sheet_row INT,
+                    client_name TEXT,
+                    client_user_id INT,
+                    client_crm_id TEXT,
+                    dates_pend TEXT,
+                    responsable TEXT,
+                    candidate_name TEXT,
+                    candidate_user_id INT,
+                    candidate_crm_id TEXT,
+                    punctuation TEXT,
+                    status TEXT,
+                    points_to_consider TEXT,
+                    strong_points TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS idx_aug27_client_uid ON august27_ai_match_proposals(client_user_id)"))
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS august27_unmatched_clients (
+                    id SERIAL PRIMARY KEY,
+                    sheet_row INT,
+                    sheet_name TEXT,
+                    clean_name TEXT,
+                    dates_pend TEXT,
+                    responsable TEXT,
+                    nota TEXT,
+                    reason TEXT DEFAULT 'No encontrado en base de datos',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
             """))
             await db.commit()
 
