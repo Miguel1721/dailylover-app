@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field("", validation_alias="ANTHROPIC_API_KEY")
     openai_api_key: str = Field("", validation_alias="OPENAI_API_KEY")
     gemini_api_key: str = Field("", validation_alias="GEMINI_API_KEY")
+    nvidia_api_key: str = Field("", validation_alias="NVIDIA_API_KEY")
     anthropic_base_url: str = Field("", validation_alias="ANTHROPIC_BASE_URL")
     demo_mode: bool = Field(False, validation_alias="DEMO_MODE")
     jwt_secret_key: str = Field("default_insecure_jwt_secret", validation_alias="JWT_SECRET_KEY")

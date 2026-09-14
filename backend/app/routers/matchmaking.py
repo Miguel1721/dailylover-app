@@ -13,6 +13,9 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import os
 import re
+import json
+import asyncio
+import httpx
 from urllib.parse import quote
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -3452,12 +3455,21 @@ def generate_clinical_match_analysis(client: dict, cand: dict) -> dict:
 
     # 1. Fortalezas Genuinas (Solo sobre datos reales existentes)
     if cand_sg is not None and client_sg is not None:
-        sg_diff = abs(client_sg - cand_sg)
-        pros.append({
-            "categoria": "Afinidad Sociocultural",
-            "titulo": f"Compatibilidad de Grupo Social (GS {cand_sg:.1f} vs {client_sg:.1f})",
-            "descripcion": f"Diferencia de apenas {sg_diff:.1f} puntos en la escala socioeconómica y cultural."
-        })
+        try:
+            c_f = float(cand_sg)
+            cl_f = float(client_sg)
+            sg_diff = abs(cl_f - c_f)
+            pros.append({
+                "categoria": "Afinidad Sociocultural",
+                "titulo": f"Compatibilidad de Grupo Social (GS {c_f:.1f} vs {cl_f:.1f})",
+                "descripcion": f"Diferencia de apenas {sg_diff:.1f} puntos en la escala socioeconómica y cultural."
+            })
+        except (ValueError, TypeError):
+            pros.append({
+                "categoria": "Afinidad Sociocultural",
+                "titulo": "Compatibilidad de Grupo Social evaluada",
+                "descripcion": "Perfiles con afinidad socioeconómica y cultural registrada."
+            })
 
     if cand_occ:
         pros.append({
@@ -3757,6 +3769,91 @@ def evaluate_bidirectional_match(
         "height_alerts": height_alerts,
         "height_pros": height_pros
     }
+
+
+async def evaluate_candidate_quick_notes_ai(
+    client_info: dict,
+    cand_info: dict,
+    api_key: str,
+    client_http: httpx.AsyncClient
+) -> Optional[dict]:
+    """
+    Evalúa semánticamente la compatibilidad de pareja mediante la API de NVIDIA
+    leyendo el texto completo de las notas clínicas (bio_notes / Quick Notes).
+    """
+    c_notes = client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or ""
+    cand_notes = cand_info.get("bio_notes") or cand_info.get("synthesis") or ""
+
+    prompt = f"""Eres la Matchmaker Principal y Directora Clínica de Daily Lover (agencia boutique de matchmaking humano en Colombia).
+Evalúa la compatibilidad de pareja entre estos dos clientes a partir del texto real de sus notas clínicas completas de entrevista.
+
+--- PERFIL CLIENTE A ({client_info.get('gender', 'Hombre').upper()}) ---
+Nombre: {client_info.get('name')}
+Edad: {client_info.get('age') or 'No especificada'}
+Ciudad: {client_info.get('city') or 'Bogotá'}
+Notas clínicas / Quick Notes de la psicóloga:
+{c_notes}
+
+--- PERFIL CANDIDATA B ({cand_info.get('gender', 'Mujer').upper()}) ---
+Nombre: {cand_info.get('name')}
+Edad: {cand_info.get('age') or 'No especificada'}
+Ciudad: {cand_info.get('city') or 'Bogotá'}
+Ocupación: {cand_info.get('occupation')}
+Notas clínicas / Quick Notes de la psicóloga:
+{cand_notes if cand_notes.strip() else 'Perfil verificado en CRM sin notas extensas redactadas.'}
+
+--- INSTRUCCIONES ---
+1. Revisa detenidamente el estilo de vida, hábitos, planes a futuro, postura frente a hijos, dinámica de pareja y 'no negociables' o 'red flags' explícitas de cada uno.
+2. Si detectas un deal-breaker claro o incompatibilidad radical de valores, orientación o metas (ej. uno busca hijos y el otro no, uno busca casual y el otro matrimonio, diferencias de orientación sexual o estilo de vida), el score debe ser bajo (menor a 40) y debes listar los deal-breakers.
+3. Si los perfiles se complementan y no hay deal-breakers, asigna un score alto acorde a la afinidad (70 a 95).
+
+Responde ÚNICAMENTE en formato JSON con la siguiente estructura exacta:
+{{
+  "ai_score": <número entero de 0 a 100>,
+  "veredicto": "<RECOMENDADO / VIABLE CON RESERVAS / NO RECOMENDADO>",
+  "analisis": "<2 a 3 líneas explicando concisamente por qué sí o por qué no>",
+  "deal_breakers": ["<lista de deal-breakers detectados o array vacío>"],
+  "puntos_fuertes": ["<1 a 3 puntos fuertes de conexión>"]
+}}"""
+
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    models_to_try = [
+        "mistralai/mistral-nemotron",
+        "nvidia/nemotron-3-super-120b-a12b"
+    ]
+
+    for model in models_to_try:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.2,
+            "max_tokens": 450
+        }
+        try:
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=18.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = data["choices"][0]["message"]["content"].strip()
+                if "```json" in raw:
+                    raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
+                elif "```" in raw:
+                    raw = raw.split("```", 1)[1].split("```", 1)[0].strip()
+                elif "{" in raw and "}" in raw:
+                    raw = raw[raw.find("{"):raw.rfind("}") + 1].strip()
+                res_json = json.loads(raw)
+                res_json["model_used"] = model
+                return res_json
+            elif resp.status_code in (404, 410):
+                continue
+        except Exception:
+            continue
+
+    return None
 
 
 @router.get("/interview-results/{crm_id_or_user_id}")
@@ -4128,11 +4225,28 @@ async def get_interview_results(
         # Fortalezas clínicas genuinas (solo sobre datos reales existentes)
         strengths = []
         if cand_sg is not None and client_sg is not None:
-            strengths.append(f"Afinidad sociocultural evaluada (Grupo Social {cand_sg:.1f} vs {client_sg:.1f})")
+            try:
+                strengths.append(f"Afinidad sociocultural evaluada (Grupo Social {float(cand_sg):.1f} vs {float(client_sg):.1f})")
+            except (ValueError, TypeError):
+                strengths.append("Afinidad sociocultural evaluada")
+        elif cand_sg is not None:
+            try:
+                strengths.append(f"Grupo Social registrado ({float(cand_sg):.1f})")
+            except (ValueError, TypeError):
+                pass
+        elif client_sg is not None:
+            try:
+                strengths.append(f"Grupo Social cliente ({float(client_sg):.1f})")
+            except (ValueError, TypeError):
+                pass
+
         if has_real_attachment and attachment_eval["type"] in ("optimal", "complementary"):
             strengths.append(f"Apego {attachment_eval['label']}: {attachment_eval['clinical_note']}")
         if cand_act is not None and client_act is not None:
-            strengths.append(f"Estilo de vida compatible ({'Alto' if cand_act >= 7 else 'Moderado'} ritmo físico: {cand_act}/10)")
+            try:
+                strengths.append(f"Estilo de vida compatible ({'Alto' if float(cand_act) >= 7 else 'Moderado'} ritmo físico: {cand_act}/10)")
+            except (ValueError, TypeError):
+                strengths.append("Estilo de vida compatible")
         if cand_eval_age and bidi["is_bidirectionally_compatible"]:
             strengths.append("Filtro bidireccional mutuo validado (compatibilidad etaria armónica)")
         if r.city:
@@ -4227,16 +4341,123 @@ async def get_interview_results(
         if len(suggested_matches) >= 30:
             break
 
-    # Ordenar por mayor afinidad clínica (manejando None gracefully) y seleccionar las mejores 8
+    # ── 7. FILTRO PREVIO ESTRUCTURAL & CONEXIÓN CON IA DE QUICK NOTES (NVIDIA) ──
+    # 1. Filtro previo estructural: ordenar candidatos preliminarmente por reglas base
     suggested_matches.sort(
         key=lambda x: (
             x["compatibility_pct"] is not None,
             x["compatibility_pct"] or 0,
+            x["dealbreakers_clean"],
             x["datos_completos"],
             x["user_id"]
         ),
         reverse=True
     )
+
+    # Inicializar campos estructurales e IA por defecto para todas las candidatas
+    for cand in suggested_matches:
+        cand["structural_score"] = cand.get("compatibility_pct") or 70
+        cand["ai_score"] = None
+        cand["ai_veredicto"] = "SIN EVALUACIÓN IA"
+        cand["ai_analisis"] = None
+        cand["ai_deal_breakers"] = []
+        cand["ai_puntos_fuertes"] = []
+
+    settings = get_settings()
+    nvidia_key = (settings.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or "").strip()
+    if not nvidia_key:
+        for env_path in ["/app/.env", ".env", "../.env"]:
+            if os.path.exists(env_path):
+                try:
+                    with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for l in f:
+                            if l.strip().startswith("NVIDIA_API_KEY="):
+                                nvidia_key = l.strip().split("=", 1)[1].strip().strip("\"'")
+                                break
+                except Exception:
+                    pass
+            if nvidia_key:
+                break
+
+    if nvidia_key and len(nvidia_key) > 10 and suggested_matches:
+        # Filtrar antes de llamar a la IA: evaluamos las 3 mejores candidatas del filtro estructural
+        candidates_to_evaluate = suggested_matches[:3]
+        remaining_candidates = suggested_matches[3:]
+
+        try:
+            async with httpx.AsyncClient() as http_client:
+                for cand in candidates_to_evaluate:
+                    struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
+                    try:
+                        res = await evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, http_client)
+                    except Exception:
+                        res = None
+
+                    if isinstance(res, dict) and res.get("ai_score") is not None:
+                        ai_score = res.get("ai_score", 70)
+                        verdict = res.get("veredicto", "VIABLE")
+                        dbs = res.get("deal_breakers") or []
+                        pts = res.get("puntos_fuertes") or []
+                        analisis = res.get("analisis") or ""
+
+                        cand["ai_score"] = ai_score
+                        cand["ai_veredicto"] = verdict
+                        cand["ai_analisis"] = analisis
+                        cand["ai_deal_breakers"] = dbs
+                        cand["ai_puntos_fuertes"] = pts
+                        cand["ai_model"] = res.get("model_used")
+
+                        # Combinación Ponderada Documentada:
+                        if len(dbs) > 0 or verdict == "NO RECOMENDADO":
+                            # Penalización estricta si la IA detecta deal-breakers en las notas clínicas
+                            cand["compatibility_pct"] = min(ai_score, 35)
+                        elif verdict == "VIABLE CON RESERVAS":
+                            # Ponderación 40% estructural + 60% IA semántica
+                            cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
+                        else:
+                            # RECOMENDADO: Ponderación 45% estructural + 55% IA semántica
+                            cand["compatibility_pct"] = int(round(0.45 * struct_score + 0.55 * ai_score))
+
+                        if dbs:
+                            cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"
+                            cand["dealbreakers_clean"] = False
+                        if pts:
+                            cand["strengths"] = pts + [s for s in cand.get("strengths", []) if s not in pts][:3]
+                        if analisis:
+                            cand["synthesis"] = f"[Análisis IA Quick Notes]: {analisis} — " + (cand.get("synthesis") or "")
+                    else:
+                        cand["ai_score"] = None
+                        cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL"
+                        cand["ai_analisis"] = None
+                        cand["ai_deal_breakers"] = []
+                        cand["ai_puntos_fuertes"] = []
+
+            # Ordenar las candidatas evaluadas con IA por su score final
+            evaluated_sorted = sorted(
+                candidates_to_evaluate,
+                key=lambda x: (
+                    x["compatibility_pct"] is not None,
+                    x["compatibility_pct"] or 0,
+                    x["dealbreakers_clean"],
+                    x["datos_completos"],
+                    x["user_id"]
+                ),
+                reverse=True
+            )
+            # Para las restantes no evaluadas con IA, marcar veredicto
+            for c in remaining_candidates:
+                c["ai_veredicto"] = "SCORE ESTRUCTURAL"
+
+            suggested_matches = evaluated_sorted + remaining_candidates
+        except Exception as e:
+            import logging
+            logging.error(f"Error evaluando candidatos con IA: {e}", exc_info=True)
+    else:
+        for cand in suggested_matches:
+            cand["structural_score"] = cand.get("compatibility_pct")
+            cand["ai_score"] = None
+            cand["ai_veredicto"] = "SIN IA CONFIGURADA"
+
     top_matches = suggested_matches[:8]
 
     return {

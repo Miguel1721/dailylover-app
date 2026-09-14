@@ -668,6 +668,19 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                           ? `✨ ${cand.compatibility_pct}% Match ${!cand.datos_completos ? '(Parcial)' : ''}`
                           : '✨ Sin score (Pendiente)'}
                       </span>
+                      {cand.ai_score != null && (
+                        <span style={{
+                          background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
+                          border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
+                          color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
+                          fontWeight: 700,
+                          fontSize: 12,
+                          padding: '3px 10px',
+                          borderRadius: 16
+                        }} title={cand.ai_analisis || ''}>
+                          🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
+                        </span>
+                      )}
                     </div>
                   </div>
 
