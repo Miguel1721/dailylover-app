@@ -7,7 +7,7 @@ Implements:
 4. Calendario de Citas (WhatsApp message generator templates, feedback & reschedule)
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -3781,39 +3781,32 @@ async def evaluate_candidate_quick_notes_ai(
     Evalúa semánticamente la compatibilidad de pareja mediante la API de NVIDIA
     leyendo el texto completo de las notas clínicas (bio_notes / Quick Notes).
     """
-    c_notes = client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or ""
-    cand_notes = cand_info.get("bio_notes") or cand_info.get("synthesis") or ""
+    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:1200]
+    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:1200]
 
-    prompt = f"""Eres la Matchmaker Principal y Directora Clínica de Daily Lover (agencia boutique de matchmaking humano en Colombia).
-Evalúa la compatibilidad de pareja entre estos dos clientes a partir del texto real de sus notas clínicas completas de entrevista.
+    prompt = f"""Eres la Directora de Matchmaking y psicóloga de Daily Lover.
+Evalúa la compatibilidad de pareja entre estos dos clientes a partir de sus notas de entrevista.
 
---- PERFIL CLIENTE A ({client_info.get('gender', 'Hombre').upper()}) ---
-Nombre: {client_info.get('name')}
-Edad: {client_info.get('age') or 'No especificada'}
-Ciudad: {client_info.get('city') or 'Bogotá'}
-Notas clínicas / Quick Notes de la psicóloga:
+--- CLIENTE A ({client_info.get('gender', 'Hombre').upper()}) ---
+Nombre: {client_info.get('name')} | Edad: {client_info.get('age') or 'No especificada'} | Ciudad: {client_info.get('city') or 'Bogotá'}
+Notas clínicas:
 {c_notes}
 
---- PERFIL CANDIDATA B ({cand_info.get('gender', 'Mujer').upper()}) ---
-Nombre: {cand_info.get('name')}
-Edad: {cand_info.get('age') or 'No especificada'}
-Ciudad: {cand_info.get('city') or 'Bogotá'}
-Ocupación: {cand_info.get('occupation')}
-Notas clínicas / Quick Notes de la psicóloga:
-{cand_notes if cand_notes.strip() else 'Perfil verificado en CRM sin notas extensas redactadas.'}
+--- CANDIDATA B ({cand_info.get('gender', 'Mujer').upper()}) ---
+Nombre: {cand_info.get('name')} | Edad: {cand_info.get('age') or 'No especificada'} | Ciudad: {cand_info.get('city') or 'Bogotá'} | Ocupación: {cand_info.get('occupation')}
+Notas clínicas:
+{cand_notes if cand_notes.strip() else 'Perfil verificado en CRM.'}
 
---- INSTRUCCIONES ---
-1. Revisa detenidamente el estilo de vida, hábitos, planes a futuro, postura frente a hijos, dinámica de pareja y 'no negociables' o 'red flags' explícitas de cada uno.
-2. Si detectas un deal-breaker claro o incompatibilidad radical de valores, orientación o metas (ej. uno busca hijos y el otro no, uno busca casual y el otro matrimonio, diferencias de orientación sexual o estilo de vida), el score debe ser bajo (menor a 40) y debes listar los deal-breakers.
-3. Si los perfiles se complementan y no hay deal-breakers, asigna un score alto acorde a la afinidad (70 a 95).
-
-Responde ÚNICAMENTE en formato JSON con la siguiente estructura exacta:
+--- REGLAS DE EVALUACIÓN ---
+1. Si detectas deal-breakers claros (postura frente a hijos, roles tradicionales de proveedor, religión no negociable), asigna ai_score entre 20 y 35, y veredicto "NO RECOMENDADO".
+2. Si los perfiles son compatibles en valores y dinámica de vida, asigna ai_score entre 75 y 95, y veredicto "RECOMENDADO".
+3. Responde ÚNICAMENTE en JSON con:
 {{
-  "ai_score": <número entero de 0 a 100>,
+  "ai_score": <número entero 0-100>,
   "veredicto": "<RECOMENDADO / VIABLE CON RESERVAS / NO RECOMENDADO>",
-  "analisis": "<2 a 3 líneas explicando concisamente por qué sí o por qué no>",
-  "deal_breakers": ["<lista de deal-breakers detectados o array vacío>"],
-  "puntos_fuertes": ["<1 a 3 puntos fuertes de conexión>"]
+  "analisis": "<explicación de 2 líneas>",
+  "deal_breakers": ["<lista o vacía>"],
+  "puntos_fuertes": ["<1 a 3 puntos>"]
 }}"""
 
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -3823,34 +3816,57 @@ Responde ÚNICAMENTE en formato JSON con la siguiente estructura exacta:
     }
 
     models_to_try = [
-        "mistralai/mistral-nemotron",
+        "meta/llama-3.2-11b-vision-instruct",
         "nvidia/nemotron-3-super-120b-a12b"
     ]
+
+    sys_msg = (
+        "You are a specialized JSON-only assistant for matchmaking clinical evaluation. "
+        "Return ONLY a single raw valid JSON object. Do not include conversational remarks, intro, outro, or markdown."
+    )
 
     for model in models_to_try:
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-            "max_tokens": 450
+            "messages": [
+                {"role": "system", "content": sys_msg},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 500
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=18.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=12.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
-                if "```json" in raw:
-                    raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
-                elif "```" in raw:
-                    raw = raw.split("```", 1)[1].split("```", 1)[0].strip()
-                elif "{" in raw and "}" in raw:
-                    raw = raw[raw.find("{"):raw.rfind("}") + 1].strip()
-                res_json = json.loads(raw)
-                res_json["model_used"] = model
-                return res_json
+                res_json = None
+                m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw)
+                if m:
+                    try:
+                        res_json = json.loads(m.group(1), strict=False)
+                    except Exception:
+                        pass
+                if not res_json:
+                    f_idx = raw.find("{")
+                    l_idx = raw.rfind("}")
+                    if f_idx != -1 and l_idx > f_idx:
+                        try:
+                            res_json = json.loads(raw[f_idx:l_idx + 1], strict=False)
+                        except Exception:
+                            pass
+                if res_json and isinstance(res_json, dict):
+                    res_json["model_used"] = model
+                    print(f"[AI MATCH OK] cand={cand_info.get('name')} model={model} score={res_json.get('ai_score')} verdict={res_json.get('veredicto')}")
+                    return res_json
+                else:
+                    print(f"[AI MATCH PARSE FAIL] model={model} raw={raw[:150]}")
             elif resp.status_code in (404, 410):
                 continue
-        except Exception:
+            else:
+                print(f"[AI MATCH HTTP ERR] model={model} status={resp.status_code} text={resp.text[:100]}")
+        except Exception as e:
+            print(f"[AI MATCH EXCEPTION] model={model} error={e}")
             continue
 
     return None
@@ -3859,6 +3875,7 @@ Responde ÚNICAMENTE en formato JSON con la siguiente estructura exacta:
 @router.get("/interview-results/{crm_id_or_user_id}")
 async def get_interview_results(
     crm_id_or_user_id: str,
+    response: Response,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -3866,6 +3883,10 @@ async def get_interview_results(
     con análisis de compatibilidad (Social Group, deporte, apego, dealbreakers y filtro
     bidireccional A <-> B) para que la psicóloga los revise antes de aprobarlos a MATCHES.
     """
+    # Forzar no-cache estricto para evitar respuestas obsoletas en navegadores/proxies
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     user_row = await resolve_client_user(crm_id_or_user_id, db)
     if not user_row:
         raise HTTPException(status_code=404, detail=f"Cliente '{crm_id_or_user_id}' no encontrado.")
@@ -4386,12 +4407,16 @@ async def get_interview_results(
 
         try:
             async with httpx.AsyncClient() as http_client:
-                for cand in candidates_to_evaluate:
-                    struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
-                    try:
-                        res = await evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, http_client)
-                    except Exception:
+                eval_tasks = [
+                    evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, http_client)
+                    for cand in candidates_to_evaluate
+                ]
+                results = await asyncio.gather(*eval_tasks, return_exceptions=True)
+
+                for cand, res in zip(candidates_to_evaluate, results):
+                    if isinstance(res, Exception):
                         res = None
+                    struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
 
                     if isinstance(res, dict) and res.get("ai_score") is not None:
                         ai_score = res.get("ai_score", 70)
