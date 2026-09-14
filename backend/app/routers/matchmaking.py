@@ -3423,356 +3423,180 @@ class ApproveInterviewMatchRequest(BaseModel):
 
 def generate_clinical_match_analysis(client: dict, cand: dict) -> dict:
     """
-    Genera un desglose clínico detallado para las psicólogas:
-    - why_ideal: Narrativa diagnóstica de por qué es la persona ideal.
-    - pros: Lista de fortalezas clínicas categorizadas.
-    - contras: Puntos de atención clínica y recomendaciones para la entrevista.
+    Genera un desglose clínico detallado para las psicólogas basado estrictamente en datos reales:
+    - why_ideal: Narrativa diagnóstica y transparente (indica claramente si faltan datos clínicos).
+    - pros: Fortalezas clínicas genuinas observadas sobre campos reales existentes.
+    - contras: Puntos de atención y datos pendientes de recolección en entrevista.
     - key_questions: Preguntas sugeridas para indagar en la llamada/sesión previa.
     """
     client_name = client.get("name", "Cliente").split()[0]
-    client_occ = client.get("occupation", "Profesional")
-    client_sg = float(client.get("social_group_score") or 8.0)
-    client_act = int(client.get("physical_activity_level") or 7)
-    
+    client_occ = client.get("occupation") if client.get("occupation") and client.get("occupation") != "No especificado" else None
+    client_sg = float(client["social_group_score"]) if client.get("social_group_score") is not None else None
+    client_act = int(client["physical_activity_level"]) if client.get("physical_activity_level") is not None else None
+
     cand_name = cand.get("name", "Candidata")
     cand_first = cand_name.split()[0]
-    cand_occ = cand.get("occupation", "Profesional")
-    cand_sg = float(cand.get("social_group_score") or 8.0)
-    cand_act = int(cand.get("physical_activity_level") or 7)
-    cand_age = cand.get("age") or 28
-    cand_lang = cand.get("love_language") or "Tiempo de calidad"
-    
-    cand_lower = cand_name.lower()
-    
-    # 1. Perfiles analizados a profundidad (candidatas frecuentes de Samuel)
-    if "estefania campos" in cand_lower:
-        return {
-            "why_ideal": f"Estefanía representa el balance ideal entre estabilidad corporativa y dinamismo que {client_name} busca. Con su trayectoria en seguridad bancaria y finanzas, comprende la alta exigencia ejecutiva y la disciplina de metas claras, compartiendo un estilo de vida de gran enfoque pero con vocación de construir una pareja estable y cálida.",
-            "pros": [
-                {
-                    "categoria": "Afinidad Sociocultural",
-                    "titulo": f"Simetría Sociocultural de Élite (GS {cand_sg:.1f} vs {client_sg:.1f})",
-                    "descripcion": f"Ambos se mueven en círculos socioeconómicos y profesionales equivalentes en Bogotá, compartiendo códigos sociales, gustos gastronómicos y visión de crecimiento personal."
-                },
-                {
-                    "categoria": "Estilo de Vida",
-                    "titulo": "Sincronía Física y Deportiva Exacta (7/10)",
-                    "descripcion": "Ritmo de actividad física sincronizado: ideal para compartir planes al aire libre, entrenamiento de fin de semana y escapadas de descanso."
-                },
-                {
-                    "categoria": "Momento Vital",
-                    "titulo": f"Rango Etario Óptimo ({cand_age} años)",
-                    "descripcion": "Etapa de vida propicia para consolidar un noviazgo maduro con proyección a largo plazo y sin ambigüedades."
-                },
-                {
-                    "categoria": "Dealbreakers",
-                    "titulo": "Filtros No Negociables 100% Cumplidos",
-                    "descripcion": "No fumadora, profesional corporativa con metas definidas y hábito regular de actividad física."
-                }
-            ],
-            "contras": [
-                {
-                    "categoria": "Disponibilidad Laboral",
-                    "punto": "Exigencia horaria del sector financiero / bancario",
-                    "recomendacion": "Validar en la sesión previa su flexibilidad de agenda entre semana para garantizar el 'Tiempo de Calidad' prioritario para el entrevistado."
-                },
-                {
-                    "categoria": "Lenguaje Afectivo",
-                    "punto": "Calibración afectiva (Actos de Servicio vs Palabras de Afirmación)",
-                    "recomendacion": "Ella expresa cariño principalmente a través de hechos y apoyo práctico, mientras él necesita validación verbal; sugerir a la psicóloga orientarlos sobre este matiz."
-                }
-            ],
-            "key_questions": [
-                "¿Cómo balanceas las semanas de alta carga corporativa con los espacios dedicados a cultivar una relación de pareja?",
-                "¿Qué planes deportivos o al aire libre son tus favoritos para desconectar durante el fin de semana?"
-            ]
-        }
-    
-    elif "maria helena mayorga" in cand_lower:
-        return {
-            "why_ideal": f"María Helena aporta una madurez emocional consolidada y una perspectiva creativa del mundo que complementa la estructura analítica de {client_name}. Al desempeñarse en publicidad y comunicación, existe una sintonía intelectual inmediata con el trasfondo de marketing e ingeniería, facilitando una conversación chispeante y profunda.",
-            "pros": [
-                {
-                    "categoria": "Química Intelectual",
-                    "titulo": "Complementariedad Profesional (Publicidad & Marketing)",
-                    "descripcion": "Universo conversacional compartido: sintonía en temas de estrategia de marcas, comunicación, negocios y visión del mercado."
-                },
-                {
-                    "categoria": "Madurez Emocional",
-                    "titulo": "Independencia y Claridad de Objetivos",
-                    "descripcion": f"Con {cand_age} años, tiene su identidad y proyecto personal resueltos, evitando juegos o dependencias emocionales."
-                },
-                {
-                    "categoria": "Estilo de Vida",
-                    "titulo": "Alto Nivel de Actividad Física (8/10)",
-                    "descripcion": "Gran dinamismo y vitalidad; comparte el entusiasmo por mantenerse activa y disfrutar planes en movimiento."
-                }
-            ],
-            "contras": [
-                {
-                    "categoria": "Expectativas de Familia",
-                    "punto": f"Diferencia etaria ({cand_age} años) y visión a futuro",
-                    "recomendacion": "Confirmar si las expectativas familiares y de paternidad/maternidad a mediano plazo están alineadas o si ambos prefieren una relación sin hijos."
-                },
-                {
-                    "categoria": "Dinámica de Carácter",
-                    "punto": "Dos personalidades de fuerte iniciativa profesional",
-                    "recomendacion": "Propiciar que en la primera cita el tono sea de disfrute y complicidad relajada, evitando derivar en debates excesivamente técnicos."
-                }
-            ],
-            "key_questions": [
-                "¿Cuál es tu postura actual respecto a proyectos de familia o planes a futuro en pareja?",
-                "¿Cómo te gusta que fluya la iniciativa y la toma de decisiones en los primeros encuentros?"
-            ]
-        }
+    cand_occ = cand.get("occupation") if cand.get("occupation") and cand.get("occupation") != "No especificado" else None
+    cand_sg = float(cand["social_group_score"]) if cand.get("social_group_score") is not None else None
+    cand_act = int(cand["physical_activity_level"]) if cand.get("physical_activity_level") is not None else None
+    cand_age = cand.get("age")
 
-    elif "maria juliana pulido" in cand_lower:
-        return {
-            "why_ideal": f"María Juliana encarna un perfil de altísimo nivel que refleja con exactitud el liderazgo, la ambición y los estándares de {client_name}. Siendo socia y directora de talento humano, integra una mente jurídica rigurosa con una sensibilidad interpersonal sobresaliente, garantizando una conexión basada en admiración recíproca.",
-            "pros": [
-                {
-                    "categoria": "Afinidad Sociocultural",
-                    "titulo": f"Paridad Sociocultural Absoluta (GS {cand_sg:.1f} = {client_sg:.1f})",
-                    "descripcion": "Puntaje idéntico en escala socioeconómica y cultural: mismos hábitos de socialización, gustos y sofisticación en Bogotá."
-                },
-                {
-                    "categoria": "Dinámica Afectiva",
-                    "titulo": "Sintonía Directa en Lenguaje del Amor",
-                    "descripcion": "Coincidencia en 'Palabras de Afirmación': capacidad mutua para brindarse reconocimiento, validación y soporte empático constante."
-                },
-                {
-                    "categoria": "Liderazgo & Empatía",
-                    "titulo": "Dirección de RRHH con Alta Inteligencia Emocional",
-                    "descripcion": "Destrezas de comunicación asertiva y escucha activa que facilitan la resolución de acuerdos sin fricciones."
-                }
-            ],
-            "contras": [
-                {
-                    "categoria": "Carga Directiva",
-                    "punto": "Responsabilidades de socia empresarial",
-                    "recomendacion": "Evaluar si sus compromisos corporativos le permiten viajar y tener escapadas espontáneas con la frecuencia que el entrevistado desea."
-                },
-                {
-                    "categoria": "Intensidad Física",
-                    "punto": "Nivel de exigencia física muy alto (9/10)",
-                    "recomendacion": "Confirmar que su intensidad deportiva sea un punto de inspiración y no un factor de sobre-exigencia para el ritmo de la pareja."
-                }
-            ],
-            "key_questions": [
-                "¿Cómo logras desconectar de la responsabilidad directiva para estar 100% presente en una cita?",
-                "¿Qué tipo de actividades compartidas te permiten recargar energía junto a una pareja?"
-            ]
-        }
-
-    elif "ivonne" in cand_lower:
-        return {
-            "why_ideal": f"Ivonne ofrece sobriedad, formalidad y un marco ético sólido que conversa naturalmente con la disciplina estructurada de {client_name}. Como abogada corporativa, posee un pensamiento ordenado, honesto y directo, valorando la estabilidad por encima de la superficialidad.",
-            "pros": [
-                {
-                    "categoria": "Estructura Intelectual",
-                    "titulo": "Perfil Analítico y Razonamiento Lógico",
-                    "descripcion": "Enfoque estructurado que brinda confianza y acuerdos de relación muy claros desde el inicio."
-                },
-                {
-                    "categoria": "Estilo de Vida",
-                    "titulo": "Disciplina Física Activa (8/10)",
-                    "descripcion": "Hábitos deportivos estables que encajan perfectamente con el deseo de actividades al aire libre."
-                },
-                {
-                    "categoria": "Dealbreakers",
-                    "titulo": "Criterios No Negociables Satisfechos",
-                    "descripcion": "No fumadora, profesional con trayectoria definida y búsqueda de pareja duradera."
-                }
-            ],
-            "contras": [
-                {
-                    "categoria": "Afinidad de Entorno",
-                    "punto": f"Delta de Grupo Social ({cand_sg:.1f} vs {client_sg:.1f})",
-                    "recomendacion": "Explorar en la entrevista si sus lugares habituales de esparcimiento, círculos de amigos y estilo de salidas son compatibles."
-                },
-                {
-                    "categoria": "Validación de CRM",
-                    "punto": "Ficha de CRM en proceso de actualización",
-                    "recomendacion": "Corroborar detalles biográficos y fotos recientes en el CRM antes de presentar el perfil formal para asegurar plena transparencia."
-                }
-            ],
-            "key_questions": [
-                "¿Cuáles son tus planes y lugares predilectos para salir en un fin de semana en Bogotá?",
-                "¿Qué ritmo de comunicación esperas entre citas cuando estás conociendo a alguien formalmente?"
-            ]
-        }
-
-    elif "ana sofia" in cand_lower or "ana sofía" in cand_lower or "bernal bejarano" in cand_lower or "ana sofia bernal" in cand_lower:
-        return {
-            "why_ideal": f"Ana Sofía (25 años, Tech & Comercial) y {client_name} presentan una sinergia clínica excepcional al cruzar sus notas biográficas. Ambos pertenecen al sector tecnológico y valoran un estilo de vida disciplinado pero equilibrado (pilates, tenis y gym). Clínicamente, el deseo explícito de Ana Sofía de no asumir el rol de 'hombre de la relación' y soltar el control encaja con naturalidad con el liderazgo masculino, madurez y apego seguro de {client_name}. Además, coinciden en el amor por los perros, prioridad por el 'Tiempo de Calidad' y una visión de independencia donde cada uno conserva su propio mundo.",
-            "pros": [
-                {
-                    "categoria": "Dinámica de Pareja & Polaridad",
-                    "titulo": "Sinergia en Roles y Liderazgo Afectivo",
-                    "descripcion": "Ella busca soltar el control y dejar de asumir la carga logística; el perfil decidido, estructurado y proactivo de Samuel responde exactamente a esta expectativa."
-                },
-                {
-                    "categoria": "Estilo de Vida & Tech",
-                    "titulo": "Afinidad Profesional y Hábitos Saludables",
-                    "descripcion": "Ambos comparten el ecosistema corporativo tech y la disciplina del entrenamiento (pilates, tenis, gym) combinada con escapadas de descanso el fin de semana."
-                },
-                {
-                    "categoria": "Lenguaje del Amor",
-                    "titulo": "Prioridad Compartida: Tiempo de Calidad",
-                    "descripcion": "Coincidencia en valorar conversaciones profundas, buen sentido del humor y espacios compartidos sin demandas asfixiantes ni expectativas de absorción total."
-                },
-                {
-                    "categoria": "Filtros Clave Cumplidos",
-                    "titulo": "Criterios No Negociables 100% Satisfechos",
-                    "descripcion": f"Rango de edad ideal (24 a 30 años), estatura acorde (+1.75 m), soltera sin hijos, amor innegociable por los perros y sin barreras de distancia en Bogotá."
-                }
-            ],
-            "contras": [
-                {
-                    "categoria": "Primer Encuentro",
-                    "punto": "Tendencia a mostrarse reservada o fría al inicio",
-                    "recomendacion": "Ana Sofía menciona que al principio puede parecer distante; se sugiere a la psicóloga orientar a Samuel a romper el hielo con humor relajado, anécdotas de viajes o mascotas para generar confianza rápida."
-                },
-                {
-                    "categoria": "Logística de la Cita",
-                    "punto": "Iniciativa en el plan y transporte",
-                    "recomendacion": "En su relación anterior le desgastaba asumir la logística o tener que manejar; es clave que Samuel elija el restaurante y tome la iniciativa en la logística de la cita."
-                }
-            ],
-            "key_questions": [
-                "¿Qué tipo de planes o ambientes te permiten desconectar del ritmo tech y sentirte realmente cómoda en una primera cita?",
-                "¿Cómo te gusta que un hombre demuestre iniciativa y cuidado cuando están empezando a conocerse?"
-            ]
-        }
-    
-    # 2. Análisis clínico dinámico contextualizado con las notas reales de ambos perfiles
-    sg_diff = abs(client_sg - cand_sg)
-    act_diff = abs(client_act - cand_act)
     cand_bio = (cand.get("bio_notes") or "").strip()
     client_notes = (client.get("bio_notes") or client.get("synthesis_who_really_is") or "").strip()
     cand_bio_lower = cand_bio.lower()
     client_notes_lower = client_notes.lower()
 
-    dynamic_pros = []
-    dynamic_contras = []
-    dynamic_questions = []
+    pros = []
+    contras = []
+    questions = []
 
-    # A. Pro de Afinidad Sociocultural
-    dynamic_pros.append({
-        "categoria": "Afinidad Sociocultural",
-        "titulo": f"Compatibilidad de Grupo Social (GS {cand_sg:.1f} vs {client_sg:.1f})",
-        "descripcion": f"Diferencia de apenas {sg_diff:.1f} puntos: comparten estándares de estilo de vida, nivel profesional y aspiraciones equivalentes en Bogotá."
-    })
+    # 1. Fortalezas Genuinas (Solo sobre datos reales existentes)
+    if cand_sg is not None and client_sg is not None:
+        sg_diff = abs(client_sg - cand_sg)
+        pros.append({
+            "categoria": "Afinidad Sociocultural",
+            "titulo": f"Compatibilidad de Grupo Social (GS {cand_sg:.1f} vs {client_sg:.1f})",
+            "descripcion": f"Diferencia de apenas {sg_diff:.1f} puntos en la escala socioeconómica y cultural."
+        })
 
-    # B. Pro de Ocupación / Carrera
-    dynamic_pros.append({
-        "categoria": "Perfil Profesional",
-        "titulo": f"Profesión de Impacto ({cand_occ})",
-        "descripcion": f"Trayectoria sólida con metas claras, generando diálogo armónico y enriquecedor con el perfil de {client_name} ({client_occ})."
-    })
+    if cand_occ:
+        pros.append({
+            "categoria": "Perfil Profesional",
+            "titulo": f"Profesión: {cand_occ}",
+            "descripcion": f"Trayectoria en {cand_occ}, generando diálogo armónico con el perfil de {client_name}." if client_occ else f"Trayectoria profesional en {cand_occ} verificada en CRM."
+        })
 
-    # C. Detección de Afinidades Específicas en Notas Reales
-    if any(k in cand_bio_lower for k in ["gym", "entrena", "action black", "caminata", "parque", "deporte"]):
-        dynamic_pros.append({
+    if cand_act is not None and client_act is not None:
+        act_diff = abs(client_act - cand_act)
+        pros.append({
             "categoria": "Estilo de Vida Activo",
-            "titulo": f"Sincronía Deportiva Comprobada ({cand_act}/10 vs {client_act}/10)",
-            "descripcion": f"Ambos priorizan el movimiento y los hábitos saludables, permitiendo planes de desconexión física y fines de semana activos."
+            "titulo": f"Ritmo Deportivo y Vital ({cand_act}/10 vs {client_act}/10)",
+            "descripcion": f"Ambos perfiles presentan hábitos de actividad física sincronizados (Δ {act_diff} pts)."
         })
-    else:
-        dynamic_pros.append({
-            "categoria": "Estilo de Vida",
-            "titulo": f"Sincronía de Vitalidad ({cand_act}/10 vs {client_act}/10)",
-            "descripcion": "Ritmo de actividad física sincronizado para compartir planes al aire libre y descanso."
-        })
-
-    # D. Cruce de Restricciones Alimentarias / Salidas
-    if ("italiana" in cand_bio_lower or "italiano" in cand_bio_lower) and ("italiano" in client_notes_lower or "leche" in client_notes_lower):
-        dynamic_pros.append({
-            "categoria": "Compatibilidad Gastronómica",
-            "titulo": "Coincidencia en Preferencias Culinarias",
-            "descripcion": f"Notas de ambos perfiles coinciden en priorizar opciones fuera de comida tradicional italiana, respetando las restricciones alimentarias de {client_name}."
-        })
-    else:
-        dynamic_pros.append({
-            "categoria": "Dealbreakers",
-            "titulo": "Filtros No Negociables Superados",
-            "descripcion": "Cumple los criterios esenciales acordados durante la entrevista clínica de admisión."
+    elif cand_bio_lower and any(k in cand_bio_lower for k in ["gym", "entrena", "action black", "caminata", "parque", "deporte", "pilates"]):
+        pros.append({
+            "categoria": "Estilo de Vida Activo",
+            "titulo": "Hábitos Saludables Mencionados en Notas",
+            "descripcion": "Las notas del CRM registran interés y regularidad en hábitos deportivos y bienestar físico."
         })
 
-    # E. Contras / Puntos de Atención Clínicos Reales
-    # E1. Hijos en notas de la candidata
+    if cand.get("dealbreakers_clean"):
+        pros.append({
+            "categoria": "Filtros Mutuos",
+            "titulo": "Filtro Bidireccional Aprobado",
+            "descripcion": "Ambos perfiles cumplen los parámetros mutuos de edad, ubicación y dealbreakers acordados."
+        })
+
+    att_eval = cand.get("attachment_eval")
+    if att_eval and att_eval.get("type") in ("optimal", "complementary"):
+        pros.append({
+            "categoria": "Dinámica Afectiva",
+            "titulo": f"Apego {att_eval.get('label')}",
+            "descripcion": att_eval.get("clinical_note") or "Combinación vincular favorable para construir pareja."
+        })
+
+    if cand.get("city"):
+        pros.append({
+            "categoria": "Ubicación Geográfica",
+            "titulo": f"Residencia en {cand['city']}",
+            "descripcion": "Sin fricciones de distancia geográfica para coordinar encuentros y construir cotidianidad."
+        })
+
+    if not pros:
+        pros.append({
+            "categoria": "Afinidad Básica",
+            "titulo": "Candidato/a Activo/a en Base de Datos",
+            "descripcion": "Perfil verificado en CRM y sin historial de conflicto o cancelaciones."
+        })
+
+    # 2. Contras / Puntos de Atención y Datos Faltantes
+    missing = cand.get("campos_faltantes") or []
+    if missing:
+        contras.append({
+            "categoria": "Información Incompleta",
+            "punto": f"Campos clínicos pendientes ({', '.join(missing)})",
+            "recomendacion": "La psicóloga debe completar los formularios clínicos durante la sesión diagnóstica para calibrar el score definitivo."
+        })
+
+    if cand_age is None:
+        contras.append({
+            "categoria": "Datos Demográficos",
+            "punto": "Edad no registrada en ficha",
+            "recomendacion": "Confirmar la fecha de nacimiento o edad exacta antes de presentar el perfil."
+        })
+        questions.append("¿Cuál es tu rango de edad preferido y qué momento vital estás buscando actualmente?")
+
+    if att_eval and att_eval.get("type") in ("warning", "trap"):
+        contras.append({
+            "categoria": "Matriz de Apego",
+            "punto": f"Atención vincular: {att_eval.get('label')}",
+            "recomendacion": att_eval.get("clinical_note") or "Acompañar a la pareja para modular posibles disparadores emocionales."
+        })
+
     if "hijo" in cand_bio_lower and "hijo" not in client_notes_lower:
         m_hijo = re.search(r'tiene\s+(?:un\s+)?hijo[^\.\n,]*', cand_bio_lower)
         hijo_txt = m_hijo.group(0).strip().capitalize() if m_hijo else "Tiene hijos de una relación previa"
-        dynamic_contras.append({
+        contras.append({
             "categoria": "Proyecto Familiar",
             "punto": f"Historial familiar ({hijo_txt})",
-            "recomendacion": f"Confirmar si {client_name} se siente cómodo saliendo con una persona que ya tiene hijos o si prefiere construir un proyecto familiar desde cero."
+            "recomendacion": f"Confirmar si {client_name} está abierto/a a salir con una persona con hijos."
         })
-        dynamic_questions.append("¿Cómo integras tu tiempo familiar con tus espacios dedicados a conocer a una nueva pareja?")
+        questions.append("¿Cómo integras tu tiempo familiar con tus espacios dedicados a conocer a una nueva pareja?")
 
-    # E2. Sectores / Logística urbana en Bogotá
     for sect in ["kennedy", "molinos", "suba", "cedritos", "20 de julio", "santa bárbara", "chapinero"]:
         if sect in cand_bio_lower:
-            dynamic_contras.append({
+            contras.append({
                 "categoria": "Logística Urbana",
                 "punto": f"Zona de residencia ({sect.title()} en Bogotá)",
-                "recomendacion": f"Sugerir un punto intermedio estratégico (Zona G, Parque de la 93 o Chapinero) para garantizar comodidad en los desplazamientos del primer encuentro."
+                "recomendacion": "Sugerir un punto intermedio estratégico para facilitar el traslado en la primera cita."
             })
             break
 
-    # E3. Desviación en Rango de Edad
-    client_min_a = client.get("search_preferences", {}).get("min_age", 20)
-    client_max_a = client.get("search_preferences", {}).get("max_age", 26)
-    if cand_age and (cand_age < client_min_a or cand_age > client_max_a):
-        delta_age = cand_age - client_max_a if cand_age > client_max_a else client_min_a - cand_age
-        dynamic_contras.append({
-            "categoria": "Rango de Edad",
-            "punto": f"Edad de la candidata ({cand_age} años vs rango preferido de {client_name}: {client_min_a}-{client_max_a} años)",
-            "recomendacion": f"La psicóloga debe validar si {client_name} está abierto a una candidata de {cand_age} años con madurez profesional equivalente."
+    if not contras:
+        contras.append({
+            "categoria": "Disponibilidad",
+            "punto": "Sincronización de agendas profesionales",
+            "recomendacion": "Validar disponibilidad real entre semana para asegurar el tiempo de calidad requerido."
         })
-        dynamic_questions.append(f"¿Qué rango de edad consideras ideal en un hombre para que exista afinidad en metas y proyectos de vida?")
 
-    # Contras de respaldo si no hay específicos
-    if len(dynamic_contras) < 2:
-        if sg_diff > 0.6:
-            dynamic_contras.append({
-                "categoria": "Entorno Social",
-                "punto": f"Diferencia moderada en Grupo Social (Δ {sg_diff:.1f})",
-                "recomendacion": "Indagar si sus expectativas de sitios de esparcimiento y viajes se complementan naturalmente."
-            })
-        else:
-            dynamic_contras.append({
-                "categoria": "Disponibilidad",
-                "punto": "Sincronización de agendas profesionales",
-                "recomendacion": "Validar disponibilidad real entre semana para asegurar el tiempo de calidad requerido."
-            })
-
-    if not dynamic_questions:
-        dynamic_questions = [
+    if not questions:
+        questions = [
             f"¿Cómo visualizas tu equilibrio entre tus proyectos profesionales y el tiempo compartido en pareja?",
             f"¿Qué valores o acuerdos son indispensables para ti desde las primeras citas?"
         ]
 
+    # 3. Narrativa why_ideal
+    cand_desc_parts = [cand_first]
+    if cand_age:
+        cand_desc_parts.append(f"{cand_age} años")
+    if cand_occ:
+        cand_desc_parts.append(cand_occ)
+    cand_header = ", ".join(cand_desc_parts)
+
     why_notes_phrase = ""
     if cand_bio:
-        # Rescatar primera frase relevante de la bio
         first_bio_line = cand_bio.split('.')[0].replace('👤', '').replace('📋', '').strip()
         if len(first_bio_line) > 15:
-            why_notes_phrase = f" Las notas clínicas destacan: '{first_bio_line[:120]}'."
+            why_notes_phrase = f" En sus notas de CRM destaca: '{first_bio_line[:120]}'."
 
-    why_text = (
-        f"{cand_first} ({cand_age} años, {cand_occ}) representa una propuesta de alto valor clínico para {client_name}. "
-        f"Su perfil profesional aporta solvencia y equilibrio de metas, mientras que su nivel socioeconómico ({cand_sg:.1f}/10) "
-        f"y ritmo de vida ({cand_act}/10) sincronizan armónicamente con la entrevista diagnóstica realizada por la psicóloga."
-        f"{why_notes_phrase}"
-    )
+    if cand.get("datos_completos"):
+        why_text = (
+            f"{cand_header} presenta una excelente compatibilidad clínica con {client_name}. "
+            f"Su afinidad sociocultural (GS {cand_sg:.1f}/10) y estilo de vida ({cand_act}/10) "
+            f"sincronizan armónicamente con la entrevista diagnóstica realizada.{why_notes_phrase}"
+        )
+    else:
+        why_text = (
+            f"{cand_header} presenta compatibilidad preliminar con {client_name} en filtros básicos (ciudad, dealbreakers). "
+            f"Sin embargo, su evaluación es parcial debido a datos pendientes ({', '.join(missing) if missing else 'formulario clínico'}). "
+            f"Se recomienda que la psicóloga valide estos aspectos antes de formalizar la propuesta.{why_notes_phrase}"
+        )
 
     return {
         "why_ideal": why_text,
-        "pros": dynamic_pros,
-        "contras": dynamic_contras,
-        "key_questions": dynamic_questions
+        "pros": pros,
+        "contras": contras,
+        "key_questions": questions
     }
 
 
@@ -3970,12 +3794,19 @@ async def get_interview_results(
 
     client_city = (prof_row.city if prof_row and prof_row.city else "Bogotá").strip()
     client_gender = (prof_row.gender if prof_row and prof_row.gender else "Hombre").strip().lower()
-    client_sg = float(ext_data.get("social_group_score") or 8.0)
-    client_act = int(ext_data.get("physical_activity_level") or 7)
+    client_sg = float(ext_data["social_group_score"]) if ext_data.get("social_group_score") is not None else None
+    client_act = int(ext_data["physical_activity_level"]) if ext_data.get("physical_activity_level") is not None else None
     client_non_neg = ext_data.get("non_negotiables") or []
     client_prefs = (prof_row.search_preferences if prof_row and prof_row.search_preferences else {}) or {}
     client_height_cm = parse_cm_height(prof_row.estatura) if prof_row and prof_row.estatura else None
-    client_age = int(prof_row.age) if prof_row and prof_row.age else (int(client_prefs.get("min_age", 24)) if client_prefs else 25)
+    client_age = int(prof_row.age) if prof_row and prof_row.age else None
+    if not client_age and prof_row and prof_row.bio_notes:
+        m_c_age = re.search(r'(\d{2})\s*a[ñn]os', prof_row.bio_notes, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', prof_row.bio_notes, re.IGNORECASE)
+        if m_c_age:
+            try:
+                client_age = int(m_c_age.group(1))
+            except Exception:
+                pass
 
     clean_client_non_neg = []
     for item in client_non_neg:
@@ -4013,9 +3844,9 @@ async def get_interview_results(
         "client_code": user_row.client_code or f"DL-{user_row.id}",
         "city": client_city,
         "gender": prof_row.gender if prof_row else "No especificado",
-        "age": prof_row.age if prof_row and prof_row.age else None,
+        "age": client_age,
         "estatura": prof_row.estatura if prof_row and prof_row.estatura else "",
-        "occupation": prof_row.occupation if prof_row and prof_row.occupation else "Profesional",
+        "occupation": prof_row.occupation.strip() if prof_row and prof_row.occupation and prof_row.occupation.strip() else "No especificado",
         "plan_tier": client_plan,
         "plan_total_dates": client_slots_total,
         "dates_used": client_used,
@@ -4024,11 +3855,11 @@ async def get_interview_results(
         "responsable": prof_row.responsable if prof_row and prof_row.responsable else (ext_data.get("updated_by") or "Psicóloga"),
         "attachment_style": parse_attachment_style(prof_row.apego if prof_row else None),
         "social_group_score": client_sg,
-        "education_level": ext_data.get("education_level", 7),
+        "education_level": ext_data.get("education_level"),
         "physical_activity_level": client_act,
-        "social_energy_level": ext_data.get("social_energy_level", 7),
-        "love_language_given": ext_data.get("love_language_given", "Tiempo de calidad"),
-        "love_language_received": ext_data.get("love_language_received", "Palabras de afirmación"),
+        "social_energy_level": ext_data.get("social_energy_level"),
+        "love_language_given": ext_data.get("love_language_given") or "No especificado",
+        "love_language_received": ext_data.get("love_language_received") or "No especificado",
         "non_negotiables": clean_client_non_neg,
         "synthesis_who_really_is": ext_data.get("synthesis_who_really_is", ""),
         "synthesis_first_date_behavior": ext_data.get("synthesis_first_date_behavior", ""),
@@ -4116,57 +3947,105 @@ async def get_interview_results(
             continue
 
         # ── 3. MATRIZ DE APEGO PSICOLÓGICO ──
-        cand_attachment = parse_attachment_style(getattr(r, "apego", None))
-        attachment_eval = evaluate_attachment_compatibility(client_attachment, cand_attachment)
-
-        cand_sg = float(r.social_group_score) if r.social_group_score is not None else round(7.6 + ((r.id % 5) * 0.3), 1)
-        cand_act = int(r.physical_activity_level) if r.physical_activity_level is not None else (7 + (r.id % 3))
-
-        sample_occupations = ["Diseñadora & Brand Strategist", "Ingeniera Industrial / Operaciones", "Arquitecta & Gestión Urbana", "Consultora Financiera", "Directora de Comunicaciones"]
-        cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else sample_occupations[r.id % len(sample_occupations)]
-
-        sample_languages = ["Tiempo de calidad", "Palabras de afirmación", "Actos de servicio", "Toque físico"]
-        cand_lang = r.love_language_given or sample_languages[r.id % len(sample_languages)]
-
-        # ── 4. CÁLCULO CLÍNICO REAL Y DIFERENCIADO (Escala Calibrada 58% - 92%) ──
-        # 4.1. Afinidad Sociocultural / Social Group (20 pts máx)
-        sg_delta = abs(client_sg - cand_sg)
-        sg_pts = max(6.0, 20.0 - (sg_delta * 14.0))
-
-        # 4.2. Afinidad de Apego Psicológico (18 pts máx)
-        if attachment_eval["type"] == "optimal":
-            attachment_pts = 18.0  # Seguro + Seguro
-        elif attachment_eval["type"] == "complementary":
-            attachment_pts = 13.0  # Seguro + Ansioso o Seguro + Evitativo
-        elif attachment_eval["type"] == "warning":
-            attachment_pts = 7.0   # Ansioso + Ansioso o Evitativo + Evitativo
-        elif attachment_eval["type"] == "trap":
-            attachment_pts = 2.0   # Trampa Ansioso-Evitativa
+        raw_apego = getattr(r, "apego", None)
+        cand_attachment = parse_attachment_style(raw_apego)
+        has_real_attachment = bool(raw_apego and cand_attachment and cand_attachment != "No especificado")
+        client_has_attachment = bool(client_attachment and client_attachment != "No especificado")
+        if has_real_attachment and client_has_attachment:
+            attachment_eval = evaluate_attachment_compatibility(client_attachment, cand_attachment)
         else:
-            attachment_pts = 12.0
+            cand_attachment = cand_attachment if has_real_attachment else "No especificado"
+            attachment_eval = {
+                "type": "unspecified",
+                "label": "Pendiente de evaluación",
+                "clinical_note": "Apego aún no evaluado en entrevista clínica.",
+                "badge_color": "#E8EAED",
+                "badge_text": "Apego: Pendiente"
+            }
 
-        # 4.3. Ritmo de Vida y Actividad Física (15 pts máx)
-        act_delta = abs(client_act - cand_act)
-        act_pts = max(4.0, 15.0 - (act_delta * 3.5))
+        # ── 4. DATOS CLÍNICOS REALES (SIN NINGÚN DATO INVENTADO) ──
+        # 1. cand_sg (social group)
+        cand_sg = float(r.social_group_score) if r.social_group_score is not None else None
+        # 2. cand_act (actividad física)
+        cand_act = int(r.physical_activity_level) if r.physical_activity_level is not None else None
+        # 3. cand_occ (ocupación)
+        cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
+        # 4. cand_lang (lenguaje del amor)
+        cand_lang_raw = r.love_language_given or getattr(r, "love_language", None)
+        cand_lang = str(cand_lang_raw).strip() if cand_lang_raw and str(cand_lang_raw).strip() else "No especificado"
+        # 5. cand_eval_age (edad para evaluación)
+        cand_bio_clean = (r.bio_notes or "").strip()
+        cand_eval_age = int(r.age) if r.age else None
+        if not cand_eval_age and cand_bio_clean:
+            m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
+            if m_age:
+                try:
+                    cand_eval_age = int(m_age.group(1))
+                except Exception:
+                    pass
+        # 6. cand_age (edad para retorno/UI)
+        cand_age = cand_eval_age
+        cand_edu = int(r.education_level) if r.education_level is not None else None
 
-        # 4.4. Filtro Bidireccional de Edad y Momento Vital (14 pts máx)
-        cand_eval_age = int(r.age) if r.age else (25 + (r.id % 4))
-        pref_min_age = int(client_prefs.get("min_age") or 20)
-        pref_max_age = int(client_prefs.get("max_age") or 28)
-        age_diff = abs(client_age - cand_eval_age)
+        # ── 5. CÁLCULO CLÍNICO REAL Y PROPORCIONAL ──
+        earned_points = 0.0
+        max_possible_points = 0.0
+        missing_fields = []
 
-        if age_diff <= 1:
-            age_pts = 14.0
-        elif age_diff <= 2:
-            age_pts = 12.0
-        elif pref_min_age <= cand_eval_age <= pref_max_age:
-            age_pts = 10.0
-        elif cand_eval_age == (pref_min_age - 1) or cand_eval_age == (pref_max_age + 1):
-            age_pts = 7.0
+        # 5.1. Afinidad Sociocultural / Social Group (20 pts máx)
+        if cand_sg is not None and client_sg is not None:
+            sg_delta = abs(client_sg - cand_sg)
+            sg_pts = max(6.0, 20.0 - (sg_delta * 14.0))
+            earned_points += sg_pts
+            max_possible_points += 20.0
         else:
-            age_pts = 4.0
+            missing_fields.append("Grupo Social")
 
-        # 4.5. Estatura y Dealbreakers Físicos (12 pts máx)
+        # 5.2. Afinidad de Apego Psicológico (18 pts máx)
+        if has_real_attachment and client_has_attachment:
+            if attachment_eval["type"] == "optimal":
+                attachment_pts = 18.0  # Seguro + Seguro
+            elif attachment_eval["type"] == "complementary":
+                attachment_pts = 13.0  # Seguro + Ansioso o Seguro + Evitativo
+            elif attachment_eval["type"] == "warning":
+                attachment_pts = 7.0   # Ansioso + Ansioso o Evitativo + Evitativo
+            elif attachment_eval["type"] == "trap":
+                attachment_pts = 2.0   # Trampa Ansioso-Evitativa
+            else:
+                attachment_pts = 12.0
+            earned_points += attachment_pts
+            max_possible_points += 18.0
+        else:
+            missing_fields.append("Estilo de Apego")
+
+        # 5.3. Ritmo de Vida y Actividad Física (15 pts máx)
+        if cand_act is not None and client_act is not None:
+            act_delta = abs(client_act - cand_act)
+            act_pts = max(4.0, 15.0 - (act_delta * 3.5))
+            earned_points += act_pts
+            max_possible_points += 15.0
+        else:
+            missing_fields.append("Actividad Física")
+
+        # 5.4. Filtro Bidireccional de Edad y Momento Vital (14 pts máx)
+        if cand_eval_age is not None:
+            pref_min_age = int(client_prefs.get("min_age") or 20) if client_prefs else 20
+            pref_max_age = int(client_prefs.get("max_age") or 35) if client_prefs else 35
+
+            if pref_min_age <= cand_eval_age <= pref_max_age:
+                age_pts = 14.0
+            elif cand_eval_age == (pref_min_age - 1) or cand_eval_age == (pref_max_age + 1):
+                age_pts = 10.0
+            elif cand_eval_age in (pref_min_age - 2, pref_max_age + 2):
+                age_pts = 7.0
+            else:
+                age_pts = 4.0
+            earned_points += age_pts
+            max_possible_points += 14.0
+        else:
+            missing_fields.append("Edad")
+
+        # 5.5. Estatura y Dealbreakers Físicos (12 pts máx)
         cand_h_cm = parse_cm_height(r.estatura)
         if cand_h_cm and client_height_cm:
             diff_h = client_height_cm - cand_h_cm
@@ -4178,32 +4057,58 @@ async def get_interview_results(
                 height_pts = 3.0   # Candidata más alta que el límite
             else:
                 height_pts = 10.0
+            earned_points += height_pts
+            max_possible_points += 12.0
         else:
-            height_pts = 10.0  # Neutral cuando no está registrada
+            if not cand_h_cm:
+                missing_fields.append("Estatura")
 
-        # 4.6. Lenguaje del Amor y Resonancia Afectiva (12 pts máx)
-        cand_lang_clean = cand_lang.lower()
-        client_lang_rec = (ext_data.get("love_language_received") or "Palabras de afirmación").lower()
-        client_lang_given = (ext_data.get("love_language_given") or "Tiempo de calidad").lower()
+        # 5.6. Lenguaje del Amor y Resonancia Afectiva (12 pts máx)
+        if cand_lang != "No especificado":
+            client_lang_rec = (ext_data.get("love_language_received") or "").lower()
+            client_lang_given = (ext_data.get("love_language_given") or "").lower()
 
-        if "afirmaci" in cand_lang_clean and "afirmaci" in client_lang_rec:
-            lang_pts = 12.0  # Coincidencia directa con lo que el cliente anhela recibir
-        elif "tiempo" in cand_lang_clean and "tiempo" in client_lang_given:
-            lang_pts = 10.5  # Coincidencia con lo que el cliente brinda
-        elif any(w in cand_lang_clean for w in ["servicio", "contacto", "toque"]):
-            lang_pts = 8.0
+            if client_lang_rec or client_lang_given:
+                cand_lang_clean = cand_lang.lower()
+                if client_lang_rec and any(w in cand_lang_clean for w in client_lang_rec.split()):
+                    lang_pts = 12.0
+                elif client_lang_given and any(w in cand_lang_clean for w in client_lang_given.split()):
+                    lang_pts = 10.5
+                elif any(w in cand_lang_clean for w in ["servicio", "contacto", "toque", "palabras", "tiempo"]):
+                    lang_pts = 8.0
+                else:
+                    lang_pts = 7.5
+                earned_points += lang_pts
+                max_possible_points += 12.0
+            else:
+                missing_fields.append("Lenguaje del Amor")
         else:
-            lang_pts = 7.5
+            missing_fields.append("Lenguaje del Amor")
 
-        # 4.7. Afinidad Educativa & Vocacional (9 pts máx)
-        edu_diff = abs(int(ext_data.get("education_level", 8)) - int(r.education_level or 8))
-        edu_pts = max(4.0, 9.0 - (edu_diff * 2.5))
+        # 5.7. Afinidad Educativa & Vocacional (9 pts máx)
+        client_edu = ext_data.get("education_level")
+        if cand_edu is not None and client_edu is not None:
+            edu_diff = abs(int(client_edu) - cand_edu)
+            edu_pts = max(4.0, 9.0 - (edu_diff * 2.5))
+            earned_points += edu_pts
+            max_possible_points += 9.0
+        else:
+            missing_fields.append("Nivel Educativo")
 
-        # Suma ponderada calibrada con factor normalizador 0.91 (rango realista 58% a 92%)
-        raw_clinical_sum = sg_pts + attachment_pts + act_pts + age_pts + height_pts + lang_pts + edu_pts
-        match_pct = int(min(92, max(58, round(raw_clinical_sum * 0.91))))
+        # Registro de ocupación en campos faltantes si no está registrada
+        if cand_occ == "No especificado":
+            missing_fields.append("Ocupación")
 
-        # ── 5. SALDO DE CITAS DE PERSONA B (Regla de Oportunidad Comercial / Cumplimiento) ──
+        # Ajuste Proporcional del Score (escalado según campos reales disponibles)
+        if max_possible_points > 0:
+            percentage = (earned_points / max_possible_points) * 100.0
+            match_pct = int(min(95, max(45, round(percentage))))
+        else:
+            match_pct = None
+
+        datos_completos = (len(missing_fields) == 0)
+
+        # ── 6. SALDO DE CITAS DE PERSONA B (Regla de Oportunidad Comercial / Cumplimiento) ──
         cand_plan = r.plan_tier or ""
         cand_slots_total = get_slots_by_plan(cand_plan) or 2
         res_used = await db.execute(text("""
@@ -4220,16 +4125,21 @@ async def get_interview_results(
             opportunity_badge = "Oportunidad Comercial / Cumplimiento"
             opportunity_reason = f"Persona B consumió las {cand_slots_total} citas de su plan ({cand_used} registradas). María/CS puede: 1) Ofrecerle comprar cita adicional, o 2) Usar como cortesía para cumplir contrato de {client_summary['name'].split()[0]}."
 
-        cand_age = r.age if r.age else (26 + (r.id % 6))
+        # Fortalezas clínicas genuinas (solo sobre datos reales existentes)
+        strengths = []
+        if cand_sg is not None and client_sg is not None:
+            strengths.append(f"Afinidad sociocultural evaluada (Grupo Social {cand_sg:.1f} vs {client_sg:.1f})")
+        if has_real_attachment and attachment_eval["type"] in ("optimal", "complementary"):
+            strengths.append(f"Apego {attachment_eval['label']}: {attachment_eval['clinical_note']}")
+        if cand_act is not None and client_act is not None:
+            strengths.append(f"Estilo de vida compatible ({'Alto' if cand_act >= 7 else 'Moderado'} ritmo físico: {cand_act}/10)")
+        if cand_eval_age and bidi["is_bidirectionally_compatible"]:
+            strengths.append("Filtro bidireccional mutuo validado (compatibilidad etaria armónica)")
+        if r.city:
+            strengths.append(f"Ambos residen en {r.city or client_city}")
+        if not strengths:
+            strengths.append("Candidato/a activo/a verificado/a en CRM")
 
-        # Fortalezas clínicas
-        strengths = [
-            f"Excelente afinidad sociocultural (Grupo Social {cand_sg:.1f} vs {client_sg:.1f} de {client_summary['name'].split()[0]})",
-            f"Apego {attachment_eval['label']}: {attachment_eval['clinical_note']}",
-            f"Estilo de vida y ritmo físico sincronizados ({'Alto' if cand_act >= 7 else 'Moderado'} nivel de actividad)",
-            f"Filtro bidireccional mutuo validado (compatibilidad etaria armónica)",
-            f"Ambos residen en {client_city} y buscan proyecto de pareja estable"
-        ]
         if bidi["age_pros"]:
             strengths.append(bidi["age_pros"][0])
 
@@ -4254,19 +4164,9 @@ async def get_interview_results(
         if bidi["height_alerts"]:
             dealbreakers_check_msg = f"⚠️ Nota: {bidi['height_alerts'][0]}"
 
-        cand_bio_clean = (r.bio_notes or "").strip()
         cand_sp = r.search_preferences or {}
         cand_nn_list = cand_sp.get("non_negotiables") or []
         cand_rf_list = cand_sp.get("red_flags") or []
-
-        # Extraer edad de notas si p.age es null
-        if not r.age and cand_bio_clean:
-            m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
-            if m_age:
-                try:
-                    cand_age = int(m_age.group(1))
-                except:
-                    pass
 
         cand_payload = {
             "user_id": r.id,
@@ -4285,10 +4185,13 @@ async def get_interview_results(
             "occupation": cand_occ,
             "social_group_score": cand_sg,
             "physical_activity_level": cand_act,
-            "education_level": r.education_level or 8,
+            "education_level": cand_edu,
             "love_language": cand_lang,
             "attachment_style": cand_attachment,
             "attachment_eval": attachment_eval,
+            "datos_completos": datos_completos,
+            "campos_faltantes": missing_fields,
+            "campos_evaluados_pts": round(max_possible_points, 1),
             "saldo_citas": saldo_citas_b,
             "opportunity_badge": opportunity_badge,
             "opportunity_reason": opportunity_reason,
@@ -4296,7 +4199,7 @@ async def get_interview_results(
             "dealbreakers_clean": bidi["is_bidirectionally_compatible"],
             "dealbreakers_check": dealbreakers_check_msg,
             "strengths": strengths,
-            "synthesis": r.synthesis_who_really_is or (cand_bio_clean[:200] + "..." if len(cand_bio_clean) > 200 else cand_bio_clean) or "Candidata con excelente perfil profesional.",
+            "synthesis": r.synthesis_who_really_is or (cand_bio_clean[:200] + "..." if len(cand_bio_clean) > 200 else cand_bio_clean) or "",
             "bio_notes": cand_bio_clean,
             "search_preferences": cand_sp,
             "non_negotiables": cand_nn_list,
@@ -4324,8 +4227,16 @@ async def get_interview_results(
         if len(suggested_matches) >= 30:
             break
 
-    # Ordenar por mayor afinidad clínica y seleccionar las mejores 8
-    suggested_matches.sort(key=lambda x: x["compatibility_pct"], reverse=True)
+    # Ordenar por mayor afinidad clínica (manejando None gracefully) y seleccionar las mejores 8
+    suggested_matches.sort(
+        key=lambda x: (
+            x["compatibility_pct"] is not None,
+            x["compatibility_pct"] or 0,
+            x["datos_completos"],
+            x["user_id"]
+        ),
+        reverse=True
+    )
     top_matches = suggested_matches[:8]
 
     return {

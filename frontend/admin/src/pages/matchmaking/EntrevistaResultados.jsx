@@ -334,13 +334,13 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
             <span style={{
               fontSize: 18,
               fontWeight: 800,
-              color: '#4CAF50',
-              background: 'rgba(76, 175, 80, 0.12)',
               padding: '4px 10px',
               borderRadius: 8,
-              border: '1px solid rgba(76, 175, 80, 0.3)'
+              border: client.social_group_score != null ? '1px solid rgba(76, 175, 80, 0.3)' : '1px solid var(--border-color)',
+              color: client.social_group_score != null ? '#4CAF50' : 'var(--text-muted)',
+              background: client.social_group_score != null ? 'rgba(76, 175, 80, 0.12)' : 'transparent'
             }}>
-              {client.social_group_score ? `${client.social_group_score.toFixed(1)} / 10` : '8.0 / 10'}
+              {client.social_group_score != null ? `${client.social_group_score.toFixed(1)} / 10` : 'Pendiente (F2)'}
             </span>
           </div>
 
@@ -354,25 +354,25 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
             <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Actividad Física</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
-                🏃 {client.physical_activity_level || 7} / 10
+                {client.physical_activity_level != null ? `🏃 ${client.physical_activity_level} / 10` : '🏃 Pendiente (F2)'}
               </div>
             </div>
             <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Nivel Educativo</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
-                🎓 {client.education_level || 8} / 10
+                {client.education_level != null ? `🎓 ${client.education_level} / 10` : '🎓 Pendiente (F1)'}
               </div>
             </div>
             <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Lenguaje Da</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#FFE599', marginTop: 2 }}>
-                {client.love_language_given}
+              <div style={{ fontSize: 12, fontWeight: 600, color: client.love_language_given && client.love_language_given !== 'No especificado' ? '#FFE599' : 'var(--text-muted)', marginTop: 2 }}>
+                {client.love_language_given && client.love_language_given !== 'No especificado' ? client.love_language_given : 'Pendiente (F2)'}
               </div>
             </div>
             <div style={{ background: 'var(--bg-base)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Lenguaje Recibe</div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#FFE599', marginTop: 2 }}>
-                {client.love_language_received}
+              <div style={{ fontSize: 12, fontWeight: 600, color: client.love_language_received && client.love_language_received !== 'No especificado' ? '#FFE599' : 'var(--text-muted)', marginTop: 2 }}>
+                {client.love_language_received && client.love_language_received !== 'No especificado' ? client.love_language_received : 'Pendiente (F2)'}
               </div>
             </div>
           </div>
@@ -524,7 +524,8 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
             </div>
           ) : (
             suggested_matches.map((cand, idx) => {
-              const sgDiff = Math.abs((client.social_group_score || 8.0) - (cand.social_group_score || 8.0)).toFixed(1)
+              const hasSg = cand.social_group_score != null && client.social_group_score != null
+              const sgDiff = hasSg ? Math.abs(client.social_group_score - cand.social_group_score).toFixed(1) : null
               return (
                 <div
                   key={cand.user_id}
@@ -590,13 +591,13 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                             <ExternalLink size={13} style={{ color: '#2196F3', opacity: 0.8, flexShrink: 0 }} />
                           </a>
                           <span style={{ fontSize: 12, color: isLight ? '#64748B' : 'var(--text-muted)' }}>
-                            ({cand.age} años)
+                            {cand.age ? `(${cand.age} años)` : '(Edad no registrada)'}
                           </span>
                         </div>
                         <div style={{ fontSize: 12, color: isLight ? '#475569' : 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <span>📍 {cand.city}</span>
                           <span>•</span>
-                          <span>💼 {cand.occupation}</span>
+                          <span>💼 {cand.occupation && cand.occupation !== 'No especificado' ? cand.occupation : 'Ocupación no especificada'}</span>
                           <span>•</span>
                           <span>📋 {cand.plan_tier}</span>
                           <span style={{
@@ -637,6 +638,22 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                           🌟 {cand.opportunity_badge}
                         </span>
                       )}
+                      {!cand.datos_completos && (
+                        <span style={{
+                          background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                          border: isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.4)',
+                          color: isLight ? '#92400E' : '#FBBF24',
+                          fontWeight: 700,
+                          fontSize: 12,
+                          padding: '4px 10px',
+                          borderRadius: 20,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5
+                        }} title={`Datos pendientes: ${cand.campos_faltantes?.join(', ') || 'Formularios incompletos'}`}>
+                          ⚠️ Datos incompletos ({cand.campos_faltantes?.length || 0})
+                        </span>
+                      )}
                       <span style={{
                         background: isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))',
                         border: isLight ? '1.5px solid #10B981' : '1px solid #4CAF50',
@@ -647,7 +664,9 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                         borderRadius: 20,
                         boxShadow: isLight ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
                       }}>
-                        ✨ {cand.compatibility_pct}% Match
+                        {cand.compatibility_pct != null
+                          ? `✨ ${cand.compatibility_pct}% Match ${!cand.datos_completos ? '(Parcial)' : ''}`
+                          : '✨ Sin score (Pendiente)'}
                       </span>
                     </div>
                   </div>
@@ -686,27 +705,51 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                     <div>
                       <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>GRUPO SOCIAL</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#15803D' : '#4CAF50', marginTop: 2 }}>
-                        {cand.social_group_score?.toFixed(1)} / 10
-                        <span style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', marginLeft: 6, fontWeight: 400 }}>
-                          (Δ {sgDiff} vs {client.name.split(' ')[0]})
-                        </span>
+                        {cand.social_group_score != null ? (
+                          <>
+                            {cand.social_group_score.toFixed(1)} / 10
+                            {hasSg && (
+                              <span style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', marginLeft: 6, fontWeight: 400 }}>
+                                (Δ {sgDiff} vs {client.name.split(' ')[0]})
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span style={{ color: isLight ? '#94A3B8' : '#6B7280', fontWeight: 600, fontSize: 12 }}>
+                            Pendiente F2
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     <div>
                       <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>ACTIVIDAD FÍSICA</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#0F172A' : 'var(--text-primary)', marginTop: 2 }}>
-                        🏃 {cand.physical_activity_level} / 10
-                        <span style={{ fontSize: 10, color: isLight ? '#15803D' : '#4CAF50', marginLeft: 6, fontWeight: 600 }}>
-                          {cand.physical_activity_level >= 7 ? 'Sincronizado' : 'Compatible'}
-                        </span>
+                        {cand.physical_activity_level != null ? (
+                          <>
+                            🏃 {cand.physical_activity_level} / 10
+                            <span style={{ fontSize: 10, color: isLight ? '#15803D' : '#4CAF50', marginLeft: 6, fontWeight: 600 }}>
+                              {cand.physical_activity_level >= 7 ? 'Sincronizado' : 'Compatible'}
+                            </span>
+                          </>
+                        ) : (
+                          <span style={{ color: isLight ? '#94A3B8' : '#6B7280', fontWeight: 600, fontSize: 12 }}>
+                            🏃 Pendiente F2
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     <div>
                       <div style={{ fontSize: 10, color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 700 }}>LENGUAJE AMOR</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#B45309' : '#FFE599', marginTop: 2 }}>
-                        ❤️ {cand.love_language}
+                        {cand.love_language && cand.love_language !== 'No especificado' ? (
+                          <>❤️ {cand.love_language}</>
+                        ) : (
+                          <span style={{ color: isLight ? '#94A3B8' : '#6B7280', fontWeight: 600, fontSize: 12 }}>
+                            ❤️ Pendiente
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -719,10 +762,12 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                           ? (isLight ? '#DC2626' : '#ff8a80')
                           : (cand.attachment_eval?.type === 'optimal'
                               ? (isLight ? '#15803D' : '#81C784')
-                              : (isLight ? '#B45309' : '#FFE599')),
+                              : (cand.attachment_eval?.type === 'unspecified'
+                                  ? (isLight ? '#94A3B8' : '#6B7280')
+                                  : (isLight ? '#B45309' : '#FFE599'))),
                         marginTop: 2
                       }} title={cand.attachment_eval?.clinical_note}>
-                        🧠 {cand.attachment_eval?.label || (cand.attachment_style ? `Apego ${cand.attachment_style}` : 'Apego Seguro')}
+                        🧠 {cand.attachment_eval?.label || (cand.attachment_style && cand.attachment_style !== 'No especificado' ? `Apego ${cand.attachment_style}` : 'Pendiente de evaluación')}
                       </div>
                     </div>
 
@@ -1004,7 +1049,8 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
   const clientHeightPref = comparison.client_height_pref || client.search_preferences?.preferred_height || 'Hasta 170 cm'
   const candHeightPref = comparison.candidate_height_pref || candidate.search_preferences?.preferred_height || 'No especificado'
 
-  const sgDiff = Math.abs((client.social_group_score || 8) - (candidate.social_group_score || 8)).toFixed(1)
+  const hasBothSg = client.social_group_score != null && candidate.social_group_score != null
+  const sgDiff = hasBothSg ? Math.abs(client.social_group_score - candidate.social_group_score).toFixed(1) : null
 
   // Paleta de colores dinámica (Light Mode vs Dark Mode)
   const t = isLight ? {
@@ -1324,8 +1370,8 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
             </h2>
             <div style={{ fontSize: 13, color: t.subtitleColor, marginTop: 6, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>📍 <b style={{ color: t.boldTextColor }}>{candidate.city}</b></span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>🎂 <b style={{ color: t.boldTextColor }}>{candidate.age} años</b></span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>💼 <b style={{ color: t.boldTextColor }}>{candidate.occupation}</b></span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>🎂 <b style={{ color: t.boldTextColor }}>{candidate.age ? `${candidate.age} años` : 'Edad no reg.'}</b></span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>💼 <b style={{ color: t.boldTextColor }}>{candidate.occupation && candidate.occupation !== 'No especificado' ? candidate.occupation : 'Ocupación no especificada'}</b></span>
               <a
                 href={candidate.crm_url || (candidate.crm_id ? `https://dailylover.smartmatchapp.com/#!/client/${candidate.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(candidate.name)}`)}
                 target="_blank"
@@ -1355,7 +1401,9 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
               borderRadius: 24,
               boxShadow: isLight ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 10px rgba(16, 185, 129, 0.25)'
             }}>
-              ✨ {candidate.compatibility_pct}% Match
+              {candidate.compatibility_pct != null
+                ? `✨ ${candidate.compatibility_pct}% Match ${!candidate.datos_completos ? '(Parcial)' : ''}`
+                : '✨ Sin score (Pendiente)'}
             </span>
             <button
               onClick={onClose}
@@ -1749,25 +1797,25 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   <div>
                     <span style={{ color: t.metricsLabel }}>Estilo de Apego:</span>
                     <div style={{ fontWeight: 700, color: t.metricsValA, fontSize: 12 }}>
-                      {client.attachment_style || 'Apego Seguro'}
+                      {client.attachment_style && client.attachment_style !== 'No especificado' ? client.attachment_style : 'Pendiente (F2)'}
                     </div>
                   </div>
                   <div>
                     <span style={{ color: t.metricsLabel }}>Lenguaje de Amor:</span>
                     <div style={{ fontWeight: 700, color: t.metricsValB, fontSize: 12 }}>
-                      {client.love_language_given || 'Tiempo de calidad'}
+                      {client.love_language_given && client.love_language_given !== 'No especificado' ? client.love_language_given : 'Pendiente (F2)'}
                     </div>
                   </div>
                   <div>
                     <span style={{ color: t.metricsLabel }}>Grupo Social (GS):</span>
                     <div style={{ fontWeight: 700, color: t.metricsValC, fontSize: 12 }}>
-                      {client.social_group_score?.toFixed(1) || '8.5'} / 10
+                      {client.social_group_score != null ? `${client.social_group_score.toFixed(1)} / 10` : 'Pendiente (F2)'}
                     </div>
                   </div>
                   <div>
                     <span style={{ color: t.metricsLabel }}>Actividad Física:</span>
                     <div style={{ fontWeight: 700, color: t.metricsValD, fontSize: 12 }}>
-                      🏃 {client.physical_activity_level || 7} / 10
+                      {client.physical_activity_level != null ? `🏃 ${client.physical_activity_level} / 10` : '🏃 Pendiente (F2)'}
                     </div>
                   </div>
                 </div>
@@ -1907,10 +1955,10 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                 </div>
 
                 <div style={{ fontSize: 12, color: t.subtitleColor, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <span>🎂 {candidate.age || '—'} años</span>
-                  <span>💼 {candidate.occupation || 'Profesional'}</span>
-                  <span>📏 {candidate.estatura || '165 cm'}</span>
-                  <span>📍 {candidate.city}</span>
+                  <span>🎂 {candidate.age ? `${candidate.age} años` : 'Edad no reg.'}</span>
+                  <span>💼 {candidate.occupation && candidate.occupation !== 'No especificado' ? candidate.occupation : 'Ocupación no especificada'}</span>
+                  <span>📏 {candidate.estatura || 'Estatura no reg.'}</span>
+                  <span>📍 {candidate.city || 'Ciudad no reg.'}</span>
                 </div>
 
                 {/* Badge de Plan y Citas Persona B */}
@@ -2060,25 +2108,25 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   <div>
                     <span style={{ color: t.metricsLabel }}>Estilo de Apego:</span>
                     <div style={{ fontWeight: 700, color: t.metricsValA, fontSize: 12 }}>
-                      {candidate.attachment_style || 'Apego Seguro'}
+                      {candidate.attachment_style && candidate.attachment_style !== 'No especificado' ? candidate.attachment_style : 'Pendiente (F2)'}
                     </div>
                   </div>
                   <div>
                     <span style={{ color: t.metricsLabel }}>Lenguaje de Amor:</span>
                     <div style={{ fontWeight: 700, color: t.metricsValB, fontSize: 12 }}>
-                      {candidate.love_language || 'Palabras de afirmación'}
+                      {candidate.love_language && candidate.love_language !== 'No especificado' ? candidate.love_language : 'Pendiente (F2)'}
                     </div>
                   </div>
                   <div>
                     <span style={{ color: t.metricsLabel }}>Grupo Social (GS):</span>
                     <div style={{ fontWeight: 700, color: t.metricsValC, fontSize: 12 }}>
-                      {candidate.social_group_score?.toFixed(1) || '8.5'} / 10
+                      {candidate.social_group_score != null ? `${candidate.social_group_score.toFixed(1)} / 10` : 'Pendiente (F2)'}
                     </div>
                   </div>
                   <div>
                     <span style={{ color: t.metricsLabel }}>Actividad Física:</span>
                     <div style={{ fontWeight: 700, color: t.metricsValD, fontSize: 12 }}>
-                      🏃 {candidate.physical_activity_level || 7} / 10
+                      {candidate.physical_activity_level != null ? `🏃 ${candidate.physical_activity_level} / 10` : '🏃 Pendiente (F2)'}
                     </div>
                   </div>
                 </div>
@@ -2100,10 +2148,10 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   🎯 CRUCE DE EDAD
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValGreen, marginTop: 2 }}>
-                  ✓ {client.age || 24} vs {candidate.age || 25} años
+                  {client.age && candidate.age ? `✓ ${client.age} vs ${candidate.age} años` : (candidate.age ? `Candidata: ${candidate.age} años` : 'Edad pendiente')}
                 </div>
                 <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
-                  En rango preferido (20-26)
+                  {candidate.age ? (client.search_preferences?.min_age ? `Preferencia: ${client.search_preferences.min_age}-${client.search_preferences.max_age} años` : 'En rango de búsqueda') : 'Pendiente de confirmación'}
                 </div>
               </div>
 
@@ -2112,10 +2160,10 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   📏 CRUCE DE ESTATURA
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValGreen, marginTop: 2 }}>
-                  ✓ {client.estatura || '178 cm'} vs {candidate.estatura || '165 cm'}
+                  {client.estatura && candidate.estatura ? `✓ ${client.estatura} vs ${candidate.estatura}` : (candidate.estatura ? `Candidata: ${candidate.estatura}` : 'Estatura no especificada')}
                 </div>
                 <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
-                  Estatura armónica en pareja
+                  {candidate.estatura ? 'Estatura armónica en pareja' : 'Pendiente de registrar'}
                 </div>
               </div>
 
@@ -2124,10 +2172,10 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   🏛️ GRUPO SOCIAL
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValBlue, marginTop: 2 }}>
-                  Δ {sgDiff} pts (GS {candidate.social_group_score?.toFixed(1)} vs {client.social_group_score?.toFixed(1)})
+                  {hasBothSg ? `Δ ${sgDiff} pts (GS ${candidate.social_group_score?.toFixed(1)} vs ${client.social_group_score?.toFixed(1)})` : (candidate.social_group_score != null ? `GS ${candidate.social_group_score.toFixed(1)} / 10` : 'Pendiente F2')}
                 </div>
                 <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
-                  Afinidad sociocultural equivalente
+                  {hasBothSg ? 'Afinidad sociocultural evaluada' : 'Pendiente de calificación clínica'}
                 </div>
               </div>
 
@@ -2136,10 +2184,12 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   🏃 RITMO DE VIDA
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.summaryValPurple, marginTop: 2 }}>
-                  {candidate.physical_activity_level || 7}/10 vs {client.physical_activity_level || 7}/10
+                  {client.physical_activity_level != null && candidate.physical_activity_level != null
+                    ? `${candidate.physical_activity_level}/10 vs ${client.physical_activity_level}/10`
+                    : (candidate.physical_activity_level != null ? `🏃 ${candidate.physical_activity_level}/10` : '🏃 Pendiente F2')}
                 </div>
                 <div style={{ fontSize: 11, color: t.summaryDesc, marginTop: 2 }}>
-                  Sincronía en hábitos saludables
+                  {candidate.physical_activity_level != null ? 'Sincronía en hábitos saludables' : 'Hábitos deportivos no registrados'}
                 </div>
               </div>
             </div>
