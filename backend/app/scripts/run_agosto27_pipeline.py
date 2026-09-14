@@ -99,7 +99,7 @@ async def process_client(client_info, db, nvidia_key, http_client):
     client_summary = {
         "user_id": user_row.id,
         "name": user_row.name,
-        "gender": prof_row.gender if prof_row else "Hombre",
+        "gender": (prof_row.gender if prof_row and prof_row.gender else "Hombre"),
         "city": client_city,
         "age": client_age,
         "occupation": prof_row.occupation if prof_row and prof_row.occupation else "",
@@ -267,6 +267,7 @@ async def process_client(client_info, db, nvidia_key, http_client):
             "city": r.city or client_city,
             "occupation": r.occupation or "",
             "attachment_style": parse_attachment_style(r.apego),
+            "gender": ("Mujer" if is_male else "Hombre"),
             "bio_notes": cand_bio,
             "search_preferences": r.search_preferences or {},
             "non_negotiables": []
