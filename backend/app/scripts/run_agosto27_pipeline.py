@@ -274,6 +274,8 @@ async def process_client(client_info, db, nvidia_key, http_client):
         }
 
         ai_res = await evaluate_candidate_quick_notes_ai(client_summary, cand_payload, nvidia_key, http_client)
+        if not ai_res:
+            ai_res = {}
         ai_score = ai_res.get("ai_score") or item["struct_score"]
         verdict = ai_res.get("veredicto") or "VIABLE"
         dbs = ai_res.get("deal_breakers") or []
