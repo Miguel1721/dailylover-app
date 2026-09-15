@@ -4913,6 +4913,11 @@ async def get_interview_results(
 
     top_matches = suggested_matches[:8]
 
+    print(f"\n>>> [AUDIT LIVE INTERVIEW-RESULTS] Request identifier='{crm_id_or_user_id}' -> Client='{client_summary.get('name')}' (UID: {client_summary.get('user_id')})", flush=True)
+    for idx, cand in enumerate(top_matches):
+        print(f"    #{idx+1}: {cand.get('name')} | comp={cand.get('compatibility_pct')} | struct={cand.get('structural_score')} | ai={cand.get('ai_score')} | verdict={cand.get('ai_veredicto')}", flush=True)
+    print(f">>> [AUDIT LIVE INTERVIEW-RESULTS] Returning {len(top_matches)} candidates.\n", flush=True)
+
     return {
         "client": client_summary,
         "suggested_matches": top_matches,
@@ -6106,6 +6111,7 @@ async def get_agosto27_queue(
     Agrupa por cliente mostrando sus 1-2 candidatos sugeridos
     con puntuación, veredicto, dealbreakers y puntos fuertes.
     """
+    print(f"\n>>> [AUDIT LIVE AGOSTO27-QUEUE] Request page={page}, search='{search}', responsable='{responsable}', status_filter='{status_filter}'", flush=True)
     stats_query = """
         SELECT 
             COUNT(DISTINCT COALESCE(client_user_id, sheet_row)) as total_clients,
