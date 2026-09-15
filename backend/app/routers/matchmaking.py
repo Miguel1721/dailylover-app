@@ -4764,6 +4764,16 @@ async def find_candidate_matches_engine(
         )
         suggested_matches = all_candidates
 
+    for c in suggested_matches:
+        is_insufficient = (
+            c.get("ai_veredicto") == "SIN DATOS SUFICIENTES"
+            or c.get("compatibility_pct") is None
+            or (c.get("campos_evaluados_pts") or 0) < 15.0
+            or c.get("ai_notes_quality") == "NULA"
+        )
+        c["insufficient_data"] = is_insufficient
+        c["match_category"] = "insufficient_data" if is_insufficient else "viable"
+
     return suggested_matches
 
 
@@ -4913,14 +4923,20 @@ async def get_interview_results(
 
     top_matches = suggested_matches[:8]
 
+    viable_matches = [m for m in top_matches if not m.get("insufficient_data")]
+    insufficient_matches = [m for m in top_matches if m.get("insufficient_data")]
+
     print(f"\n>>> [AUDIT LIVE INTERVIEW-RESULTS] Request identifier='{crm_id_or_user_id}' -> Client='{client_summary.get('name')}' (UID: {client_summary.get('user_id')})", flush=True)
+    print(f"    Viables con datos completos: {len(viable_matches)} | Insuficientes en CRM: {len(insufficient_matches)}", flush=True)
     for idx, cand in enumerate(top_matches):
-        print(f"    #{idx+1}: {cand.get('name')} | comp={cand.get('compatibility_pct')} | struct={cand.get('structural_score')} | ai={cand.get('ai_score')} | verdict={cand.get('ai_veredicto')}", flush=True)
+        print(f"    #{idx+1}: {cand.get('name')} | category={cand.get('match_category')} | comp={cand.get('compatibility_pct')} | struct={cand.get('structural_score')} | ai={cand.get('ai_score')} | verdict={cand.get('ai_veredicto')}", flush=True)
     print(f">>> [AUDIT LIVE INTERVIEW-RESULTS] Returning {len(top_matches)} candidates.\n", flush=True)
 
     return {
         "client": client_summary,
         "suggested_matches": top_matches,
+        "viable_matches": viable_matches,
+        "insufficient_matches": insufficient_matches,
         "total_evaluated": len(suggested_matches),
         "total_candidates_pool": len(suggested_matches)
     }

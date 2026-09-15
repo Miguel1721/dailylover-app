@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X, ExternalLink, RefreshCw, FileText, User, Users } from 'lucide-react'
+import { Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X, ExternalLink, RefreshCw, FileText, User, Users, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 import ClinicalNotesViewer from '../../components/ClinicalNotesViewer'
@@ -48,6 +48,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
 
   // Modal de análisis clínico de match
   const [viewingAnalysis, setViewingAnalysis] = useState(null)
+  const [showInsufficient, setShowInsufficient] = useState(true)
 
   const fetchResults = () => {
     if (!clientId && !clientName) return
@@ -151,6 +152,14 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
   }
 
   const { client, suggested_matches = [] } = data
+
+  const viableMatches = (data?.viable_matches || []).length > 0
+    ? data.viable_matches
+    : suggested_matches.filter(c => !c.insufficient_data && c.compatibility_pct != null && c.ai_veredicto !== 'SIN DATOS SUFICIENTES' && (c.campos_evaluados_pts || 0) >= 15)
+
+  const insufficientMatches = (data?.insufficient_matches || []).length > 0
+    ? data.insufficient_matches
+    : suggested_matches.filter(c => c.insufficient_data || c.compatibility_pct == null || c.ai_veredicto === 'SIN DATOS SUFICIENTES' || (c.campos_evaluados_pts || 0) < 15)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -511,38 +520,41 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
             </button>
           </div>
 
-          {suggested_matches.length === 0 ? (
-            <div style={{
-              background: isLight ? '#FFFFFF' : 'var(--bg-card)',
-              border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
-              borderRadius: 12,
-              padding: 40,
-              textAlign: 'center',
-              color: isLight ? '#64748B' : 'var(--text-muted)'
-            }}>
-              No se encontraron candidatos disponibles en la misma ciudad en este momento.
-            </div>
-          ) : (
-            suggested_matches.map((cand, idx) => {
+          {(() => {
+            const renderCandidateCard = (cand, idx, isInsufficient) => {
               const hasSg = cand.social_group_score != null && client.social_group_score != null
               const sgDiff = hasSg ? Math.abs(client.social_group_score - cand.social_group_score).toFixed(1) : null
+
               return (
                 <div
                   key={cand.user_id}
                   style={{
-                    background: isLight ? '#FFFFFF' : 'var(--bg-card)',
-                    border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                    background: isLight
+                      ? (isInsufficient ? '#FFFDF5' : '#FFFFFF')
+                      : (isInsufficient ? 'rgba(245, 158, 11, 0.03)' : 'var(--bg-card)'),
+                    border: isInsufficient
+                      ? (isLight ? '1.5px dashed #F59E0B' : '1px dashed rgba(245, 158, 11, 0.4)')
+                      : (isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)'),
                     borderRadius: 14,
                     padding: 20,
-                    boxShadow: isLight ? '0 4px 16px rgba(0, 0, 0, 0.05)' : '0 4px 20px rgba(0, 0, 0, 0.2)',
+                    boxShadow: isLight
+                      ? (isInsufficient ? '0 2px 8px rgba(245, 158, 11, 0.08)' : '0 4px 16px rgba(0, 0, 0, 0.05)')
+                      : (isInsufficient ? 'none' : '0 4px 20px rgba(0, 0, 0, 0.2)'),
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 14,
                     transition: 'border-color 0.2s',
-                    position: 'relative'
+                    position: 'relative',
+                    marginBottom: 16
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--color-primary)'}
-                  onMouseLeave={(e) => e.currentTarget.style.borderColor = isLight ? '#E2E8F0' : 'var(--border-color)'}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = isInsufficient ? '#F59E0B' : 'var(--color-primary)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = isInsufficient
+                      ? (isLight ? '#F59E0B' : 'rgba(245, 158, 11, 0.4)')
+                      : (isLight ? '#E2E8F0' : 'var(--border-color)')
+                  }}
                 >
                   {/* Fila Superior: Nombre, Score y Compatibilidad */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
@@ -551,7 +563,9 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                         width: 42,
                         height: 42,
                         borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #1976d2, #0288d1)',
+                        background: isInsufficient
+                          ? 'linear-gradient(135deg, #78716c, #a8a29e)'
+                          : 'linear-gradient(135deg, #1976d2, #0288d1)',
                         color: '#fff',
                         display: 'flex',
                         alignItems: 'center',
@@ -638,57 +652,117 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                           🌟 {cand.opportunity_badge}
                         </span>
                       )}
-                      {!cand.datos_completos && (
+                      {isInsufficient ? (
                         <span style={{
                           background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
-                          border: isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.4)',
+                          border: isLight ? '1.5px solid #F59E0B' : '1px solid #F59E0B',
                           color: isLight ? '#92400E' : '#FBBF24',
-                          fontWeight: 700,
-                          fontSize: 12,
-                          padding: '4px 10px',
+                          fontWeight: 800,
+                          fontSize: 13,
+                          padding: '4px 12px',
                           borderRadius: 20,
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: 5
-                        }} title={`Datos pendientes: ${cand.campos_faltantes?.join(', ') || 'Formularios incompletos'}`}>
-                          ⚠️ Datos incompletos ({cand.campos_faltantes?.length || 0})
+                        }}>
+                          ⚠️ Sin datos suficientes
                         </span>
-                      )}
-                      <span style={{
-                        background: cand.compatibility_pct != null
-                          ? (isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))')
-                          : (isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)'),
-                        border: cand.compatibility_pct != null
-                          ? (isLight ? '1.5px solid #10B981' : '1px solid #4CAF50')
-                          : (isLight ? '1.5px solid #9CA3AF' : '1px solid rgba(156, 163, 175, 0.3)'),
-                        color: cand.compatibility_pct != null
-                          ? (isLight ? '#065F46' : '#81C784')
-                          : (isLight ? '#4B5563' : '#9CA3AF'),
-                        fontWeight: 800,
-                        fontSize: 14,
-                        padding: '4px 12px',
-                        borderRadius: 20,
-                        boxShadow: isLight && cand.compatibility_pct != null ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
-                      }}>
-                        {cand.compatibility_pct != null
-                          ? `✨ ${cand.compatibility_pct}% Match ${!cand.datos_completos ? '(Parcial)' : ''}`
-                          : '⚠️ Sin datos suficientes'}
-                      </span>
-                      {cand.ai_score != null && (
-                        <span style={{
-                          background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
-                          border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
-                          color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
-                          fontWeight: 700,
-                          fontSize: 12,
-                          padding: '3px 10px',
-                          borderRadius: 16
-                        }} title={cand.ai_analisis || ''}>
-                          🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
-                        </span>
+                      ) : (
+                        <>
+                          {!cand.datos_completos && (
+                            <span style={{
+                              background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                              border: isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.4)',
+                              color: isLight ? '#92400E' : '#FBBF24',
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '4px 10px',
+                              borderRadius: 20,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5
+                            }} title={`Datos pendientes: ${cand.campos_faltantes?.join(', ') || 'Formularios incompletos'}`}>
+                              ⚠️ Datos incompletos ({cand.campos_faltantes?.length || 0})
+                            </span>
+                          )}
+                          <span style={{
+                            background: isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))',
+                            border: isLight ? '1.5px solid #10B981' : '1px solid #4CAF50',
+                            color: isLight ? '#065F46' : '#81C784',
+                            fontWeight: 800,
+                            fontSize: 14,
+                            padding: '4px 12px',
+                            borderRadius: 20,
+                            boxShadow: isLight ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
+                          }}>
+                            ✨ {cand.compatibility_pct}% Match {!cand.datos_completos ? '(Parcial)' : ''}
+                          </span>
+                          {cand.ai_score != null && (
+                            <span style={{
+                              background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
+                              border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
+                              color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '3px 10px',
+                              borderRadius: 16
+                            }} title={cand.ai_analisis || ''}>
+                              🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
+                            </span>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
+
+                  {/* ALERTA VISUAL DE DATOS INSUFICIENTES */}
+                  {isInsufficient && (
+                    <div style={{
+                      background: isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.08)',
+                      border: isLight ? '1px solid #FECACA' : '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: 10,
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 12
+                    }}>
+                      <AlertTriangle size={20} color="#DC2626" style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div style={{ fontSize: 12.5, flex: 1 }}>
+                        <div style={{ fontWeight: 800, color: '#DC2626', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span>Requiere completar ficha clínica en CRM antes de evaluar match:</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(220, 38, 38, 0.12)', color: '#DC2626', padding: '1px 6px', borderRadius: 6 }}>
+                            {cand.campos_evaluados_pts || 0} / 100 pts evaluables
+                          </span>
+                        </div>
+                        <div style={{ color: isLight ? '#4B5563' : '#CBD5E1', lineHeight: 1.5 }}>
+                          {cand.campos_faltantes && cand.campos_faltantes.length > 0 && (
+                            <div>• <b>Campos estructurales faltantes:</b> {cand.campos_faltantes.join(', ')}.</div>
+                          )}
+                          {(!cand.bio_notes || cand.bio_notes.length < 20) && (
+                            <div>• <b>Notas clínicas:</b> Sin notas de entrevista clínica registradas por la psicóloga en ficha CRM.</div>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 8 }}>
+                          <a
+                            href={cand.crm_url || (cand.crm_id && cand.crm_id !== 'None' ? `https://dailylover.smartmatchapp.com/#!/client/${cand.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(cand.name)}`)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: '#2563EB',
+                              fontWeight: 700,
+                              textDecoration: 'none',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5
+                            }}
+                          >
+                            <span>Abrir ficha de {cand.name} en SmartMatchApp para completar datos</span>
+                            <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Banner de Oportunidad Comercial / Cumplimiento para Persona B */}
                   {cand.opportunity_badge && (
@@ -801,10 +875,10 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                   {/* Fortalezas del Match */}
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#0F172A' : 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 6 }}>
-                      Fortalezas de este Match
+                      {isInsufficient ? 'Datos Preliminares Registrados' : 'Fortalezas de este Match'}
                     </div>
                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: isLight ? '#334155' : 'var(--text-secondary)', lineHeight: 1.55 }}>
-                      {cand.strengths.map((str, sIdx) => (
+                      {(cand.strengths || []).map((str, sIdx) => (
                         <li key={sIdx}>{str}</li>
                       ))}
                     </ul>
@@ -821,7 +895,9 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                     gap: 10
                   }}>
                     <span style={{ fontSize: 12, color: isLight ? '#64748B' : 'var(--text-muted)' }}>
-                      Candidato #{idx + 1} evaluado por algoritmo clínico
+                      {isInsufficient
+                        ? `Candidato #${idx + 1} • Requiere completar ficha para contrastación 360°`
+                        : `Candidato #${idx + 1} evaluado por algoritmo clínico`}
                     </span>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -855,29 +931,170 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                         🧠 Análisis de Match
                       </button>
 
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => setSelectedCandidate(cand)}
-                        style={{
-                          padding: '9px 18px',
-                          fontSize: 13,
-                          fontWeight: 700,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          background: 'linear-gradient(135deg, #961500, #7a1100)',
-                          color: '#FFFFFF',
-                          boxShadow: '0 4px 14px rgba(150, 21, 0, 0.3)'
-                        }}
-                      >
-                        <Heart size={15} fill="#fff" /> ✨ Enviar a Aprobación por María
-                      </button>
+                      {isInsufficient ? (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`⚠️ ADVERTENCIA: ${cand.name} tiene información insuficiente en CRM (faltan: ${cand.campos_faltantes?.join(', ') || 'notas clínicas'}). ¿Confirmas que deseas enviarlo de todos modos a revisión de María advirtiéndole que faltan datos?`)) {
+                              setSelectedCandidate(cand)
+                            }
+                          }}
+                          style={{
+                            padding: '9px 16px',
+                            fontSize: 13,
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.08)',
+                            color: isLight ? '#475569' : '#94A3B8',
+                            border: isLight ? '1.5px solid #CBD5E1' : '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = '#F59E0B'
+                            e.currentTarget.style.color = isLight ? '#B45309' : '#FBBF24'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = isLight ? '#CBD5E1' : 'rgba(255, 255, 255, 0.2)'
+                            e.currentTarget.style.color = isLight ? '#475569' : '#94A3B8'
+                          }}
+                        >
+                          <AlertTriangle size={15} color="#F59E0B" /> Enviar con advertencia de datos faltantes
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => setSelectedCandidate(cand)}
+                          style={{
+                            padding: '9px 18px',
+                            fontSize: 13,
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            background: 'linear-gradient(135deg, #961500, #7a1100)',
+                            color: '#FFFFFF',
+                            boxShadow: '0 4px 14px rgba(150, 21, 0, 0.3)'
+                          }}
+                        >
+                          <Heart size={15} fill="#fff" /> ✨ Enviar a Aprobación por María
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
               )
-            })
-          )}
+            }
+
+            return (
+              <div>
+                {/* SECCIÓN 1: CANDIDATOS RECOMENDADOS Y VIABLES CON EVALUACIÓN CLÍNICA */}
+                <div style={{ marginBottom: 28 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <CheckCircle2 size={18} color="#10B981" />
+                      <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: isLight ? '#0F172A' : '#F8FAFC' }}>
+                        Candidatos Recomendados / Viables Evaluados ({viableMatches.length})
+                      </h3>
+                    </div>
+                    <span style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      padding: '3px 10px',
+                      borderRadius: 12,
+                      background: isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)',
+                      color: isLight ? '#065F46' : '#81C784',
+                      border: isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)'
+                    }}>
+                      ✓ Aptos para revisión clínica
+                    </span>
+                  </div>
+
+                  {viableMatches.length === 0 ? (
+                    <div style={{
+                      background: isLight ? '#FFFFFF' : 'var(--bg-card)',
+                      border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                      borderRadius: 12,
+                      padding: 30,
+                      textAlign: 'center',
+                      color: isLight ? '#64748B' : 'var(--text-muted)'
+                    }}>
+                      No se encontraron candidatos con datos suficientes para evaluación clínica en este momento.
+                    </div>
+                  ) : (
+                    viableMatches.map((cand, idx) => renderCandidateCard(cand, idx, false))
+                  )}
+                </div>
+
+                {/* SECCIÓN 2: CANDIDATOS CON INFORMACIÓN INSUFICIENTE EN CRM */}
+                {insufficientMatches.length > 0 && (
+                  <div style={{
+                    marginTop: 32,
+                    border: isLight ? '1.5px dashed #F59E0B' : '1.5px dashed rgba(245, 158, 11, 0.5)',
+                    borderRadius: 14,
+                    background: isLight ? '#FFFDF5' : 'rgba(245, 158, 11, 0.03)',
+                    padding: 20
+                  }}>
+                    <div
+                      onClick={() => setShowInsufficient(!showInsufficient)}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        userSelect: 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 8,
+                          background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <AlertTriangle size={18} color="#D97706" />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: isLight ? '#92400E' : '#FBBF24', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span>⚠️ Candidatos con Información Insuficiente en CRM ({insufficientMatches.length})</span>
+                            <span style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              background: isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.2)',
+                              color: isLight ? '#78350F' : '#FCD34D'
+                            }}>
+                              Ficha incompleta
+                            </span>
+                          </div>
+                          <p style={{ fontSize: 12, color: isLight ? '#78350F' : '#FCD34D', margin: '3px 0 0' }}>
+                            Pasan los filtros demográficos duros, pero carecen de notas clínicas o datos estructurales suficientes en el CRM para contrastar compatibilidad de forma rigurosa.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: isLight ? '#92400E' : '#FBBF24', fontSize: 13, fontWeight: 700 }}>
+                        <span>{showInsufficient ? 'Ocultar' : 'Ver candidatos'}</span>
+                        {showInsufficient ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </div>
+                    </div>
+
+                    {showInsufficient && (
+                      <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        {insufficientMatches.map((cand, idx) => renderCandidateCard(cand, idx, true))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       </div>
 
