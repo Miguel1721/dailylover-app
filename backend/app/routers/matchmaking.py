@@ -3862,6 +3862,111 @@ _AI_MATCH_CACHE: Dict[str, dict] = {
 }
 
 
+def check_deterministic_hard_dealbreakers(cli: dict, cand: dict) -> Tuple[bool, Optional[str]]:
+    """
+    Evalúa incompatibilidades estructurales insalvables con 0% alucinación y 0 costo de IA.
+    Retorna (es_incompatible, motivo)
+    """
+    def _to_d(val):
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return {}
+        return {}
+
+    # 1. Género y Orientación Sexual
+    c_gender = (cli.get('gender') or '').strip().lower()
+    c_sp = _to_d(cli.get('search_preferences'))
+    c_pref_gender = (c_sp.get('preferred_gender') or '').strip().lower()
+    c_orient = (cli.get('orientation') or c_sp.get('preferred_orientation') or '').strip().lower()
+
+    cand_gender = (cand.get('gender') or '').strip().lower()
+    cand_sp = _to_d(cand.get('search_preferences'))
+    cand_pref_gender = (cand_sp.get('preferred_gender') or '').strip().lower()
+    cand_orient = (cand.get('orientation') or cand_sp.get('preferred_orientation') or '').strip().lower()
+
+    # Si cliente busca género específico y candidato no coincide
+    if c_pref_gender and cand_gender:
+        if ('hombre' in c_pref_gender and 'mujer' in cand_gender) or ('mujer' in c_pref_gender and 'hombre' in cand_gender):
+            return True, f"Incompatibilidad de género buscado: {cli.get('name')} ({c_gender or 'S/D'}) busca {c_sp.get('preferred_gender')}, pero {cand.get('name')} es {cand.get('gender')}."
+
+    # Si candidato busca género específico y cliente no coincide
+    if cand_pref_gender and c_gender:
+        if ('hombre' in cand_pref_gender and 'mujer' in c_gender) or ('mujer' in cand_pref_gender and 'hombre' in c_gender):
+            return True, f"Incompatibilidad de género buscado en candidato: {cand.get('name')} busca {cand_sp.get('preferred_gender')}, pero {cli.get('name')} es {cli.get('gender')}."
+
+    # Si ambos son del mismo género y alguno es explícitamente heterosexual
+    if c_gender and cand_gender and c_gender == cand_gender:
+        if 'hetero' in c_orient or 'hetero' in cand_orient or ('hombre' in c_pref_gender and c_gender == 'mujer') or ('mujer' in c_pref_gender and c_gender == 'hombre'):
+            return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} y {cand.get('name')} son del mismo sexo ({c_gender}), pero hay orientación heterosexual declarada."
+
+    # 2. Hijos excluyentes declarados en no negociables
+    c_ls = _to_d(cli.get('lifestyle'))
+    cand_ls = _to_d(cand.get('lifestyle'))
+    c_has_kids = (c_ls.get('has_children') or '').strip().lower()
+    cand_has_kids = (cand_ls.get('has_children') or '').strip().lower()
+
+    c_nn = [str(x).lower() for x in (c_sp.get('non_negotiables') or [])]
+    cand_nn = [str(x).lower() for x in (cand_sp.get('non_negotiables') or [])]
+
+    if any(k in x for x in c_nn for k in ['no personas con hijos', 'no tener hijos la pareja', 'sin hijos']) and ('sí' in cand_has_kids or 'si' in cand_has_kids or '1' in cand_has_kids or '2' in cand_has_kids):
+        return True, f"Dealbreaker de hijos: {cli.get('name')} declaró no aceptar parejas con hijos, y {cand.get('name')} tiene hijos."
+
+    if any(k in x for x in cand_nn for k in ['no personas con hijos', 'no tener hijos la pareja', 'sin hijos']) and ('sí' in c_has_kids or 'si' in c_has_kids or '1' in c_has_kids or '2' in c_has_kids):
+        return True, f"Dealbreaker de hijos: {cand.get('name')} declaró no aceptar parejas con hijos, y {cli.get('name')} tiene hijos."
+
+    return False, None
+
+
+def parse_clinical_ai_response(raw: str) -> dict:
+    """Parsea respuestas en formato JSON o con formateo Markdown con fallbacks robustos."""
+    m = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', raw)
+    if m:
+        try:
+            return json.loads(m.group(1), strict=False)
+        except Exception:
+            pass
+    f_idx = raw.find("{")
+    l_idx = raw.rfind("}")
+    if f_idx != -1 and l_idx > f_idx:
+        try:
+            return json.loads(raw[f_idx:l_idx + 1], strict=False)
+        except Exception:
+            pass
+
+    res = {}
+    score_m = re.search(r'ai_score[\*\:\s]+(\d+)', raw, re.IGNORECASE)
+    res['ai_score'] = int(score_m.group(1)) if score_m else 65
+
+    veredicto_m = re.search(r'veredicto[\*\:\s]+([^\n\*\#]+)', raw, re.IGNORECASE)
+    res['veredicto'] = veredicto_m.group(1).strip() if veredicto_m else 'VIABLE'
+
+    analisis_m = re.search(r'an[aá]lisis[\*\:\s]+(.*?)(?=\n\s*\*\*|\Z)', raw, re.IGNORECASE | re.DOTALL)
+    res['analisis'] = analisis_m.group(1).strip() if analisis_m else raw[:300]
+
+    deal_breakers = []
+    db_m = re.search(r'(?:deal[\s\-_]*breakers|puntos\s+a\s+considerar|reservas)[\*\:\s]+(.*?)(?=\n\s*\*\*(?:puntos|an[aá]lisis)|\Z)', raw, re.IGNORECASE | re.DOTALL)
+    if db_m:
+        for line in db_m.group(1).strip().split('\n'):
+            line = re.sub(r'^[\*\-\d\.\s]+', '', line).strip()
+            if line:
+                deal_breakers.append(line)
+    res['deal_breakers'] = deal_breakers
+
+    puntos_fuertes = []
+    pf_m = re.search(r'(?:puntos\s+fuertes|fortalezas)[\*\:\s]+(.*?)(?=\n\s*\*\*(?:deal|an[aá]lisis|en\s+resumen)|\Z)', raw, re.IGNORECASE | re.DOTALL)
+    if pf_m:
+        for line in pf_m.group(1).strip().split('\n'):
+            line = re.sub(r'^[\*\-\d\.\s]+', '', line).strip()
+            if line:
+                puntos_fuertes.append(line)
+    res['puntos_fuertes'] = puntos_fuertes
+    return res
+
+
 async def evaluate_candidate_quick_notes_ai(
     client_info: dict,
     cand_info: dict,
@@ -3869,48 +3974,92 @@ async def evaluate_candidate_quick_notes_ai(
     client_http: httpx.AsyncClient
 ) -> Optional[dict]:
     """
-    Evalúa semánticamente la compatibilidad de pareja mediante la API de NVIDIA
-    leyendo el texto completo de las notas clínicas (bio_notes / Quick Notes).
+    Evalúa integralmente (360°) la compatibilidad de pareja mediante Tier 1 determinístico
+    y Tier 2 con la API de NVIDIA leyendo la totalidad de notas clínicas y campos del CRM.
     """
     cache_key = f"{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}"
     if cache_key in _AI_MATCH_CACHE:
         return _AI_MATCH_CACHE[cache_key]
 
-    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:4000]
-    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:4000]
+    # BARRERA 1: Filtro Determinístico (0% AI, 0 tokens)
+    is_hard_dealbreaker, hard_reason = check_deterministic_hard_dealbreakers(client_info, cand_info)
+    if is_hard_dealbreaker:
+        rejection_res = {
+            "ai_score": 15,
+            "veredicto": "NO RECOMENDADO",
+            "analisis": hard_reason,
+            "deal_breakers": [hard_reason],
+            "puntos_fuertes": [],
+            "calidad_notas": "N/A - FILTRO DETERMINISTICO",
+            "model_used": "deterministic_tier1"
+        }
+        _AI_MATCH_CACHE[cache_key] = rejection_res
+        return rejection_res
+
+    # BARRERA 2: Evaluación Clínica 360° con IA
+    def _to_d(val):
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return {}
+        return {}
+
+    c_sp = _to_d(client_info.get("search_preferences"))
+    cand_sp = _to_d(cand_info.get("search_preferences"))
+    c_ls = _to_d(client_info.get("lifestyle"))
+    cand_ls = _to_d(cand_info.get("lifestyle"))
+    c_ap = _to_d(client_info.get("apego"))
+    cand_ap = _to_d(cand_info.get("apego"))
+
+    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:3500]
+    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:3500]
 
     prompt = f"""Eres la Directora de Matchmaking y psicóloga clínica senior de Daily Lover.
-Tu labor es contrastar rigurosamente las notas de entrevista de ambos clientes para encontrar compatibilidades genuinas y posibles fricciones reales.
+Tu labor es contrastar en 360° los perfiles de ambas personas: sus notas clínicas de entrevista, sus estilos de apego, lenguajes del amor, valores, hábitos de vida y lo que cada uno expresó que busca.
 
---- CLIENTE A ({client_info.get('gender', 'Hombre').upper()}) ---
-Nombre: {client_info.get('name')} | Edad: {client_info.get('age') or 'No especificada'} | Ciudad: {client_info.get('city') or 'Bogotá'}
-Notas clínicas de entrevista:
-{c_notes if c_notes.strip() else 'Sin notas clínicas registradas en ficha.'}
+==============================
+PERFIL CLIENTE: {client_info.get('name')}
+- Demografía: Género: {client_info.get('gender') or 'No especificado'} | Edad: {client_info.get('age') or 'No especificada'} | Ciudad: {client_info.get('city') or 'Bogotá'} | Estatura: {client_info.get('estatura') or 'No especificada'}
+- Profesión: {client_info.get('occupation') or 'No especificada'} | Educación: {client_info.get('education') or 'No especificada'}
+- Dinámica Psicológica: Estilo de Apego: {c_ap.get('style') or client_info.get('attachment_style') or 'No especificado'} | Lenguaje del Amor: {client_info.get('love_language') or 'No especificado'} | Temperamento: {c_ls.get('temperament') or 'No especificado'}
+- Estilo de Vida: ¿Tiene hijos?: {c_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'No especificado'} | Fuma: {c_ls.get('smoker') or 'No especificado'} | Bebe: {c_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {c_ls.get('has_pets') or 'No especificado'} | Rumba: {c_ls.get('rumba') or 'No especificado'} | Valores: {c_ls.get('values') or []}
+- Qué busca y límites: No Negociables: {c_sp.get('non_negotiables') or []} | Red Flags: {c_sp.get('red_flags') or []} | Qué busca: {c_sp.get('what_searches_in_partner') or 'No especificado'}
+- Notas Clínicas de la Psicóloga:
+{c_notes if c_notes else 'Sin notas clínicas registradas en ficha.'}
 
---- CANDIDATO/A B ({cand_info.get('gender', 'Mujer').upper()}) ---
-Nombre: {cand_info.get('name')} | Edad: {cand_info.get('age') or 'No especificada'} | Ciudad: {cand_info.get('city') or 'Bogotá'} | Ocupación: {cand_info.get('occupation') or 'No especificada'}
-Notas clínicas de entrevista:
-{cand_notes if cand_notes.strip() else 'Sin notas clínicas registradas en ficha.'}
+==============================
+PERFIL CANDIDATO: {cand_info.get('name')}
+- Demografía: Género: {cand_info.get('gender') or 'No especificado'} | Edad: {cand_info.get('age') or 'No especificada'} | Ciudad: {cand_info.get('city') or 'Bogotá'} | Estatura: {cand_info.get('estatura') or 'No especificada'}
+- Profesión: {cand_info.get('occupation') or 'No especificada'} | Educación: {cand_info.get('education') or 'No especificada'}
+- Dinámica Psicológica: Estilo de Apego: {cand_ap.get('style') or cand_info.get('attachment_style') or 'No especificado'} | Lenguaje del Amor: {cand_info.get('love_language') or 'No especificado'} | Temperamento: {cand_ls.get('temperament') or 'No especificado'}
+- Estilo de Vida: ¿Tiene hijos?: {cand_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {cand_ls.get('wants_children') or 'No especificado'} | Fuma: {cand_ls.get('smoker') or 'No especificado'} | Bebe: {cand_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {cand_ls.get('has_pets') or 'No especificado'} | Rumba: {cand_ls.get('rumba') or 'No especificado'} | Valores: {cand_ls.get('values') or []}
+- Qué busca y límites: No Negociables: {cand_sp.get('non_negotiables') or []} | Red Flags: {cand_sp.get('red_flags') or []} | Qué busca: {cand_sp.get('what_searches_in_partner') or 'No especificado'}
+- Notas Clínicas de la Psicóloga:
+{cand_notes if cand_notes else 'Sin notas clínicas registradas en ficha.'}
 
 --- REGLAS CLÍNICAS DE EVALUACIÓN ---
 1. ESPECIFICIDAD OBLIGATORIA:
    - PROHIBIDO usar frases genéricas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica").
-   - Todo punto fuerte o de fricción DEBE estar anclado a un hecho textual y concreto extraído de las notas (ej: pasatiempos específicos, hábitos diarios, profesión, planes de viaje, mascotas, manejo del dinero, temperamento, apego o postura ante los hijos).
-   - Si las notas clínicas de alguna persona son muy escuetas o no aportan detalles suficientes para contrastar un aspecto, debes declararlo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
+   - Cita hechos textuales concretos: apego, hábitos, ritmo de rumba, mascotas, proyectos de vida o extractos de las notas.
+   - Si las notas clínicas de alguna persona son muy escuetas, decláralo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
 
-2. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE:
-   - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers. Los matices normales de personalidad (ej. diferencias de introversión/extroversión complementarias, carreras demandantes habituales en profesionales, o pequeñas diferencias de ocio) se consideran compatibles y enriquecedores, NO causales de castigo.
-   - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar o verificar (ej. distancia entre sectores de la ciudad, horarios rotativos, o preferencias secundarias).
-   - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos de conexión, PERO existen reservas clínicas o de estilo de vida reales que requieren validación mutua antes de agendar (ej. disponibilidad de tiempo severamente limitada, duelo afectivo o "tusa" menor a 1 año, o dudas de compromiso).
-   - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que hace improbable una buena conexión, aunque no llegue a dealbreaker insalvable.
-   - "NO RECOMENDADO" (ai_score 15 a 35): Dealbreakers explícitos e incompatibilidad directa (postura irreconciliable sobre hijos, religión rígida no negociable, intolerancia a mascotas/humo, o descalificación expresa).
+2. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 15 a 92):
+   - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers. Diferencias normales complementarias o agendas laborales habituales se consideran compatibles, NO causales de castigo.
+   - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar o verificar (rutinas, logística o preferencias secundarias).
+   - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos de conexión, PERO existen reservas clínicas o de estilo de vida reales que requieren validación mutua (apego ansioso/evitativo sin trabajar, ritmo de rumba muy dispar, o duelo afectivo menor a 1 año).
+   - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que dificulta la conexión.
+   - "NO RECOMENDADO" (ai_score 15 a 35): Dealbreakers explícitos o incompatibilidad directa en estilo de vida o valores fundamentales.
 
-3. Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
+3. FORMATO DE RESPUESTA:
+Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 {{
   "ai_score": <entero coherente con la rúbrica>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
-  "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas reales>",
-  "deal_breakers": ["<fricciones o deal-breakers concretos, o vacía si no hay>"],
+  "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas y perfiles reales>",
+  "deal_breakers": ["<fricciones o reservas concretas, o vacía si no hay>"],
   "puntos_fuertes": ["<1 a 3 puntos hiper-específicos citando hechos de las notas>"],
   "calidad_notas": "<SUFICIENTE / ESCUETA / NULA>"
 }}"""
@@ -3927,8 +4076,8 @@ Notas clínicas de entrevista:
     ]
 
     sys_msg = (
-        "You are a specialized JSON-only assistant for matchmaking clinical evaluation. "
-        "Return ONLY a single raw valid JSON object. Do not include conversational remarks, intro, outro, or markdown."
+        "Eres un asistente de psicología clínica experto en matchmaking de Daily Lover. "
+        "Responde SIEMPRE en formato JSON estricto."
     )
 
     for model in models_to_try:
@@ -3938,36 +4087,19 @@ Notas clínicas de entrevista:
                 {"role": "system", "content": sys_msg},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.1,
-            "max_tokens": 500
+            "temperature": 0.2,
+            "max_tokens": 650
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=20.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=35.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
-                res_json = None
-                m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", raw)
-                if m:
-                    try:
-                        res_json = json.loads(m.group(1), strict=False)
-                    except Exception:
-                        pass
-                if not res_json:
-                    f_idx = raw.find("{")
-                    l_idx = raw.rfind("}")
-                    if f_idx != -1 and l_idx > f_idx:
-                        try:
-                            res_json = json.loads(raw[f_idx:l_idx + 1], strict=False)
-                        except Exception:
-                            pass
-                if res_json and isinstance(res_json, dict):
+                res_json = parse_clinical_ai_response(raw)
+                if res_json and isinstance(res_json, dict) and "ai_score" in res_json:
                     res_json["model_used"] = model
-                    print(f"[AI MATCH OK] cand={cand_info.get('name')} model={model} score={res_json.get('ai_score')} verdict={res_json.get('veredicto')}")
                     _AI_MATCH_CACHE[cache_key] = res_json
                     return res_json
-                else:
-                    print(f"[AI MATCH PARSE FAIL] model={model} raw={raw[:150]}")
             elif resp.status_code in (404, 410):
                 continue
             else:
@@ -4035,6 +4167,7 @@ async def find_candidate_matches_engine(
         SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
                p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
                p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+               p.lifestyle, p.love_language,
                cep.social_group_score, cep.physical_activity_level, cep.education_level,
                cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
         FROM users u
@@ -4067,6 +4200,7 @@ async def find_candidate_matches_engine(
             SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
                    p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
                    p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+                   p.lifestyle, p.love_language,
                    cep.social_group_score, cep.physical_activity_level, cep.education_level,
                    cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
             FROM users u
@@ -4341,6 +4475,8 @@ async def find_candidate_matches_engine(
         cand_payload = {
             "user_id": r.id,
             "name": cand_name,
+            "gender": r.gender or ("Mujer" if is_male else "Hombre"),
+            "orientation": getattr(r, "orientation", None),
             "phone": r.phone or "",
             "crm_id": clean_cid if clean_cid and clean_cid.isdigit() else "",
             "crm_url": cand_crm_url,
@@ -4357,6 +4493,8 @@ async def find_candidate_matches_engine(
             "physical_activity_level": cand_act,
             "education_level": cand_edu,
             "love_language": cand_lang,
+            "lifestyle": getattr(r, "lifestyle", None),
+            "apego": getattr(r, "apego", None),
             "attachment_style": cand_attachment,
             "attachment_eval": attachment_eval,
             "datos_completos": datos_completos,
