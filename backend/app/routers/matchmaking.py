@@ -1084,15 +1084,24 @@ async def get_refunds_queue(
     """
     Retorna la cola de refunds para Lina (Servicio al Cliente).
     Filtra por REFUND (pendientes de procesar) o REFUND DONE (procesados en Stripe/Nequi).
+    Incluye datos de pago e identificador de Stripe para procesar devoluciones automáticas.
     """
     target_status = "REFUND DONE" if status and status.upper() == "REFUND DONE" else "REFUND"
     query = """
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier,
             m.status, m.observations, m.created_at, m.updated_at,
-            m.person_a_crm_id, uA.crm_id AS ua_crm_id
+            m.person_a_crm_id, uA.crm_id AS ua_crm_id,
+            COALESCE(m.stripe_payment_intent_id, pA.stripe_payment_intent_id) AS stripe_payment_intent_id,
+            COALESCE(m.stripe_refund_id, sp.stripe_refund_id) AS stripe_refund_id,
+            COALESCE(m.refund_amount, sp.amount_refunded) AS refund_amount,
+            sp.amount AS stripe_amount,
+            sp.currency AS stripe_currency,
+            sp.payment_status AS stripe_payment_status
         FROM operational_matches m
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN profiles pA ON pA.user_id = uA.id
+        LEFT JOIN stripe_payments sp ON sp.stripe_payment_intent_id = COALESCE(m.stripe_payment_intent_id, pA.stripe_payment_intent_id)
         WHERE m.status = :st
     """
     params = {"st": target_status}
@@ -1117,23 +1126,198 @@ async def get_refunds_queue(
             "plan_tier": normalize_plan(d.get("plan_tier")),
             "status": d.get("status"),
             "observations": d.get("observations") or "",
-            "fecha": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else ""
+            "fecha": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else "",
+            "stripe_payment_intent_id": d.get("stripe_payment_intent_id") or "",
+            "stripe_refund_id": d.get("stripe_refund_id") or "",
+            "stripe_amount": float(d.get("stripe_amount")) if d.get("stripe_amount") is not None else None,
+            "stripe_currency": d.get("stripe_currency") or "COP",
+            "stripe_payment_status": d.get("stripe_payment_status") or "",
+            "refund_amount": float(d.get("refund_amount")) if d.get("refund_amount") is not None else None
         })
 
     return {"refunds": refunds, "total": len(refunds)}
 
 
+class StripeProcessRefundRequest(BaseModel):
+    payment_intent_id: Optional[str] = None
+    amount: Optional[float] = None
+    reason: Optional[str] = "requested_by_customer"
+    notes: Optional[str] = None
+
+
+@router.post("/refunds/{match_id}/process-stripe")
+async def process_stripe_refund(
+    match_id: int,
+    req: Optional[StripeProcessRefundRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Acción exclusiva de Lina / Finanzas:
+    Ejecuta un reembolso automático en vivo a través de la API de Stripe
+    usando el Payment Intent (pi_...) asociado al cliente.
+    """
+    settings = get_settings()
+    stripe_key = settings.stripe_api_key or os.environ.get("STRIPE_API_KEY", "")
+    if not stripe_key:
+        raise HTTPException(status_code=500, detail="STRIPE_API_KEY no configurada en el servidor")
+
+    # 1. Obtener match y usuario
+    res = await db.execute(text("""
+        SELECT m.id, m.person_a, m.person_b, m.psychologist_name, m.slot_number,
+               m.person_a_crm_id, m.person_b_crm_id, m.observations,
+               COALESCE(m.stripe_payment_intent_id, pA.stripe_payment_intent_id) AS pi_id,
+               sp.amount AS paid_amount, sp.currency
+        FROM operational_matches m
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN profiles pA ON pA.user_id = uA.id
+        LEFT JOIN stripe_payments sp ON sp.stripe_payment_intent_id = COALESCE(m.stripe_payment_intent_id, pA.stripe_payment_intent_id)
+        WHERE m.id = :id
+    """), {"id": match_id})
+    row = res.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    pi_to_use = (req.payment_intent_id if req and req.payment_intent_id else None) or row.pi_id
+    if not pi_to_use:
+        # Búsqueda fallback en stripe_payments por nombre
+        sp_res = await db.execute(text("""
+            SELECT stripe_payment_intent_id, amount, currency
+            FROM stripe_payments
+            WHERE LOWER(customer_name) ILIKE :n AND payment_status = 'succeeded'
+            ORDER BY payment_date DESC LIMIT 1
+        """), {"n": f"%{row.person_a.strip().lower()}%"})
+        sp_row = sp_res.fetchone()
+        if sp_row:
+            pi_to_use = sp_row.stripe_payment_intent_id
+
+    if not pi_to_use:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se encontró un Payment Intent (pi_...) asociado a '{row.person_a}'. Puedes ingresarlo manualmente en el formulario."
+        )
+
+    # 2. Llamada directa a Stripe API
+    import urllib.request, urllib.parse, base64
+    auth_h = "Basic " + base64.b64encode(f"{stripe_key}:".encode()).decode()
+
+    refund_payload = {
+        "payment_intent": pi_to_use,
+        "reason": (req.reason if req and req.reason else "requested_by_customer"),
+        "metadata[match_id]": str(match_id),
+        "metadata[person_a]": row.person_a,
+        "metadata[processed_by]": "Lina CRM"
+    }
+    if req and req.amount and req.amount > 0:
+        refund_payload["amount"] = str(int(req.amount * 100))
+
+    encoded_data = urllib.parse.urlencode(refund_payload).encode("utf-8")
+    req_stripe = urllib.request.Request(
+        "https://api.stripe.com/v1/refunds",
+        data=encoded_data,
+        headers={"Authorization": auth_h, "Content-Type": "application/x-www-form-urlencoded"}
+    )
+
+    try:
+        with urllib.request.urlopen(req_stripe) as resp_stripe:
+            stripe_res = json.loads(resp_stripe.read().decode())
+    except urllib.error.HTTPError as err:
+        err_body = err.read().decode()
+        try:
+            err_json = json.loads(err_body)
+            err_msg = err_json.get("error", {}).get("message", err_body)
+        except Exception:
+            err_msg = err_body
+        raise HTTPException(status_code=400, detail=f"Error en Stripe: {err_msg}")
+
+    refund_id = stripe_res.get("id")
+    refund_status = stripe_res.get("status")
+    refunded_amt = float(stripe_res.get("amount", 0)) / 100.0
+    refund_curr = stripe_res.get("currency", "cop").upper()
+
+    # 3. Actualizar DB
+    obs_extra = f" | [REFUND AUTOMÁTICO STRIPE: {refund_id} - ${refunded_amt:,.0f} {refund_curr} ({refund_status})]"
+    if req and req.notes:
+        obs_extra += f" - Nota: {req.notes}"
+
+    obs_final = (row.observations or "") + obs_extra
+
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'REFUND DONE',
+            stripe_payment_intent_id = :pi,
+            stripe_refund_id = :ref_id,
+            refund_amount = :amt,
+            observations = :obs,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {
+        "id": match_id,
+        "pi": pi_to_use,
+        "ref_id": refund_id,
+        "amt": refunded_amt,
+        "obs": obs_final
+    })
+
+    await db.execute(text("""
+        UPDATE stripe_payments
+        SET payment_status = 'refunded',
+            amount_refunded = :amt,
+            stripe_refund_id = :ref_id,
+            updated_at = NOW()
+        WHERE stripe_payment_intent_id = :pi
+    """), {"amt": refunded_amt, "ref_id": refund_id, "pi": pi_to_use})
+
+    await db.execute(text("""
+        INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+        VALUES (:name, :mid, 'STRIPE_REFUND_PROCESSED', :details, NOW())
+    """), {
+        "name": row.person_a,
+        "mid": match_id,
+        "details": f"Reembolso automático procesado en Stripe por Lina. ID: {refund_id}, Monto: ${refunded_amt:,.0f} {refund_curr}"
+    })
+
+    await db.commit()
+
+    # 4. Notificar a Google Sheets
+    try:
+        from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
+        tab_name = get_canonical_tab_name(row.psychologist_name)
+        asyncio.create_task(notify_apps_script_status_change(
+            tab=tab_name,
+            match_id=match_id,
+            slot_number=getattr(row, 'slot_number', 1) or 1,
+            new_status="REFUND DONE",
+            role="servicio_al_cliente",
+            person_a=row.person_a,
+            person_b=row.person_b,
+            person_a_crm_id=getattr(row, 'person_a_crm_id', None),
+            person_b_crm_id=getattr(row, 'person_b_crm_id', None),
+            extra_notes=f"Reembolso automático Stripe: {refund_id}"
+        ))
+    except Exception as e:
+        logger.warning(f"Error al notificar Apps Script: {e}")
+
+    return {
+        "status": "success",
+        "refund_id": refund_id,
+        "refund_status": refund_status,
+        "amount_refunded": refunded_amt,
+        "currency": refund_curr,
+        "message": f"✓ Reembolso de ${refunded_amt:,.0f} {refund_curr} procesado exitosamente en Stripe (ID: {refund_id})."
+    }
+
+
 @router.patch("/refunds/{match_id}/process")
 async def process_refund(match_id: int, db: AsyncSession = Depends(get_db)):
     """
-    Acción exclusiva de Lina: Marca el match como REFUND DONE tras procesar el reembolso en Stripe/Nequi.
+    Acción manual de Lina: Marca el match como REFUND DONE tras procesar el reembolso manualmente en Nequi/Banco.
     """
     res = await db.execute(text("SELECT id, person_a, person_b, psychologist_name, slot_number, person_a_crm_id, person_b_crm_id, observations FROM operational_matches WHERE id = :id"), {"id": match_id})
     row = res.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
-    obs = (row.observations or "") + f" | [REFUND PROCESADO POR LINA]"
+    obs = (row.observations or "") + f" | [REFUND MANUAL PROCESADO POR LINA]"
     await db.execute(text("""
         UPDATE operational_matches
         SET status = 'REFUND DONE', observations = :obs, updated_at = NOW()
@@ -1142,7 +1326,7 @@ async def process_refund(match_id: int, db: AsyncSession = Depends(get_db)):
 
     await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
-        VALUES (:name, :mid, 'REFUND_PROCESSED', 'Reembolso aprobado y procesado por Lina en pasarela/banco.', NOW())
+        VALUES (:name, :mid, 'REFUND_PROCESSED', 'Reembolso manual aprobado y registrado por Lina.', NOW())
     """), {"name": row.person_a, "mid": match_id})
 
     await db.commit()

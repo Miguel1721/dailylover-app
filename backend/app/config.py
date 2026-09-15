@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     whatsapp_webhook_verify_token: str = Field("daily_lover_verify_token_default", validation_alias="WHATSAPP_WEBHOOK_VERIFY_TOKEN")
     smartmatchapp_webhook_secret: str = Field("", validation_alias="SMARTMATCHAPP_WEBHOOK_SECRET")
     calendly_api_token: str = Field("", validation_alias="CALENDLY_API_TOKEN")
+    stripe_api_key: str = Field("", validation_alias="STRIPE_API_KEY")
+    stripe_webhook_secret: str = Field("", validation_alias="STRIPE_WEBHOOK_SECRET")
 
 
 

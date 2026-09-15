@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/webhooks", tags=["Webhooks"])
 
+import asyncio
+
 # Mapeo de IDs de productos / montos de Stripe a planes de Daily Lover
 STRIPE_PLAN_MAP = {
     "195": "VIP 195k",
@@ -31,14 +33,44 @@ STRIPE_PLAN_MAP = {
     "40": "Básico 40k",
 }
 
+def verify_stripe_signature(payload_bytes: bytes, sig_header: Optional[str], secret: str) -> bool:
+    """Valida la firma HMAC-SHA256 del webhook de Stripe."""
+    if not secret:
+        return True
+    if not sig_header:
+        return False
+    try:
+        pairs = dict(item.strip().split("=", 1) for item in sig_header.split(",") if "=" in item)
+        timestamp = pairs.get("t")
+        signature = pairs.get("v1")
+        if not timestamp or not signature:
+            return False
+        signed_payload = f"{timestamp}.".encode("utf-8") + payload_bytes
+        expected_sig = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected_sig, signature)
+    except Exception as e:
+        logger.error(f"Error verificando firma de Stripe: {e}")
+        return False
+
 @router.post("/stripe")
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """
     Endpoint automático para recibir eventos de pago desde Stripe.
-    Actualiza el plan_tier del cliente y notifica a la psicóloga asignada.
+    Actualiza el plan_tier del cliente, registra en stripe_payments,
+    notifica a la psicóloga asignada y procesa eventos de devolución (refund).
     """
+    settings = get_settings()
+    body_bytes = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    # 1. Validar firma si el secreto está configurado
+    if settings.stripe_webhook_secret:
+        if not verify_stripe_signature(body_bytes, sig_header, settings.stripe_webhook_secret):
+            logger.warning("Firma criptográfica de Stripe rechazada")
+            raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+
     try:
-        payload = await request.json()
+        payload = json.loads(body_bytes.decode("utf-8"))
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
@@ -47,51 +79,139 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     logger.info(f"Stripe Webhook recibido: {event_type}")
 
+    # ─── CASO 1: PAGO EXITOSO O CHECKOUT COMPLETADO ─────────────────────────────
     if event_type in ["checkout.session.completed", "invoice.payment_succeeded", "charge.succeeded"]:
         customer_email = data_object.get("customer_email") or data_object.get("billing_details", {}).get("email")
         customer_phone = data_object.get("customer_phone") or data_object.get("billing_details", {}).get("phone")
-        amount_paid = data_object.get("amount_total") or data_object.get("amount")
+        customer_name = data_object.get("customer_name") or data_object.get("billing_details", {}).get("name")
+        stripe_cust_id = data_object.get("customer")
+        
+        pi_id = data_object.get("payment_intent") or (data_object.get("id") if str(data_object.get("id", "")).startswith("pi_") else None)
+        charge_id = data_object.get("latest_charge") or (data_object.get("id") if str(data_object.get("id", "")).startswith("ch_") else None)
 
-        # Determinar el plan según el monto o metadata
-        plan_name = "Estándar 65k"
-        meta_plan = data_object.get("metadata", {}).get("plan_tier") or data_object.get("metadata", {}).get("plan") or ""
-        desc = str(data_object.get("description", "")).lower()
-        if "experience" in str(meta_plan).lower() or "experience" in desc:
+        # Si el correo no vino directo pero tenemos customer_id y API key, enriquecer desde Stripe
+        if not customer_email and stripe_cust_id and settings.stripe_api_key:
+            try:
+                import urllib.request
+                auth_h = "Basic " + base64.b64encode(f"{settings.stripe_api_key}:".encode()).decode()
+                req_c = urllib.request.Request(f"https://api.stripe.com/v1/customers/{stripe_cust_id}", headers={"Authorization": auth_h})
+                with urllib.request.urlopen(req_c) as resp_c:
+                    c_data = json.loads(resp_c.read().decode())
+                    customer_email = customer_email or c_data.get("email")
+                    customer_name = customer_name or c_data.get("name")
+                    customer_phone = customer_phone or c_data.get("phone")
+            except Exception as ex:
+                logger.warning(f"No se pudo consultar customer {stripe_cust_id}: {ex}")
+
+        amount_raw = data_object.get("amount_total") or data_object.get("amount") or 0
+        amount_cop = float(amount_raw) / 100.0 if amount_raw else 0.0
+        currency = (data_object.get("currency") or "cop").upper()
+
+        # Determinar el plan de forma dinámica (soportando links preferenciales o únicos de María)
+        meta = data_object.get("metadata", {}) or {}
+        meta_plan = meta.get("plan_tier") or meta.get("plan") or meta.get("producto") or ""
+        desc = str(data_object.get("description") or "").strip()
+
+        plan_name = ""
+        if "experience" in str(meta_plan).lower() or "experience" in desc.lower():
             plan_name = "Matchmaking Experience"
         elif meta_plan:
             plan_name = meta_plan
-        elif amount_paid:
+        elif desc and len(desc) > 3 and not desc.lower().startswith("invoice"):
+            plan_name = desc[:60]
+        else:
             for key, name in STRIPE_PLAN_MAP.items():
-                if key in str(amount_paid):
+                if key in str(int(amount_cop)):
                     plan_name = name
                     break
 
-        if customer_email or customer_phone:
-            # Buscar usuario por correo o teléfono haciendo JOIN con profiles
+        if not plan_name:
+            if amount_cop > 0:
+                plan_name = f"Plan Especial - ${int(amount_cop):,} {currency}"
+            else:
+                plan_name = "Plan Personalizado"
+
+        # Registrar en la tabla de auditoría stripe_payments
+        try:
+            await db.execute(text("""
+                INSERT INTO stripe_payments (
+                    stripe_payment_intent_id, stripe_charge_id, stripe_customer_id,
+                    customer_name, customer_email, customer_phone,
+                    amount, currency, description, plan_tier,
+                    payment_status, payment_date, metadata, created_at, updated_at
+                ) VALUES (
+                    :pi_id, :ch_id, :cust_id,
+                    :c_name, :c_email, :c_phone,
+                    :amt, :curr, :desc, :plan,
+                    'succeeded', NOW(), :meta, NOW(), NOW()
+                )
+                ON CONFLICT (stripe_payment_intent_id) DO UPDATE SET
+                    payment_status = 'succeeded',
+                    amount = EXCLUDED.amount,
+                    plan_tier = EXCLUDED.plan_tier,
+                    customer_name = COALESCE(EXCLUDED.customer_name, stripe_payments.customer_name),
+                    customer_email = COALESCE(EXCLUDED.customer_email, stripe_payments.customer_email),
+                    updated_at = NOW()
+            """), {
+                "pi_id": pi_id,
+                "ch_id": charge_id,
+                "cust_id": stripe_cust_id,
+                "c_name": customer_name,
+                "c_email": customer_email,
+                "c_phone": customer_phone,
+                "amt": amount_cop,
+                "curr": currency,
+                "desc": desc or plan_name,
+                "plan": plan_name,
+                "meta": json.dumps(meta)
+            })
+        except Exception as e:
+            logger.error(f"Error guardando en stripe_payments: {e}")
+
+        # Buscar usuario en el CRM por correo, teléfono o nombre
+        if customer_email or customer_phone or customer_name:
             result = await db.execute(text("""
                 SELECT u.id, u.name, p.responsable, p.plan_tier
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE (u.email IS NOT NULL AND lower(u.email) = lower(:e))
                    OR (u.phone IS NOT NULL AND u.phone = :p)
+                   OR (u.name IS NOT NULL AND lower(u.name) = lower(:n))
                 LIMIT 1
-            """), {"e": customer_email or "", "p": customer_phone or ""})
+            """), {"e": customer_email or "", "p": customer_phone or "", "n": customer_name or ""})
             user_row = result.fetchone()
 
             if user_row:
                 user_id, user_name, responsable, old_plan = user_row.id, user_row.name, user_row.responsable, user_row.plan_tier
-                
-                # Actualizar plan_tier en profiles (donde pertenece la columna)
+
+                # Actualizar plan y referencias de Stripe en profiles
                 await db.execute(text("""
                     UPDATE profiles
-                    SET plan_tier = :plan_tier, updated_at = NOW()
+                    SET plan_tier = :plan_tier,
+                        stripe_customer_id = COALESCE(:cust_id, stripe_customer_id),
+                        stripe_payment_intent_id = COALESCE(:pi_id, stripe_payment_intent_id),
+                        last_payment_amount = :amt,
+                        last_payment_date = NOW(),
+                        updated_at = NOW()
                     WHERE user_id = :user_id
-                """), {"plan_tier": plan_name, "user_id": user_id})
+                """), {
+                    "plan_tier": plan_name,
+                    "cust_id": stripe_cust_id,
+                    "pi_id": pi_id,
+                    "amt": amount_cop,
+                    "user_id": user_id
+                })
 
-                # Registrar recordatorio / notificación interna para la psicóloga
+                # Vincular user_id en stripe_payments
+                if pi_id:
+                    await db.execute(text("""
+                        UPDATE stripe_payments SET user_id = :uid WHERE stripe_payment_intent_id = :pi
+                    """), {"uid": user_id, "pi": pi_id})
+
+                # Notificación para la psicóloga asignada
                 responsable_name = (responsable or "").replace("MATCHES ", "").strip() or "REVISIÓN MANUAL"
-                obs_note = f"🔔 [PAGO AUTOMÁTICO STRIPE] {user_name} renovó/adquirió plan {plan_name}. Plan anterior: {old_plan or 'Sin plan'}."
-                
+                obs_note = f"🔔 [PAGO STRIPE] {user_name} adquirió {plan_name} (${amount_cop:,.0f} {currency}). Plan anterior: {old_plan or 'Sin plan'}."
+
                 await db.execute(text("""
                     INSERT INTO reminders (title, description, due_date, status, assigned_to, created_at)
                     VALUES (:title, :desc, CURRENT_DATE, 'PENDIENTE', :assigned, NOW())
@@ -105,6 +225,79 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 logger.info(f"Plan actualizado en profiles para usuario {user_id} ({user_name}) a {plan_name}")
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}
 
+    # ─── CASO 2: REEMBOLSO EMITIDO EN STRIPE ─────────────────────────────────────
+    elif event_type == "charge.refunded":
+        pi_id = data_object.get("payment_intent")
+        ch_id = data_object.get("id")
+        amount_refunded = float(data_object.get("amount_refunded", 0)) / 100.0
+        refunds_list = data_object.get("refunds", {}).get("data", [])
+        refund_id = refunds_list[0].get("id") if refunds_list else f"re_{ch_id}"
+
+        logger.info(f"Stripe Webhook Refund: ch={ch_id}, pi={pi_id}, amount={amount_refunded}, ref_id={refund_id}")
+
+        # Actualizar stripe_payments
+        if pi_id or ch_id:
+            await db.execute(text("""
+                UPDATE stripe_payments
+                SET payment_status = 'refunded',
+                    amount_refunded = :amt,
+                    stripe_refund_id = :ref_id,
+                    updated_at = NOW()
+                WHERE stripe_payment_intent_id = :pi OR stripe_charge_id = :ch
+            """), {"amt": amount_refunded, "ref_id": refund_id, "pi": pi_id, "ch": ch_id})
+
+        # Buscar match en operational_matches para marcarlo REFUND DONE
+        res = await db.execute(text("""
+            SELECT id, person_a, psychologist_name, observations
+            FROM operational_matches
+            WHERE stripe_payment_intent_id = :pi
+               OR (status = 'REFUND' AND person_a ILIKE :name_pattern)
+            ORDER BY updated_at DESC LIMIT 1
+        """), {
+            "pi": pi_id or "",
+            "name_pattern": f"%{data_object.get('billing_details', {}).get('name', '')[:10]}%" if data_object.get('billing_details', {}).get('name') else "IMPOSSIBLE_MATCH"
+        })
+        match_row = res.fetchone()
+
+        if match_row:
+            mid = match_row.id
+            obs = (match_row.observations or "") + f" | [REFUND STRIPE WEBHOOK: {refund_id} - ${amount_refunded:,.0f} COP]"
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'REFUND DONE',
+                    stripe_refund_id = :ref_id,
+                    refund_amount = :amt,
+                    observations = :obs,
+                    updated_at = NOW()
+                WHERE id = :mid
+            """), {"mid": mid, "ref_id": refund_id, "amt": amount_refunded, "obs": obs})
+
+            await db.execute(text("""
+                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+                VALUES (:name, :mid, 'STRIPE_REFUND_WEBHOOK', :details, NOW())
+            """), {
+                "name": match_row.person_a,
+                "mid": mid,
+                "details": f"Reembolso confirmado vía Stripe Webhook. ID: {refund_id}, Monto: ${amount_refunded:,.0f} COP"
+            })
+
+            # Notificar a Apps Script (Google Sheets)
+            try:
+                from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
+                tab_name = get_canonical_tab_name(match_row.psychologist_name)
+                asyncio.create_task(notify_apps_script_status_change(
+                    tab=tab_name,
+                    match_id=mid,
+                    slot_number=1,
+                    new_status="REFUND DONE",
+                    role="servicio_al_cliente",
+                    extra_notes=f"Reembolso automático Stripe: {refund_id}"
+                ))
+            except Exception as err:
+                logger.warning(f"Error notificando Apps Script tras webhook refund: {err}")
+
+        await db.commit()
+        return {"status": "success", "refund_id": refund_id, "amount_refunded": amount_refunded}
 
     return {"status": "ignored", "event_type": event_type}
 

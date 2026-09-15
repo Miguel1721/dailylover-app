@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
-  Wallet, CheckCircle, Search, RefreshCw, AlertCircle, Clock, ExternalLink, MapPin
+  Wallet, CheckCircle, Search, RefreshCw, AlertCircle, Clock, ExternalLink, MapPin, Zap, CreditCard
 } from 'lucide-react'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
@@ -21,6 +21,50 @@ export default function RefundsQueue() {
     reason: ''
   })
   const [submittingManual, setSubmittingManual] = useState(false)
+  const [stripeRefundTarget, setStripeRefundTarget] = useState(null)
+  const [stripeAmount, setStripeAmount] = useState('')
+  const [stripeReason, setStripeReason] = useState('requested_by_customer')
+  const [stripeNotes, setStripeNotes] = useState('')
+  const [stripeProcessing, setStripeProcessing] = useState(false)
+
+  const handleOpenStripeModal = (item) => {
+    setStripeRefundTarget(item)
+    setStripeAmount(item.stripe_amount ? String(item.stripe_amount) : '')
+    setStripeReason('requested_by_customer')
+    setStripeNotes('')
+  }
+
+  const handleExecuteStripeRefund = async (e) => {
+    e.preventDefault()
+    if (!stripeRefundTarget) return
+
+    setStripeProcessing(true)
+    try {
+      const res = await fetch(`/api/v1/matchmaking/refunds/${stripeRefundTarget.id}/process-stripe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          payment_intent_id: stripeRefundTarget.stripe_payment_intent_id || undefined,
+          amount: stripeAmount ? parseFloat(stripeAmount) : undefined,
+          reason: stripeReason,
+          notes: stripeNotes || undefined
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Error al procesar el reembolso en Stripe')
+      
+      alert(data.message || '✓ Reembolso procesado exitosamente en Stripe.')
+      setStripeRefundTarget(null)
+      fetchRefunds()
+    } catch (err) {
+      alert(`Error: ${err.message}`)
+    } finally {
+      setStripeProcessing(false)
+    }
+  }
 
   const handleCreateManualRefund = async (e) => {
     e.preventDefault()
@@ -268,7 +312,16 @@ export default function RefundsQueue() {
                     <CrmPersonLink name={r.person_a} crmId={r.person_a_crm_id} />
                   </td>
                   <td style={{ padding: '12px 12px', fontWeight: 600 }}>
-                    {r.plan_tier || 'Estándar 65k'}
+                    <div>{r.plan_tier || 'Estándar 65k'}</div>
+                    {r.stripe_amount ? (
+                      <div style={{ fontSize: 11, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                        <CreditCard size={11} /> ${r.stripe_amount.toLocaleString()} {r.stripe_currency}
+                      </div>
+                    ) : r.stripe_payment_intent_id ? (
+                      <div style={{ fontSize: 10, color: '#38bdf8', marginTop: 2 }}>
+                        💳 Stripe {r.stripe_payment_intent_id.slice(0, 8)}...
+                      </div>
+                    ) : null}
                   </td>
                   <td style={{ padding: '12px 12px' }}>
                     <span style={{ padding: '2px 6px', background: 'var(--bg-base)', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
@@ -296,29 +349,68 @@ export default function RefundsQueue() {
                   </td>
                   <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                     {r.status === 'REFUND' ? (
-                      <button
-                        onClick={() => handleProcessRefund(r.id)}
-                        disabled={processingId === r.id}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          background: '#274E13',
-                          color: '#FFFFFF',
-                          border: 'none',
-                          borderRadius: 6,
-                          padding: '6px 12px',
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <CheckCircle size={14} /> {processingId === r.id ? 'Procesando...' : 'Aprobar Refund'}
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center', minWidth: 140 }}>
+                        <button
+                          onClick={() => handleOpenStripeModal(r)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            background: '#7c3aed',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: 6,
+                            padding: '6px 12px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(124, 58, 237, 0.3)',
+                            width: '100%',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <Zap size={13} fill="#FFFFFF" /> Reembolsar Stripe
+                        </button>
+
+                        <button
+                          onClick={() => handleProcessRefund(r.id)}
+                          disabled={processingId === r.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            background: 'transparent',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 6,
+                            padding: '4px 8px',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            width: '100%',
+                            justifyContent: 'center'
+                          }}
+                          title="Marcar como procesado si el reembolso fue por Nequi o transferencia manual"
+                        >
+                          <CheckCircle size={12} /> {processingId === r.id ? '...' : 'Manual (Nequi)'}
+                        </button>
+                      </div>
                     ) : (
-                      <span style={{ fontSize: 11, color: '#274E13', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <CheckCircle size={13} /> Reembolsado
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        <span style={{ fontSize: 11, color: '#274E13', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <CheckCircle size={13} /> Reembolsado
+                        </span>
+                        {r.stripe_refund_id && (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            ID: {r.stripe_refund_id.slice(0, 12)}...
+                          </span>
+                        )}
+                        {r.refund_amount && (
+                          <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>
+                            ${r.refund_amount.toLocaleString()} COP
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -443,6 +535,134 @@ export default function RefundsQueue() {
                   }}
                 >
                   {submittingManual ? 'Enviando...' : 'Enviar a Cola de Lina'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reembolso Automático en Stripe */}
+      {stripeRefundTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            borderRadius: 12,
+            border: '1px solid #7c3aed',
+            width: '100%',
+            maxWidth: 520,
+            padding: 24,
+            boxShadow: '0 8px 32px rgba(124, 58, 237, 0.3)'
+          }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Zap size={20} color="#a855f7" fill="#a855f7" /> Reembolso Automático en Stripe
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+              Esta acción ordenará a <strong>Stripe</strong> devolver los fondos a la tarjeta del cliente de forma inmediata.
+            </p>
+
+            <form onSubmit={handleExecuteStripeRefund} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ padding: '12px 14px', background: 'var(--bg-base)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Cliente / Solicitante</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                  {stripeRefundTarget.person_a}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  Plan: <strong>{stripeRefundTarget.plan_tier}</strong> • Match #{stripeRefundTarget.id}
+                </div>
+                {stripeRefundTarget.stripe_payment_intent_id && (
+                  <div style={{ fontSize: 11, color: '#38bdf8', marginTop: 4, fontFamily: 'monospace' }}>
+                    Payment Intent: {stripeRefundTarget.stripe_payment_intent_id}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Monto a Reembolsar (COP) *
+                </label>
+                <input
+                  type="number"
+                  required
+                  placeholder={stripeRefundTarget.stripe_amount ? String(stripeRefundTarget.stripe_amount) : "Ej: 65000"}
+                  value={stripeAmount}
+                  onChange={e => setStripeAmount(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 14, fontWeight: 600
+                  }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                  {stripeRefundTarget.stripe_amount ? `Monto cobrado originalmente: $${stripeRefundTarget.stripe_amount.toLocaleString()} COP` : 'Si se deja el valor original, se reembolsa el 100%.'}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Motivo del Reembolso (Stripe)
+                </label>
+                <select
+                  value={stripeReason}
+                  onChange={e => setStripeReason(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 13
+                  }}
+                >
+                  <option value="requested_by_customer">Solicitado por el cliente (requested_by_customer)</option>
+                  <option value="duplicate">Cobro duplicado (duplicate)</option>
+                  <option value="fraudulent">Sospecha de fraude (fraudulent)</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Nota interna de auditoría (Lina / Servicio al Cliente)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Ej: Cliente solicitó cancelación por cambio de ciudad."
+                  value={stripeNotes}
+                  onChange={e => setStripeNotes(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 13, resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setStripeRefundTarget(null)}
+                  disabled={stripeProcessing}
+                  style={{
+                    padding: '9px 16px', borderRadius: 6, border: '1px solid var(--border-color)',
+                    background: 'var(--bg-base)', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={stripeProcessing}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '9px 18px', borderRadius: 6, border: 'none',
+                    background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700,
+                    cursor: 'pointer', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.4)'
+                  }}
+                >
+                  <Zap size={14} fill="#fff" />
+                  {stripeProcessing ? 'Procesando en Stripe...' : 'Confirmar Reembolso Automático'}
                 </button>
               </div>
             </form>
