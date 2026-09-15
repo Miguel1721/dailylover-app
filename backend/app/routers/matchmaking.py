@@ -3879,29 +3879,38 @@ async def evaluate_candidate_quick_notes_ai(
     c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:1200]
     cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:1200]
 
-    prompt = f"""Eres la Directora de Matchmaking y psicóloga de Daily Lover.
-Evalúa la compatibilidad de pareja entre estos dos clientes a partir de sus notas de entrevista.
+    prompt = f"""Eres la Directora de Matchmaking y psicóloga clínica senior de Daily Lover.
+Tu labor es contrastar rigurosamente las notas de entrevista de ambos clientes para encontrar compatibilidades genuinas y posibles fricciones reales.
 
 --- CLIENTE A ({client_info.get('gender', 'Hombre').upper()}) ---
 Nombre: {client_info.get('name')} | Edad: {client_info.get('age') or 'No especificada'} | Ciudad: {client_info.get('city') or 'Bogotá'}
-Notas clínicas:
-{c_notes}
+Notas clínicas de entrevista:
+{c_notes if c_notes.strip() else 'Sin notas clínicas registradas en ficha.'}
 
---- CANDIDATA B ({cand_info.get('gender', 'Mujer').upper()}) ---
-Nombre: {cand_info.get('name')} | Edad: {cand_info.get('age') or 'No especificada'} | Ciudad: {cand_info.get('city') or 'Bogotá'} | Ocupación: {cand_info.get('occupation')}
-Notas clínicas:
-{cand_notes if cand_notes.strip() else 'Perfil verificado en CRM.'}
+--- CANDIDATO/A B ({cand_info.get('gender', 'Mujer').upper()}) ---
+Nombre: {cand_info.get('name')} | Edad: {cand_info.get('age') or 'No especificada'} | Ciudad: {cand_info.get('city') or 'Bogotá'} | Ocupación: {cand_info.get('occupation') or 'No especificada'}
+Notas clínicas de entrevista:
+{cand_notes if cand_notes.strip() else 'Sin notas clínicas registradas en ficha.'}
 
---- REGLAS DE EVALUACIÓN ---
-1. Si detectas deal-breakers claros (postura frente a hijos, roles tradicionales de proveedor, religión no negociable), asigna ai_score entre 20 y 35, y veredicto "NO RECOMENDADO".
-2. Si los perfiles son compatibles en valores y dinámica de vida, asigna ai_score entre 75 y 95, y veredicto "RECOMENDADO".
-3. Responde ÚNICAMENTE en JSON con:
+--- REGLAS CLÍNICAS ESTRICTAS DE EVALUACIÓN ---
+1. ESPECIFICIDAD OBLIGATORIA:
+   - PROHIBIDO usar frases genéricas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica").
+   - Todo punto fuerte o de fricción DEBE estar anclado a un hecho textual y concreto extraído de las notas (ej: pasatiempos específicos, hábitos diarios, profesión, planes de viaje, mascotas, manejo del dinero, temperamento, apego o postura ante los hijos).
+   - Si las notas clínicas de alguna persona son muy escuetas o no aportan detalles suficientes para contrastar un aspecto, debes declararlo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X" en lugar de inventar generalidades.
+
+2. RÚBRICA Y COHERENCIA ESTRICTA DE PUNTAJE (El score debe reflejar exactamente el veredicto):
+   - "RECOMENDADO" (ai_score 75 a 95): Afinidad evidente y concreta comprobada en notas, sin deal-breakers ni reservas clínicas significativas.
+   - "VIABLE CON RESERVAS" (ai_score 50 a 68): Hay puntos de conexión, PERO existen diferencias de estilo de vida, dudas sobre disponibilidad, historial afectivo complejo o temas a verificar antes de presentar el perfil. (PROHIBIDO dar más de 68 cuando hay reservas explícitas).
+   - "NO RECOMENDADO" (ai_score 15 a 35): Deal-breakers explícitos (postura irreconciliable sobre hijos, religión rígida no negociable, roles de género incompatibles, o antecedentes de descalificación).
+
+3. Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
 {{
-  "ai_score": <número entero 0-100>,
+  "ai_score": <entero coherente con la rúbrica>,
   "veredicto": "<RECOMENDADO / VIABLE CON RESERVAS / NO RECOMENDADO>",
-  "analisis": "<explicación de 2 líneas>",
-  "deal_breakers": ["<lista o vacía>"],
-  "puntos_fuertes": ["<1 a 3 puntos>"]
+  "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas reales>",
+  "deal_breakers": ["<fricciones o deal-breakers concretos, o vacía si no hay>"],
+  "puntos_fuertes": ["<1 a 3 puntos hiper-específicos citando hechos de las notas>"],
+  "calidad_notas": "<SUFICIENTE / ESCUETA / NULA>"
 }}"""
 
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -3912,7 +3921,7 @@ Notas clínicas:
 
     models_to_try = [
         "meta/llama-3.2-11b-vision-instruct",
-        "nvidia/nemotron-3-super-120b-a12b"
+        "meta/llama-3.2-90b-vision-instruct"
     ]
 
     sys_msg = (
@@ -4444,12 +4453,16 @@ async def find_candidate_matches_engine(
                     cand["ai_puntos_fuertes"] = pts
                     cand["ai_model"] = res.get("model_used")
 
+                    cand["ai_notes_quality"] = res.get("calidad_notas", "SUFICIENTE")
+
                     if len(dbs) > 0 or verdict == "NO RECOMENDADO":
                         cand["compatibility_pct"] = min(ai_score, 35)
                     elif verdict == "VIABLE CON RESERVAS":
-                        cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
+                        # Criterio estricto: cuando hay reservas explícitas, el porcentaje nunca debe superar 68%
+                        raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score))
+                        cand["compatibility_pct"] = min(raw_blend, 68)
                     else:
-                        cand["compatibility_pct"] = int(round(0.45 * struct_score + 0.55 * ai_score))
+                        cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
 
                     if dbs:
                         cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"

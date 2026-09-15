@@ -173,20 +173,33 @@ async def process_client(client_info, db, nvidia_key, http_client, candidate_usa
         if candidate_usage_tracker is not None:
             candidate_usage_tracker[cand_uid] = candidate_usage_tracker.get(cand_uid, 0) + 1
 
-        # Score y veredicto
-        # compatibility_pct contiene la mezcla ponderada (45% estructural + 55% IA)
+        # Score y veredicto con coherencia clínica estricta
         score_val = cand.get("compatibility_pct") or cand.get("structural_score") or 70
-        punct_10 = str(max(1, min(10, round(score_val / 10.0))))
-
         verdict = cand.get("ai_veredicto") or "VIABLE"
         dbs = cand.get("ai_deal_breakers") or []
         puntos = cand.get("ai_puntos_fuertes") or []
-        analisis = cand.get("ai_analisis") or cand.get("match_analysis") or ""
+
+        raw_punct = round(score_val / 10.0)
+        if verdict == "VIABLE CON RESERVAS":
+            # Tope estricto: cuando la clínica arroja reservas, nunca presentar más de 6/10
+            punct_num = min(int(raw_punct), 6)
+        elif verdict == "NO RECOMENDADO" or len(dbs) > 0:
+            punct_num = min(int(raw_punct), 3)
+        else:
+            punct_num = int(raw_punct)
+        punct_10 = str(max(1, min(10, punct_num)))
+
+        # Evitar fugas de diccionarios Python en el análisis clínico
+        analisis_raw = cand.get("ai_analisis") or cand.get("match_analysis") or ""
+        if isinstance(analisis_raw, dict):
+            analisis = (analisis_raw.get("why_ideal") or "").strip()
+        else:
+            analisis = str(analisis_raw or "").strip()
 
         # Puntos a considerar
         points_to_consider = ""
         if dbs:
-            points_to_consider = f"⚠️ Dealbreakers / Puntos de atención: {'; '.join(dbs)}. "
+            points_to_consider = f"⚠️ Dealbreakers / Puntos de fricción: {'; '.join(dbs)}. "
         elif verdict == "VIABLE CON RESERVAS":
             points_to_consider = "Viable con reservas: verificar disponibilidad o expectativas mutuas. "
         else:
@@ -198,10 +211,12 @@ async def process_client(client_info, db, nvidia_key, http_client, candidate_usa
         if analisis:
             points_to_consider += f"Contexto clínico: {analisis}"
 
-        # Puntos fuertes
+        # Puntos fuertes (limpieza de clichés o puntuación duplicada)
         strong_parts = []
         if puntos:
-            strong_parts.append(f"Puntos fuertes: {'; '.join(puntos)}.")
+            clean_puntos = [p.strip().rstrip('.') for p in puntos if p and len(p.strip()) > 3]
+            if clean_puntos:
+                strong_parts.append(f"Puntos fuertes: {'; '.join(clean_puntos)}.")
         if cand.get("occupation") and cand.get("occupation") != "No especificado":
             strong_parts.append(f"Ocupación: {cand['occupation']}.")
         if cand.get("city"):
