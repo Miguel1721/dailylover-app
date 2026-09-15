@@ -3876,8 +3876,8 @@ async def evaluate_candidate_quick_notes_ai(
     if cache_key in _AI_MATCH_CACHE:
         return _AI_MATCH_CACHE[cache_key]
 
-    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:1200]
-    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:1200]
+    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:4000]
+    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:4000]
 
     prompt = f"""Eres la Directora de Matchmaking y psicóloga clínica senior de Daily Lover.
 Tu labor es contrastar rigurosamente las notas de entrevista de ambos clientes para encontrar compatibilidades genuinas y posibles fricciones reales.
@@ -3892,21 +3892,23 @@ Nombre: {cand_info.get('name')} | Edad: {cand_info.get('age') or 'No especificad
 Notas clínicas de entrevista:
 {cand_notes if cand_notes.strip() else 'Sin notas clínicas registradas en ficha.'}
 
---- REGLAS CLÍNICAS ESTRICTAS DE EVALUACIÓN ---
+--- REGLAS CLÍNICAS DE EVALUACIÓN ---
 1. ESPECIFICIDAD OBLIGATORIA:
    - PROHIBIDO usar frases genéricas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica").
    - Todo punto fuerte o de fricción DEBE estar anclado a un hecho textual y concreto extraído de las notas (ej: pasatiempos específicos, hábitos diarios, profesión, planes de viaje, mascotas, manejo del dinero, temperamento, apego o postura ante los hijos).
-   - Si las notas clínicas de alguna persona son muy escuetas o no aportan detalles suficientes para contrastar un aspecto, debes declararlo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X" en lugar de inventar generalidades.
+   - Si las notas clínicas de alguna persona son muy escuetas o no aportan detalles suficientes para contrastar un aspecto, debes declararlo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
 
-2. RÚBRICA Y COHERENCIA ESTRICTA DE PUNTAJE (El score debe reflejar exactamente el veredicto):
-   - "RECOMENDADO" (ai_score 75 a 95): Afinidad evidente y concreta comprobada en notas, sin deal-breakers ni reservas clínicas significativas.
-   - "VIABLE CON RESERVAS" (ai_score 50 a 68): Hay puntos de conexión, PERO existen diferencias de estilo de vida, dudas sobre disponibilidad, historial afectivo complejo o temas a verificar antes de presentar el perfil. (PROHIBIDO dar más de 68 cuando hay reservas explícitas).
-   - "NO RECOMENDADO" (ai_score 15 a 35): Deal-breakers explícitos (postura irreconciliable sobre hijos, religión rígida no negociable, roles de género incompatibles, o antecedentes de descalificación).
+2. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE:
+   - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers. Los matices normales de personalidad (ej. diferencias de introversión/extroversión complementarias, carreras demandantes habituales en profesionales, o pequeñas diferencias de ocio) se consideran compatibles y enriquecedores, NO causales de castigo.
+   - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar o verificar (ej. distancia entre sectores de la ciudad, horarios rotativos, o preferencias secundarias).
+   - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos de conexión, PERO existen reservas clínicas o de estilo de vida reales que requieren validación mutua antes de agendar (ej. disponibilidad de tiempo severamente limitada, duelo afectivo o "tusa" menor a 1 año, o dudas de compromiso).
+   - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que hace improbable una buena conexión, aunque no llegue a dealbreaker insalvable.
+   - "NO RECOMENDADO" (ai_score 15 a 35): Dealbreakers explícitos e incompatibilidad directa (postura irreconciliable sobre hijos, religión rígida no negociable, intolerancia a mascotas/humo, o descalificación expresa).
 
 3. Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
 {{
   "ai_score": <entero coherente con la rúbrica>,
-  "veredicto": "<RECOMENDADO / VIABLE CON RESERVAS / NO RECOMENDADO>",
+  "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
   "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas reales>",
   "deal_breakers": ["<fricciones o deal-breakers concretos, o vacía si no hay>"],
   "puntos_fuertes": ["<1 a 3 puntos hiper-específicos citando hechos de las notas>"],
@@ -4457,12 +4459,19 @@ async def find_candidate_matches_engine(
 
                     if verdict == "NO RECOMENDADO":
                         cand["compatibility_pct"] = min(ai_score, 35)
-                    elif verdict == "VIABLE CON RESERVAS":
-                        # Criterio estricto: cuando hay reservas clínicas, el porcentaje nunca debe superar 68% (score 5-6/10)
+                    elif verdict == "COMPATIBILIDAD BAJA":
                         raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score))
-                        cand["compatibility_pct"] = min(raw_blend, 68)
+                        cand["compatibility_pct"] = min(raw_blend, 49)
+                    elif verdict == "VIABLE CON RESERVAS":
+                        raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score))
+                        cand["compatibility_pct"] = min(raw_blend, 64)
+                    elif verdict == "VIABLE BUENO":
+                        raw_blend = int(round(0.30 * struct_score + 0.70 * ai_score))
+                        cand["compatibility_pct"] = max(65, min(raw_blend, 74))
                     else:
-                        cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
+                        # RECOMENDADO
+                        raw_blend = int(round(0.25 * struct_score + 0.75 * ai_score))
+                        cand["compatibility_pct"] = max(75, min(raw_blend, 95))
 
                     if dbs:
                         if verdict == "NO RECOMENDADO":
