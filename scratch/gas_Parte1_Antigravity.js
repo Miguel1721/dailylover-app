@@ -1990,7 +1990,7 @@ function reconstruirRevisionMaria() {
     var headers = [
       "ID MATCH", "Persona A", "Origen pestaña (A)", "Observaciones (A)",
       "Persona B", "Origen pestaña (B)", "Observaciones (B)",
-      "Aprobar", "Aprobación María", "NOTAS MARÍA"
+      "NOTAS MARÍA", "Aprobar", "Aprobación María"
     ];
 
     if (!revisionSheet) {
@@ -2162,16 +2162,16 @@ function reconstruirRevisionMaria() {
           var matchUid = "MATCH-" + pairKey.replace(/___/g, "-").toUpperCase();
 
           collectedRows.push([
-            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, aprobarInitial, isAlreadyApproved, ""
+            matchUid, textA, curName, obsVal, textB, origenTabB, obsB, "", aprobarInitial, isAlreadyApproved
           ]);
 
           richColA.push([richA || SpreadsheetApp.newRichTextValue().setText(textA).build()]);
           richColB.push([richB || SpreadsheetApp.newRichTextValue().setText(textB).build()]);
 
-          // Construir colores de fila en batch
-          var col8Bg = (aprobarInitial === "APROBADO POR AMBAS PSICÓLOGAS") ? "#D9EAD3" : "#FFF2CC";
-          var col9Bg = (aprobarInitial === "APROBADO POR AMBAS PSICÓLOGAS") ? "#D9EAD3" : "#E8EAED";
-          bgMatrix.push([null, null, null, null, null, null, null, col8Bg, col9Bg, null]);
+          // Construir colores de fila en batch (Col 9: Aprobar, Col 10: Aprobación María)
+          var col9Bg = (aprobarInitial === "APROBADO POR AMBAS PSICÓLOGAS") ? "#D9EAD3" : "#FFF2CC";
+          var col10Bg = (aprobarInitial === "APROBADO POR AMBAS PSICÓLOGAS") ? "#D9EAD3" : "#E8EAED";
+          bgMatrix.push([null, null, null, null, null, null, null, null, col9Bg, col10Bg]);
           foundInSheet++;
         }
       }
@@ -4055,34 +4055,31 @@ function ensureMatchesColumnsAndDropdowns() {
 
   // 5. Aplicar Desplegables de Estados
   var estadosData = getEstadosPorEtapa();
-  var matchesList = [].concat(estadosData.SERVICIO_CLIENTE, estadosData.RESULTADO_CITA);
-  if (matchesList.length === 0) {
-    matchesList = [
-      "pendiente", "agendando", "por confirmar", "esperar", "de viaje", "problemas personales",
-      "no contestan", "reprogramar", "esperar que salgan con su date", "TROUBLEMAKER",
-      "cita confirmada", "cita reservada", "DATE PROGRAMADO", "cita realizada", "match", "MATCH DONE",
-      "no match (él rechazó)", "no match (ella rechazó)", "sin química (mutuo)"
-    ];
-  } else {
-    var hasCitaReservada = false;
-    for (var mci = 0; mci < matchesList.length; mci++) {
-      if ((matchesList[mci] || "").toString().toLowerCase() === "cita reservada") {
-        hasCitaReservada = true;
-        break;
-      }
-    }
-    if (!hasCitaReservada) matchesList.push("cita reservada");
-  }
-  var matchesRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(matchesList, true)
+  var resultadoCitaList = estadosData.RESULTADO_CITA.length > 0 ? estadosData.RESULTADO_CITA : [
+    "yes", "no", "maybe", "friends", "cita confirmada", "CITA RESERVADA",
+    "DATE PROGRAMADO", "cita realizada", "match", "MATCH DONE",
+    "no match (él rechazó)", "no match (ella rechazó)", "sin química (mutuo)"
+  ];
+  var resultadoCitaRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(resultadoCitaList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  var servicioClienteList = estadosData.SERVICIO_CLIENTE.length > 0 ? estadosData.SERVICIO_CLIENTE : [
+    "pendiente", "agendando", "por confirmar", "cita confirmada", "reprogramar",
+    "no contestan", "esperar", "de viaje", "problemas personales",
+    "esperar que salgan con su date", "TROUBLEMAKER"
+  ];
+  var servicioClienteRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(servicioClienteList, true)
     .setAllowInvalid(true)
     .build();
 
   var maxRows = Math.min(sheet.getMaxRows(), 5000);
   if (maxRows > 1) {
-    if (colA) safeSetDataValidation(sheet.getRange(2, colA, maxRows - 1, 1), matchesRule);
-    if (colB) safeSetDataValidation(sheet.getRange(2, colB, maxRows - 1, 1), matchesRule);
-    if (colTotal) safeSetDataValidation(sheet.getRange(2, colTotal, maxRows - 1, 1), matchesRule);
+    if (colA) safeSetDataValidation(sheet.getRange(2, colA, maxRows - 1, 1), servicioClienteRule);
+    if (colB) safeSetDataValidation(sheet.getRange(2, colB, maxRows - 1, 1), servicioClienteRule);
+    if (colTotal) safeSetDataValidation(sheet.getRange(2, colTotal, maxRows - 1, 1), resultadoCitaRule);
   }
 
   // 6. Aplicar Desplegable de ⚙️ RESTAURANTES en la columna LUGAR
@@ -4746,54 +4743,69 @@ function actualizarDesplegablesDinamicos() {
 
   var estadosData = getEstadosPorEtapa();
 
-  // 1. Regla para Etapa PSICOLOGA
-  var psycList = estadosData.PSICOLOGA.length > 0 ? estadosData.PSICOLOGA : [
-    "Llenar perfil", "Listo para match", "HECHO", "APROBADO", "NOT APPROVED", "DESCALIFICADO",
-    "NO HAY GENTE", "REVISAR", "TROUBLEMAKER", "HECHO POR MAPE", "REQUEST PROFILE UPDATE",
-    "PSIC. URG", "MUJER +50", "REFUND", "RECHAZADA POR PSICÓLOGA B"
+  // 1. Regla para Etapa PSICOLOGA (Pestañas MATCHES [NOMBRE])
+  // Opciones operativas manuales de psicólogas (NO incluye APROBADO ya que lo estampa el sistema automáticamente)
+  var psycList = [
+    "Listo para match", "HECHO", "NOT APPROVED", "REVISAR",
+    "NO HAY GENTE", "REFUND", "DESCALIFICADO", "TROUBLE", "TROUBLEMAKER",
+    "Llenar perfil", "REQUEST PROFILE UPDATE"
   ];
   var psycRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(psycList, true)
     .setAllowInvalid(true)
     .build();
 
-  // 2. Regla para Etapa PERSONAS DÍFICILES
-  var difList = [].concat(estadosData.PERSONAS_DIFICILES, estadosData.PSICOLOGA);
-  if (difList.length === 0) {
-    difList = ["NO HAY GENTE", "ESPERA O REFUND", "Listo para match", "HECHO", "REVISAR"];
-  }
+  // 2. Regla para REVISIÓN MARÍA (Columna APROBAR)
+  // Opciones de decisión de María (SIN APROBADO bare: la aprobación se da automáticamente por el sistema o vía checkbox)
+  var mariaList = ["NOT APPROVED", "REFUND", "REVISAR"];
+  var mariaRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(mariaList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // 3. Regla para PERSONAS DÍFICILES
+  var difList = estadosData.PERSONAS_DIFICILES.length > 0 ? estadosData.PERSONAS_DIFICILES : [
+    "NO HAY GENTE", "ESPERA O REFUND", "Listo para match", "HECHO", "REVISAR"
+  ];
   var difRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(difList, true)
     .setAllowInvalid(true)
     .build();
 
-  // 3. Regla para Etapa SERVICIO_CLIENTE + RESULTADO_CITA (Pestaña MATCHES)
-  var matchesList = [].concat(estadosData.SERVICIO_CLIENTE, estadosData.RESULTADO_CITA);
-  if (matchesList.length === 0) {
-    matchesList = [
-      "pendiente", "agendando", "por confirmar", "esperar", "de viaje", "problemas personales",
-      "no contestan", "reprogramar", "esperar que salgan con su date", "TROUBLEMAKER",
-      "cita confirmada", "DATE PROGRAMADO", "cita realizada", "match", "MATCH DONE",
-      "no match (él rechazó)", "no match (ella rechazó)", "sin química (mutuo)"
-    ];
-  }
-  var matchesRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(matchesList, true)
+  // 4. Regla para MATCHES - Columna A (ESTADO TOTAL / RESULTADO DE CITA)
+  var resultadoCitaList = estadosData.RESULTADO_CITA.length > 0 ? estadosData.RESULTADO_CITA : [
+    "yes", "no", "maybe", "friends", "cita confirmada", "CITA RESERVADA",
+    "DATE PROGRAMADO", "cita realizada", "match", "MATCH DONE",
+    "no match (él rechazó)", "no match (ella rechazó)", "sin química (mutuo)"
+  ];
+  var resultadoCitaRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(resultadoCitaList, true)
     .setAllowInvalid(true)
     .build();
 
-  // 4. Regla para Etapa REFUND
+  // 5. Regla para MATCHES - Columnas B y C (ESTADO PERSONA A y B - Coordinación)
+  var servicioClienteList = estadosData.SERVICIO_CLIENTE.length > 0 ? estadosData.SERVICIO_CLIENTE : [
+    "pendiente", "agendando", "por confirmar", "cita confirmada", "reprogramar",
+    "no contestan", "esperar", "de viaje", "problemas personales",
+    "esperar que salgan con su date", "TROUBLEMAKER"
+  ];
+  var servicioClienteRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(servicioClienteList, true)
+    .setAllowInvalid(true)
+    .build();
+
+  // 6. Regla para REFUND (Pestaña REFUNDS PENDIENTES)
   var refundList = estadosData.REFUND.length > 0 ? estadosData.REFUND : [
-    "REFUND DONE", "REFUND APROBADO", "REFUND RECHAZADO", "REFUND PENDIENTE", "REFUND PROCESADO",
-    "REFUND PENDIENTE – NEQUI", "REFUND PENDIENTE – DATOS",
-    "REFUND PENDIENTE – STRIPE", "REFUND PARCIAL PENDIENTE", "PENDIENTE DE RESPUESTA CLIENTE", "CLIENTE QUIERE ESPERAR"
+    "REFUND PENDIENTE", "REFUND APROBADO", "REFUND PROCESADO", "REFUND RECHAZADO", "REFUND DONE",
+    "REFUND PENDIENTE – NEQUI", "REFUND PENDIENTE – STRIPE", "REFUND PENDIENTE – DATOS",
+    "REFUND PARCIAL PENDIENTE", "PENDIENTE DE RESPUESTA CLIENTE", "CLIENTE QUIERE ESPERAR"
   ];
   var refundRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(refundList, true)
     .setAllowInvalid(true)
     .build();
 
-  // 5. Regla para LUGAR / RESTAURANTES (Desde pestaña ⚙️ RESTAURANTES)
+  // 7. Regla para LUGAR / RESTAURANTES (Desde pestaña ⚙️ RESTAURANTES)
   var venueRule = getRestaurantVenueValidationRule(ss);
 
   // Aplicar a todas las pestañas con logging detallado y protección de excepciones
@@ -4818,7 +4830,7 @@ function actualizarDesplegablesDinamicos() {
         }
       } else if (sName === "PERSONAS DÍFICILES" || sName === "PERSONAS DIFICILES" || sName === (CONFIG.PRIORITY_SHEET_NAME || "").toUpperCase()) {
         var dHeaders = getSheetHeaders(s);
-        var dStatusCol = dHeaders["STATUS"] || 8;
+        var dStatusCol = dHeaders["STATUS"] || 4;
         var dMaxRows = Math.min(s.getMaxRows(), 3000);
         if (dMaxRows > 1) {
           safeSetDataValidation(s.getRange(2, dStatusCol, dMaxRows - 1, 1), difRule);
@@ -4831,9 +4843,9 @@ function actualizarDesplegablesDinamicos() {
         var mLugarCol = mHeaders["LUGAR"] || 10;
         var mMaxRows = Math.min(s.getMaxRows(), 5000);
         if (mMaxRows > 1) {
-          if (matchCol) safeSetDataValidation(s.getRange(2, matchCol, mMaxRows - 1, 1), matchesRule);
-          if (mStatusACol) safeSetDataValidation(s.getRange(2, mStatusACol, mMaxRows - 1, 1), matchesRule);
-          if (mStatusBCol) safeSetDataValidation(s.getRange(2, mStatusBCol, mMaxRows - 1, 1), matchesRule);
+          if (matchCol) safeSetDataValidation(s.getRange(2, matchCol, mMaxRows - 1, 1), resultadoCitaRule);
+          if (mStatusACol) safeSetDataValidation(s.getRange(2, mStatusACol, mMaxRows - 1, 1), servicioClienteRule);
+          if (mStatusBCol) safeSetDataValidation(s.getRange(2, mStatusBCol, mMaxRows - 1, 1), servicioClienteRule);
           if (mLugarCol && venueRule) safeSetDataValidation(s.getRange(2, mLugarCol, mMaxRows - 1, 1), venueRule);
         }
         try {
@@ -4845,7 +4857,7 @@ function actualizarDesplegablesDinamicos() {
         var cLugarCol = cHeaders["LUGAR"] || 5;
         var cMaxRows = Math.min(s.getMaxRows(), 3000);
         if (cMaxRows > 1) {
-          if (cStatusCol) safeSetDataValidation(s.getRange(2, cStatusCol, cMaxRows - 1, 1), matchesRule);
+          if (cStatusCol) safeSetDataValidation(s.getRange(2, cStatusCol, cMaxRows - 1, 1), resultadoCitaRule);
           if (cLugarCol && venueRule) safeSetDataValidation(s.getRange(2, cLugarCol, cMaxRows - 1, 1), venueRule);
         }
       } else if (sName === (CONFIG.REFUNDS_SHEET_NAME || "REFUNDS PENDIENTES").toUpperCase() || sName === "REFUNDS PENDIENTES") {
@@ -4857,10 +4869,10 @@ function actualizarDesplegablesDinamicos() {
         }
       } else if (sName === (CONFIG.REVISION_MARIA_SHEET_NAME || "REVISIÓN MARÍA").toUpperCase() || sName === "REVISION MARIA") {
         var revHeaders = getSheetHeaders(s);
-        var revCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 11;
+        var revCol = revHeaders["APROBAR"] || revHeaders["STATUS"] || 8;
         var revMaxRows = Math.min(s.getMaxRows(), 3000);
         if (revMaxRows > 1) {
-          safeSetDataValidation(s.getRange(2, revCol, revMaxRows - 1, 1), psycRule);
+          safeSetDataValidation(s.getRange(2, revCol, revMaxRows - 1, 1), mariaRule);
         }
       }
     } catch (sheetErr) {
@@ -5224,16 +5236,21 @@ function handleRevisionMariaEdit(sheet, row, col, newValue, oldValue) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // ── CASO 1: CHECKBOX DE MARÍA (COLUMNA 9) ──
+    // ── CASO 1: CHECKBOX DE MARÍA (COLUMNA 9) ──
   if (col === checkboxCol) {
     var checkVal = (newValue === true || newValue === "TRUE" || sheet.getRange(row, checkboxCol).getValue() === true);
     var currentAprobar = (sheet.getRange(row, aprobarCol).getValue() || "").toString().trim().toUpperCase();
 
-    // Bloqueo duro: Si Aprobar NO dice exactamente 'APROBADO POR AMBAS PSICÓLOGAS' (o 'APROBADO'), revertir
-    if (checkVal && currentAprobar !== "APROBADO POR AMBAS PSICÓLOGAS") {
+    // Nueva regla de negocio (Miguel): María puede aprobar con que UNA sola psicóloga haya marcado Hecho
+    // Acepta ÚNICAMENTE 'APROBADO POR AMBAS PSICÓLOGAS' o estado intermedio 'APROBADO POR [X] — ESPERANDO A [Y]'
+    var isApprovedByBoth = (currentAprobar === "APROBADO POR AMBAS PSICÓLOGAS");
+    var isApprovedByOne = (currentAprobar.indexOf("APROBADO POR") !== -1 && currentAprobar.indexOf("ESPERANDO A") !== -1);
+    var isApprovalAllowed = (isApprovedByBoth || isApprovedByOne);
+
+    if (checkVal && !isApprovalAllowed) {
       sheet.getRange(row, checkboxCol).setValue(false);
       SpreadsheetApp.getActiveSpreadsheet().toast(
-        "⚠️ BLOQUEADO: El checkbox de aprobación final solo puede marcarse cuando el estado indique exactamente 'APROBADO POR AMBAS PSICÓLOGAS' (Actualmente: '" + currentAprobar + "').",
+        "⚠️ BLOQUEADO: El checkbox de aprobación final solo puede marcarse cuando al menos una psicóloga haya aprobado (Actualmente: '" + currentAprobar + "').",
         "Aprobación Bloqueada",
         8
       );
