@@ -9,7 +9,7 @@ import {
 
 import CopilotWidget from './components/CopilotWidget'
 
-import { AuthProvider, useAuth } from './context/AuthContext'
+import { AuthProvider, useAuth, ADMIN_EMAILS, ADMIN_ROLES } from './context/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 
 import Dashboard from './pages/Dashboard'
@@ -226,7 +226,13 @@ function Sidebar({ isOpen, onClose }) {
 
   const effectiveRole = user?.role || ''
   const isAtrasadosOnly = effectiveRole === 'atrasados_only' || user?.role === 'atrasados_only'
-  const isMaria = !isAtrasadosOnly && (effectiveRole === 'María' || (!previewRole && ((user?.email && (user.email.toLowerCase() === 'mariapaula@dailylover.com' || user.email.toLowerCase().includes('admin'))) || (user?.role && (user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'SUPERADMIN' || user.role.toLowerCase().includes('admin'))))))
+  const isMaria = !isAtrasadosOnly && (
+    effectiveRole === 'María' ||
+    (!previewRole && (
+      (user?.email && ADMIN_EMAILS.includes(user.email.trim().toLowerCase())) ||
+      (user?.role && ADMIN_ROLES.includes(user.role))
+    ))
+  )
   const isCs = !isAtrasadosOnly && effectiveRole === 'Servicio al Cliente'
   const isPsyc = !isAtrasadosOnly && (effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker'))
   const isLina = !isAtrasadosOnly && effectiveRole === 'Lina (Refunds)'

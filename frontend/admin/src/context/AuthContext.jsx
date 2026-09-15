@@ -4,6 +4,20 @@ const AuthContext = createContext()
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
+export const ADMIN_EMAILS = [
+  'mariapaula@dailylover.com',
+  'admin@dailylover.co',
+  'admin@dailylover.com',
+  'miguel.lozano1408@gmail.com'
+]
+
+export const ADMIN_ROLES = [
+  'Admin',
+  'Super Admin',
+  'SUPERADMIN',
+  'María'
+]
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('dl_user')
@@ -34,11 +48,7 @@ export function AuthProvider({ children }) {
         .then(freshUser => {
           if (freshUser) {
             const isAtrasados = freshUser.role === 'atrasados_only' || freshUser.email?.toLowerCase().includes('atrasados')
-            const isAdm = !isAtrasados && freshUser.email && (
-              freshUser.email.toLowerCase().includes('admin') ||
-              freshUser.email.toLowerCase() === 'mariapaula@dailylover.com' ||
-              freshUser.email.toLowerCase().includes('miguel')
-            )
+            const isAdm = !isAtrasados && freshUser.email && ADMIN_EMAILS.includes(freshUser.email.trim().toLowerCase())
             const roleToAssign = freshUser.role || (isAdm ? 'Super Admin' : 'Sin Asignar')
             const updated = {
               ...freshUser,
@@ -67,15 +77,8 @@ export function AuthProvider({ children }) {
 
   const isOriginalAdmin = Boolean(
     user && user.role !== 'atrasados_only' && !user.email?.toLowerCase().includes('atrasados') && (
-      user.role === 'Admin' ||
-      user.role === 'Super Admin' ||
-      user.role === 'SUPERADMIN' ||
-      (user.role && user.role.toLowerCase().includes('admin')) ||
-      (user.email && (
-        user.email.toLowerCase().includes('admin') ||
-        user.email.toLowerCase() === 'mariapaula@dailylover.com' ||
-        user.email.toLowerCase().includes('miguel')
-      ))
+      ADMIN_ROLES.includes(user.role) ||
+      (user.email && ADMIN_EMAILS.includes(user.email.trim().toLowerCase()))
     )
   )
 
@@ -105,13 +108,7 @@ export function AuthProvider({ children }) {
     const role = previewRole || user?.role || (isOriginalAdmin ? 'Super Admin' : '')
 
     // Admin and Super Admin roles have total access
-    if (
-      role === 'Admin' ||
-      role === 'Super Admin' ||
-      role === 'SUPERADMIN' ||
-      role === 'María' ||
-      (typeof role === 'string' && role.toLowerCase().includes('admin'))
-    ) {
+    if (ADMIN_ROLES.includes(role)) {
       return true
     }
 
