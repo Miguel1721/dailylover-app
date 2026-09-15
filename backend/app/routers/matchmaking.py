@@ -5992,7 +5992,7 @@ async def get_agosto27_queue(
         LEFT JOIN users uCand ON uCand.id = p.candidate_user_id
         LEFT JOIN profiles profCand ON profCand.user_id = p.candidate_user_id
         WHERE COALESCE(p.client_user_id, p.sheet_row) = ANY(:keys)
-        ORDER BY p.id ASC
+        ORDER BY NULLIF(regexp_replace(p.punctuation, '[^0-9.]', '', 'g'), '')::numeric DESC NULLS LAST, p.id ASC
     """), {"keys": client_keys})
     props_rows = props_res.fetchall()
 
@@ -6043,7 +6043,7 @@ async def get_agosto27_queue(
             "responsable": cr.responsable,
             "dates_pend": cr.dates_pend,
             "client_status": c_status,
-            "proposals": props_by_client.get(ck, [])
+            "proposals": props_by_client.get(ck, [])[:4]
         })
 
     return {
