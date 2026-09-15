@@ -333,6 +333,7 @@ async def get_my_matches(
         ) uB_user ON LOWER(TRIM(uB_user.name)) = LOWER(TRIM(m.person_b))
         LEFT JOIN profiles pB ON pB.user_id = uB_user.id
         WHERE 1=1
+          AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
     params = {}
 
@@ -399,6 +400,7 @@ async def get_my_matches(
                   )
                   AND UPPER(m.psychologist_name) != UPPER(:psyc)
                   AND (m.status IN ('HECHO', 'HECHO POR MAPE', 'REVISAR', 'PROPUESTO') OR m.status_b = 'REVISAR')
+                  AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
             """), {"psyc": norm_psyc, "psyc_like": f"%{norm_psyc}%"})
             cross_count = cross_res.scalar() or 0
         except Exception:
@@ -865,6 +867,7 @@ async def get_approval_queue(
         LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
         WHERE (m.status IN ('HECHO', 'PENDIENTE APROBACIÓN MARÍA', 'Listo para match') OR m.status ILIKE '%APROBA%MARIA%')
           AND m.approved_by_maria = false
+          AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
     params = {}
 
@@ -2447,6 +2450,7 @@ async def get_matches_pending_service(
         WHERE (m.status = 'APROBADO' OR m.approved_by_maria = true)
           AND (c.stage IS NULL OR c.stage IN ('pendiente', 'agendando', 'por confirmar', 'esperar', 'de viaje', 'problemas personales', 'no contestan', 'reprogramar'))
           AND (c.scheduled_date IS NULL)
+          AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
     params = {}
     if city and city.lower() not in ("all", "todas"):
@@ -2559,12 +2563,29 @@ async def schedule_match(
             "rname": payload.reservation_name or "María Paula Salinas"
         })
 
-    # Actualizar match_confirmations
-    await db.execute(text("""
-        UPDATE match_confirmations
-        SET scheduled_date = NOW(), venue_name = :ven, stage = 'cita confirmada', updated_at = NOW()
-        WHERE match_id = :mid
-    """), {"mid": match_id, "ven": payload.venue})
+    # Actualizar / Insertar en match_confirmations
+    try:
+        from datetime import datetime
+        dt_val = datetime.fromisoformat(payload.scheduled_date.strip().replace(" ", "T").replace("Z", ""))
+    except Exception:
+        dt_val = payload.scheduled_date
+
+    exist_conf = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid LIMIT 1"), {"mid": match_id})
+    conf_row = exist_conf.fetchone()
+    if conf_row:
+        await db.execute(text("""
+            UPDATE match_confirmations
+            SET scheduled_date = CAST(:dt AS TIMESTAMP), venue_name = :ven, stage = 'cita confirmada', updated_at = NOW()
+            WHERE id = :cid
+        """), {"cid": conf_row.id, "dt": dt_val, "ven": payload.venue})
+    else:
+        await db.execute(text("""
+            INSERT INTO match_confirmations (
+                match_id, stage, scheduled_date, venue_name, created_at, updated_at
+            ) VALUES (
+                :mid, 'cita confirmada', CAST(:dt AS TIMESTAMP), :ven, NOW(), NOW()
+            )
+        """), {"mid": match_id, "dt": dt_val, "ven": payload.venue})
 
     det = f"Cita agendada para {payload.scheduled_date} en {payload.venue}"
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'DATE_SCHEDULED', :d, NOW())"), {"n": match_row.person_a, "mid": match_id, "d": det})
@@ -3422,6 +3443,8 @@ class ApproveInterviewMatchRequest(BaseModel):
     person_b_id: int
     psychologist_name: str
     notes: Optional[str] = None
+    batch_tag: Optional[str] = None
+    proposal_id: Optional[int] = None
 
 
 def generate_clinical_match_analysis(client: dict, cand: dict) -> dict:
@@ -4660,6 +4683,7 @@ async def approve_interview_match(
     existing_slot = slot_res.fetchone()
 
     obs = payload.notes or f"Match aprobado desde Entrevista Clínica por {psyc}."
+    batch_tag_val = payload.batch_tag.strip() if payload.batch_tag else None
 
     if existing_slot:
         match_id = existing_slot.id
@@ -4671,6 +4695,7 @@ async def approve_interview_match(
                 psychologist_name = :psyc,
                 status = 'HECHO',
                 approved_by_maria = false,
+                batch_tag = COALESCE(:bt, batch_tag),
                 observations = :obs,
                 updated_at = NOW()
             WHERE id = :mid
@@ -4680,6 +4705,7 @@ async def approve_interview_match(
             "bcrm": user_b.crm_id,
             "psyc": psyc,
             "obs": obs,
+            "bt": batch_tag_val,
             "mid": match_id
         })
     else:
@@ -4687,9 +4713,9 @@ async def approve_interview_match(
         ins_res = await db.execute(text("""
             INSERT INTO operational_matches
             (person_a, person_b, user_id_a, user_id_b, person_a_crm_id, person_b_crm_id,
-             psychologist_name, city, pref, plan_tier, status, approved_by_maria, observations, created_at, updated_at)
+             psychologist_name, city, pref, plan_tier, status, approved_by_maria, batch_tag, observations, created_at, updated_at)
             VALUES
-            (:pa, :pb, :aid, :bid, :acrm, :bcrm, :psyc, :city, :pref, :plan, 'HECHO', false, :obs, NOW(), NOW())
+            (:pa, :pb, :aid, :bid, :acrm, :bcrm, :psyc, :city, :pref, :plan, 'HECHO', false, :bt, :obs, NOW(), NOW())
             RETURNING id
         """), {
             "pa": name_a,
@@ -4702,11 +4728,35 @@ async def approve_interview_match(
             "city": city_val,
             "pref": pref_val,
             "plan": plan_val,
+            "bt": batch_tag_val,
             "obs": obs
         })
         match_id = ins_res.scalar()
 
-    # 4. Registrar en person_history
+    # 3.1 Garantizar registro inicial en match_confirmations si no existe
+    exist_mc = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid LIMIT 1"), {"mid": match_id})
+    if not exist_mc.fetchone():
+        await db.execute(text("""
+            INSERT INTO match_confirmations (match_id, stage, created_at, updated_at)
+            VALUES (:mid, 'pendiente', NOW(), NOW())
+        """), {"mid": match_id})
+
+    # 4. Si viene de la cola de Agosto 27, actualizar decisión en august27_ai_match_proposals
+    if payload.proposal_id:
+        await db.execute(text("""
+            UPDATE august27_ai_match_proposals
+            SET decision = 'approved', decided_at = NOW(), decided_by = :dec_by
+            WHERE id = :pid
+        """), {"pid": payload.proposal_id, "dec_by": psyc})
+    elif batch_tag_val == "agosto27_backlog":
+        await db.execute(text("""
+            UPDATE august27_ai_match_proposals
+            SET decision = 'approved', decided_at = NOW(), decided_by = :dec_by
+            WHERE (client_user_id = :aid AND candidate_user_id = :bid)
+               OR (LOWER(TRIM(client_name)) = LOWER(TRIM(:aname)) AND LOWER(TRIM(candidate_name)) = LOWER(TRIM(:bname)))
+        """), {"aid": user_a.id, "bid": user_b.id, "aname": name_a, "bname": name_b, "dec_by": psyc})
+
+    # 5. Registrar en person_history
     await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
         VALUES (:aname, :mid, 'INTERVIEW_PROPOSAL_SENT', :det, NOW())
@@ -5708,12 +5758,413 @@ async def approve_priority_match(
     }
 
 
+# ─── 13. COLA DE ATRASADOS (AGOSTO 27), CLIENTES RECIENTES & MATCHES ATRASADOS ─────
+
+class DiscardProposalRequest(BaseModel):
+    proposal_id: int
+    user_name: Optional[str] = "María"
+    reason: Optional[str] = None
 
 
+@router.get("/recent-extended-clients")
+async def get_recent_extended_clients(
+    limit: int = Query(8, ge=1, le=50),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna los clientes que tienen expediente clínico / perfil extendido
+    guardado o modificado recientemente (dinámico, sin filtros estáticos).
+    """
+    query = """
+        SELECT 
+            u.id, 
+            u.name, 
+            u.phone, 
+            u.client_code, 
+            u.crm_id,
+            p.city,
+            cep.updated_at
+        FROM client_extended_profile cep
+        JOIN users u ON u.id = cep.user_id
+        LEFT JOIN profiles p ON p.user_id = u.id
+        ORDER BY cep.updated_at DESC
+        LIMIT :lim
+    """
+    res = await db.execute(text(query), {"lim": limit})
+    rows = res.fetchall()
+    clients = []
+    for r in rows:
+        d = dict(r._mapping)
+        clients.append({
+            "id": d["id"],
+            "name": d["name"],
+            "phone": d.get("phone"),
+            "client_code": d.get("client_code"),
+            "crm_id": d.get("crm_id"),
+            "city": d.get("city") or "Bogotá",
+            "has_extended": True
+        })
+    return {"clients": clients}
 
 
+@router.get("/agosto27-queue")
+async def get_agosto27_queue(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    responsable: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query("pending"),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Cola de Clientes Atrasados de Agosto 27 (419 clientes, 799 propuestas).
+    Agrupa por cliente mostrando sus 1-2 candidatos sugeridos
+    con puntuación, veredicto, dealbreakers y puntos fuertes.
+    """
+    stats_query = """
+        SELECT 
+            COUNT(DISTINCT COALESCE(client_user_id, sheet_row)) as total_clients,
+            COUNT(*) as total_proposals,
+            COUNT(CASE WHEN decision = 'approved' THEN 1 END) as approved_proposals,
+            COUNT(CASE WHEN decision = 'discarded' THEN 1 END) as discarded_proposals,
+            COUNT(CASE WHEN decision = 'pending' OR decision IS NULL THEN 1 END) as pending_proposals
+        FROM august27_ai_match_proposals
+    """
+    stats_res = await db.execute(text(stats_query))
+    stats_row = stats_res.fetchone()
+    stats_dict = dict(stats_row._mapping) if stats_row else {}
+
+    rev_res = await db.execute(text("""
+        SELECT COUNT(DISTINCT COALESCE(client_user_id, sheet_row))
+        FROM august27_ai_match_proposals
+        WHERE decision = 'approved'
+    """))
+    approved_clients_count = rev_res.scalar() or 0
+
+    disc_clients_res = await db.execute(text("""
+        SELECT COUNT(*) FROM (
+            SELECT COALESCE(client_user_id, sheet_row)
+            FROM august27_ai_match_proposals
+            GROUP BY COALESCE(client_user_id, sheet_row)
+            HAVING bool_and(decision = 'discarded') = true
+        ) sub
+    """))
+    fully_discarded_clients = disc_clients_res.scalar() or 0
+    reviewed_clients_count = approved_clients_count + fully_discarded_clients
+    total_clients_count = stats_dict.get("total_clients", 419)
+    pending_clients_count = max(0, total_clients_count - reviewed_clients_count)
+
+    psyc_res = await db.execute(text("""
+        SELECT DISTINCT responsable 
+        FROM august27_ai_match_proposals 
+        WHERE responsable IS NOT NULL AND TRIM(responsable) != ''
+        ORDER BY responsable ASC
+    """))
+    psyc_list = [r[0].strip() for r in psyc_res.fetchall() if r[0]]
+
+    where_clauses = ["1=1"]
+    params = {}
+
+    if responsable and responsable.lower() not in ("all", "todas"):
+        where_clauses.append("responsable ILIKE :resp")
+        params["resp"] = f"%{responsable.strip()}%"
+
+    if search:
+        where_clauses.append("(client_name ILIKE :srch OR candidate_name ILIKE :srch OR client_crm_id ILIKE :srch)")
+        params["srch"] = f"%{search.strip()}%"
+
+    where_sql = " AND ".join(where_clauses)
+
+    summaries_cte = f"""
+        SELECT 
+            COALESCE(client_user_id, sheet_row) as client_key,
+            MIN(sheet_row) as sheet_row,
+            MAX(client_user_id) as client_user_id,
+            MAX(client_name) as client_name,
+            MAX(client_crm_id) as client_crm_id,
+            MAX(responsable) as responsable,
+            MAX(dates_pend) as dates_pend,
+            COUNT(*) as proposal_count,
+            bool_or(decision = 'approved') as has_approved,
+            bool_and(decision = 'discarded') as all_discarded,
+            bool_or(decision = 'pending' OR decision IS NULL) as has_pending,
+            MAX(created_at) as created_at
+        FROM august27_ai_match_proposals
+        WHERE {where_sql}
+        GROUP BY COALESCE(client_user_id, sheet_row)
+    """
+
+    status_cond = "1=1"
+    if status_filter == "pending":
+        status_cond = "has_pending = true AND has_approved = false"
+    elif status_filter == "reviewed":
+        status_cond = "(has_approved = true OR all_discarded = true)"
+    elif status_filter == "approved":
+        status_cond = "has_approved = true"
+    elif status_filter == "discarded":
+        status_cond = "all_discarded = true"
+
+    count_query = f"""
+        WITH cs AS ({summaries_cte})
+        SELECT COUNT(*) FROM cs WHERE {status_cond}
+    """
+    total_matching_res = await db.execute(text(count_query), params)
+    total_items = total_matching_res.scalar() or 0
+
+    select_clients_query = f"""
+        WITH cs AS ({summaries_cte})
+        SELECT * FROM cs
+        WHERE {status_cond}
+        ORDER BY sheet_row ASC
+        LIMIT :lim OFFSET :off
+    """
+    params["lim"] = page_size
+    params["off"] = (page - 1) * page_size
+
+    clients_res = await db.execute(text(select_clients_query), params)
+    client_rows = clients_res.fetchall()
+
+    if not client_rows:
+        return {
+            "total_clients": total_clients_count,
+            "pending_clients": pending_clients_count,
+            "reviewed_clients": reviewed_clients_count,
+            "approved_clients": approved_clients_count,
+            "total_proposals": stats_dict.get("total_proposals", 0),
+            "approved_proposals": stats_dict.get("approved_proposals", 0),
+            "discarded_proposals": stats_dict.get("discarded_proposals", 0),
+            "pending_proposals": stats_dict.get("pending_proposals", 0),
+            "responsable_list": psyc_list,
+            "page": page,
+            "page_size": page_size,
+            "total_items": total_items,
+            "total_pages": (total_items + page_size - 1) // page_size if page_size > 0 else 1,
+            "clients": []
+        }
+
+    client_keys = [r.client_key for r in client_rows]
+
+    props_res = await db.execute(text("""
+        SELECT 
+            p.id,
+            COALESCE(p.client_user_id, p.sheet_row) as client_key,
+            p.candidate_name,
+            p.candidate_user_id,
+            p.candidate_crm_id,
+            p.punctuation,
+            p.status,
+            p.points_to_consider,
+            p.strong_points,
+            COALESCE(p.decision, 'pending') as decision,
+            p.decided_at,
+            p.decided_by,
+            uCand.phone as candidate_phone,
+            profCand.city as candidate_city,
+            profCand.occupation as candidate_occupation,
+            profCand.plan_tier as candidate_plan_tier
+        FROM august27_ai_match_proposals p
+        LEFT JOIN users uCand ON uCand.id = p.candidate_user_id
+        LEFT JOIN profiles profCand ON profCand.user_id = p.candidate_user_id
+        WHERE COALESCE(p.client_user_id, p.sheet_row) = ANY(:keys)
+        ORDER BY p.id ASC
+    """), {"keys": client_keys})
+    props_rows = props_res.fetchall()
+
+    props_by_client = {}
+    seen_cand_by_client = {}
+    for pr in props_rows:
+        ck = pr.client_key
+        if ck not in props_by_client:
+            props_by_client[ck] = []
+            seen_cand_by_client[ck] = set()
+        
+        cand_key = pr.candidate_user_id or (pr.candidate_name.strip().lower() if pr.candidate_name else pr.id)
+        if cand_key in seen_cand_by_client[ck]:
+            continue
+        seen_cand_by_client[ck].add(cand_key)
+        
+        sp_text = pr.strong_points or ""
+        sp_list = [line.strip().lstrip("-*• ") for line in sp_text.split("\n") if line.strip()] if sp_text else []
+        
+        props_by_client[ck].append({
+            "id": pr.id,
+            "candidate_name": pr.candidate_name,
+            "candidate_user_id": pr.candidate_user_id,
+            "candidate_crm_id": pr.candidate_crm_id,
+            "candidate_phone": pr.candidate_phone,
+            "candidate_city": pr.candidate_city or "Bogotá",
+            "candidate_occupation": pr.candidate_occupation,
+            "candidate_plan_tier": pr.candidate_plan_tier,
+            "punctuation": pr.punctuation,
+            "status": pr.status,
+            "points_to_consider": pr.points_to_consider,
+            "strong_points": sp_list,
+            "decision": pr.decision,
+            "decided_at": pr.decided_at.isoformat() if pr.decided_at else None,
+            "decided_by": pr.decided_by
+        })
+
+    clients_output = []
+    for cr in client_rows:
+        ck = cr.client_key
+        c_status = "approved" if cr.has_approved else ("discarded" if cr.all_discarded else "pending")
+        clients_output.append({
+            "client_key": ck,
+            "sheet_row": cr.sheet_row,
+            "client_user_id": cr.client_user_id,
+            "client_name": cr.client_name,
+            "client_crm_id": cr.client_crm_id,
+            "responsable": cr.responsable,
+            "dates_pend": cr.dates_pend,
+            "client_status": c_status,
+            "proposals": props_by_client.get(ck, [])
+        })
+
+    return {
+        "total_clients": total_clients_count,
+        "pending_clients": pending_clients_count,
+        "reviewed_clients": reviewed_clients_count,
+        "approved_clients": approved_clients_count,
+        "total_proposals": stats_dict.get("total_proposals", 0),
+        "approved_proposals": stats_dict.get("approved_proposals", 0),
+        "discarded_proposals": stats_dict.get("discarded_proposals", 0),
+        "pending_proposals": stats_dict.get("pending_proposals", 0),
+        "responsable_list": psyc_list,
+        "page": page,
+        "page_size": page_size,
+        "total_items": total_items,
+        "total_pages": (total_items + page_size - 1) // page_size if page_size > 0 else 1,
+        "clients": clients_output
+    }
 
 
+@router.post("/agosto27-discard")
+async def discard_agosto27_proposal(
+    payload: DiscardProposalRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Descarta una propuesta específica del backlog de Agosto 27.
+    """
+    res = await db.execute(text("""
+        UPDATE august27_ai_match_proposals
+        SET decision = 'discarded', decided_at = NOW(), decided_by = :dec_by
+        WHERE id = :pid
+        RETURNING id, client_name, candidate_name
+    """), {"pid": payload.proposal_id, "dec_by": payload.user_name or "María"})
+    row = res.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Propuesta de {row.candidate_name} descartada para {row.client_name}."
+    }
 
 
+@router.get("/matches-atrasados")
+async def get_matches_atrasados(
+    search: Optional[str] = Query(None),
+    city: Optional[str] = Query(None),
+    psychologist: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna los matches que fueron aprobados desde el backlog de Agosto 27
+    (batch_tag = 'agosto27_backlog') para gestión exclusiva de Servicio al Cliente.
+    """
+    base_query = """
+        FROM operational_matches m
+        LEFT JOIN match_confirmations c ON c.match_id = m.id
+        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        WHERE m.batch_tag = 'agosto27_backlog'
+    """
+    where_extra = []
+    params = {}
 
+    if city and city.lower() not in ("all", "todas"):
+        where_extra.append("m.city ILIKE :city")
+        params["city"] = f"%{city.strip()}%"
+
+    if psychologist and psychologist.lower() not in ("all", "todas"):
+        where_extra.append("m.psychologist_name ILIKE :psyc")
+        params["psyc"] = f"%{psychologist.strip()}%"
+
+    if status and status.lower() not in ("all", "todos"):
+        where_extra.append("COALESCE(c.stage, 'pendiente') = :st")
+        params["st"] = status.strip()
+
+    if search:
+        where_extra.append("(m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)")
+        params["srch"] = f"%{search.strip()}%"
+
+    if where_extra:
+        base_query += " AND " + " AND ".join(where_extra)
+
+    count_res = await db.execute(text(f"SELECT COUNT(*) {base_query}"), params)
+    total_items = count_res.scalar() or 0
+
+    select_query = f"""
+        SELECT 
+            m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.pref,
+            m.status, m.observations, m.created_at, m.updated_at, m.batch_tag,
+            m.person_a_crm_id, m.person_b_crm_id,
+            m.user_id_a, m.user_id_b,
+            COALESCE(c.stage, 'pendiente') AS cs_stage,
+            c.person_a_confirmation, c.person_b_confirmation,
+            c.scheduled_date, c.venue_name AS restaurant_name, c.observations AS cs_notes,
+            uA.phone AS phone_a, uB.phone AS phone_b
+        {base_query}
+        ORDER BY m.updated_at DESC, m.id DESC
+        LIMIT :lim OFFSET :off
+    """
+    params["lim"] = page_size
+    params["off"] = (page - 1) * page_size
+
+    res = await db.execute(text(select_query), params)
+    rows = res.fetchall()
+
+    matches = []
+    for r in rows:
+        d = dict(r._mapping)
+        s_date = d.get("scheduled_date")
+        s_date_str = s_date.strftime("%Y-%m-%d") if s_date else None
+        s_time_str = s_date.strftime("%H:%M") if s_date else None
+        matches.append({
+            "id": d.get("id"),
+            "person_a": d.get("person_a"),
+            "person_b": d.get("person_b"),
+            "psychologist_name": d.get("psychologist_name"),
+            "city": d.get("city") or "Bogotá",
+            "plan_tier": d.get("plan_tier"),
+            "pref": d.get("pref"),
+            "status": d.get("status"),
+            "observations": d.get("observations"),
+            "created_at": d.get("created_at").isoformat() if d.get("created_at") else None,
+            "updated_at": d.get("updated_at").isoformat() if d.get("updated_at") else None,
+            "person_a_crm_id": d.get("person_a_crm_id"),
+            "person_b_crm_id": d.get("person_b_crm_id"),
+            "cs_stage": d.get("cs_stage") or "pendiente",
+            "person_a_confirmation": d.get("person_a_confirmation"),
+            "person_b_confirmation": d.get("person_b_confirmation"),
+            "scheduled_date": s_date_str,
+            "scheduled_time": s_time_str,
+            "restaurant_name": d.get("restaurant_name"),
+            "cs_notes": d.get("cs_notes"),
+            "phone_a": d.get("phone_a"),
+            "phone_b": d.get("phone_b"),
+            "user_id_a": d.get("user_id_a"),
+            "user_id_b": d.get("user_id_b")
+        })
+
+    return {
+        "total_items": total_items,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total_items + page_size - 1) // page_size if page_size > 0 else 1,
+        "matches": matches
+    }

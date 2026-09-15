@@ -33,9 +33,10 @@ export function AuthProvider({ children }) {
         })
         .then(freshUser => {
           if (freshUser) {
-            const isAdm = freshUser.email && (
+            const isAtrasados = freshUser.role === 'atrasados_only' || freshUser.email?.toLowerCase().includes('atrasados')
+            const isAdm = !isAtrasados && freshUser.email && (
               freshUser.email.toLowerCase().includes('admin') ||
-              freshUser.email.toLowerCase().includes('maria') ||
+              freshUser.email.toLowerCase() === 'mariapaula@dailylover.com' ||
               freshUser.email.toLowerCase().includes('miguel')
             )
             const roleToAssign = freshUser.role || (isAdm ? 'Super Admin' : 'Sin Asignar')
@@ -65,14 +66,14 @@ export function AuthProvider({ children }) {
   }
 
   const isOriginalAdmin = Boolean(
-    user && (
+    user && user.role !== 'atrasados_only' && !user.email?.toLowerCase().includes('atrasados') && (
       user.role === 'Admin' ||
       user.role === 'Super Admin' ||
       user.role === 'SUPERADMIN' ||
       (user.role && user.role.toLowerCase().includes('admin')) ||
       (user.email && (
         user.email.toLowerCase().includes('admin') ||
-        user.email.toLowerCase().includes('maria') ||
+        user.email.toLowerCase() === 'mariapaula@dailylover.com' ||
         user.email.toLowerCase().includes('miguel')
       ))
     )
@@ -89,6 +90,12 @@ export function AuthProvider({ children }) {
 
   const hasPermission = (module, action) => {
     if (!user) return false
+
+    // Rol restringido de atrasados: SOLO matching view para sus 2 páginas permitidas
+    if (effectiveRole === 'atrasados_only' || user?.role === 'atrasados_only') {
+      if (module === 'matching' && action === 'view') return true
+      return false
+    }
 
     // Admins and Maria Paula always have full access when not simulating
     if (!previewRole && isOriginalAdmin) {

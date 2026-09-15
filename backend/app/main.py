@@ -28,6 +28,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+ATRASADOS_ALLOWED_PREFIXES = (
+    "/api/v1/auth/me",
+    "/api/v1/auth/logout",
+    "/api/v1/config",
+    "/api/v1/matchmaking/agosto27-queue",
+    "/api/v1/matchmaking/agosto27-discard",
+    "/api/v1/matchmaking/approve-interview-match",
+    "/api/v1/matchmaking/matches-atrasados",
+    "/api/v1/matchmaking/matches",
+    "/api/v1/matchmaking/restaurants",
+    "/api/v1/matchmaking/recent-extended-clients",
+    "/api/v1/matchmaking/schedule-match",
+    "/api/v1/matchmaking/update-stage",
+    "/docs",
+    "/openapi.json",
+    "/favicon.ico"
+)
+
+# ─── GUARDA DE SEGURIDAD PARA ROL RESTRINGIDO (MARÍA ATRASADOS) ──────────────
+@app.middleware("http")
+async def atrasados_role_guard(request, call_next):
+    path = request.url.path
+    if path.startswith("/api/"):
+        auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+            try:
+                from app.services.auth_service import decode_token
+                payload = decode_token(token)
+                if payload and payload.get("role_id"):
+                    atrasados_id = getattr(request.app.state, "atrasados_role_id", "5c528b9d-f2de-4e85-a03e-2ee2798e2da0")
+                    if str(payload.get("role_id")) == str(atrasados_id):
+                        if not any(path.startswith(prefix) for prefix in ATRASADOS_ALLOWED_PREFIXES):
+                            from fastapi.responses import JSONResponse
+                            return JSONResponse(
+                                status_code=403,
+                                content={"detail": "Acceso restringido: este usuario solo tiene acceso a la Cola de Atrasados y Matches Atrasados."}
+                            )
+            except Exception:
+                pass
+    return await call_next(request)
+
 # ─── CIBERSEGURIDAD: SECURITY HEADERS MIDDLEWARE ─────────────────────────────
 @app.middleware("http")
 async def add_security_headers(request, call_next):
@@ -54,6 +96,24 @@ async def startup_seed():
                 INSERT INTO roles (name, is_system) VALUES ('Super Admin', true)
                 ON CONFLICT (name) DO NOTHING;
             """))
+            # Ensure atrasados_only role and cache ID
+            await db.execute(text("""
+                INSERT INTO roles (name, is_system) VALUES ('atrasados_only', false)
+                ON CONFLICT (name) DO NOTHING;
+            """))
+            r_atrasados = await db.execute(text("SELECT id FROM roles WHERE name = 'atrasados_only'"))
+            atrasados_row = r_atrasados.scalar()
+            if atrasados_row:
+                app.state.atrasados_role_id = str(atrasados_row)
+
+            # Ensure maria.atrasados user account
+            h_atrasados = hash_password('MariaAtrasados2026!*')
+            await db.execute(text("""
+                INSERT INTO user_accounts (email, password_hash, role_id, status, must_change_password)
+                VALUES ('maria.atrasados@dailylover.com', :pass, :rid, 'active', false)
+                ON CONFLICT (email) DO UPDATE SET password_hash = :pass, role_id = :rid;
+            """), {'pass': h_atrasados, 'rid': atrasados_row})
+
             h_pass = hash_password('Daily2026!')
             # Ensure Maria Paula in user_accounts
             await db.execute(text("""
@@ -162,10 +222,22 @@ async def startup_seed():
                     status TEXT,
                     points_to_consider TEXT,
                     strong_points TEXT,
+                    decision TEXT DEFAULT 'pending',
+                    decided_at TIMESTAMP WITH TIME ZONE,
+                    decided_by TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
             """))
             await db.execute(text("CREATE INDEX IF NOT EXISTS idx_aug27_client_uid ON august27_ai_match_proposals(client_user_id)"))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS idx_aug27_decision ON august27_ai_match_proposals(decision)"))
+            await db.execute(text("ALTER TABLE august27_ai_match_proposals ADD COLUMN IF NOT EXISTS decision TEXT DEFAULT 'pending'"))
+            await db.execute(text("ALTER TABLE august27_ai_match_proposals ADD COLUMN IF NOT EXISTS decided_at TIMESTAMP WITH TIME ZONE"))
+            await db.execute(text("ALTER TABLE august27_ai_match_proposals ADD COLUMN IF NOT EXISTS decided_by TEXT"))
+
+            # Ensure batch_tag in operational_matches
+            await db.execute(text("ALTER TABLE operational_matches ADD COLUMN IF NOT EXISTS batch_tag TEXT"))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS idx_operational_matches_batch_tag ON operational_matches(batch_tag)"))
+
             await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS august27_unmatched_clients (
                     id SERIAL PRIMARY KEY,

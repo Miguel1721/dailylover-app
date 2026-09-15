@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { ClipboardList, Brain, Sparkles, User, CheckCircle2, ArrowRight, ShieldCheck, Calendar, Clock, Video, Play, Phone, MapPin, ExternalLink } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 import ClientSelectorBar from '../../components/ClientSelectorBar'
 import DatosObjetivos from './DatosObjetivos'
 import PercepcionPsicologa from './PercepcionPsicologa'
 import EntrevistaResultados from './EntrevistaResultados'
+import ColaAtrasadosView from './ColaAtrasadosView'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
-export default function EntrevistaHub() {
+export default function EntrevistaHub({ initialTab }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { user, token } = useAuth()
+  const isAtrasadosOnly = user?.role === 'atrasados_only'
 
   const urlUserId = searchParams.get('user_id') || searchParams.get('id')
-  const urlTab = searchParams.get('tab') || 'objetivos'
+  const defaultTab = isAtrasadosOnly ? 'cola_atrasados' : (initialTab || searchParams.get('tab') || 'objetivos')
+  const urlTab = searchParams.get('tab') || defaultTab
 
   const [selectedClient, setSelectedClient] = useState(null)
   const [activeTab, setActiveTab] = useState(urlTab)
@@ -34,24 +39,26 @@ export default function EntrevistaHub() {
       .finally(() => setLoadingAppts(false))
   }, [])
 
-  // Sincronizar tab desde URL
+  // Sincronizar tab desde URL o prop
   useEffect(() => {
-    if (urlTab && ['objetivos', 'percepcion', 'resultados'].includes(urlTab)) {
+    if (urlTab && ['objetivos', 'percepcion', 'resultados', 'cola_atrasados'].includes(urlTab)) {
       setActiveTab(urlTab)
     }
   }, [urlTab])
 
-  // Cargar clientes recientes si no hay cliente seleccionado
+  // Cargar clientes con perfil guardado recientemente (dinámico, sin atajo a Samuel)
   useEffect(() => {
-    fetch(`${API}/api/v1/matchmaking/client-search?query=Samuel`)
+    fetch(`${API}/api/v1/matchmaking/recent-extended-clients`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
       .then(r => r.json())
       .then(data => {
-        if (data.clients) {
-          setRecentClients(data.clients.filter(c => c.has_extended))
+        if (data && data.clients) {
+          setRecentClients(data.clients)
         }
       })
       .catch(() => {})
-  }, [])
+  }, [token])
 
   // Cargar cliente por URL si viene en query
   useEffect(() => {
@@ -114,23 +121,90 @@ export default function EntrevistaHub() {
               🎙️ Entrevista Clínica & Matching
             </h1>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-              Flujo unificado en 3 fases: Datos Objetivos (1-10) → Percepción Clínica → Resultados con Candidatos Sugeridos y Aprobación hacia MATCHES.
+              Flujo clínico integral: Entrevista Individual (3 Fases) o Cola de Revisión Rápida de los 419 Clientes Atrasados.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Barra de Selección de Cliente Común para todo el proceso */}
-      <ClientSelectorBar
-        selectedClient={selectedClient}
-        onSelectClient={handleSelectClient}
-        onClearClient={handleClearClient}
-        exists={Boolean(selectedClient)}
-      />
+      {/* Selector de Modo: Entrevista Individual vs Cola de Atrasados */}
+      {!isAtrasadosOnly && (
+        <div style={{
+          display: 'flex',
+          gap: 12,
+          marginBottom: 20,
+          borderBottom: '1px solid var(--border-color)',
+          paddingBottom: 10,
+          flexWrap: 'wrap'
+        }}>
+          <button
+            onClick={() => switchTab('objetivos')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              borderRadius: 8,
+              border: 'none',
+              background: activeTab !== 'cola_atrasados' ? 'rgba(150, 21, 0, 0.15)' : 'transparent',
+              color: activeTab !== 'cola_atrasados' ? 'var(--color-primary-light)' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: 'pointer'
+            }}
+          >
+            <ClipboardList size={16} />
+            <span>🎙️ Entrevista Individual (3 Fases)</span>
+          </button>
 
-      {/* Si NO hay cliente seleccionado: Pantalla Guía con Accesos Rápidos & Citas de Calendario */}
-      {!selectedClient ? (
-        <div>
+          <button
+            onClick={() => switchTab('cola_atrasados')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              borderRadius: 8,
+              border: 'none',
+              background: activeTab === 'cola_atrasados' ? 'rgba(150, 21, 0, 0.15)' : 'transparent',
+              color: activeTab === 'cola_atrasados' ? 'var(--color-primary-light)' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: 'pointer'
+            }}
+          >
+            <Sparkles size={16} color="var(--color-primary-light)" />
+            <span>📦 Cola de Atrasados (419 Clientes)</span>
+            <span style={{
+              fontSize: 10,
+              background: 'var(--color-primary)',
+              color: '#fff',
+              padding: '1px 6px',
+              borderRadius: 10,
+              fontWeight: 800
+            }}>
+              Agosto 27
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Si la pestaña activa es Cola de Atrasados: Renderizar ColaAtrasadosView */}
+      {activeTab === 'cola_atrasados' ? (
+        <ColaAtrasadosView />
+      ) : (
+        <>
+          {/* Barra de Selección de Cliente Común para todo el proceso */}
+          <ClientSelectorBar
+            selectedClient={selectedClient}
+            onSelectClient={handleSelectClient}
+            onClearClient={handleClearClient}
+            exists={Boolean(selectedClient)}
+          />
+
+          {/* Si NO hay cliente seleccionado: Pantalla Guía con Accesos Rápidos & Citas de Calendario */}
+          {!selectedClient ? (
+            <div>
           {/* BANDEJA: CITAS DE ENTREVISTA AGENDADAS (CALENDARIO & TURNOS) */}
           <div style={{
             background: 'var(--bg-card)',
@@ -610,6 +684,8 @@ export default function EntrevistaHub() {
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   )

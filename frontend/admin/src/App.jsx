@@ -48,6 +48,7 @@ import Prioritarios from './pages/matchmaking/Prioritarios'
 import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
+import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame } from 'lucide-react'
 
 
@@ -224,12 +225,19 @@ function Sidebar({ isOpen, onClose }) {
   }
 
   const effectiveRole = user?.role || ''
-  const isMaria = effectiveRole === 'María' || (!previewRole && ((user?.email && (user.email.toLowerCase().includes('maria') || user.email.toLowerCase().includes('admin'))) || (user?.role && (user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'SUPERADMIN' || user.role.toLowerCase().includes('admin')))))
-  const isCs = effectiveRole === 'Servicio al Cliente'
-  const isPsyc = effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker')
-  const isLina = effectiveRole === 'Lina (Refunds)'
+  const isAtrasadosOnly = effectiveRole === 'atrasados_only' || user?.role === 'atrasados_only'
+  const isMaria = !isAtrasadosOnly && (effectiveRole === 'María' || (!previewRole && ((user?.email && (user.email.toLowerCase() === 'mariapaula@dailylover.com' || user.email.toLowerCase().includes('admin'))) || (user?.role && (user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'SUPERADMIN' || user.role.toLowerCase().includes('admin'))))))
+  const isCs = !isAtrasadosOnly && effectiveRole === 'Servicio al Cliente'
+  const isPsyc = !isAtrasadosOnly && (effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker'))
+  const isLina = !isAtrasadosOnly && effectiveRole === 'Lina (Refunds)'
 
-  const homePath = isCs ? '/matchmaking/aprobados-maria' : isLina ? '/matchmaking/refunds' : '/'
+  const homePath = isAtrasadosOnly ? '/matchmaking/cola-atrasados' : isCs ? '/matchmaking/aprobados-maria' : isLina ? '/matchmaking/refunds' : '/'
+
+  // Navegación exclusiva para usuario de Atrasados (Zero ruido)
+  const atrasadosNavItems = [
+    { to: '/matchmaking/cola-atrasados', icon: Sparkles, label: '🎙️ Cola de Atrasados' },
+    { to: '/matchmaking/matches-atrasados', icon: Calendar, label: '📅 Matches Atrasados' }
+  ]
 
   // Groups and items configuration — Zero noise per role
   const coreItems = [
@@ -332,24 +340,52 @@ function Sidebar({ isOpen, onClose }) {
       </div>
       
       <nav className="sidebar-nav" style={{ flex: 1, overflowY: 'auto' }}>
-        {coreItems.filter(i => hasPermission(i.module, i.action)).map(({ to, icon: Icon, label, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            onClick={handleLinkClick}
-          >
-            <Icon className="nav-icon" size={16} />
-            {label}
-          </NavLink>
-        ))}
+        {isAtrasadosOnly ? (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--text-muted)',
+              padding: '0 12px 6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              Gestión de Atrasados
+            </div>
+            {atrasadosNavItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        ) : (
+          <>
+            {coreItems.filter(i => hasPermission(i.module, i.action)).map(({ to, icon: Icon, label, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
 
-        {showMatchmaking && renderNavGroup('Matchmaking Operativo', matchmakingItems)}
-        {isMaria && renderNavGroup('CMS Visual (María Paula)', cmsItems)}
-        {showPersonal && renderNavGroup('Personal', personalItems)}
-        {showFinance && renderNavGroup('Finanzas', financeItems)}
-        {showSystem && renderNavGroup('Sistema', systemItems)}
+            {showMatchmaking && renderNavGroup('Matchmaking Operativo', matchmakingItems)}
+            {isMaria && renderNavGroup('CMS Visual (María Paula)', cmsItems)}
+            {showPersonal && renderNavGroup('Personal', personalItems)}
+            {showFinance && renderNavGroup('Finanzas', financeItems)}
+            {showSystem && renderNavGroup('Sistema', systemItems)}
+          </>
+        )}
       </nav>
 
       {/* Footer & Demo Mode Indicator */}
@@ -406,6 +442,9 @@ function Sidebar({ isOpen, onClose }) {
 function HomeRoute() {
   const { user } = useAuth()
   const effectiveRole = user?.role || ''
+  if (effectiveRole === 'atrasados_only') {
+    return <Navigate to="/matchmaking/cola-atrasados" replace />
+  }
   if (effectiveRole === 'Servicio al Cliente') {
     return <Navigate to="/matchmaking/aprobados-maria" replace />
   }
@@ -591,6 +630,10 @@ function AppContent() {
                     <Route path="/matchmaking/datos-objetivos" element={<ProtectedRoute module="matching" action="view"><DatosObjetivos /></ProtectedRoute>} />
                     <Route path="/matchmaking/percepcion-psicologa" element={<ProtectedRoute module="matching" action="view"><PercepcionPsicologa /></ProtectedRoute>} />
                     <Route path="/matchmaking/entrevista" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute>} />
+                    <Route path="/matchmaking/cola-atrasados" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute>} />
+                    <Route path="/matchmaking/matches-atrasados" element={<ProtectedRoute module="matching" action="view"><MatchesAtrasados /></ProtectedRoute>} />
+                    <Route path="/cola-atrasados" element={<Navigate to="/matchmaking/cola-atrasados" replace />} />
+                    <Route path="/matches-atrasados" element={<Navigate to="/matchmaking/matches-atrasados" replace />} />
                     <Route path="/entrevista" element={<Navigate to="/matchmaking/entrevista" replace />} />
                     <Route path="/datos-objetivos" element={<Navigate to="/matchmaking/datos-objetivos" replace />} />
                     <Route path="/percepcion-psicologa" element={<Navigate to="/matchmaking/percepcion-psicologa" replace />} />
