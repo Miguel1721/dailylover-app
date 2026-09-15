@@ -576,23 +576,31 @@ export default function ColaAtrasadosView() {
 
                           {/* Badge Score */}
                           <div style={{ textAlign: 'right' }}>
-                            <span style={{
-                              fontSize: 12,
-                              fontWeight: 800,
-                              padding: '3px 8px',
-                              borderRadius: 6,
-                              background: p.punctuation?.includes('9') || p.punctuation?.includes('8.5')
-                                ? 'rgba(76, 175, 80, 0.18)'
-                                : 'rgba(255, 193, 7, 0.18)',
-                              color: p.punctuation?.includes('9') || p.punctuation?.includes('8.5')
-                                ? '#81C784'
-                                : '#FFE082',
-                              border: p.punctuation?.includes('9') || p.punctuation?.includes('8.5')
-                                ? '1px solid rgba(76, 175, 80, 0.3)'
-                                : '1px solid rgba(255, 193, 7, 0.3)'
-                            }}>
-                              Score: {p.punctuation || '8.5/10'}
-                            </span>
+                            {(() => {
+                              const pStr = p.punctuation || ''
+                              const numMatch = pStr.match(/(\d+(?:\.\d+)?)/)
+                              const numVal = numMatch ? parseFloat(numMatch[1]) : null
+                              const isHigh = numVal !== null && numVal >= 7.5
+                              const isLow = numVal !== null && numVal < 5.0
+                              const bg = isHigh ? 'rgba(76, 175, 80, 0.18)' : isLow ? 'rgba(244, 67, 54, 0.18)' : 'rgba(255, 193, 7, 0.18)'
+                              const color = isHigh ? '#81C784' : isLow ? '#FF8A80' : '#FFE082'
+                              const border = isHigh ? '1px solid rgba(76, 175, 80, 0.3)' : isLow ? '1px solid rgba(244, 67, 54, 0.3)' : '1px solid rgba(255, 193, 7, 0.3)'
+                              const displayScore = numVal !== null ? `${numVal.toFixed(1)}/10` : (pStr || 'S/D')
+
+                              return (
+                                <span style={{
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  padding: '3px 8px',
+                                  borderRadius: 6,
+                                  background: bg,
+                                  color: color,
+                                  border: border
+                                }}>
+                                  Score: {displayScore}
+                                </span>
+                              )
+                            })()}
                             <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
                               {p.status || 'PROPUESTO'}
                             </div>
