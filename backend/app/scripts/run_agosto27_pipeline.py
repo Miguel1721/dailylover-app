@@ -104,7 +104,47 @@ async def process_client(client_info, db, nvidia_key, http_client, candidate_usa
     client_sg = float(ext_data["social_group_score"]) if ext_data.get("social_group_score") is not None else None
     client_act = int(ext_data["physical_activity_level"]) if ext_data.get("physical_activity_level") is not None else None
     client_edu = int(ext_data["education_level"]) if ext_data.get("education_level") is not None else None
-    client_attachment = parse_attachment_style(prof_row.apego if prof_row else None)
+
+    # Regla Unificada de Cascada: 1) Psicóloga -> 2) CRM
+    psyc_attachment = str(ext_data.get("attachment_style") or "").strip()
+    if psyc_attachment and psyc_attachment.lower() != "no especificado":
+        client_attachment = psyc_attachment.lower()
+        client_attachment_source = "Psicóloga"
+    else:
+        client_attachment = parse_attachment_style(prof_row.apego if prof_row else None)
+        client_attachment_source = "CRM"
+
+    crm_love_lang = str(prof_row.love_language or "").strip() if prof_row and prof_row.love_language else None
+    psyc_lang_given = str(ext_data.get("love_language_given") or "").strip()
+    psyc_lang_rec = str(ext_data.get("love_language_received") or "").strip()
+
+    client_lang_given = psyc_lang_given if (psyc_lang_given and psyc_lang_given.lower() != "no especificado") else (crm_love_lang or "No especificado")
+    client_lang_rec = psyc_lang_rec if (psyc_lang_rec and psyc_lang_rec.lower() != "no especificado") else (crm_love_lang or "No especificado")
+    client_love_source = "Psicóloga" if (psyc_lang_given and psyc_lang_given.lower() != "no especificado") or (psyc_lang_rec and psyc_lang_rec.lower() != "no especificado") else "CRM"
+
+    primary_love_lang = (
+        client_lang_given if client_lang_given != "No especificado"
+        else (client_lang_rec if client_lang_rec != "No especificado" else (crm_love_lang or "No especificado"))
+    )
+
+    clean_client_non_neg = []
+    for item in (ext_data.get("non_negotiables") or []):
+        if isinstance(item, dict):
+            txt = item.get("texto") or item.get("text") or ""
+            if txt.strip():
+                clean_client_non_neg.append(txt.strip())
+        elif isinstance(item, str) and item.strip():
+            clean_client_non_neg.append(item.strip())
+
+    client_non_neg_source = "Psicóloga" if clean_client_non_neg else "CRM"
+    if not clean_client_non_neg and prof_row and prof_row.search_preferences and isinstance(prof_row.search_preferences, dict):
+        for item in (prof_row.search_preferences.get("non_negotiables") or []):
+            if isinstance(item, dict):
+                txt = item.get("texto") or item.get("text") or ""
+                if txt.strip():
+                    clean_client_non_neg.append(txt.strip())
+            elif isinstance(item, str) and item.strip():
+                clean_client_non_neg.append(item.strip())
 
     client_summary = {
         "user_id": user_row.id,
@@ -120,13 +160,17 @@ async def process_client(client_info, db, nvidia_key, http_client, candidate_usa
         "plan_tier": prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)",
         "responsable": prof_row.responsable if prof_row and prof_row.responsable else (ext_data.get("updated_by") or "Psicóloga"),
         "attachment_style": client_attachment,
+        "attachment_source": client_attachment_source,
         "social_group_score": client_sg,
         "education_level": client_edu,
         "physical_activity_level": client_act,
         "social_energy_level": ext_data.get("social_energy_level"),
-        "love_language_given": ext_data.get("love_language_given") or "No especificado",
-        "love_language_received": ext_data.get("love_language_received") or "No especificado",
-        "non_negotiables": ext_data.get("non_negotiables") or [],
+        "love_language": primary_love_lang,
+        "love_language_given": client_lang_given,
+        "love_language_received": client_lang_rec,
+        "love_language_source": client_love_source,
+        "non_negotiables": clean_client_non_neg,
+        "non_negotiables_source": client_non_neg_source,
         "synthesis_who_really_is": ext_data.get("synthesis_who_really_is", ""),
         "bio_notes": prof_row.bio_notes if prof_row and prof_row.bio_notes else "",
         "search_preferences": client_prefs

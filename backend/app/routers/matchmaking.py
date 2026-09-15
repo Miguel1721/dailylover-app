@@ -3233,6 +3233,7 @@ async def get_client_extended_profile(
                 "synthesis_who_really_is": "",
                 "synthesis_first_date_behavior": "",
                 "synthesis_best_match_type": "",
+                "attachment_style": "Seguro",
                 "updated_at": None,
                 "updated_by": None
             }
@@ -3249,6 +3250,8 @@ async def get_client_extended_profile(
         d["physical_complexion"] = []
     if d.get("non_negotiables") is None:
         d["non_negotiables"] = []
+    if d.get("attachment_style") is None:
+        d["attachment_style"] = "Seguro"
 
     return {
         "exists": True,
@@ -3293,6 +3296,7 @@ class ExtendedProfilePayload(BaseModel):
     synthesis_who_really_is: Optional[str] = None
     synthesis_first_date_behavior: Optional[str] = None
     synthesis_best_match_type: Optional[str] = None
+    attachment_style: Optional[str] = None
     updated_by: Optional[str] = "Psicóloga"
 
 
@@ -3328,7 +3332,7 @@ async def save_client_extended_profile(
             love_language_flexibility, non_negotiables, physical_complexion,
             physical_importance, physical_traits_notes, behavioral_risk_level,
             flags_notes, synthesis_who_really_is, synthesis_first_date_behavior,
-            synthesis_best_match_type, updated_at, updated_by
+            synthesis_best_match_type, attachment_style, updated_at, updated_by
         ) VALUES (
             :user_id, :crm_id,
             :social_group_score, :education_level, :mobility_travel,
@@ -3341,7 +3345,7 @@ async def save_client_extended_profile(
             :love_language_flexibility, CAST(:non_negotiables AS jsonb), :physical_complexion,
             :physical_importance, :physical_traits_notes, :behavioral_risk_level,
             :flags_notes, :synthesis_who_really_is, :synthesis_first_date_behavior,
-            :synthesis_best_match_type, NOW(), :updated_by
+            :synthesis_best_match_type, :attachment_style, NOW(), :updated_by
         )
         ON CONFLICT (user_id) DO UPDATE SET
             crm_id = EXCLUDED.crm_id,
@@ -3377,6 +3381,7 @@ async def save_client_extended_profile(
             synthesis_who_really_is = COALESCE(EXCLUDED.synthesis_who_really_is, client_extended_profile.synthesis_who_really_is),
             synthesis_first_date_behavior = COALESCE(EXCLUDED.synthesis_first_date_behavior, client_extended_profile.synthesis_first_date_behavior),
             synthesis_best_match_type = COALESCE(EXCLUDED.synthesis_best_match_type, client_extended_profile.synthesis_best_match_type),
+            attachment_style = COALESCE(EXCLUDED.attachment_style, client_extended_profile.attachment_style),
             updated_at = NOW(),
             updated_by = EXCLUDED.updated_by
         RETURNING *;
@@ -3417,6 +3422,7 @@ async def save_client_extended_profile(
         "synthesis_who_really_is": payload.synthesis_who_really_is,
         "synthesis_first_date_behavior": payload.synthesis_first_date_behavior,
         "synthesis_best_match_type": payload.synthesis_best_match_type,
+        "attachment_style": payload.attachment_style,
         "updated_by": payload.updated_by or "Psicóloga"
     }
 
@@ -4034,6 +4040,22 @@ async def evaluate_candidate_quick_notes_ai(
     c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:3500]
     cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:3500]
 
+    c_att = client_info.get('attachment_style') or c_ap.get('style') or 'No especificado'
+    c_att_src = client_info.get('attachment_source')
+    c_att_str = f"{c_att} (Fuente: {c_att_src})" if c_att_src and c_att != "No especificado" else c_att
+
+    c_love = client_info.get('love_language') or client_info.get('love_language_given') or 'No especificado'
+    c_love_src = client_info.get('love_language_source')
+    c_love_str = f"{c_love} (Fuente: {c_love_src})" if c_love_src and c_love != "No especificado" else c_love
+
+    cand_att = cand_info.get('attachment_style') or cand_ap.get('style') or 'No especificado'
+    cand_att_src = cand_info.get('attachment_source')
+    cand_att_str = f"{cand_att} (Fuente: {cand_att_src})" if cand_att_src and cand_att != "No especificado" else cand_att
+
+    cand_love = cand_info.get('love_language') or 'No especificado'
+    cand_love_src = cand_info.get('love_language_source')
+    cand_love_str = f"{cand_love} (Fuente: {cand_love_src})" if cand_love_src and cand_love != "No especificado" else cand_love
+
     prompt = f"""Eres la Directora de Matchmaking y psicóloga clínica senior de Daily Lover.
 Tu labor es contrastar en 360° los perfiles de ambas personas: sus notas clínicas de entrevista, sus estilos de apego, lenguajes del amor, valores, hábitos de vida y lo que cada uno expresó que busca.
 
@@ -4041,7 +4063,7 @@ Tu labor es contrastar en 360° los perfiles de ambas personas: sus notas clíni
 PERFIL CLIENTE: {client_info.get('name')}
 - Demografía: Género: {client_info.get('gender') or 'No especificado'} | Edad: {client_info.get('age') or 'No especificada'} | Ciudad: {client_info.get('city') or 'Bogotá'} | Estatura: {client_info.get('estatura') or 'No especificada'}
 - Profesión: {client_info.get('occupation') or 'No especificada'} | Educación: {client_info.get('education') or 'No especificada'}
-- Dinámica Psicológica: Estilo de Apego: {c_ap.get('style') or client_info.get('attachment_style') or 'No especificado'} | Lenguaje del Amor: {client_info.get('love_language') or 'No especificado'} | Temperamento: {c_ls.get('temperament') or 'No especificado'}
+- Dinámica Psicológica: Estilo de Apego: {c_att_str} | Lenguaje del Amor: {c_love_str} | Temperamento: {c_ls.get('temperament') or 'No especificado'}
 - Estilo de Vida: ¿Tiene hijos?: {c_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'No especificado'} | Fuma: {c_ls.get('smoker') or 'No especificado'} | Bebe: {c_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {c_ls.get('has_pets') or 'No especificado'} | Rumba: {c_ls.get('rumba') or 'No especificado'} | Valores: {c_ls.get('values') or []}
 - Qué busca y límites: No Negociables: {c_sp.get('non_negotiables') or []} | Red Flags: {c_sp.get('red_flags') or []} | Qué busca: {c_sp.get('what_searches_in_partner') or 'No especificado'}
 - Notas Clínicas de la Psicóloga:
@@ -4051,7 +4073,7 @@ PERFIL CLIENTE: {client_info.get('name')}
 PERFIL CANDIDATO: {cand_info.get('name')}
 - Demografía: Género: {cand_info.get('gender') or 'No especificado'} | Edad: {cand_info.get('age') or 'No especificada'} | Ciudad: {cand_info.get('city') or 'Bogotá'} | Estatura: {cand_info.get('estatura') or 'No especificada'}
 - Profesión: {cand_info.get('occupation') or 'No especificada'} | Educación: {cand_info.get('education') or 'No especificada'}
-- Dinámica Psicológica: Estilo de Apego: {cand_ap.get('style') or cand_info.get('attachment_style') or 'No especificado'} | Lenguaje del Amor: {cand_info.get('love_language') or 'No especificado'} | Temperamento: {cand_ls.get('temperament') or 'No especificado'}
+- Dinámica Psicológica: Estilo de Apego: {cand_att_str} | Lenguaje del Amor: {cand_love_str} | Temperamento: {cand_ls.get('temperament') or 'No especificado'}
 - Estilo de Vida: ¿Tiene hijos?: {cand_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {cand_ls.get('wants_children') or 'No especificado'} | Fuma: {cand_ls.get('smoker') or 'No especificado'} | Bebe: {cand_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {cand_ls.get('has_pets') or 'No especificado'} | Rumba: {cand_ls.get('rumba') or 'No especificado'} | Valores: {cand_ls.get('values') or []}
 - Qué busca y límites: No Negociables: {cand_sp.get('non_negotiables') or []} | Red Flags: {cand_sp.get('red_flags') or []} | Qué busca: {cand_sp.get('what_searches_in_partner') or 'No especificado'}
 - Notas Clínicas de la Psicóloga:
@@ -4059,6 +4081,7 @@ PERFIL CANDIDATO: {cand_info.get('name')}
 
 --- REGLAS CLÍNICAS DE EVALUACIÓN ---
 1. ESPECIFICIDAD OBLIGATORIA:
+   - Si la fuente de un dato es "Psicóloga", dale PRIORIDAD absoluta sobre cualquier dato auto-declarado en CRM, ya que representa el criterio clínico profesional validado en entrevista.
    - PROHIBIDO usar frases genéricas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica").
    - Cita hechos textuales concretos: apego, hábitos, ritmo de rumba, mascotas, proyectos de vida o extractos de las notas.
    - Si las notas clínicas de alguna persona son muy escuetas, decláralo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
@@ -4231,7 +4254,8 @@ async def find_candidate_matches_engine(
                p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
                p.lifestyle, p.love_language,
                cep.social_group_score, cep.physical_activity_level, cep.education_level,
-               cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
+               cep.love_language_given, cep.love_language_received, cep.attachment_style,
+               cep.non_negotiables, cep.synthesis_who_really_is
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
         LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
@@ -4264,7 +4288,8 @@ async def find_candidate_matches_engine(
                    p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
                    p.lifestyle, p.love_language,
                    cep.social_group_score, cep.physical_activity_level, cep.education_level,
-                   cep.love_language_given, cep.non_negotiables, cep.synthesis_who_really_is
+                   cep.love_language_given, cep.love_language_received, cep.attachment_style,
+                   cep.non_negotiables, cep.synthesis_who_really_is
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
@@ -4331,9 +4356,17 @@ async def find_candidate_matches_engine(
             continue
 
         # 3. Matriz de apego psicológico
+        # Regla Unificada de Cascada: 1) Psicóloga (cep.attachment_style) -> 2) CRM (profiles.apego)
+        cand_psyc_att = str(getattr(r, "attachment_style", None) or "").strip()
         raw_apego = getattr(r, "apego", None)
-        cand_attachment = parse_attachment_style(raw_apego)
-        has_real_attachment = bool(raw_apego and cand_attachment and cand_attachment != "No especificado")
+        if cand_psyc_att and cand_psyc_att.lower() != "no especificado":
+            cand_attachment = cand_psyc_att.lower()
+            cand_attachment_source = "Psicóloga"
+        else:
+            cand_attachment = parse_attachment_style(raw_apego)
+            cand_attachment_source = "CRM"
+
+        has_real_attachment = bool(cand_attachment and cand_attachment != "No especificado")
         client_has_attachment = bool(client_attachment and client_attachment != "No especificado")
         if has_real_attachment and client_has_attachment:
             attachment_eval = evaluate_attachment_compatibility(client_attachment, cand_attachment)
@@ -4351,8 +4384,24 @@ async def find_candidate_matches_engine(
         cand_sg = float(r.social_group_score) if r.social_group_score is not None else None
         cand_act = int(r.physical_activity_level) if r.physical_activity_level is not None else None
         cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
-        cand_lang_raw = r.love_language_given or getattr(r, "love_language", None)
-        cand_lang = str(cand_lang_raw).strip() if cand_lang_raw and str(cand_lang_raw).strip() else "No especificado"
+
+        # Regla Unificada de Cascada: 1) Psicóloga (love_language_given / love_language_received) -> 2) CRM (profiles.love_language)
+        cand_psyc_given = str(getattr(r, "love_language_given", None) or "").strip()
+        cand_psyc_rec = str(getattr(r, "love_language_received", None) or "").strip()
+        cand_crm_lang = str(getattr(r, "love_language", None) or "").strip()
+
+        if cand_psyc_given and cand_psyc_given.lower() != "no especificado":
+            cand_lang = cand_psyc_given
+            cand_lang_source = "Psicóloga"
+        elif cand_psyc_rec and cand_psyc_rec.lower() != "no especificado":
+            cand_lang = cand_psyc_rec
+            cand_lang_source = "Psicóloga"
+        elif cand_crm_lang and cand_crm_lang.lower() != "no especificado":
+            cand_lang = cand_crm_lang
+            cand_lang_source = "CRM"
+        else:
+            cand_lang = "No especificado"
+            cand_lang_source = "CRM"
         cand_bio_clean = (r.bio_notes or "").strip()
         cand_eval_age = int(r.age) if r.age else None
         if not cand_eval_age and cand_bio_clean:
@@ -4530,8 +4579,31 @@ async def find_candidate_matches_engine(
         if bidi["height_alerts"]:
             dealbreakers_check_msg = f"⚠️ Nota: {bidi['height_alerts'][0]}"
 
+        # Regla Unificada de Cascada: 1) Psicóloga (cep.non_negotiables) -> 2) CRM (search_preferences.non_negotiables)
+        cand_clean_non_neg = []
+        cand_psyc_nn = getattr(r, "non_negotiables", None) or []
+        if isinstance(cand_psyc_nn, list):
+            for item in cand_psyc_nn:
+                if isinstance(item, dict):
+                    txt = item.get("texto") or item.get("text") or ""
+                    if txt.strip():
+                        cand_clean_non_neg.append(txt.strip())
+                elif isinstance(item, str) and item.strip():
+                    cand_clean_non_neg.append(item.strip())
+
         cand_sp = r.search_preferences or {}
-        cand_nn_list = cand_sp.get("non_negotiables") or []
+        crm_cand_nn_list = cand_sp.get("non_negotiables") or []
+        cand_nn_source = "Psicóloga" if cand_clean_non_neg else "CRM"
+        if not cand_clean_non_neg and crm_cand_nn_list:
+            for item in crm_cand_nn_list:
+                if isinstance(item, dict):
+                    txt = item.get("texto") or item.get("text") or ""
+                    if txt.strip():
+                        cand_clean_non_neg.append(txt.strip())
+                elif isinstance(item, str) and item.strip():
+                    cand_clean_non_neg.append(item.strip())
+
+        cand_nn_list = cand_clean_non_neg
         cand_rf_list = cand_sp.get("red_flags") or []
 
         cand_payload = {
@@ -4555,9 +4627,13 @@ async def find_candidate_matches_engine(
             "physical_activity_level": cand_act,
             "education_level": cand_edu,
             "love_language": cand_lang,
+            "love_language_source": cand_lang_source,
             "lifestyle": getattr(r, "lifestyle", None),
             "apego": getattr(r, "apego", None),
             "attachment_style": cand_attachment,
+            "attachment_source": cand_attachment_source,
+            "non_negotiables": cand_nn_list,
+            "non_negotiables_source": cand_nn_source,
             "attachment_eval": attachment_eval,
             "datos_completos": datos_completos,
             "campos_faltantes": missing_fields,
@@ -4831,14 +4907,49 @@ async def get_interview_results(
             except Exception:
                 pass
 
+    # Regla Unificada de Cascada para Cliente (Persona A):
+    # 1. Estilo de Apego: 1) Psicóloga (client_extended_profile) -> 2) CRM (profiles.apego)
+    psyc_attachment = str(ext_data.get("attachment_style") or "").strip()
+    if psyc_attachment and psyc_attachment.lower() != "no especificado":
+        client_attachment = psyc_attachment.lower()
+        client_attachment_source = "Psicóloga"
+    else:
+        client_attachment = parse_attachment_style(prof_row.apego if prof_row else None)
+        client_attachment_source = "CRM"
+
+    # 2. Lenguaje del Amor: 1) Psicóloga (love_language_given / love_language_received) -> 2) CRM (profiles.love_language)
+    crm_love_lang = str(prof_row.love_language or "").strip() if prof_row and prof_row.love_language else None
+    psyc_lang_given = str(ext_data.get("love_language_given") or "").strip()
+    psyc_lang_rec = str(ext_data.get("love_language_received") or "").strip()
+
+    client_lang_given = psyc_lang_given if (psyc_lang_given and psyc_lang_given.lower() != "no especificado") else (crm_love_lang or "No especificado")
+    client_lang_rec = psyc_lang_rec if (psyc_lang_rec and psyc_lang_rec.lower() != "no especificado") else (crm_love_lang or "No especificado")
+    client_love_source = "Psicóloga" if (psyc_lang_given and psyc_lang_given.lower() != "no especificado") or (psyc_lang_rec and psyc_lang_rec.lower() != "no especificado") else "CRM"
+
+    primary_love_lang = (
+        client_lang_given if client_lang_given != "No especificado"
+        else (client_lang_rec if client_lang_rec != "No especificado" else (crm_love_lang or "No especificado"))
+    )
+
+    # 3. Innegociables: 1) Psicóloga (client_extended_profile.non_negotiables) -> 2) CRM (profiles.search_preferences.non_negotiables)
     clean_client_non_neg = []
-    for item in client_non_neg:
+    for item in (ext_data.get("non_negotiables") or []):
         if isinstance(item, dict):
             txt = item.get("texto") or item.get("text") or ""
             if txt.strip():
                 clean_client_non_neg.append(txt.strip())
         elif isinstance(item, str) and item.strip():
             clean_client_non_neg.append(item.strip())
+
+    client_non_neg_source = "Psicóloga" if clean_client_non_neg else "CRM"
+    if not clean_client_non_neg and prof_row and prof_row.search_preferences and isinstance(prof_row.search_preferences, dict):
+        for item in (prof_row.search_preferences.get("non_negotiables") or []):
+            if isinstance(item, dict):
+                txt = item.get("texto") or item.get("text") or ""
+                if txt.strip():
+                    clean_client_non_neg.append(txt.strip())
+            elif isinstance(item, str) and item.strip():
+                clean_client_non_neg.append(item.strip())
 
     # URL canónica de SmartMatchApp para el cliente entrevistado
     clean_user_cid = str(user_row.crm_id or "").strip()
@@ -4877,14 +4988,18 @@ async def get_interview_results(
         "dates_remaining": client_saldo,
         "saldo_citas": client_saldo,
         "responsable": prof_row.responsable if prof_row and prof_row.responsable else (ext_data.get("updated_by") or "Psicóloga"),
-        "attachment_style": parse_attachment_style(prof_row.apego if prof_row else None),
+        "attachment_style": client_attachment,
+        "attachment_source": client_attachment_source,
         "social_group_score": client_sg,
         "education_level": ext_data.get("education_level"),
         "physical_activity_level": client_act,
         "social_energy_level": ext_data.get("social_energy_level"),
-        "love_language_given": ext_data.get("love_language_given") or "No especificado",
-        "love_language_received": ext_data.get("love_language_received") or "No especificado",
+        "love_language": primary_love_lang,
+        "love_language_given": client_lang_given,
+        "love_language_received": client_lang_rec,
+        "love_language_source": client_love_source,
         "non_negotiables": clean_client_non_neg,
+        "non_negotiables_source": client_non_neg_source,
         "synthesis_who_really_is": ext_data.get("synthesis_who_really_is", ""),
         "synthesis_first_date_behavior": ext_data.get("synthesis_first_date_behavior", ""),
         "synthesis_best_match_type": ext_data.get("synthesis_best_match_type", ""),
@@ -4927,9 +5042,10 @@ async def get_interview_results(
     insufficient_matches = [m for m in top_matches if m.get("insufficient_data")]
 
     print(f"\n>>> [AUDIT LIVE INTERVIEW-RESULTS] Request identifier='{crm_id_or_user_id}' -> Client='{client_summary.get('name')}' (UID: {client_summary.get('user_id')})", flush=True)
+    print(f"    Prioridad de Datos Cliente: Apego='{client_summary.get('attachment_style')}' ({client_summary.get('attachment_source')}) | Lenguaje='{client_summary.get('love_language')}' ({client_summary.get('love_language_source')}) | No-Negociables={len(clean_client_non_neg)} ({client_summary.get('non_negotiables_source')})", flush=True)
     print(f"    Viables con datos completos: {len(viable_matches)} | Insuficientes en CRM: {len(insufficient_matches)}", flush=True)
     for idx, cand in enumerate(top_matches):
-        print(f"    #{idx+1}: {cand.get('name')} | category={cand.get('match_category')} | comp={cand.get('compatibility_pct')} | struct={cand.get('structural_score')} | ai={cand.get('ai_score')} | verdict={cand.get('ai_veredicto')}", flush=True)
+        print(f"    #{idx+1}: {cand.get('name')} | apego='{cand.get('attachment_style')}' ({cand.get('attachment_source')}) | lang='{cand.get('love_language')}' ({cand.get('love_language_source')}) | category={cand.get('match_category')} | comp={cand.get('compatibility_pct')} | struct={cand.get('structural_score')} | ai={cand.get('ai_score')} | verdict={cand.get('ai_veredicto')}", flush=True)
     print(f">>> [AUDIT LIVE INTERVIEW-RESULTS] Returning {len(top_matches)} candidates.\n", flush=True)
 
     return {

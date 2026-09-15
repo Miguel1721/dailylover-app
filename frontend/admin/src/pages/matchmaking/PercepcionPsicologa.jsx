@@ -46,6 +46,7 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
     conversation_lead: 5,
 
     // Bloque 3A: Historia de Relaciones
+    attachment_style: 'Seguro',
     emotional_processing: 5,
     months_single: 12,
     self_awareness: 5,
@@ -152,7 +153,8 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
             flags_notes: p.flags_notes || '',
             synthesis_who_really_is: p.synthesis_who_really_is || '',
             synthesis_first_date_behavior: p.synthesis_first_date_behavior || '',
-            synthesis_best_match_type: p.synthesis_best_match_type || ''
+            synthesis_best_match_type: p.synthesis_best_match_type || '',
+            attachment_style: p.attachment_style || 'Seguro'
           })
           setExists(true)
           setLastUpdated(p.updated_at)
@@ -188,7 +190,8 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
             flags_notes: '',
             synthesis_who_really_is: '',
             synthesis_first_date_behavior: '',
-            synthesis_best_match_type: ''
+            synthesis_best_match_type: '',
+            attachment_style: 'Seguro'
           })
         }
         setLoading(false)
@@ -249,6 +252,7 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
         synthesis_who_really_is: formData.synthesis_who_really_is.slice(0, 200),
         synthesis_first_date_behavior: formData.synthesis_first_date_behavior.slice(0, 200),
         synthesis_best_match_type: formData.synthesis_best_match_type.slice(0, 200),
+        attachment_style: formData.attachment_style || 'Seguro',
         updated_by: user?.name || 'Psicóloga'
       }
 
@@ -531,8 +535,58 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 10 }}>
                 <Clock size={18} style={{ color: 'var(--color-primary)' }} />
                 <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                  Bloque 3A — Historia de Relaciones & Cierre Emocional
+                  Bloque 3A — Dinámica Vincular, Apego & Cierre Emocional
                 </h2>
+              </div>
+
+              {/* Estilo de Apego Percibido */}
+              <div style={{
+                marginBottom: 22,
+                padding: '16px 18px',
+                background: 'rgba(150, 21, 0, 0.05)',
+                borderRadius: 10,
+                border: '1.5px solid rgba(150, 21, 0, 0.3)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div>
+                    <label style={{ fontWeight: 800, fontSize: 13, color: 'var(--text-primary)', display: 'block' }}>
+                      🧠 Estilo de Apego Percibido (Juicio Clínico de la Psicóloga)
+                    </label>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      Prioridad clínica absoluta sobre lo auto-declarado por el cliente en el CRM.
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    padding: '3px 8px',
+                    borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    border: '1px solid rgba(16, 185, 129, 0.3)'
+                  }}>
+                    ✓ Pesa más que el CRM
+                  </span>
+                </div>
+                <select
+                  value={formData.attachment_style || 'Seguro'}
+                  onChange={(e) => setFormData({ ...formData, attachment_style: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'var(--bg-base)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                    fontWeight: 700
+                  }}
+                >
+                  <option value="Seguro">Apego Seguro (Equilibrado, autónomo, asertivo y constructivo)</option>
+                  <option value="Ansioso">Apego Ansioso (Preocupado / Necesidad de validación constante / Hiperactivación)</option>
+                  <option value="Evitativo">Apego Evitativo (Distante / Sobre-independencia defensiva / Desactivación afectiva)</option>
+                  <option value="Desorganizado">Apego Desorganizado (Temeroso / Ambivalente / Oscilación entre cercanía y huida)</option>
+                </select>
               </div>
 
               {/* Procesamiento Emocional */}

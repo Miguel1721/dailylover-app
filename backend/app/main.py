@@ -198,10 +198,12 @@ async def startup_seed():
                     synthesis_who_really_is VARCHAR(250),
                     synthesis_first_date_behavior VARCHAR(250),
                     synthesis_best_match_type VARCHAR(250),
+                    attachment_style VARCHAR(50),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_by VARCHAR(100)
                 )
             """))
+            await db.execute(text("ALTER TABLE client_extended_profile ADD COLUMN IF NOT EXISTS attachment_style VARCHAR(50)"))
             await db.execute(text("CREATE INDEX IF NOT EXISTS idx_client_ext_user_id ON client_extended_profile(user_id)"))
             await db.execute(text("CREATE INDEX IF NOT EXISTS idx_client_ext_crm_id ON client_extended_profile(crm_id)"))
 
