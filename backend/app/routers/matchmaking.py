@@ -4455,18 +4455,22 @@ async def find_candidate_matches_engine(
 
                     cand["ai_notes_quality"] = res.get("calidad_notas", "SUFICIENTE")
 
-                    if len(dbs) > 0 or verdict == "NO RECOMENDADO":
+                    if verdict == "NO RECOMENDADO":
                         cand["compatibility_pct"] = min(ai_score, 35)
                     elif verdict == "VIABLE CON RESERVAS":
-                        # Criterio estricto: cuando hay reservas explícitas, el porcentaje nunca debe superar 68%
+                        # Criterio estricto: cuando hay reservas clínicas, el porcentaje nunca debe superar 68% (score 5-6/10)
                         raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score))
                         cand["compatibility_pct"] = min(raw_blend, 68)
                     else:
                         cand["compatibility_pct"] = int(round(0.40 * struct_score + 0.60 * ai_score))
 
                     if dbs:
-                        cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"
-                        cand["dealbreakers_clean"] = False
+                        if verdict == "NO RECOMENDADO":
+                            cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"
+                            cand["dealbreakers_clean"] = False
+                        else:
+                            cand["dealbreakers_check"] = f"⚠️ Puntos a verificar: {', '.join(dbs[:2])}"
+                            cand["dealbreakers_clean"] = True
                     if pts:
                         cand["strengths"] = [f"IA: {p}" for p in pts] + cand.get("strengths", [])
                 else:
