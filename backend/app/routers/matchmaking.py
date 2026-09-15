@@ -3862,7 +3862,7 @@ _AI_MATCH_CACHE: Dict[str, dict] = {
 }
 
 
-def check_deterministic_hard_dealbreakers(cli: dict, cand: dict) -> Tuple[bool, Optional[str]]:
+def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     """
     Evalúa incompatibilidades estructurales insalvables con 0% alucinación y 0 costo de IA.
     Retorna (es_incompatible, motivo)
@@ -3888,20 +3888,31 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict) -> Tuple[bool, 
     cand_pref_gender = (cand_sp.get('preferred_gender') or '').strip().lower()
     cand_orient = (cand.get('orientation') or cand_sp.get('preferred_orientation') or '').strip().lower()
 
-    # Si cliente busca género específico y candidato no coincide
-    if c_pref_gender and cand_gender:
+    c_wants_both = ("hombre" in c_pref_gender and "mujer" in c_pref_gender) or ("ambos" in c_pref_gender) or ("cualquiera" in c_pref_gender)
+    cand_wants_both = ("hombre" in cand_pref_gender and "mujer" in cand_pref_gender) or ("ambos" in cand_pref_gender) or ("cualquiera" in cand_pref_gender)
+
+    # Si cliente busca género específico (y no ambos) y candidato no coincide
+    if c_pref_gender and cand_gender and not c_wants_both:
         if ('hombre' in c_pref_gender and 'mujer' in cand_gender) or ('mujer' in c_pref_gender and 'hombre' in cand_gender):
             return True, f"Incompatibilidad de género buscado: {cli.get('name')} ({c_gender or 'S/D'}) busca {c_sp.get('preferred_gender')}, pero {cand.get('name')} es {cand.get('gender')}."
 
-    # Si candidato busca género específico y cliente no coincide
-    if cand_pref_gender and c_gender:
+    # Si candidato busca género específico (y no ambos) y cliente no coincide
+    if cand_pref_gender and c_gender and not cand_wants_both:
         if ('hombre' in cand_pref_gender and 'mujer' in c_gender) or ('mujer' in cand_pref_gender and 'hombre' in c_gender):
             return True, f"Incompatibilidad de género buscado en candidato: {cand.get('name')} busca {cand_sp.get('preferred_gender')}, pero {cli.get('name')} es {cli.get('gender')}."
 
     # Si ambos son del mismo género y alguno es explícitamente heterosexual
-    if c_gender and cand_gender and c_gender == cand_gender:
-        if 'hetero' in c_orient or 'hetero' in cand_orient or ('hombre' in c_pref_gender and c_gender == 'mujer') or ('mujer' in c_pref_gender and c_gender == 'hombre'):
+    if c_gender and cand_gender and (('hombre' in c_gender and 'hombre' in cand_gender) or ('mujer' in c_gender and 'mujer' in cand_gender)):
+        if 'hetero' in c_orient or 'hetero' in cand_orient or ('hombre' in c_pref_gender and 'mujer' in c_gender and not c_wants_both) or ('mujer' in c_pref_gender and 'hombre' in c_gender and not c_wants_both) or ('hombre' in cand_pref_gender and 'mujer' in cand_gender and not cand_wants_both) or ('mujer' in cand_pref_gender and 'hombre' in cand_gender and not cand_wants_both):
             return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} y {cand.get('name')} son del mismo sexo ({c_gender}), pero hay orientación heterosexual declarada."
+
+    # Si son de distinto sexo y alguno es exclusivamente homosexual/gay/lesbiana
+    is_diff_gender = ('hombre' in c_gender and 'mujer' in cand_gender) or ('mujer' in c_gender and 'hombre' in cand_gender)
+    if is_diff_gender:
+        if ('lesb' in c_orient) or ('gay' in c_orient and 'hombre' in c_gender) or ('homo' in c_orient and 'hetero' not in c_orient and 'bi' not in c_orient):
+            return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} tiene orientación homosexual/lesbiana declarada y {cand.get('name')} es de distinto sexo."
+        if ('lesb' in cand_orient) or ('gay' in cand_orient and 'hombre' in cand_gender) or ('homo' in cand_orient and 'hetero' not in cand_orient and 'bi' not in cand_orient):
+            return True, f"Incompatibilidad de orientación sexual: {cand.get('name')} tiene orientación homosexual/lesbiana declarada y {cli.get('name')} es de distinto sexo."
 
     # 2. Hijos excluyentes declarados en no negociables
     c_ls = _to_d(cli.get('lifestyle'))
@@ -3917,6 +3928,12 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict) -> Tuple[bool, 
 
     if any(k in x for x in cand_nn for k in ['no personas con hijos', 'no tener hijos la pareja', 'sin hijos']) and ('sí' in c_has_kids or 'si' in c_has_kids or '1' in c_has_kids or '2' in c_has_kids):
         return True, f"Dealbreaker de hijos: {cand.get('name')} declaró no aceptar parejas con hijos, y {cli.get('name')} tiene hijos."
+
+    # 3. Posturas diametralmente opuestas sobre querer hijos en el futuro
+    c_wants_kids = (c_ls.get('wants_children') or '').strip().lower()
+    cand_wants_kids = (cand_ls.get('wants_children') or '').strip().lower()
+    if ('no' in c_wants_kids and 'definitivo' in c_wants_kids) and ('sí' in cand_wants_kids and 'definitivo' in cand_wants_kids):
+        return True, f"Proyecto de vida incompatible: {cli.get('name')} tiene postura definitiva de no tener hijos, mientras que {cand.get('name')} tiene postura definitiva de sí tener hijos."
 
     return False, None
 
@@ -4149,14 +4166,59 @@ async def find_candidate_matches_engine(
         elif isinstance(item, str) and item.strip():
             clean_client_non_neg.append(item.strip())
 
-    is_male = "homb" in client_gender or "masc" in client_gender
-    gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')" if is_male else "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
+    # Determinar género buscado real a partir de search_preferences (en lugar de asumir heterosexual binario)
+    c_pref_gender = (client_prefs.get("preferred_gender") or "").strip().lower()
+    c_orient = (client_summary.get("orientation") or client_prefs.get("preferred_orientation") or "").strip().lower()
+    is_client_male = "homb" in client_gender or "masc" in client_gender
 
-    anti_opposite_name_sql = (
-        "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
-        if is_male else
-        "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
-    )
+    if "muj" in c_pref_gender or "fem" in c_pref_gender:
+        if "homb" in c_pref_gender or "masc" in c_pref_gender:
+            # Busca ambos géneros
+            gender_filter_sql = "(p.gender IS NOT NULL AND p.gender != '')"
+            anti_opposite_name_sql = ""
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%lesb%' OR p.orientation ILIKE '%gay%')"
+        else:
+            # Busca estrictamente Mujer
+            gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')"
+            anti_opposite_name_sql = "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
+            if not is_client_male:
+                # Mujer buscando mujer (LGBTIQ+)
+                orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%lesb%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%homo%')"
+            else:
+                # Hombre buscando mujer
+                orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')"
+    elif "homb" in c_pref_gender or "masc" in c_pref_gender:
+        # Busca estrictamente Hombre
+        gender_filter_sql = "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
+        anti_opposite_name_sql = "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
+        if is_client_male:
+            # Hombre buscando hombre (LGBTIQ+)
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%gay%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%homo%')"
+        else:
+            # Mujer buscando hombre
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')"
+    else:
+        # Fallback si no tiene preferred_gender explícito en search_preferences: deducir de orientación declarada
+        if "lesb" in c_orient or ("homo" in c_orient and not is_client_male):
+            gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')"
+            anti_opposite_name_sql = "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%lesb%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%homo%')"
+        elif "gay" in c_orient or ("homo" in c_orient and is_client_male):
+            gender_filter_sql = "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
+            anti_opposite_name_sql = "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%gay%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%homo%')"
+        elif "bi" in c_orient:
+            gender_filter_sql = "(p.gender IS NOT NULL AND p.gender != '')"
+            anti_opposite_name_sql = ""
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%lesb%' OR p.orientation ILIKE '%gay%')"
+        else:
+            gender_filter_sql = "(p.gender ILIKE '%fem%' OR p.gender ILIKE '%muj%')" if is_client_male else "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
+            anti_opposite_name_sql = (
+                "AND u.name !~* '^(miguel|juan|carlos|diego|andres|pedro|luis|felipe|daniel|sebastian|jorge|pablo|alejandro|david|mateo|santiago|cristian|victor|gabriel|nicolas|camilo)'"
+                if is_client_male else
+                "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
+            )
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')"
 
     city_sql = ""
     if client_city and client_city.lower() != "todas":
@@ -4182,7 +4244,7 @@ async def find_candidate_matches_engine(
           AND {gender_filter_sql}
           {anti_opposite_name_sql}
           {city_sql}
-          AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
+          {orient_filter_sql}
           AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
         ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
                  (p.occupation IS NOT NULL AND p.occupation != '') DESC,
@@ -4214,7 +4276,7 @@ async def find_candidate_matches_engine(
               AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
               AND {gender_filter_sql}
               {anti_opposite_name_sql}
-              AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')
+              {orient_filter_sql}
               AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
             ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
                      (p.occupation IS NOT NULL AND p.occupation != '') DESC,
@@ -4523,6 +4585,20 @@ async def find_candidate_matches_engine(
             }
         }
         cand_payload["match_analysis"] = generate_clinical_match_analysis(client_summary, cand_payload)
+
+        # =========================================================================
+        # TIER 1: FILTRO DETERMINÍSTICO ESTRUCTURAL PREVIO (0% IA, 0 tokens)
+        # Se evalúa sobre el pool COMPLETO de candidatos ANTES de rankear o enviar a la IA.
+        # Descarta de raíz cualquier incompatibilidad insalvable de:
+        # 1) Género buscado por ambas partes
+        # 2) Orientación sexual cruzada
+        # 3) Hijos no negociables vs hijos declarados
+        # 4) Posturas diametralmente opuestas sobre querer hijos
+        # =========================================================================
+        is_hard_dealbreaker, hard_reason = check_deterministic_hard_dealbreakers(client_summary, cand_payload)
+        if is_hard_dealbreaker:
+            continue
+
         if is_capped:
             capped_candidates.append(cand_payload)
         else:
@@ -4673,7 +4749,7 @@ async def get_interview_results(
     # 1. Datos básicos y perfil
     prof_res = await db.execute(text("""
         SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.orientation, p.responsable,
-               p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes
+               p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes, p.lifestyle
         FROM profiles p
         WHERE p.user_id = :uid
         LIMIT 1
@@ -4739,6 +4815,7 @@ async def get_interview_results(
         "client_code": user_row.client_code or f"DL-{user_row.id}",
         "city": client_city,
         "gender": prof_row.gender if prof_row else "No especificado",
+        "orientation": prof_row.orientation if prof_row and prof_row.orientation else (client_prefs.get("preferred_orientation") or None),
         "age": client_age,
         "estatura": prof_row.estatura if prof_row and prof_row.estatura else "",
         "occupation": prof_row.occupation.strip() if prof_row and prof_row.occupation and prof_row.occupation.strip() else "No especificado",
@@ -4759,6 +4836,8 @@ async def get_interview_results(
         "synthesis_who_really_is": ext_data.get("synthesis_who_really_is", ""),
         "synthesis_first_date_behavior": ext_data.get("synthesis_first_date_behavior", ""),
         "synthesis_best_match_type": ext_data.get("synthesis_best_match_type", ""),
+        "lifestyle": prof_row.lifestyle if prof_row and prof_row.lifestyle else {},
+        "apego": prof_row.apego if prof_row and prof_row.apego else {},
         "bio_notes": prof_row.bio_notes if prof_row and prof_row.bio_notes else "",
         "search_preferences": client_prefs
     }
