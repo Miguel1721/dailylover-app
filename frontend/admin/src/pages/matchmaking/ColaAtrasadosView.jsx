@@ -580,12 +580,13 @@ export default function ColaAtrasadosView() {
                               const pStr = p.punctuation || ''
                               const numMatch = pStr.match(/(\d+(?:\.\d+)?)/)
                               const numVal = numMatch ? parseFloat(numMatch[1]) : null
-                              const isHigh = numVal !== null && numVal >= 7.5
-                              const isLow = numVal !== null && numVal < 5.0
-                              const bg = isHigh ? 'rgba(76, 175, 80, 0.18)' : isLow ? 'rgba(244, 67, 54, 0.18)' : 'rgba(255, 193, 7, 0.18)'
-                              const color = isHigh ? '#81C784' : isLow ? '#FF8A80' : '#FFE082'
-                              const border = isHigh ? '1px solid rgba(76, 175, 80, 0.3)' : isLow ? '1px solid rgba(244, 67, 54, 0.3)' : '1px solid rgba(255, 193, 7, 0.3)'
-                              const displayScore = numVal !== null ? `${numVal.toFixed(1)}/10` : (pStr || 'S/D')
+                              const isNoData = numVal === null || pStr === 'N/A' || pStr === 'S/D' || !pStr || pStr.toLowerCase().includes('sin datos')
+                              const isHigh = !isNoData && numVal !== null && numVal >= 7.5
+                              const isLow = !isNoData && numVal !== null && numVal < 5.0
+                              const bg = isNoData ? 'rgba(156, 163, 175, 0.15)' : isHigh ? 'rgba(76, 175, 80, 0.18)' : isLow ? 'rgba(244, 67, 54, 0.18)' : 'rgba(255, 193, 7, 0.18)'
+                              const color = isNoData ? '#9CA3AF' : isHigh ? '#81C784' : isLow ? '#FF8A80' : '#FFE082'
+                              const border = isNoData ? '1px solid rgba(156, 163, 175, 0.3)' : isHigh ? '1px solid rgba(76, 175, 80, 0.3)' : isLow ? '1px solid rgba(244, 67, 54, 0.3)' : '1px solid rgba(255, 193, 7, 0.3)'
+                              const displayScore = isNoData ? '⚠️ Sin datos suficientes' : `Score: ${numVal.toFixed(1)}/10`
 
                               return (
                                 <span style={{
@@ -597,7 +598,7 @@ export default function ColaAtrasadosView() {
                                   color: color,
                                   border: border
                                 }}>
-                                  Score: {displayScore}
+                                  {displayScore}
                                 </span>
                               )
                             })()}

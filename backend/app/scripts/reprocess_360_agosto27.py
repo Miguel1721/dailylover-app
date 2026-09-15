@@ -216,14 +216,13 @@ async def run_reprocess(is_pilot=False):
 
     # 1. Backup de seguridad V4
     if not is_pilot:
-        print("1. Creando backup de seguridad 'august27_ai_match_proposals_v4_backup'...", flush=True)
+        print("1. Verificando backup de seguridad 'august27_ai_match_proposals_v4_backup'...", flush=True)
         async with pool.acquire() as conn:
-            await conn.execute("DROP TABLE IF EXISTS august27_ai_match_proposals_v4_backup")
-            await conn.execute("CREATE TABLE august27_ai_match_proposals_v4_backup AS SELECT * FROM august27_ai_match_proposals")
+            await conn.execute("CREATE TABLE IF NOT EXISTS august27_ai_match_proposals_v4_backup AS SELECT * FROM august27_ai_match_proposals")
             bk_cnt = await conn.fetchval("SELECT count(*) FROM august27_ai_match_proposals_v4_backup")
             print(f"Backup V4 verificado con {bk_cnt} filas.", flush=True)
 
-    # 2. Cargar todas las propuestas con perfiles enriquecidos
+    # 2. Cargar todas las propuestas pendientes con perfiles enriquecidos
     query = """
         SELECT 
             p.id, p.sheet_row, p.client_name, p.client_user_id, p.candidate_name, p.candidate_user_id,
@@ -244,6 +243,19 @@ async def run_reprocess(is_pilot=False):
     """
     if is_pilot:
         query += " AND p.id IN (1208, 1209, 1566, 984, 1257) "
+    else:
+        query += """
+          AND (
+            p.points_to_consider IS NULL
+            OR (
+              p.points_to_consider NOT LIKE '%⛔ INCOMPATIBILIDAD ESTRUCTURAL%'
+              AND p.points_to_consider NOT LIKE '%⚠️ Puntos de atención / Reservas%'
+              AND p.points_to_consider NOT LIKE '%Match altamente recomendado%'
+              AND p.points_to_consider NOT LIKE '%Viable con reservas: verificar compatibilidad%'
+              AND p.points_to_consider NOT LIKE '%Viable con buena compatibilidad: contrastar%'
+            )
+          )
+        """
     query += " ORDER BY p.id ASC"
 
     async with pool.acquire() as conn:

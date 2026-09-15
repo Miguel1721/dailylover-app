@@ -655,18 +655,24 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                         </span>
                       )}
                       <span style={{
-                        background: isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))',
-                        border: isLight ? '1.5px solid #10B981' : '1px solid #4CAF50',
-                        color: isLight ? '#065F46' : '#81C784',
+                        background: cand.compatibility_pct != null
+                          ? (isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))')
+                          : (isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)'),
+                        border: cand.compatibility_pct != null
+                          ? (isLight ? '1.5px solid #10B981' : '1px solid #4CAF50')
+                          : (isLight ? '1.5px solid #9CA3AF' : '1px solid rgba(156, 163, 175, 0.3)'),
+                        color: cand.compatibility_pct != null
+                          ? (isLight ? '#065F46' : '#81C784')
+                          : (isLight ? '#4B5563' : '#9CA3AF'),
                         fontWeight: 800,
                         fontSize: 14,
                         padding: '4px 12px',
                         borderRadius: 20,
-                        boxShadow: isLight ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
+                        boxShadow: isLight && cand.compatibility_pct != null ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
                       }}>
                         {cand.compatibility_pct != null
                           ? `✨ ${cand.compatibility_pct}% Match ${!cand.datos_completos ? '(Parcial)' : ''}`
-                          : '✨ Sin score (Pendiente)'}
+                          : '⚠️ Sin datos suficientes'}
                       </span>
                       {cand.ai_score != null && (
                         <span style={{
@@ -925,7 +931,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                 {client.name} × {selectedCandidate.name}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                📍 {client.city} • Afinidad: <b>{selectedCandidate.compatibility_pct}%</b>
+                📍 {client.city} • Afinidad: <b>{selectedCandidate.compatibility_pct != null ? `${selectedCandidate.compatibility_pct}%` : 'Sin datos suficientes'}</b>
               </div>
             </div>
 
@@ -1405,18 +1411,24 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{
-              background: t.matchBadgeBg,
-              border: t.matchBadgeBorder,
-              color: t.matchBadgeColor,
+              background: candidate.compatibility_pct != null
+                ? t.matchBadgeBg
+                : (isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)'),
+              border: candidate.compatibility_pct != null
+                ? t.matchBadgeBorder
+                : (isLight ? '1.5px solid #9CA3AF' : '1px solid rgba(156, 163, 175, 0.3)'),
+              color: candidate.compatibility_pct != null
+                ? t.matchBadgeColor
+                : (isLight ? '#4B5563' : '#9CA3AF'),
               fontWeight: 800,
               fontSize: 'clamp(13px, 1.8vw, 15px)',
               padding: '6px 14px',
               borderRadius: 24,
-              boxShadow: isLight ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 10px rgba(16, 185, 129, 0.25)'
+              boxShadow: candidate.compatibility_pct != null ? (isLight ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 10px rgba(16, 185, 129, 0.25)') : 'none'
             }}>
               {candidate.compatibility_pct != null
                 ? `✨ ${candidate.compatibility_pct}% Match ${!candidate.datos_completos ? '(Parcial)' : ''}`
-                : '✨ Sin score (Pendiente)'}
+                : '⚠️ Sin datos suficientes'}
             </span>
             <button
               onClick={onClose}

@@ -4471,7 +4471,7 @@ async def find_candidate_matches_engine(
         if cand_occ == "No especificado":
             missing_fields.append("Ocupación")
 
-        if max_possible_points > 0:
+        if max_possible_points >= 15.0:
             percentage = (earned_points / max_possible_points) * 100.0
             match_pct = int(min(95, max(45, round(percentage))))
         else:
@@ -4566,7 +4566,7 @@ async def find_candidate_matches_engine(
             "opportunity_badge": opportunity_badge,
             "opportunity_reason": opportunity_reason,
             "compatibility_pct": match_pct,
-            "structural_score": match_pct or 70,
+            "structural_score": match_pct,
             "dealbreakers_clean": bidi["is_bidirectionally_compatible"],
             "dealbreakers_check": dealbreakers_check_msg,
             "strengths": strengths,
@@ -4623,12 +4623,26 @@ async def find_candidate_matches_engine(
     )
 
     for cand in suggested_matches:
-        cand["structural_score"] = cand.get("compatibility_pct") or 70
-        cand["ai_score"] = None
-        cand["ai_veredicto"] = "SIN EVALUACIÓN IA"
-        cand["ai_analisis"] = None
-        cand["ai_deal_breakers"] = []
-        cand["ai_puntos_fuertes"] = []
+        cand["structural_score"] = cand.get("structural_score")
+        cand_notes_clean = (cand.get("bio_notes") or cand.get("synthesis") or "").strip()
+        has_clinical_notes = len(cand_notes_clean) >= 20
+        has_structural_data = (cand.get("campos_evaluados_pts") or 0) >= 15.0 and (cand.get("structural_score") is not None)
+
+        if not has_clinical_notes and not has_structural_data:
+            cand["compatibility_pct"] = None
+            cand["structural_score"] = None
+            cand["ai_score"] = None
+            cand["ai_veredicto"] = "SIN DATOS SUFICIENTES"
+            cand["ai_notes_quality"] = "NULA"
+            cand["ai_analisis"] = "Perfil sin notas clínicas ni datos estructurales suficientes en CRM para evaluar compatibilidad de forma rigurosa."
+            cand["ai_deal_breakers"] = ["Perfil incompleto en CRM"]
+            cand["ai_puntos_fuertes"] = []
+        else:
+            cand["ai_score"] = None
+            cand["ai_veredicto"] = "SIN EVALUACIÓN IA"
+            cand["ai_analisis"] = None
+            cand["ai_deal_breakers"] = []
+            cand["ai_puntos_fuertes"] = []
 
     # 8. Evaluación con IA clínica (NVIDIA)
     if nvidia_key and len(nvidia_key) > 10 and suggested_matches:
@@ -4642,10 +4656,15 @@ async def find_candidate_matches_engine(
             should_close_client = True
 
         try:
-            eval_tasks = [
-                evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, client_to_use)
-                for cand in candidates_to_evaluate
-            ]
+            eval_tasks = []
+            for cand in candidates_to_evaluate:
+                if cand.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
+                    # Perfil vacío o sin datos: no gastar tokens ni generar falsos puntajes
+                    eval_tasks.append(asyncio.sleep(0, result=None))
+                else:
+                    eval_tasks.append(
+                        evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, client_to_use)
+                    )
             eval_results = await asyncio.gather(*eval_tasks, return_exceptions=True)
 
             for cand, res in zip(candidates_to_evaluate, eval_results):
@@ -4653,14 +4672,19 @@ async def find_candidate_matches_engine(
                     print(f"[AI MATCH EXCEPTION IN GATHER] cand={cand.get('name')} error={res}")
                     res = None
 
-                struct_score = cand.get("structural_score") or cand.get("compatibility_pct") or 70
+                if cand.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
+                    # Mantener sin datos suficientes y compatibility_pct = None
+                    continue
+
+                struct_score = cand.get("structural_score") if cand.get("structural_score") is not None else cand.get("compatibility_pct")
 
                 if isinstance(res, dict) and res.get("ai_score") is not None:
-                    ai_score = res.get("ai_score", 70)
+                    ai_score = res.get("ai_score")
                     verdict = res.get("veredicto", "VIABLE")
                     dbs = res.get("deal_breakers") or []
                     pts = res.get("puntos_fuertes") or []
                     analisis = res.get("analisis") or ""
+                    notes_qual = res.get("calidad_notas", "SUFICIENTE")
 
                     cand["ai_score"] = ai_score
                     cand["ai_veredicto"] = verdict
@@ -4668,24 +4692,29 @@ async def find_candidate_matches_engine(
                     cand["ai_deal_breakers"] = dbs
                     cand["ai_puntos_fuertes"] = pts
                     cand["ai_model"] = res.get("model_used")
+                    cand["ai_notes_quality"] = notes_qual
 
-                    cand["ai_notes_quality"] = res.get("calidad_notas", "SUFICIENTE")
-
-                    if verdict == "NO RECOMENDADO":
-                        cand["compatibility_pct"] = min(ai_score, 35)
-                    elif verdict == "COMPATIBILIDAD BAJA":
-                        raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score))
-                        cand["compatibility_pct"] = min(raw_blend, 49)
-                    elif verdict == "VIABLE CON RESERVAS":
-                        raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score))
-                        cand["compatibility_pct"] = min(raw_blend, 64)
-                    elif verdict == "VIABLE BUENO":
-                        raw_blend = int(round(0.30 * struct_score + 0.70 * ai_score))
-                        cand["compatibility_pct"] = max(65, min(raw_blend, 74))
+                    if notes_qual == "NULA" and struct_score is None:
+                        cand["compatibility_pct"] = None
+                        cand["structural_score"] = None
+                        cand["ai_score"] = None
+                        cand["ai_veredicto"] = "SIN DATOS SUFICIENTES"
                     else:
-                        # RECOMENDADO
-                        raw_blend = int(round(0.25 * struct_score + 0.75 * ai_score))
-                        cand["compatibility_pct"] = max(75, min(raw_blend, 95))
+                        if verdict == "NO RECOMENDADO":
+                            cand["compatibility_pct"] = min(ai_score, 35) if ai_score is not None else None
+                        elif verdict == "COMPATIBILIDAD BAJA":
+                            raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score)) if struct_score is not None else ai_score
+                            cand["compatibility_pct"] = min(raw_blend, 49) if raw_blend is not None else None
+                        elif verdict == "VIABLE CON RESERVAS":
+                            raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score)) if struct_score is not None else ai_score
+                            cand["compatibility_pct"] = min(raw_blend, 64) if raw_blend is not None else None
+                        elif verdict == "VIABLE BUENO":
+                            raw_blend = int(round(0.30 * struct_score + 0.70 * ai_score)) if struct_score is not None else ai_score
+                            cand["compatibility_pct"] = max(65, min(raw_blend, 74)) if raw_blend is not None else None
+                        else:
+                            # RECOMENDADO
+                            raw_blend = int(round(0.25 * struct_score + 0.75 * ai_score)) if struct_score is not None else ai_score
+                            cand["compatibility_pct"] = max(75, min(raw_blend, 95)) if raw_blend is not None else None
 
                     if dbs:
                         if verdict == "NO RECOMENDADO":
@@ -4698,10 +4727,11 @@ async def find_candidate_matches_engine(
                         cand["strengths"] = [f"IA: {p}" for p in pts] + cand.get("strengths", [])
                 else:
                     cand["ai_score"] = None
-                    cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL"
+                    cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL" if struct_score is not None else "SIN DATOS SUFICIENTES"
                     cand["ai_analisis"] = None
                     cand["ai_deal_breakers"] = []
                     cand["ai_puntos_fuertes"] = []
+                    cand["compatibility_pct"] = struct_score
         finally:
             if should_close_client:
                 await client_to_use.aclose()
@@ -4718,9 +4748,21 @@ async def find_candidate_matches_engine(
             reverse=True
         )
         for c in remaining_candidates:
-            c["ai_veredicto"] = "SCORE ESTRUCTURAL"
+            if c.get("ai_veredicto") != "SIN DATOS SUFICIENTES":
+                c["ai_veredicto"] = "SCORE ESTRUCTURAL" if c.get("structural_score") is not None else "SIN DATOS SUFICIENTES"
 
-        suggested_matches = evaluated_sorted + remaining_candidates
+        all_candidates = evaluated_sorted + remaining_candidates
+        all_candidates.sort(
+            key=lambda x: (
+                x["compatibility_pct"] is not None,
+                x["compatibility_pct"] or 0,
+                x["dealbreakers_clean"],
+                x["datos_completos"],
+                x["user_id"]
+            ),
+            reverse=True
+        )
+        suggested_matches = all_candidates
 
     return suggested_matches
 

@@ -174,20 +174,23 @@ async def process_client(client_info, db, nvidia_key, http_client, candidate_usa
             candidate_usage_tracker[cand_uid] = candidate_usage_tracker.get(cand_uid, 0) + 1
 
         # Score y veredicto con coherencia clínica estricta
-        score_val = cand.get("compatibility_pct") or cand.get("structural_score") or 70
+        score_val = cand.get("compatibility_pct") if cand.get("compatibility_pct") is not None else cand.get("structural_score")
         verdict = cand.get("ai_veredicto") or "VIABLE"
         dbs = cand.get("ai_deal_breakers") or []
         puntos = cand.get("ai_puntos_fuertes") or []
 
-        raw_punct = round(score_val / 10.0)
-        if verdict == "VIABLE CON RESERVAS":
-            # Tope estricto: cuando la clínica arroja reservas, nunca presentar más de 6/10
-            punct_num = min(int(raw_punct), 6)
-        elif verdict == "NO RECOMENDADO" or len(dbs) > 0:
-            punct_num = min(int(raw_punct), 3)
+        if score_val is not None:
+            raw_punct = round(score_val / 10.0)
+            if verdict == "VIABLE CON RESERVAS":
+                # Tope estricto: cuando la clínica arroja reservas, nunca presentar más de 6/10
+                punct_num = min(int(raw_punct), 6)
+            elif verdict == "NO RECOMENDADO" or len(dbs) > 0:
+                punct_num = min(int(raw_punct), 3)
+            else:
+                punct_num = int(raw_punct)
+            punct_10 = str(max(1, min(10, punct_num)))
         else:
-            punct_num = int(raw_punct)
-        punct_10 = str(max(1, min(10, punct_num)))
+            punct_10 = "S/D"
 
         # Evitar fugas de diccionarios Python en el análisis clínico
         analisis_raw = cand.get("ai_analisis") or cand.get("match_analysis") or ""
