@@ -300,8 +300,12 @@ app.include_router(scheduling.router)
 ADMIN_STATIC = os.path.join(os.path.dirname(__file__), "static", "admin")
 APP_PREVIEW_STATIC = os.path.join(os.path.dirname(__file__), "static", "app-preview")
 UPLOADS_STATIC = os.path.join(os.path.dirname(__file__), "static", "uploads")
+IMAGES_STATIC = os.path.join(os.path.dirname(__file__), "static", "images")
 os.makedirs(UPLOADS_STATIC, exist_ok=True)
 app.mount("/static/uploads", StaticFiles(directory=UPLOADS_STATIC), name="static_uploads")
+if os.path.isdir(IMAGES_STATIC):
+    app.mount("/images", StaticFiles(directory=IMAGES_STATIC), name="static_images")
+    app.mount("/admin/images", StaticFiles(directory=IMAGES_STATIC), name="admin_images")
 FAVICON_PATH = os.path.join(APP_PREVIEW_STATIC, "favicon.svg")
 
 @app.get("/login", include_in_schema=False)

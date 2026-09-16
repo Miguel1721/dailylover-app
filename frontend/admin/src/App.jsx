@@ -465,7 +465,7 @@ function HomeRoute() {
 }
 
 function AppContent() {
-  const { token, user, isOriginalAdmin, previewRole, setPreviewRole } = useAuth()
+  const { token, user, isOriginalAdmin, previewRole, setPreviewRole, loading } = useAuth()
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -491,6 +491,24 @@ function AppContent() {
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light')
+  }
+
+  if (loading && token) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'var(--bg-base)',
+        color: 'var(--text-secondary)',
+        gap: 16
+      }}>
+        <div className="spinner" />
+        <span style={{ fontSize: 13, letterSpacing: '0.02em' }}>Verificando sesión...</span>
+      </div>
+    )
   }
 
   return (
