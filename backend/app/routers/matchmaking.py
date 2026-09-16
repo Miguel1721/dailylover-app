@@ -3418,6 +3418,7 @@ async def get_client_extended_profile(
                 "synthesis_first_date_behavior": "",
                 "synthesis_best_match_type": "",
                 "attachment_style": "Seguro",
+                "dynamic_answers": {},
                 "updated_at": None,
                 "updated_by": None
             }
@@ -3436,6 +3437,8 @@ async def get_client_extended_profile(
         d["non_negotiables"] = []
     if d.get("attachment_style") is None:
         d["attachment_style"] = "Seguro"
+    if d.get("dynamic_answers") is None:
+        d["dynamic_answers"] = {}
 
     return {
         "exists": True,
@@ -3481,6 +3484,7 @@ class ExtendedProfilePayload(BaseModel):
     synthesis_first_date_behavior: Optional[str] = None
     synthesis_best_match_type: Optional[str] = None
     attachment_style: Optional[str] = None
+    dynamic_answers: Optional[Dict[str, Any]] = None
     updated_by: Optional[str] = "Psicóloga"
 
 
@@ -3502,6 +3506,7 @@ async def save_client_extended_profile(
 
     import json
     non_neg_json = json.dumps(payload.non_negotiables, ensure_ascii=False) if payload.non_negotiables is not None else None
+    dyn_json = json.dumps(payload.dynamic_answers or {}, ensure_ascii=False)
 
     upsert_sql = """
         INSERT INTO client_extended_profile (
@@ -3516,7 +3521,7 @@ async def save_client_extended_profile(
             love_language_flexibility, non_negotiables, physical_complexion,
             physical_importance, physical_traits_notes, behavioral_risk_level,
             flags_notes, synthesis_who_really_is, synthesis_first_date_behavior,
-            synthesis_best_match_type, attachment_style, updated_at, updated_by
+            synthesis_best_match_type, attachment_style, dynamic_answers, updated_at, updated_by
         ) VALUES (
             :user_id, :crm_id,
             :social_group_score, :education_level, :mobility_travel,
@@ -3529,7 +3534,7 @@ async def save_client_extended_profile(
             :love_language_flexibility, CAST(:non_negotiables AS jsonb), :physical_complexion,
             :physical_importance, :physical_traits_notes, :behavioral_risk_level,
             :flags_notes, :synthesis_who_really_is, :synthesis_first_date_behavior,
-            :synthesis_best_match_type, :attachment_style, NOW(), :updated_by
+            :synthesis_best_match_type, :attachment_style, CAST(:dynamic_answers AS jsonb), NOW(), :updated_by
         )
         ON CONFLICT (user_id) DO UPDATE SET
             crm_id = EXCLUDED.crm_id,
@@ -3566,6 +3571,7 @@ async def save_client_extended_profile(
             synthesis_first_date_behavior = COALESCE(EXCLUDED.synthesis_first_date_behavior, client_extended_profile.synthesis_first_date_behavior),
             synthesis_best_match_type = COALESCE(EXCLUDED.synthesis_best_match_type, client_extended_profile.synthesis_best_match_type),
             attachment_style = COALESCE(EXCLUDED.attachment_style, client_extended_profile.attachment_style),
+            dynamic_answers = COALESCE(client_extended_profile.dynamic_answers, '{}'::jsonb) || COALESCE(EXCLUDED.dynamic_answers, '{}'::jsonb),
             updated_at = NOW(),
             updated_by = EXCLUDED.updated_by
         RETURNING *;
@@ -3607,6 +3613,7 @@ async def save_client_extended_profile(
         "synthesis_first_date_behavior": payload.synthesis_first_date_behavior,
         "synthesis_best_match_type": payload.synthesis_best_match_type,
         "attachment_style": payload.attachment_style,
+        "dynamic_answers": dyn_json,
         "updated_by": payload.updated_by or "Psicóloga"
     }
 

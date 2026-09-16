@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import RatingSlider10 from '../../components/RatingSlider10'
 import ClientSelectorBar from '../../components/ClientSelectorBar'
+import DynamicFormSection from '../../components/DynamicFormSection'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
@@ -28,6 +29,7 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
   const urlUserId = searchParams.get('user_id') || searchParams.get('id')
 
   const [selectedClient, setSelectedClient] = useState(client)
+  const [schema, setSchema] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
@@ -77,8 +79,21 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
     // Bloque 6: Síntesis
     synthesis_who_really_is: '',
     synthesis_first_date_behavior: '',
-    synthesis_best_match_type: ''
+    synthesis_best_match_type: '',
+    dynamic_answers: {}
   })
+
+  // Load dynamic form schema
+  useEffect(() => {
+    fetch(`${API}/api/v1/admin/forms/schemas/percepcion_psicologa`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.sections) setSchema(d)
+      })
+      .catch(err => console.warn('Usando estructura local para Percepción Psicóloga:', err))
+  }, [token])
 
   // Load client from prop or URL
   useEffect(() => {
@@ -154,7 +169,8 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
             synthesis_who_really_is: p.synthesis_who_really_is || '',
             synthesis_first_date_behavior: p.synthesis_first_date_behavior || '',
             synthesis_best_match_type: p.synthesis_best_match_type || '',
-            attachment_style: p.attachment_style || 'Seguro'
+            attachment_style: p.attachment_style || 'Seguro',
+            dynamic_answers: p.dynamic_answers || {}
           })
           setExists(true)
           setLastUpdated(p.updated_at)
@@ -191,7 +207,8 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
             synthesis_who_really_is: '',
             synthesis_first_date_behavior: '',
             synthesis_best_match_type: '',
-            attachment_style: 'Seguro'
+            attachment_style: 'Seguro',
+            dynamic_answers: {}
           })
         }
         setLoading(false)
@@ -200,6 +217,42 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
         console.error('Error loading extended profile:', err)
         setLoading(false)
       })
+  }
+
+  const defaultSectionIds = [
+    'sec_primera_impresion', 'sec_historia_emocional', 'sec_tipo_fisico',
+    'sec_semaforo_clinico', 'sec_sintesis_matchmaker'
+  ]
+  const defaultFieldIds = [
+    'punctuality', 'presentation_camera', 'presentation_style', 'presentation_background',
+    'speaking_confidence', 'conversation_lead', 'attachment_style', 'emotional_processing',
+    'months_single', 'self_awareness', 'love_language_given', 'love_language_received',
+    'love_language_flexibility', 'physical_importance', 'physical_traits_notes',
+    'behavioral_risk_level', 'flags_notes', 'synthesis_who_really_is',
+    'synthesis_first_date_behavior', 'synthesis_best_match_type'
+  ]
+
+  const customSections = schema?.sections ? schema.sections.map(sec => {
+    if (!defaultSectionIds.includes(sec.id)) return sec
+    const extraFields = (sec.fields || []).filter(f => !defaultFieldIds.includes(f.id))
+    if (extraFields.length > 0) {
+      return { ...sec, id: sec.id + '_custom', title: `${sec.title} (Campos Adicionales)`, fields: extraFields }
+    }
+    return null
+  }).filter(Boolean) : []
+
+  const handleFieldChange = (fieldId, value) => {
+    if (defaultFieldIds.includes(fieldId)) {
+      setFormData(prev => ({ ...prev, [fieldId]: value }))
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        dynamic_answers: {
+          ...(prev.dynamic_answers || {}),
+          [fieldId]: value
+        }
+      }))
+    }
   }
 
   const handleToggleComplexion = (item) => {
@@ -253,6 +306,7 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
         synthesis_first_date_behavior: formData.synthesis_first_date_behavior.slice(0, 200),
         synthesis_best_match_type: formData.synthesis_best_match_type.slice(0, 200),
         attachment_style: formData.attachment_style || 'Seguro',
+        dynamic_answers: formData.dynamic_answers || {},
         updated_by: user?.name || 'Psicóloga'
       }
 
@@ -1043,6 +1097,23 @@ export default function PercepcionPsicologa({ standalone = true, onContinue, cli
                 />
               </div>
             </div>
+
+            {/* Secciones Dinámicas Adicionales Configuradas por María / Admin */}
+            {customSections && customSections.length > 0 && (
+              <div style={{ marginTop: 24, marginBottom: 24 }}>
+                <div style={{ padding: '10px 16px', background: 'rgba(150, 21, 0, 0.1)', border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: 16, fontSize: 13, color: 'var(--color-primary)', fontWeight: 600 }}>
+                  ⚙️ Preguntas Adicionales Configuradas Dinámicamente
+                </div>
+                {customSections.map(sec => (
+                  <DynamicFormSection
+                    key={sec.id}
+                    section={sec}
+                    values={formData}
+                    onChange={handleFieldChange}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* Bottom Sticky Action Bar */}
             <div style={{

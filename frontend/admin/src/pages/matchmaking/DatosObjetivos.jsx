@@ -4,6 +4,7 @@ import { Save, CheckCircle, AlertCircle, RefreshCw, Sparkles, UserCheck, Shield,
 import { useAuth } from '../../context/AuthContext'
 import RatingSlider10 from '../../components/RatingSlider10'
 import ClientSelectorBar from '../../components/ClientSelectorBar'
+import DynamicFormSection from '../../components/DynamicFormSection'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
@@ -21,6 +22,7 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
   const urlUserId = searchParams.get('user_id') || searchParams.get('id')
 
   const [selectedClient, setSelectedClient] = useState(client)
+  const [schema, setSchema] = useState(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
@@ -40,8 +42,21 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
     religion_importance: 1,
     political_self_placement: 'apolítico',
     kids_importance: 5,
-    traditionalism_level: 5
+    traditionalism_level: 5,
+    dynamic_answers: {}
   })
+
+  // Load dynamic form schema
+  useEffect(() => {
+    fetch(`${API}/api/v1/admin/forms/schemas/datos_objetivos`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.sections) setSchema(d)
+      })
+      .catch(err => console.warn('Usando estructura local para Datos Objetivos:', err))
+  }, [token])
 
   // Load client from prop or URL
   useEffect(() => {
@@ -67,6 +82,26 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
     setUpdatedBy(null)
   }
 
+  const handleFieldChange = (fieldId, value) => {
+    const nativeFields = [
+      'social_group_score', 'education_level', 'mobility_travel',
+      'physical_activity_level', 'social_energy_level', 'life_structure_level',
+      'weekend_style', 'religion_importance', 'political_self_placement',
+      'kids_importance', 'traditionalism_level'
+    ]
+    if (nativeFields.includes(fieldId)) {
+      setFormData(prev => ({ ...prev, [fieldId]: value }))
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        dynamic_answers: {
+          ...(prev.dynamic_answers || {}),
+          [fieldId]: value
+        }
+      }))
+    }
+  }
+
   const loadExtendedProfile = (userId) => {
     setLoading(true)
     fetch(`${API}/api/v1/matchmaking/extended-profile/${userId}`, {
@@ -90,7 +125,8 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
             religion_importance: p.religion_importance || 1,
             political_self_placement: p.political_self_placement || 'apolítico',
             kids_importance: p.kids_importance || 5,
-            traditionalism_level: p.traditionalism_level || 5
+            traditionalism_level: p.traditionalism_level || 5,
+            dynamic_answers: p.dynamic_answers || {}
           })
           setExists(true)
           setLastUpdated(p.updated_at)
@@ -111,7 +147,8 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
             religion_importance: 1,
             political_self_placement: 'apolítico',
             kids_importance: 5,
-            traditionalism_level: 5
+            traditionalism_level: 5,
+            dynamic_answers: {}
           })
         }
         setLoading(false)
@@ -154,6 +191,7 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
         political_self_placement: formData.political_self_placement,
         kids_importance: formData.kids_importance,
         traditionalism_level: formData.traditionalism_level,
+        dynamic_answers: formData.dynamic_answers || {},
         updated_by: user?.name || 'Psicóloga'
       }
 
@@ -284,8 +322,19 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
         {/* Active Form */}
         {selectedClient && !loading && (
           <form onSubmit={handleSave}>
-            {/* SECCIÓN A: Nivel Socioeconómico & Educación */}
-            <div className="card" style={{ marginBottom: 20 }}>
+            {schema && schema.sections && schema.sections.length > 0 ? (
+              schema.sections.map(section => (
+                <DynamicFormSection
+                  key={section.id}
+                  section={section}
+                  values={formData}
+                  onChange={handleFieldChange}
+                />
+              ))
+            ) : (
+              <>
+                {/* SECCIÓN A: Nivel Socioeconómico & Educación */}
+                <div className="card" style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, borderBottom: '1px solid var(--border-color)', paddingBottom: 10 }}>
                 <Award size={18} style={{ color: 'var(--color-primary)' }} />
                 <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
@@ -535,6 +584,8 @@ export default function DatosObjetivos({ standalone = true, onContinue, client =
                 rightAnchor="10 - Roles tradicionales definidos de género"
               />
             </div>
+          </>
+        )}
 
             {/* Bottom Sticky Action Bar */}
             <div style={{

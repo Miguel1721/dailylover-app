@@ -4,7 +4,7 @@ import { Search } from 'lucide-react'
 import {
   LayoutDashboard, Users, Calendar, Upload, Heart,
   Wallet, Percent, TrendingUp, TrendingDown, Landmark,
-  Shield, UserCheck, LogOut, Sun, Moon, Menu, X, Truck, Sparkles
+  Shield, UserCheck, LogOut, Sun, Moon, Menu, X, Truck, Sparkles, Settings
 } from 'lucide-react'
 
 import CopilotWidget from './components/CopilotWidget'
@@ -24,6 +24,7 @@ import Expenses from './pages/Expenses'
 import CashFlow from './pages/CashFlow'
 import Roles from './pages/Roles'
 import UserAccounts from './pages/UserAccounts'
+import ConfiguracionFormularios from './pages/ConfiguracionFormularios'
 import Login from './pages/Login'
 import Proveedores from './pages/Proveedores'
 
@@ -289,6 +290,7 @@ function Sidebar({ isOpen, onClose }) {
   const systemItems = isMaria ? [
     { to: '/roles', icon: Shield, label: 'Roles de Sistema', module: 'roles', action: 'view' },
     { to: '/usuarios', icon: UserCheck, label: 'Cuentas de Acceso', module: 'usuarios', action: 'view' },
+    { to: '/configuracion/formularios', icon: Settings, label: '⚙️ Configurar Formularios', module: 'roles', action: 'view' },
   ] : []
 
   const showMatchmaking = matchmakingItems.some(i => hasPermission(i.module, i.action))
@@ -700,6 +702,8 @@ function AppContent() {
                     {/* Sistema */}
                     <Route path="/roles" element={<ProtectedRoute module="roles" action="view"><Roles /></ProtectedRoute>} />
                     <Route path="/usuarios" element={<ProtectedRoute module="usuarios" action="view"><UserAccounts /></ProtectedRoute>} />
+                    <Route path="/configuracion/formularios" element={<ProtectedRoute module="roles" action="view"><ConfiguracionFormularios /></ProtectedRoute>} />
+                    <Route path="/admin/configuracion/formularios" element={<Navigate to="/configuracion/formularios" replace />} />
 
                     <Route path="*" element={<Dashboard />} />
                   </Routes>
