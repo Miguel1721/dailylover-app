@@ -223,7 +223,29 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
                 await db.commit()
                 logger.info(f"Plan actualizado en profiles para usuario {user_id} ({user_name}) a {plan_name}")
+
+            # Disparador en tiempo real hacia Google Sheets (apuntando al Sheet configurado en GOOGLE_SHEETS_SPREADSHEET_ID)
+            target_name = (user_row.name if user_row else None) or customer_name or ""
+            target_resp = user_row.responsable if user_row else None
+            if target_name and plan_name:
+                try:
+                    from app.services.google_sheets import update_client_plan_in_sheet
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            update_client_plan_in_sheet,
+                            customer_name=target_name,
+                            new_plan=plan_name,
+                            responsable=target_resp
+                        )
+                    )
+                    logger.info(f"🚀 Disparador Stripe -> Google Sheets programado en background para: '{target_name}' con plan '{plan_name}'")
+                except Exception as e_sheet:
+                    logger.warning(f"No se pudo programar actualización de Google Sheets en tiempo real: {e_sheet}")
+
+            if user_row:
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}
+            else:
+                return {"status": "success", "customer_name": customer_name, "updated_plan": plan_name}
 
     # ─── CASO 2: REEMBOLSO EMITIDO EN STRIPE ─────────────────────────────────────
     elif event_type == "charge.refunded":

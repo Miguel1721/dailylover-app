@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     stripe_api_key: str = Field("", validation_alias="STRIPE_API_KEY")
     stripe_webhook_secret: str = Field("", validation_alias="STRIPE_WEBHOOK_SECRET")
 
-
-
+    # Google Sheets Destination (configurable para cambiar fácil el domingo)
+    google_sheets_spreadsheet_id: str = Field("1cVI62FL9GhQYs8fxUrvM_Q0Qeo-ZkF_KB5Fwv_W9kMY", validation_alias="GOOGLE_SHEETS_SPREADSHEET_ID")
 
     
     # AWS S3 / Oracle Object Storage

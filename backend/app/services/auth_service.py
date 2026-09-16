@@ -17,8 +17,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def create_access_token(user_account_id: str, role_id: Optional[str]) -> str:
-    """Generates a JWT access token with an 8-hour expiration."""
-    expire = datetime.utcnow() + timedelta(hours=8)
+    """Generates a JWT access token with a 7-day expiration."""
+    expire = datetime.utcnow() + timedelta(days=7)
     to_encode = {
         "sub": str(user_account_id),
         "role_id": str(role_id) if role_id else None,

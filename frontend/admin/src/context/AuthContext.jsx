@@ -42,8 +42,17 @@ export function AuthProvider({ children }) {
         headers: { 'Authorization': `Bearer ${tokenToUse}` }
       })
         .then(res => {
-          if (res.ok) return res.json()
-          return null
+          if (res.status === 401) {
+            console.warn("Sesión expirada o token inválido (401). Limpiando credenciales...");
+            localStorage.removeItem('dl_token');
+            localStorage.removeItem('dl_user');
+            sessionStorage.removeItem('dl_preview_role');
+            setToken(null);
+            setUser(null);
+            return null;
+          }
+          if (res.ok) return res.json();
+          return null;
         })
         .then(freshUser => {
           if (freshUser) {

@@ -12,9 +12,16 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SHEET_ID = "1ziZsPwYv6I3fEIEyVM7I0Na7LLgzrwyfM8vcglUQ8RA"
+DEFAULT_SHEET_ID = "1cVI62FL9GhQYs8fxUrvM_Q0Qeo-ZkF_KB5Fwv_W9kMY"
 
 def get_spreadsheet_id() -> str:
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if settings.google_sheets_spreadsheet_id:
+            return settings.google_sheets_spreadsheet_id
+    except Exception:
+        pass
     return os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID", DEFAULT_SHEET_ID)
 
 
@@ -607,4 +614,169 @@ def append_profile_to_profiles_tab(person_data: Dict[str, Any], spreadsheet_id: 
     except Exception as e:
         logger.error(f"Error insertando perfil en PROFILES: {e}")
         return {"success": False, "error": str(e)}
+
+
+def update_client_plan_in_sheet(
+    customer_name: str,
+    new_plan: str,
+    responsable: Optional[str] = None,
+    notes: Optional[str] = None,
+    spreadsheet_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Actualiza el plan de un cliente en tiempo real en el Google Sheet ante eventos de Stripe.
+    Busca por nombre en la pestaña correspondiente de la psicóloga (por defecto 'MATCHES ANA ').
+    Actualiza la columna PLAN (y TOTAL CITAS u OBSERVACIONES si existen).
+    
+    El ID del Sheet se obtiene dinámicamente de GOOGLE_SHEETS_SPREADSHEET_ID en .env,
+    permitiendo cambiar de Sheet en 1 sola línea el domingo para el lanzamiento oficial.
+    """
+    if not customer_name:
+        return {"success": False, "error": "customer_name vacío"}
+
+    client = get_sheets_client()
+    if not client:
+        return {"success": False, "error": "No se pudo conectar con Google Sheets API"}
+
+    sheet_id = spreadsheet_id or get_spreadsheet_id()
+    
+    import unicodedata
+    import re
+    def _norm(txt: str) -> str:
+        if not txt:
+            return ""
+        t = unicodedata.normalize('NFKD', str(txt)).encode('ASCII', 'ignore').decode('utf-8')
+        return " ".join(t.lower().strip().split())
+
+    norm_target = _norm(customer_name)
+
+    # 1. Determinar pestañas candidatas
+    candidate_tabs = []
+    if responsable:
+        tab_resp = get_canonical_tab_name(responsable)
+        if tab_resp:
+            candidate_tabs.append(tab_resp)
+            
+    # Siempre incluir 'MATCHES ANA ' (gid 299023828) como pestaña principal
+    if "MATCHES ANA " not in candidate_tabs:
+        candidate_tabs.append("MATCHES ANA ")
+        
+    # Otras pestañas de psicólogas por si el cliente está en otra
+    for t in ["MATCHES JENN", "MATCHES STEFFY", "MATCHES MAPE D", "MATCHES SILVI", "MATCHES ALEJA", "MATCHES SOFI"]:
+        if t not in candidate_tabs:
+            candidate_tabs.append(t)
+
+    # También soportar tabs de PROFILES si el sheet apuntado es el de Lina
+    for p in ["PROFILES STEFFY", "PROFILES ANA", "PROFILES JENN", "PROFILES MAPE D"]:
+        if p not in candidate_tabs:
+            candidate_tabs.append(p)
+
+    updated_tabs = []
+    total_updated_rows = 0
+
+    for tab in candidate_tabs:
+        try:
+            # Obtener encabezados
+            header_res = client.spreadsheets().values().get(
+                spreadsheetId=sheet_id,
+                range=f"'{tab}'!1:1"
+            ).execute()
+            headers = header_res.get('values', [[]])[0]
+            if not headers:
+                continue
+
+            # Identificar columnas
+            name_col = -1
+            plan_col = -1
+            citas_col = -1
+
+            for idx, h in enumerate(headers):
+                hn = _norm(h)
+                if hn in ["person a", "person_a", "persona", "nombre", "fullname", "cliente"]:
+                    name_col = idx
+                elif hn in ["plan", "plan_tier"]:
+                    plan_col = idx
+                elif hn in ["total citas", "citas totales", "citas"]:
+                    citas_col = idx
+
+            if name_col == -1 or plan_col == -1:
+                continue
+
+            # Leer filas de datos
+            rows_res = client.spreadsheets().values().get(
+                spreadsheetId=sheet_id,
+                range=f"'{tab}'!A2:Z"
+            ).execute()
+            rows = rows_res.get('values', [])
+            if not rows:
+                continue
+
+            updates = []
+            for r_idx, row in enumerate(rows):
+                if name_col < len(row):
+                    cell_val = row[name_col]
+                    # Limpiar si es fórmula HYPERLINK
+                    if "HYPERLINK" in cell_val.upper():
+                        m = re.search(r'HYPERLINK\([^;]+;\s*"([^"]+)"\)', cell_val, re.IGNORECASE)
+                        if m:
+                            cell_val = m.group(1)
+                    
+                    if _norm(cell_val) == norm_target or norm_target in _norm(cell_val):
+                        row_num = r_idx + 2
+                        
+                        # Actualizar PLAN
+                        plan_col_letter = chr(65 + plan_col) if plan_col < 26 else f"A{chr(65 + plan_col - 26)}"
+                        updates.append({
+                            "range": f"'{tab}'!{plan_col_letter}{row_num}",
+                            "values": [[new_plan]]
+                        })
+                        
+                        # Si hay columna de CITAS TOTALES, calcular citas según el plan
+                        if citas_col != -1:
+                            citas_num = 2
+                            p_lower = new_plan.lower()
+                            if "vip" in p_lower or "195" in p_lower:
+                                citas_num = 4
+                            elif "98" in p_lower or "150" in p_lower:
+                                citas_num = 3
+                            elif "65" in p_lower:
+                                citas_num = 2
+                            elif "40" in p_lower:
+                                citas_num = 1
+                            citas_col_letter = chr(65 + citas_col) if citas_col < 26 else f"A{chr(65 + citas_col - 26)}"
+                            updates.append({
+                                "range": f"'{tab}'!{citas_col_letter}{row_num}",
+                                "values": [[citas_num]]
+                            })
+
+            if updates:
+                body = {
+                    "valueInputOption": "USER_ENTERED",
+                    "data": updates
+                }
+                client.spreadsheets().values().batchUpdate(
+                    spreadsheetId=sheet_id,
+                    body=body
+                ).execute()
+                
+                updated_tabs.append(tab)
+                total_updated_rows += len(updates)
+                logger.info(f"✅ Google Sheets actualizado en '{tab}': {len(updates)} celdas actualizadas para '{customer_name}' -> '{new_plan}'.")
+                
+                # Si encontramos al cliente en su pestaña asignada o en MATCHES ANA, terminamos
+                if tab == candidate_tabs[0] or tab == "MATCHES ANA ":
+                    break
+
+        except Exception as e:
+            logger.warning(f"Aviso revisando pestaña '{tab}' para actualización de Stripe: {e}")
+            continue
+
+    return {
+        "success": total_updated_rows > 0,
+        "updated_rows": total_updated_rows,
+        "updated_tabs": updated_tabs,
+        "customer_name": customer_name,
+        "new_plan": new_plan
+    }
+
 
