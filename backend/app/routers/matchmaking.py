@@ -7020,10 +7020,10 @@ HISTORIAL DE LA CONVERSACIÓN:
                 {"role": "user", "content": question}
             ],
             "temperature": 0.2,
-            "max_tokens": 500
+            "max_tokens": 300
         }
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client_http:
+            async with httpx.AsyncClient(timeout=8.5) as client_http:
                 r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
                 if r.status_code == 200:
                     res_data = r.json()
