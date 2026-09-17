@@ -296,6 +296,9 @@ async def get_my_matches(
             uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id,
             p.city AS profile_city, p.orientation AS profile_orientation, 
             p.gender AS profile_gender, p.plan_tier AS profile_plan_tier,
+            COALESCE(sp.payment_date, p.last_payment_date, sp_name.payment_date) AS stripe_pay_date,
+            COALESCE(sp.amount, p.last_payment_amount, sp_name.amount) AS stripe_pay_amount,
+            COALESCE(sp.currency, sp_name.currency, 'COP') AS stripe_pay_currency,
             COALESCE(
                 NULLIF(TRIM(pB.responsable), ''),
                 (
@@ -326,6 +329,18 @@ async def get_my_matches(
             ORDER BY LOWER(TRIM(name)), id DESC
         ) uA_user ON LOWER(TRIM(uA_user.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN profiles p ON p.user_id = uA_user.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (user_id) user_id, payment_date, amount, currency
+            FROM stripe_payments
+            WHERE payment_status = 'succeeded'
+            ORDER BY user_id, payment_date DESC
+        ) sp ON sp.user_id = uA_user.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(customer_name))) customer_name, payment_date, amount, currency
+            FROM stripe_payments
+            WHERE payment_status = 'succeeded' AND customer_name IS NOT NULL AND LENGTH(customer_name) > 4
+            ORDER BY LOWER(TRIM(customer_name)), payment_date DESC
+        ) sp_name ON LOWER(TRIM(sp_name.customer_name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN (
             SELECT DISTINCT ON (LOWER(TRIM(name))) id, name
             FROM users
@@ -434,6 +449,13 @@ async def get_my_matches(
         curr_psyc = normalize_psychologist(d.get("psychologist_name")) or d.get("psychologist_name")
         is_cross_locked = bool(p_b_psyc and p_b_psyc != curr_psyc and (d.get("status") in ("HECHO", "HECHO POR MAPE", "REVISAR", "PROPUESTO")))
 
+        stripe_date = d.get("stripe_pay_date")
+        slot_date = d.get("created_at")
+        effective_date = stripe_date or slot_date
+        has_stripe = bool(stripe_date)
+        stripe_amt = float(d.get("stripe_pay_amount")) if d.get("stripe_pay_amount") is not None else None
+        stripe_curr = d.get("stripe_pay_currency") or "COP"
+
         matches.append({
             "id": d.get("id"),
             "city": normalize_city(final_city),
@@ -445,7 +467,12 @@ async def get_my_matches(
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
             "psychologist_b": p_b_psyc,
             "is_priority": bool(d.get("is_priority")),
-            "fecha": d.get("created_at").strftime("%Y-%m-%d %H:%M") if d.get("created_at") else "",
+            "fecha": effective_date.strftime("%Y-%m-%d %H:%M") if effective_date else "",
+            "fecha_pago_stripe": stripe_date.strftime("%Y-%m-%d %H:%M") if stripe_date else None,
+            "fecha_slot": slot_date.strftime("%Y-%m-%d %H:%M") if slot_date else "",
+            "tiene_pago_stripe": has_stripe,
+            "monto_pago_stripe": stripe_amt,
+            "moneda_pago_stripe": stripe_curr,
             "status": d.get("status") or "Listo para match",
             "status_a": d.get("status_a") or "Listo para match",
             "status_b": d.get("status_b") or "",

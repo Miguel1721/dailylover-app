@@ -80,6 +80,27 @@ const PSYCHOLOGIST_LIST = [
   'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA'
 ]
 
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return ''
+  try {
+    const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T'))
+    if (isNaN(d.getTime())) return ''
+    const now = new Date()
+    const diffMs = now - d
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    if (diffDays <= 0) return 'hoy'
+    if (diffDays === 1) return 'ayer'
+    if (diffDays < 30) return `hace ${diffDays}d`
+    const diffMonths = Math.floor(diffDays / 30)
+    if (diffMonths === 1) return 'hace 1m'
+    if (diffMonths < 12) return `hace ${diffMonths}m`
+    const diffYears = Math.floor(diffMonths / 12)
+    return `hace ${diffYears}a`
+  } catch (e) {
+    return ''
+  }
+}
+
 export const STATUS_GROUPS = [
   {
     area: 'Psicólogas (Mesa de Trabajo)',
@@ -1376,7 +1397,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 200 : 230, letterSpacing: '0.04em' }}>PERSONA A</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 290 : 360, letterSpacing: '0.04em' }}>PERSONA B (PROPUESTA)</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, minWidth: isCompact ? 120 : 140, letterSpacing: '0.04em' }}>PSICÓLOGA DE B</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, minWidth: isCompact ? 110 : 130, letterSpacing: '0.04em' }}>FECHA</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, minWidth: isCompact ? 120 : 145, letterSpacing: '0.04em' }} title="Fecha de pago en Stripe o fecha de creación del slot">FECHA / PAGO</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 160 : 185, letterSpacing: '0.04em' }}>STATUS</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 8px' : '14px 12px', fontWeight: 800, textAlign: 'center', width: 95, letterSpacing: '0.04em' }}>APROBADO</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 240 : 340, letterSpacing: '0.04em' }}>OBSERVACIONES</th>
@@ -1569,9 +1590,61 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                         )}
                       </td>
 
-                      {/* FECHA */}
-                      <td style={{ padding: isCompact ? '10px 12px' : '15px 14px', fontSize: isCompact ? 11.5 : 12.5, color: 'var(--text-secondary)', fontWeight: 500 }}>
-                        {m.fecha}
+                      {/* FECHA / PAGO STRIPE */}
+                      <td style={{ padding: isCompact ? '8px 12px' : '12px 14px', whiteSpace: 'nowrap' }}>
+                        {m.tiene_pago_stripe ? (
+                          <div
+                            title={`✓ Pago confirmado en Stripe: $${Number(m.monto_pago_stripe || 0).toLocaleString('es-CO')} ${m.moneda_pago_stripe || 'COP'}\nFecha Pago: ${m.fecha_pago_stripe}\nSlot Sistema: ${m.fecha_slot || m.fecha}`}
+                            style={{ display: 'flex', flexDirection: 'column', gap: 3, cursor: 'help' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                background: 'rgba(99, 91, 255, 0.15)',
+                                color: '#A594FD',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                fontSize: isCompact ? 10.5 : 11,
+                                fontWeight: 800,
+                                border: '1px solid rgba(99, 91, 255, 0.3)'
+                              }}>
+                                💳 Stripe
+                              </span>
+                              {formatRelativeTime(m.fecha_pago_stripe) && (
+                                <span style={{ fontSize: isCompact ? 10.5 : 11, color: 'var(--text-muted)', fontWeight: 600 }}>
+                                  ({formatRelativeTime(m.fecha_pago_stripe)})
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: isCompact ? 11.5 : 12.5, color: 'var(--text-primary)', fontWeight: 600 }}>
+                              {m.fecha_pago_stripe ? m.fecha_pago_stripe.split(' ')[0] : m.fecha}
+                            </div>
+                            {m.monto_pago_stripe && (
+                              <div style={{ fontSize: 10.5, color: '#34D399', fontWeight: 600 }}>
+                                ${Math.round(m.monto_pago_stripe).toLocaleString('es-CO')} {m.moneda_pago_stripe}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div
+                            title={`Fecha de creación del slot en sistema: ${m.fecha_slot || m.fecha}`}
+                            style={{ display: 'flex', flexDirection: 'column', gap: 2, cursor: 'help' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: isCompact ? 11 : 12, color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                📅 {m.fecha_slot ? m.fecha_slot.split(' ')[0] : (m.fecha ? m.fecha.split(' ')[0] : '—')}
+                              </span>
+                              {formatRelativeTime(m.fecha_slot || m.fecha) && (
+                                <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                                  ({formatRelativeTime(m.fecha_slot || m.fecha)})
+                                </span>
+                              )}
+                            </div>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Slot sistema</span>
+                          </div>
+                        )}
                       </td>
 
                       {/* STATUS (AGRUPADO POR ÁREA) */}
