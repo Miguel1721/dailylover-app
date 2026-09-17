@@ -7006,29 +7006,8 @@ HISTORIAL DE LA CONVERSACIÓN:
     ai_answer = None
     model_used = None
 
-    # TIER 1: Google Gemini (Ultra rápido ~1.5s - 2.5s)
-    if gemini_key:
-        gemini_models = ["gemini-2.5-flash", "gemini-flash-latest"]
-        for g_model in gemini_models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
-            payload_ai = {
-                "contents": [{"parts": [{"text": f"{system_prompt}\n\nPregunta de la psicóloga: {question}"}]}],
-                "generationConfig": {"maxOutputTokens": 300, "temperature": 0.2}
-            }
-            try:
-                async with httpx.AsyncClient(timeout=6.0) as client_http:
-                    r = await client_http.post(url, json=payload_ai)
-                    if r.status_code == 200:
-                        res_data = r.json()
-                        ai_answer = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        model_used = g_model
-                        break
-            except Exception as e:
-                print(f"[CLINICAL CHAT] Gemini {g_model} exception: {e}")
-                continue
-
-    # TIER 2: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~2.0s)
-    if not ai_answer and nvidia_key:
+    # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~2.0s - 3.5s)
+    if nvidia_key:
         url_nv = "https://integrate.api.nvidia.com/v1/chat/completions"
         headers_nv = {
             "Authorization": f"Bearer {nvidia_key}",
@@ -7041,17 +7020,38 @@ HISTORIAL DE LA CONVERSACIÓN:
                 {"role": "user", "content": question}
             ],
             "temperature": 0.2,
-            "max_tokens": 300
+            "max_tokens": 500
         }
         try:
-            async with httpx.AsyncClient(timeout=9.0) as client_http:
+            async with httpx.AsyncClient(timeout=12.0) as client_http:
                 r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
                 if r.status_code == 200:
                     res_data = r.json()
                     ai_answer = res_data["choices"][0]["message"]["content"].strip()
                     model_used = "meta/llama-3.2-11b-vision-instruct"
+                else:
+                    print(f"[CLINICAL CHAT] NVIDIA status {r.status_code}: {r.text[:100]}")
         except Exception as e:
-            print(f"[CLINICAL CHAT] NVIDIA fallback exception: {e}")
+            print(f"[CLINICAL CHAT] NVIDIA exception: {type(e).__name__} - {e}")
+
+    # TIER 2: Google Gemini Fallback
+    if not ai_answer and gemini_key:
+        url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+        payload_ai = {
+            "contents": [{"parts": [{"text": f"{system_prompt}\n\nPregunta de la psicóloga: {question}"}]}],
+            "generationConfig": {"maxOutputTokens": 1000, "temperature": 0.2}
+        }
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client_http:
+                r = await client_http.post(url_gem, json=payload_ai)
+                if r.status_code == 200:
+                    res_data = r.json()
+                    ai_answer = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    model_used = "gemini-2.5-flash"
+                else:
+                    print(f"[CLINICAL CHAT] Gemini 2.5 status {r.status_code}: {r.text[:100]}")
+        except Exception as e:
+            print(f"[CLINICAL CHAT] Gemini 2.5 fallback exception: {type(e).__name__} - {e}")
 
     t_end = datetime.now()
     duration_ms = int((t_end - t_start).total_seconds() * 1000)
