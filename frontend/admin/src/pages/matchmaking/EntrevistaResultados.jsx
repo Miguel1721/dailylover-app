@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X, ExternalLink, RefreshCw, FileText, User, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X, ExternalLink, RefreshCw, FileText, User, Users, ChevronDown, ChevronUp, Bot, Send, Trash2, MessageSquare } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 import ClinicalNotesViewer from '../../components/ClinicalNotesViewer'
@@ -1311,6 +1311,106 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
 
   const hasBothSg = client.social_group_score != null && candidate.social_group_score != null
   const sgDiff = hasBothSg ? Math.abs(client.social_group_score - candidate.social_group_score).toFixed(1) : null
+
+  // Mini Copiloto Clínico (Chatbot Exclusivo de Pareja)
+  const [chatOpen, setChatOpen] = useState(true)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatMessagesEndRef = useRef(null)
+
+  const scrollToChatBottom = () => {
+    if (chatMessagesEndRef.current) {
+      chatMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
+  useEffect(() => {
+    if (chatOpen && chatMessages.length > 0) {
+      scrollToChatBottom()
+    }
+  }, [chatMessages, chatOpen])
+
+  const QUICK_QUESTIONS = [
+    { icon: '🐶', label: 'Mascotas', q: '¿Cómo están en el tema de mascotas y convivencia con animales?' },
+    { icon: '🏃', label: 'Deporte & Gym', q: '¿Qué afinidad tienen en actividad física, gimnasio o hábitos saludables?' },
+    { icon: '👶', label: 'Hijos & Familia', q: '¿Cuál es la postura de cada uno respecto a tener o querer hijos?' },
+    { icon: '🍷', label: 'Fiesta & Hábitos', q: '¿Cómo son sus hábitos de rumba, vida nocturna, alcohol o cigarrillo?' },
+    { icon: '💡', label: 'Temas para 1ra cita', q: '¿Qué temas concretos de conversación sugieres para romper el hielo en su 1ra cita según sus notas?' }
+  ]
+
+  const handleSendQuestion = async (textToSend) => {
+    const q = (textToSend || chatInput || '').trim()
+    if (!q || chatLoading) return
+
+    setChatOpen(true)
+    setChatInput('')
+
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      text: q,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+
+    const nextMessages = [...chatMessages, userMsg]
+    setChatMessages(nextMessages)
+    setChatLoading(true)
+
+    try {
+      const payload = {
+        person_a_name: client.name,
+        person_b_name: candidate.name,
+        person_a_info: {
+          ...client,
+          bio_notes: clientNotes,
+          non_negotiables: clientNonNeg,
+          red_flags: clientRedFlags
+        },
+        person_b_info: {
+          ...candidate,
+          bio_notes: candidateNotes,
+          non_negotiables: candNonNeg,
+          red_flags: candRedFlags
+        },
+        question: q,
+        history: nextMessages.slice(-4)
+      }
+
+      const res = await fetch(`${API}/api/v1/matchmaking/clinical-chat-pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.detail || 'Error en la respuesta del copiloto')
+      }
+
+      const aiMsg = {
+        id: Date.now() + 1,
+        sender: 'ai',
+        text: data.answer || 'Sin respuesta generada.',
+        model: data.model_used,
+        responseTimeMs: data.response_time_ms,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+
+      setChatMessages([...nextMessages, aiMsg])
+    } catch (err) {
+      const errorMsg = {
+        id: Date.now() + 1,
+        sender: 'ai',
+        isError: true,
+        text: `⚠️ Error al consultar el copiloto: ${err.message}. Intenta de nuevo.`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+      setChatMessages([...nextMessages, errorMsg])
+    } finally {
+      setChatLoading(false)
+    }
+  }
 
   // Paleta de colores dinámica (Light Mode vs Dark Mode)
   const t = isLight ? {
@@ -2644,6 +2744,320 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
             )}
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* COPILOTO CLÍNICO DE PAREJA (CHATBOT EXCLUSIVO PERSONA A × PERSONA B)     */}
+        {/* ========================================================================= */}
+        <div style={{
+          background: isLight ? '#FFFFFF' : '#141824',
+          border: isLight ? '1.5px solid rgba(150, 21, 0, 0.25)' : '1px solid rgba(150, 21, 0, 0.4)',
+          borderRadius: 14,
+          padding: '14px 16px',
+          boxShadow: isLight ? '0 4px 20px rgba(150, 21, 0, 0.08)' : '0 4px 24px rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          transition: 'all 0.25s ease'
+        }}>
+          {/* Header del Copiloto */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              cursor: 'pointer'
+            }}
+            onClick={() => setChatOpen(!chatOpen)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{
+                width: 34,
+                height: 34,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #961500 0%, #c41a00 100%)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(150, 21, 0, 0.3)'
+              }}>
+                <Bot size={18} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: t.titleColor, letterSpacing: '-0.01em' }}>
+                    💬 Copiloto Clínico IA: {client.name} <span style={{ color: '#961500' }}>×</span> {candidate.name}
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)',
+                    color: isLight ? '#065F46' : '#34D399',
+                    border: `1px solid ${isLight ? '#A7F3D0' : 'rgba(16, 185, 129, 0.3)'}`
+                  }}>
+                    ⚡ En Vivo (Cero Alucinaciones)
+                  </span>
+                </div>
+                <div style={{ fontSize: 11.5, color: t.subtitleColor, marginTop: 1 }}>
+                  Pregúntale a la IA sobre afinidades, notas clínicas, dealbreakers o dudas para la primera cita
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {chatMessages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setChatMessages([])
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: t.subtitleColor,
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '4px 8px',
+                    borderRadius: 6
+                  }}
+                  title="Limpiar conversación"
+                >
+                  <Trash2 size={13} /> Limpiar
+                </button>
+              )}
+              <button
+                type="button"
+                style={{
+                  background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '4px 8px',
+                  color: t.titleColor,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  fontWeight: 600
+                }}
+              >
+                {chatOpen ? <><ChevronUp size={14} /> Minimizar</> : <><ChevronDown size={14} /> Expandir</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Cuerpo del Copiloto (si está abierto) */}
+          {chatOpen && (
+            <>
+              {/* Botones de Preguntas Rápidas (Chips a 1 Clic) */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                overflowX: 'auto',
+                paddingBottom: 4,
+                scrollbarWidth: 'none'
+              }}>
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: t.subtitleColor, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>
+                  Sugerencias:
+                </span>
+                {QUICK_QUESTIONS.map((item, qIdx) => (
+                  <button
+                    key={qIdx}
+                    type="button"
+                    disabled={chatLoading}
+                    onClick={() => handleSendQuestion(item.q)}
+                    style={{
+                      background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.05)',
+                      border: isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: 16,
+                      padding: '4px 10px',
+                      fontSize: 11,
+                      color: t.titleColor,
+                      cursor: chatLoading ? 'not-allowed' : 'pointer',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      transition: 'all 0.15s ease',
+                      opacity: chatLoading ? 0.6 : 1
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!chatLoading) {
+                        e.currentTarget.style.borderColor = '#961500'
+                        e.currentTarget.style.background = isLight ? '#FFF5F5' : 'rgba(150, 21, 0, 0.15)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.1)'
+                      e.currentTarget.style.background = isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.05)'
+                    }}
+                  >
+                    <span>{item.icon}</span> {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Área de Mensajes del Chat */}
+              <div style={{
+                background: isLight ? '#F8FAFC' : 'rgba(0, 0, 0, 0.25)',
+                border: isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.06)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                minHeight: 110,
+                maxHeight: 250,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10
+              }}>
+                {/* Mensaje de bienvenida inicial si no hay mensajes */}
+                {chatMessages.length === 0 && (
+                  <div style={{
+                    fontSize: 12,
+                    color: t.subtitleColor,
+                    lineHeight: 1.5,
+                    padding: '8px 10px',
+                    background: isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: 8,
+                    borderLeft: '3px solid #961500'
+                  }}>
+                    👋 <b>Copiloto Clínico listo:</b> Puedes escribir cualquier consulta sobre <b>{client.name}</b> y <b>{candidate.name}</b> o pulsar uno de los botones rápidos de arriba. El modelo responderá analizando únicamente sus notas clínicas sin inventar datos no registrados.
+                  </div>
+                )}
+
+                {/* Lista de mensajes */}
+                {chatMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                      maxWidth: '100%'
+                    }}
+                  >
+                    <div style={{
+                      maxWidth: '85%',
+                      padding: '8px 12px',
+                      borderRadius: msg.sender === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      background: msg.sender === 'user'
+                        ? 'linear-gradient(135deg, #961500 0%, #b81a00 100%)'
+                        : (isLight ? '#FFFFFF' : '#1A202C'),
+                      color: msg.sender === 'user' ? '#FFFFFF' : (isLight ? '#0F172A' : '#F1F5F9'),
+                      border: msg.sender === 'user'
+                        ? 'none'
+                        : (isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.1)'),
+                      borderLeft: msg.sender === 'ai' ? `3px solid ${msg.isError ? '#EF4444' : '#10B981'}` : undefined,
+                      fontSize: 12.5,
+                      lineHeight: 1.5,
+                      boxShadow: isLight ? '0 1px 4px rgba(0, 0, 0, 0.05)' : '0 2px 8px rgba(0, 0, 0, 0.2)',
+                      wordBreak: 'break-word',
+                      whiteSpace: 'pre-wrap'
+                    }}>
+                      {msg.text}
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginTop: 3,
+                      fontSize: 10,
+                      color: t.subtitleColor,
+                      padding: '0 4px'
+                    }}>
+                      <span>{msg.time}</span>
+                      {msg.sender === 'ai' && msg.model && (
+                        <span>• ⚡ {((msg.responseTimeMs || 0) / 1000).toFixed(1)}s ({msg.model.replace('models/', '')})</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Loading indicator */}
+                {chatLoading && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px' }}>
+                    <div style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      border: '2px solid rgba(150, 21, 0, 0.2)',
+                      borderTopColor: '#961500',
+                      animation: 'spin 0.8s linear infinite'
+                    }} />
+                    <span style={{ fontSize: 11.5, color: t.subtitleColor, fontStyle: 'italic' }}>
+                      Analizando notas clínicas de {client.name} y {candidate.name}...
+                    </span>
+                  </div>
+                )}
+                <div ref={chatMessagesEndRef} />
+              </div>
+
+              {/* Input y Botón de Envío */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  handleSendQuestion(chatInput)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder={`Pregunta sobre esta pareja (ej: ¿qué valores comparten?, ¿qué red flags tienen?)...`}
+                  disabled={chatLoading}
+                  style={{
+                    flex: 1,
+                    background: isLight ? '#FFFFFF' : '#0D0A0B',
+                    border: isLight ? '1px solid #CBD5E1' : '1px solid rgba(150, 21, 0, 0.3)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    fontSize: 12.5,
+                    color: t.titleColor,
+                    outline: 'none',
+                    transition: 'border-color 0.2s'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#961500'}
+                  onBlur={(e) => e.target.style.borderColor = isLight ? '#CBD5E1' : 'rgba(150, 21, 0, 0.3)'}
+                />
+                <button
+                  type="submit"
+                  disabled={chatLoading || !chatInput.trim()}
+                  style={{
+                    background: (!chatInput.trim() || chatLoading) ? (isLight ? '#E2E8F0' : '#2A2022') : '#961500',
+                    color: (!chatInput.trim() || chatLoading) ? (isLight ? '#94A3B8' : '#6B5A5D') : '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: (!chatInput.trim() || chatLoading) ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    transition: 'all 0.2s ease',
+                    boxShadow: (!chatInput.trim() || chatLoading) ? 'none' : '0 2px 8px rgba(150, 21, 0, 0.3)'
+                  }}
+                >
+                  <Send size={13} /> Preguntar
+                </button>
+              </form>
+            </>
+          )}
+        </div>
 
         {/* Botones de Pie */}
         <div style={{

@@ -6850,3 +6850,225 @@ async def get_matches_atrasados(
         "total_pages": (total_items + page_size - 1) // page_size if page_size > 0 else 1,
         "matches": matches
     }
+
+
+# =============================================================================
+# COPILOTO CLÍNICO DE PAREJA (CHATBOT EXCLUSIVO PERSONA A × PERSONA B)
+# =============================================================================
+
+class ClinicalChatPairRequest(BaseModel):
+    person_a_name: str
+    person_b_name: str
+    person_a_info: Optional[Dict[str, Any]] = None
+    person_b_info: Optional[Dict[str, Any]] = None
+    question: str
+    history: Optional[List[Dict[str, Any]]] = []
+
+
+def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) -> str:
+    if not info:
+        return f"- {name}: Sin información cargada en el perfil."
+
+    def _safe_dict(v):
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except Exception:
+                return {}
+        return {}
+
+    age = info.get("age") or "No especificada"
+    city = info.get("city") or "Bogotá"
+    occ = info.get("occupation") or "No especificada"
+    gender = info.get("gender") or "No especificado"
+    estatura = info.get("estatura") or "No especificada"
+
+    att = info.get("attachment_style")
+    if not att or att == "No especificado":
+        ap_d = _safe_dict(info.get("apego"))
+        att = ap_d.get("style") or "No especificado"
+    att_src = info.get("attachment_source") or ""
+    att_str = f"{att} (Fuente: {att_src})" if att_src and att != "No especificado" else str(att)
+
+    love = info.get("love_language") or info.get("love_language_given") or "No especificado"
+    love_src = info.get("love_language_source") or ""
+    love_str = f"{love} (Fuente: {love_src})" if love_src and love != "No especificado" else str(love)
+
+    sg = info.get("social_group_score")
+    sg_str = f"{sg}/10" if sg is not None else "No evaluado"
+    act = info.get("physical_activity_level")
+    act_str = f"{act}/10" if act is not None else "No especificado"
+
+    ls = _safe_dict(info.get("lifestyle"))
+    has_kids = ls.get("has_children") or "No especificado"
+    wants_kids = ls.get("wants_children") or "No especificado"
+    smoker = ls.get("smoker") or "No especificado"
+    alcohol = ls.get("drinks_alcohol") or "No especificado"
+    pets = ls.get("has_pets") or "No especificado"
+    rumba = ls.get("rumba") or "No especificado"
+    values = ls.get("values") or []
+
+    sp = _safe_dict(info.get("search_preferences"))
+    non_neg = info.get("non_negotiables") or sp.get("non_negotiables") or []
+    red_flags = info.get("red_flags") or sp.get("red_flags") or []
+    what_searches = sp.get("what_searches_in_partner") or "No especificado"
+
+    bio_notes = (info.get("bio_notes") or info.get("synthesis") or info.get("synthesis_who_really_is") or "").strip()
+    if not bio_notes:
+        bio_notes = "Sin notas clínicas registradas en el perfil."
+
+    return f"""DATOS DE {name.upper()}:
+- Demografía: Género: {gender} | Edad: {age} | Ciudad: {city} | Estatura: {estatura}
+- Profesión: {occ}
+- Dinámica Psicológica: Estilo de apego: {att_str} | Lenguaje del amor: {love_str} | Grupo Social: {sg_str} | Nivel deporte: {act_str}
+- Hábitos y Estilo de Vida: ¿Tiene hijos?: {has_kids} | ¿Quiere hijos?: {wants_kids} | Fuma: {smoker} | Bebe: {alcohol} | Mascotas: {pets} | Rumba: {rumba} | Valores: {values}
+- Preferencias de Pareja: No negociables: {non_neg} | Banderas rojas: {red_flags} | Qué busca: {what_searches}
+- Notas Clínicas de la Psicóloga (Entrevista):
+\"\"\"{bio_notes}\"\"\""""
+
+
+@router.post("/clinical-chat-pair")
+async def clinical_chat_pair(
+    payload: ClinicalChatPairRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mini Copiloto Clínico de Pareja para psicólogas.
+    Responde consultas instantáneas y rigurosas sobre la compatibilidad exclusiva entre Persona A y Persona B
+    contrastando sus notas clínicas de entrevista con motor de IA de baja latencia.
+    """
+    name_a = payload.person_a_name.strip()
+    name_b = payload.person_b_name.strip()
+    question = payload.question.strip()
+
+    if not question:
+        raise HTTPException(status_code=400, detail="La pregunta no puede estar vacía.")
+
+    # Formatear contexto clínico de ambas partes
+    formatted_a = _format_clinical_entity_for_chat(name_a, payload.person_a_info)
+    formatted_b = _format_clinical_entity_for_chat(name_b, payload.person_b_info)
+
+    # Historial reciente (máximo 4 mensajes previos para contexto continuo de conversación)
+    history_lines = []
+    if payload.history:
+        for msg in payload.history[-4:]:
+            role = "Psicóloga" if msg.get("sender") == "user" else "Copiloto"
+            txt = msg.get("text", "").strip()
+            if txt:
+                history_lines.append(f"{role}: {txt}")
+    history_context = "\n".join(history_lines) if history_lines else "Sin historial previo."
+
+    system_prompt = f"""Eres el Copiloto Clínico de Matchmaking de Daily Lover (agencia de parejas de alto nivel en Colombia).
+Tu labor es asistir a la psicóloga entrevistadora respondiendo con absoluto rigor clínico sobre la afinidad y compatibilidad EXCLUSIVAMENTE entre esta pareja:
+PERSONA A: {name_a}
+PERSONA B: {name_b}
+
+============================================================
+{formatted_a}
+============================================================
+{formatted_b}
+============================================================
+
+HISTORIAL DE LA CONVERSACIÓN:
+{history_context}
+
+--- REGLAS DE ORO CLÍNICAS (ESTRICTAS Y OBLIGATORIAS) ---
+1. CONOCIMIENTO LIMITADO Y CERO ALUCINACIONES:
+   Tu conocimiento se limita 100% a la información y notas clínicas de {name_a} y {name_b} descritas arriba.
+   Si la pregunta consulta sobre un dato, hábito o preferencia que NO está explícito ni mencionado en las notas o ficha de una o ambas personas (por ejemplo: si tienen o quieren mascotas, si fuman, o sus hábitos financieros), DEBES señalarlo explícitamente de inmediato (ej: "⚠️ En las notas de {name_b} no se registra información sobre mascotas. Se recomienda validarlo directamente en la llamada o entrevista").
+   JAMÁS inventes, asumas o des por hecho datos no sustentados en sus notas.
+2. PRECISIÓN CLÍNICA Y CITA DE HECHOS:
+   Menciona los hechos concretos documentados en sus notas: rutinas deportivas, animales de compañía si los tienen, estilo de apego, ritmo de rumba o lo que cada uno busca.
+3. CONCISIÓN Y AGILIDAD (MÁXIMO 2 A 4 ORACIONES):
+   Sé muy directo, profesional, empático y conciso (máximo 2 a 4 oraciones o 2 viñetas claras). No des rodeos ni introducciones largas. Responde exactamente lo que la psicóloga necesita saber."""
+
+    settings = get_settings()
+    gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    nvidia_key = (settings.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or "").strip()
+
+    if not gemini_key or not nvidia_key:
+        for env_path in ["/app/.env", ".env", "../.env", "/home/ubuntu/dailylover/.env"]:
+            if os.path.exists(env_path):
+                try:
+                    with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            l = line.strip()
+                            if l.startswith("GEMINI_API_KEY=") and not gemini_key:
+                                gemini_key = l.split("=", 1)[1].strip().strip("\"'")
+                            elif l.startswith("NVIDIA_API_KEY=") and not nvidia_key:
+                                nvidia_key = l.split("=", 1)[1].strip().strip("\"'")
+                except Exception:
+                    pass
+
+    t_start = datetime.now()
+    ai_answer = None
+    model_used = None
+
+    # TIER 1: Google Gemini (Ultra rápido ~1.5s - 2.5s)
+    if gemini_key:
+        gemini_models = ["gemini-2.5-flash", "gemini-flash-latest"]
+        for g_model in gemini_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
+            payload_ai = {
+                "contents": [{"parts": [{"text": f"{system_prompt}\n\nPregunta de la psicóloga: {question}"}]}],
+                "generationConfig": {"maxOutputTokens": 300, "temperature": 0.2}
+            }
+            try:
+                async with httpx.AsyncClient(timeout=6.0) as client_http:
+                    r = await client_http.post(url, json=payload_ai)
+                    if r.status_code == 200:
+                        res_data = r.json()
+                        ai_answer = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        model_used = g_model
+                        break
+            except Exception as e:
+                print(f"[CLINICAL CHAT] Gemini {g_model} exception: {e}")
+                continue
+
+    # TIER 2: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~2.0s)
+    if not ai_answer and nvidia_key:
+        url_nv = "https://integrate.api.nvidia.com/v1/chat/completions"
+        headers_nv = {
+            "Authorization": f"Bearer {nvidia_key}",
+            "Content-Type": "application/json"
+        }
+        payload_nv = {
+            "model": "meta/llama-3.2-11b-vision-instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 300
+        }
+        try:
+            async with httpx.AsyncClient(timeout=9.0) as client_http:
+                r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
+                if r.status_code == 200:
+                    res_data = r.json()
+                    ai_answer = res_data["choices"][0]["message"]["content"].strip()
+                    model_used = "meta/llama-3.2-11b-vision-instruct"
+        except Exception as e:
+            print(f"[CLINICAL CHAT] NVIDIA fallback exception: {e}")
+
+    t_end = datetime.now()
+    duration_ms = int((t_end - t_start).total_seconds() * 1000)
+
+    if not ai_answer:
+        ai_answer = (
+            f"⚠️ En este momento el motor de análisis no pudo procesar la consulta. "
+            f"Por favor revisa directamente las notas de {name_a} y {name_b} en las columnas superiores o reintenta."
+        )
+        model_used = "fallback-offline"
+
+    return {
+        "status": "success",
+        "answer": ai_answer,
+        "model_used": model_used,
+        "response_time_ms": duration_ms,
+        "person_a": name_a,
+        "person_b": name_b
+    }
+
