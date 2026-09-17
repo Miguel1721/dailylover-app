@@ -6977,12 +6977,15 @@ HISTORIAL DE LA CONVERSACIÓN:
 --- REGLAS DE ORO CLÍNICAS (ESTRICTAS Y OBLIGATORIAS) ---
 1. CONOCIMIENTO LIMITADO Y CERO ALUCINACIONES:
    Tu conocimiento se limita 100% a la información y notas clínicas de {name_a} y {name_b} descritas arriba.
-   Si la pregunta consulta sobre un dato, hábito o preferencia que NO está explícito ni mencionado en las notas o ficha de una o ambas personas (por ejemplo: si tienen o quieren mascotas, si fuman, o sus hábitos financieros), DEBES señalarlo explícitamente de inmediato (ej: "⚠️ En las notas de {name_b} no se registra información sobre mascotas. Se recomienda validarlo directamente en la llamada o entrevista").
+   Revisa minuciosamente el texto completo de las notas clínicas. Si una persona menciona brevemente su postura o desinterés sobre un tema (ej: "el tema de la política no es tan relevante para ella"), indícalo con fidelidad textual en lugar de asumir que no hay información.
+   Si la pregunta consulta sobre un dato o hábito que realmente NO está mencionado en las notas de una o ambas personas (ej: si tienen mascotas o fuman), señálalo explícitamente (ej: "⚠️ En las notas de {name_b} no se registra información sobre mascotas. Se recomienda validarlo directamente en la llamada o entrevista").
    JAMÁS inventes, asumas o des por hecho datos no sustentados en sus notas.
-2. PRECISIÓN CLÍNICA Y CITA DE HECHOS:
-   Menciona los hechos concretos documentados en sus notas: rutinas deportivas, animales de compañía si los tienen, estilo de apego, ritmo de rumba o lo que cada uno busca.
-3. CONCISIÓN Y AGILIDAD (MÁXIMO 2 A 4 ORACIONES):
-   Sé muy directo, profesional, empático y conciso (máximo 2 a 4 oraciones o 2 viñetas claras). No des rodeos ni introducciones largas. Responde exactamente lo que la psicóloga necesita saber."""
+2. DEALBREAKERS, CONDICIONES Y REQUISITOS:
+   Cuando pregunten si alguno tiene una condición, requisito o dealbreaker (ej: si la persona debe vivir sola, no tener hijos, etc.), contrasta explícitamente los no negociables y notas de ambos para aclarar con certeza si alguno lo exige o si ninguno lo tiene como impedimento.
+3. PRECISIÓN CLÍNICA Y CITA DE HECHOS:
+   Menciona los hechos concretos documentados en sus notas: rutinas deportivas, convivencia familiar o independiente, estilo de apego, ritmo de rumba o lo que cada uno busca.
+4. CONCISIÓN Y AGILIDAD (MÁXIMO 2 A 4 ORACIONES):
+   Sé muy directo, profesional, empático y conciso (máximo 2 a 4 oraciones o viñetas claras). No des rodeos ni introducciones largas. Responde exactamente lo que la psicóloga necesita saber."""
 
     settings = get_settings()
     gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
@@ -7006,7 +7009,7 @@ HISTORIAL DE LA CONVERSACIÓN:
     ai_answer = None
     model_used = None
 
-    # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~2.0s - 3.5s)
+    # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~1.5s - 4.0s) con timeout calibrado y reintento
     if nvidia_key:
         url_nv = "https://integrate.api.nvidia.com/v1/chat/completions"
         headers_nv = {
@@ -7022,32 +7025,45 @@ HISTORIAL DE LA CONVERSACIÓN:
             "temperature": 0.2,
             "max_tokens": 300
         }
-        try:
-            async with httpx.AsyncClient(timeout=8.5) as client_http:
-                r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
-                if r.status_code == 200:
-                    res_data = r.json()
-                    ai_answer = res_data["choices"][0]["message"]["content"].strip()
-                    model_used = "meta/llama-3.2-11b-vision-instruct"
-                else:
-                    print(f"[CLINICAL CHAT] NVIDIA status {r.status_code}: {r.text[:100]}")
-        except Exception as e:
-            print(f"[CLINICAL CHAT] NVIDIA exception: {type(e).__name__} - {e}")
+        for attempt in (1, 2):
+            try:
+                timeout_val = 11.0 if attempt == 1 else 7.0
+                async with httpx.AsyncClient(timeout=timeout_val) as client_http:
+                    r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
+                    if r.status_code == 200:
+                        res_data = r.json()
+                        ai_answer = res_data["choices"][0]["message"]["content"].strip()
+                        model_used = "meta/llama-3.2-11b-vision-instruct"
+                        break
+                    else:
+                        print(f"[CLINICAL CHAT] NVIDIA attempt {attempt} status {r.status_code}: {r.text[:100]}")
+            except Exception as e:
+                print(f"[CLINICAL CHAT] NVIDIA attempt {attempt} exception: {type(e).__name__} - {e}")
+                if attempt == 2:
+                    break
 
-    # TIER 2: Google Gemini Fallback
+    # TIER 2: Google Gemini Fallback (con thinkingBudget=0 para latencia ultrarrápida ~1s)
     if not ai_answer and gemini_key:
         url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
         payload_ai = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n\nPregunta de la psicóloga: {question}"}]}],
-            "generationConfig": {"maxOutputTokens": 1000, "temperature": 0.2}
+            "generationConfig": {
+                "maxOutputTokens": 400,
+                "temperature": 0.2,
+                "thinkingConfig": {"thinkingBudget": 0}
+            }
         }
         try:
-            async with httpx.AsyncClient(timeout=4.0) as client_http:
+            async with httpx.AsyncClient(timeout=6.0) as client_http:
                 r = await client_http.post(url_gem, json=payload_ai)
                 if r.status_code == 200:
                     res_data = r.json()
-                    ai_answer = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    model_used = "gemini-2.5-flash"
+                    candidates = res_data.get("candidates", [])
+                    if candidates and "content" in candidates[0]:
+                        parts = candidates[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            ai_answer = parts[0]["text"].strip()
+                            model_used = "gemini-2.5-flash"
                 else:
                     print(f"[CLINICAL CHAT] Gemini 2.5 status {r.status_code}: {r.text[:100]}")
         except Exception as e:
