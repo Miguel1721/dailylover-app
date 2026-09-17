@@ -5221,7 +5221,7 @@ async def get_interview_results(
         client_summary=client_summary,
         db=db,
         pool_limit=60,
-        max_ai_evaluations=12,
+        max_ai_evaluations=4,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
         nvidia_key=nvidia_key
