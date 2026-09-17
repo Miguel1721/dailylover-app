@@ -1000,29 +1000,6 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         marginBottom: 16,
         flexWrap: 'wrap'
       }}>
-        {/* Filtro Psicóloga */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <User size={13} color="var(--text-secondary)" />
-          <select
-            value={selectedPsyc}
-            onChange={e => setSelectedPsyc(e.target.value)}
-            style={{
-              padding: '6px 10px',
-              borderRadius: 6,
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-base)',
-              color: 'var(--text-primary)',
-              fontSize: 12,
-              fontWeight: 600,
-              outline: 'none'
-            }}
-          >
-            <option value="all">Todas las Psicólogas</option>
-            {psycList.map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-        </div>
 
         {/* Filtro Estado */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
