@@ -3313,9 +3313,52 @@ async def resolve_client_user(crm_id_or_user_id: str, db: AsyncSession):
                OR client_code = :val 
                OR phone = :val 
                OR unaccent(lower(trim(name))) = unaccent(lower(trim(:val)))
+            ORDER BY (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
             LIMIT 1
         """), {"val": identifier})
         user_row = res.fetchone()
+
+    # Fallback 1: Buscar en operational_matches si tiene person_a_crm_id o person_b_crm_id asociado
+    if not user_row:
+        op_res = await db.execute(text("""
+            SELECT COALESCE(NULLIF(TRIM(person_a_crm_id), ''), NULLIF(TRIM(person_b_crm_id), ''))
+            FROM operational_matches
+            WHERE (unaccent(lower(trim(person_a))) = unaccent(lower(trim(:val)))
+                   OR unaccent(lower(trim(person_b))) = unaccent(lower(trim(:val))))
+              AND (person_a_crm_id ~ '^[0-9]+$' OR person_b_crm_id ~ '^[0-9]+$')
+            LIMIT 1
+        """), {"val": identifier})
+        op_cid = op_res.scalar()
+        if op_cid:
+            c_res = await db.execute(text("SELECT id, name, phone, client_code, crm_id FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": str(op_cid)})
+            user_row = c_res.fetchone()
+
+    # Fallback 2: Búsqueda difusa (trigram similarity) tolerante a discrepancias ortográficas (ej. Camila vs Cammila)
+    if not user_row and len(identifier) >= 3:
+        sim_res = await db.execute(text("""
+            SELECT id, name, phone, client_code, crm_id
+            FROM users
+            WHERE similarity(unaccent(lower(name)), unaccent(lower(:val))) >= 0.5
+            ORDER BY (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC,
+                     similarity(unaccent(lower(name)), unaccent(lower(:val))) DESC
+            LIMIT 1
+        """), {"val": identifier})
+        user_row = sim_res.fetchone()
+
+    # Fallback 3: Búsqueda por palabras clave componentes del nombre (ej. 'Camila' y 'Habeych')
+    if not user_row and len(identifier) >= 3:
+        words = [w.strip() for w in re.split(r'\s+', identifier) if len(w.strip()) >= 3]
+        if words:
+            conditions = " AND ".join([f"unaccent(name) ILIKE :w{i}" for i in range(len(words))])
+            params = {f"w{i}": f"%{w}%" for i, w in enumerate(words)}
+            word_res = await db.execute(text(f"""
+                SELECT id, name, phone, client_code, crm_id
+                FROM users
+                WHERE {conditions}
+                ORDER BY (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
+                LIMIT 1
+            """), params)
+            user_row = word_res.fetchone()
 
     return user_row
 

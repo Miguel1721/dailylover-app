@@ -1351,33 +1351,11 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                             </span>
                           )}
                           <button
-                            onClick={() => setHistoryTarget(m.person_a_crm_id || m.person_a)}
+                            onClick={() => setHistoryTarget(m.person_a_crm_id || m.ua_crm_id || m.person_a)}
                             title="Ver historial de Persona A"
                             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
                           >
                             <History size={isCompact ? 12 : 14} />
-                          </button>
-                          {/* BOTÓN ASISTENTE CLÍNICO & SUGERENCIAS IA */}
-                          <button
-                            onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id, matchRow: m, tab: 'sugerencias' })}
-                            title={`Ver Sugerencias IA, Datos Objetivos y Percepción de ${m.person_a}`}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              padding: isCompact ? '2px 6px' : '3px 8px',
-                              borderRadius: 4,
-                              border: '1px solid rgba(184, 50, 79, 0.4)',
-                              background: 'rgba(184, 50, 79, 0.12)',
-                              color: '#B8324F',
-                              fontSize: isCompact ? 10 : 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              whiteSpace: 'nowrap',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            <Sparkles size={isCompact ? 11 : 12} /> Sugerencias IA
                           </button>
                         </div>
                       </td>
@@ -1412,9 +1390,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               boxSizing: 'border-box'
                             }}
                           />
-                          {(!m.person_b || m.person_b.trim() === '') && !isLocked && (
+                          {(!m.person_b || m.person_b.trim() === '') ? (
                             <button
-                              onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id, matchRow: m, tab: 'sugerencias' })}
+                              onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id || m.ua_crm_id, matchRow: m, tab: 'sugerencias' })}
                               title={`Buscar candidatos afines con IA para ${m.person_a}`}
                               style={{
                                 display: 'inline-flex',
@@ -1434,10 +1412,32 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                             >
                               <Sparkles size={isCompact ? 11 : 12} /> Buscar con IA
                             </button>
+                          ) : (
+                            <button
+                              onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id || m.ua_crm_id, matchRow: m, tab: 'sugerencias' })}
+                              title={`Ver o cambiar candidatos con sugerencias IA para ${m.person_a}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                padding: isCompact ? '2px 6px' : '4px 8px',
+                                borderRadius: 6,
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                color: '#10B981',
+                                fontSize: isCompact ? 10 : 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0
+                              }}
+                            >
+                              <Sparkles size={isCompact ? 10 : 11} /> Sugerencias IA
+                            </button>
                           )}
                           {m.person_b && m.person_b.trim() !== '' && (
                             <button
-                              onClick={() => setHistoryTarget(m.person_b_crm_id || m.person_b)}
+                              onClick={() => setHistoryTarget(m.person_b_crm_id || m.ub_crm_id || m.person_b)}
                               title={`Ver historial de ${m.person_b}`}
                               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
                             >
@@ -1906,6 +1906,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
               {aiModalTarget.tab === 'sugerencias' && (
                 <EntrevistaResultados
+                  clientId={aiModalTarget.crmId || aiModalTarget.matchRow?.person_a_crm_id || aiModalTarget.matchRow?.ua_crm_id}
                   clientName={aiModalTarget.clientName}
                   onGoToTab={(tab) => {
                     if (tab === 'objetivos' || tab === 'percepcion') {
