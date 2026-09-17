@@ -6960,8 +6960,8 @@ async def clinical_chat_pair(
                 history_lines.append(f"{role}: {txt}")
     history_context = "\n".join(history_lines) if history_lines else "Sin historial previo."
 
-    system_prompt = f"""Eres el Copiloto Clínico de Matchmaking de Daily Lover (agencia de parejas de alto nivel en Colombia).
-Tu labor es asistir a la psicóloga entrevistadora respondiendo con absoluto rigor clínico sobre la afinidad y compatibilidad EXCLUSIVAMENTE entre esta pareja:
+    system_prompt = f"""Eres el Comparador Clínico Estricto de Daily Lover.
+Tu único objetivo es contrastar de forma directa, seca y rigurosa los datos reales entre:
 PERSONA A: {name_a}
 PERSONA B: {name_b}
 
@@ -6975,17 +6975,22 @@ HISTORIAL DE LA CONVERSACIÓN:
 {history_context}
 
 --- REGLAS DE ORO CLÍNICAS (ESTRICTAS Y OBLIGATORIAS) ---
-1. CONOCIMIENTO LIMITADO Y CERO ALUCINACIONES:
-   Tu conocimiento se limita 100% a la información y notas clínicas de {name_a} y {name_b} descritas arriba.
-   Revisa minuciosamente el texto completo de las notas clínicas. Si una persona menciona brevemente su postura o desinterés sobre un tema (ej: "el tema de la política no es tan relevante para ella"), indícalo con fidelidad textual en lugar de asumir que no hay información.
-   Si la pregunta consulta sobre un dato o hábito que realmente NO está mencionado en las notas de una o ambas personas (ej: si tienen mascotas o fuman), señálalo explícitamente (ej: "⚠️ En las notas de {name_b} no se registra información sobre mascotas. Se recomienda validarlo directamente en la llamada o entrevista").
-   JAMÁS inventes, asumas o des por hecho datos no sustentados en sus notas.
-2. DEALBREAKERS, CONDICIONES Y REQUISITOS:
-   Cuando pregunten si alguno tiene una condición, requisito o dealbreaker (ej: si la persona debe vivir sola, no tener hijos, etc.), contrasta explícitamente los no negociables y notas de ambos para aclarar con certeza si alguno lo exige o si ninguno lo tiene como impedimento.
-3. PRECISIÓN CLÍNICA Y CITA DE HECHOS:
-   Menciona los hechos concretos documentados en sus notas: rutinas deportivas, convivencia familiar o independiente, estilo de apego, ritmo de rumba o lo que cada uno busca.
-4. CONCISIÓN Y AGILIDAD (MÁXIMO 2 A 4 ORACIONES):
-   Sé muy directo, profesional, empático y conciso (máximo 2 a 4 oraciones o viñetas claras). No des rodeos ni introducciones largas. Responde exactamente lo que la psicóloga necesita saber."""
+1. LECTURA EXHAUSTIVA DE NOTAS CLÍNICAS:
+   Lee con total atención todo el texto libre dentro de "Notas Clínicas de la Psicóloga (Entrevista)".
+   Allí están los detalles de pasatiempos, gustos de cine, anécdotas, religión, familia, política y estilo de vida.
+   Si el texto contiene cualquier mención sobre el tema preguntado (ej: "amo el cine pero no las pelis de terror" o "la política no es tan relevante para ella"), cita esa frase o hecho exacto.
+2. CERO ALUCINACIONES Y EXTRACCIÓN PURA (TEMPERATURA 0):
+   Solo afirma lo que esté sustentado en el texto. Si tras revisar minuciosamente las notas y campos NO hay ninguna mención sobre ese tema para esa persona (ej: vehículos, mascotas o deudas), responde exactamente: "⚠️ Sin información registrada en notas".
+   JAMÁS inventes, asumas, deduzcas ni extrapoles. Las psicólogas confían a ciegas en esta información; si no está en las notas, comunícalo sin rodeos.
+3. FORMATO CONCRETO PARA PSICÓLOGAS (SIN RODEOS NI FRASES DE CORTESÍA):
+   Responde de forma esquemática y al grano con este formato:
+   • {name_a}: [Dato o frase exacta de sus notas o "⚠️ Sin información registrada en notas"]
+   • {name_b}: [Dato o frase exacta de sus notas o "⚠️ Sin información registrada en notas"]
+   • Conclusión: [1 sola línea con el cruce objetivo: si coinciden, si hay choque/dealbreaker o si requiere validar en llamada]
+4. CONDICIONES Y DEALBREAKERS:
+   Si preguntan si alguno exige una condición o dealbreaker (ej: si la persona debe vivir sola, no tener hijos, etc.), contrasta sus No Negociables y notas. Si no lo exige explícitamente, responde que no es una condición o dealbreaker para esa persona.
+5. PREMISAS CAPCIOSAS O TEMAS AJENOS:
+   Si la pregunta asume algo falso (ej: si toman licor juntos), aclara el hecho real documentado. Si preguntan por terceros o temas ajenos al match de estas dos personas, indica que tu función se limita únicamente a comparar a {name_a} y {name_b}."""
 
     settings = get_settings()
     gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
@@ -7009,7 +7014,7 @@ HISTORIAL DE LA CONVERSACIÓN:
     ai_answer = None
     model_used = None
 
-    # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~1.5s - 4.0s) con timeout calibrado y reintento
+    # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct ~1.5s - 4.0s) con temperatura 0.0 (Cero Creatividad)
     if nvidia_key:
         url_nv = "https://integrate.api.nvidia.com/v1/chat/completions"
         headers_nv = {
@@ -7022,8 +7027,8 @@ HISTORIAL DE LA CONVERSACIÓN:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": question}
             ],
-            "temperature": 0.2,
-            "max_tokens": 300
+            "temperature": 0.0,
+            "max_tokens": 250
         }
         for attempt in (1, 2):
             try:
@@ -7042,14 +7047,14 @@ HISTORIAL DE LA CONVERSACIÓN:
                 if attempt == 2:
                     break
 
-    # TIER 2: Google Gemini Fallback (con thinkingBudget=0 para latencia ultrarrápida ~1s)
+    # TIER 2: Google Gemini Fallback (con thinkingBudget=0 y temperatura 0.0)
     if not ai_answer and gemini_key:
         url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
         payload_ai = {
             "contents": [{"parts": [{"text": f"{system_prompt}\n\nPregunta de la psicóloga: {question}"}]}],
             "generationConfig": {
-                "maxOutputTokens": 400,
-                "temperature": 0.2,
+                "maxOutputTokens": 300,
+                "temperature": 0.0,
                 "thinkingConfig": {"thinkingBudget": 0}
             }
         }
