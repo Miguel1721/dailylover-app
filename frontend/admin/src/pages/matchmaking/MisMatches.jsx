@@ -1594,7 +1594,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       <td style={{ padding: isCompact ? '8px 12px' : '12px 14px', whiteSpace: 'nowrap' }}>
                         {m.tiene_pago_stripe ? (
                           <div
-                            title={`✓ Pago confirmado en Stripe: $${Number(m.monto_pago_stripe || 0).toLocaleString('es-CO')} ${m.moneda_pago_stripe || 'COP'}\nFecha Pago: ${m.fecha_pago_stripe}\nSlot Sistema: ${m.fecha_slot || m.fecha}`}
+                            title={`✓ Pago confirmado en Stripe\nPlan pagado: ${m.plan_pago_stripe || m.plan_tier || 'Plan activo'}\nFecha Pago: ${m.fecha_pago_stripe}\nSlot Sistema: ${m.fecha_slot || m.fecha}`}
                             style={{ display: 'flex', flexDirection: 'column', gap: 3, cursor: 'help' }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -1621,15 +1621,22 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                             <div style={{ fontSize: isCompact ? 11.5 : 12.5, color: 'var(--text-primary)', fontWeight: 600 }}>
                               {m.fecha_pago_stripe ? m.fecha_pago_stripe.split(' ')[0] : m.fecha}
                             </div>
-                            {m.monto_pago_stripe && (
-                              <div style={{ fontSize: 10.5, color: '#34D399', fontWeight: 600 }}>
-                                ${Math.round(m.monto_pago_stripe).toLocaleString('es-CO')} {m.moneda_pago_stripe}
+                            {(m.plan_pago_stripe || m.plan_tier) && (
+                              <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontSize: isCompact ? 10.5 : 11,
+                                color: '#60A5FA',
+                                fontWeight: 700
+                              }}>
+                                🏷️ {m.plan_pago_stripe || m.plan_tier}
                               </div>
                             )}
                           </div>
                         ) : (
                           <div
-                            title={`Fecha de creación del slot en sistema: ${m.fecha_slot || m.fecha}`}
+                            title={`Fecha de creación del slot en sistema: ${m.fecha_slot || m.fecha}\nPlan: ${m.plan_tier || 'Sin plan'}`}
                             style={{ display: 'flex', flexDirection: 'column', gap: 2, cursor: 'help' }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1642,7 +1649,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                                 </span>
                               )}
                             </div>
-                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Slot sistema</span>
+                            <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                              {m.plan_tier ? `🏷️ ${m.plan_tier}` : 'Slot sistema'}
+                            </span>
                           </div>
                         )}
                       </td>
