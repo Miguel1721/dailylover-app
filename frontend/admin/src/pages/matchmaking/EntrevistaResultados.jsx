@@ -9,7 +9,7 @@ const API = 'https://prueba-daily.agentesia.cloud'
 
 const PSYCHOLOGISTS = ['ANA', 'SILVI', 'JENN', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA']
 
-export default function EntrevistaResultados({ clientId, clientName, onGoToTab }) {
+export default function EntrevistaResultados({ clientId, clientName, onGoToTab, onAssignCandidate }) {
   const { token, user } = useAuth()
   const navigate = useNavigate()
 
@@ -964,23 +964,47 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab }
                           <AlertTriangle size={15} color="#F59E0B" /> Enviar con advertencia de datos faltantes
                         </button>
                       ) : (
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => setSelectedCandidate(cand)}
-                          style={{
-                            padding: '9px 18px',
-                            fontSize: 13,
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            background: 'linear-gradient(135deg, #961500, #7a1100)',
-                            color: '#FFFFFF',
-                            boxShadow: '0 4px 14px rgba(150, 21, 0, 0.3)'
-                          }}
-                        >
-                          <Heart size={15} fill="#fff" /> ✨ Enviar a Aprobación por María
-                        </button>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {onAssignCandidate && (
+                            <button
+                              onClick={() => onAssignCandidate(cand)}
+                              style={{
+                                padding: '9px 18px',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                background: '#10B981',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                borderRadius: 8,
+                                cursor: 'pointer',
+                                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <Check size={16} /> 🎯 Asignar a la Fila de {clientName || 'Persona A'}
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => setSelectedCandidate(cand)}
+                            style={{
+                              padding: '9px 18px',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              background: 'linear-gradient(135deg, #961500, #7a1100)',
+                              color: '#FFFFFF',
+                              boxShadow: '0 4px 14px rgba(150, 21, 0, 0.3)'
+                            }}
+                          >
+                            <Heart size={15} fill="#fff" /> ✨ Enviar a Aprobación por María
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

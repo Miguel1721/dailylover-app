@@ -60,10 +60,14 @@ export default function EntrevistaHub({ initialTab }) {
       .catch(() => {})
   }, [token])
 
-  // Cargar cliente por URL si viene en query
+  const urlClientName = searchParams.get('name') || searchParams.get('search')
+
+  // Cargar cliente por URL si viene en query (id o user_id)
   useEffect(() => {
     if (urlUserId && (!selectedClient || selectedClient.id !== Number(urlUserId))) {
-      fetch(`${API}/api/v1/matchmaking/extended-profile/${urlUserId}`)
+      fetch(`${API}/api/v1/matchmaking/extended-profile/${urlUserId}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      })
         .then(r => r.json())
         .then(data => {
           if (data && data.client) {
@@ -78,7 +82,29 @@ export default function EntrevistaHub({ initialTab }) {
         })
         .catch(e => console.error('Error fetching client by URL:', e))
     }
-  }, [urlUserId])
+  }, [urlUserId, token])
+
+  // Cargar cliente por nombre o búsqueda si viene en URL
+  useEffect(() => {
+    if (!urlUserId && urlClientName && (!selectedClient || selectedClient.name !== urlClientName)) {
+      fetch(`${API}/api/v1/matchmaking/extended-profile/${encodeURIComponent(urlClientName)}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.client) {
+            setSelectedClient({
+              id: data.client.user_id,
+              name: data.client.name,
+              phone: data.client.phone,
+              client_code: data.client.client_code,
+              crm_id: data.client.crm_id
+            })
+          }
+        })
+        .catch(e => console.error('Error fetching client by name query:', e))
+    }
+  }, [urlUserId, urlClientName, token])
 
   const handleSelectClient = (client) => {
     setSelectedClient(client)

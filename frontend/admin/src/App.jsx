@@ -50,7 +50,7 @@ import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
-import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame } from 'lucide-react'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet } from 'lucide-react'
 
 
 
@@ -258,16 +258,15 @@ function Sidebar({ isOpen, onClose }) {
 
   const matchmakingItems = [
     ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión María', module: 'matching', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: 'Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
     ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/datos-objetivos', icon: ClipboardList, label: '📋 Datos Objetivos', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/percepcion-psicologa', icon: Brain, label: '🧠 Percepción Psicóloga', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : 'Aprobados por María', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? 'MATCHES (Todas las Psicólogas)' : 'MATCHES', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: 'Citas Aceptadas', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: 'Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : '🛡️ Aprobados por María', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Aceptadas', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: '📥 Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
   const cmsItems = isMaria ? [
@@ -652,20 +651,22 @@ function AppContent() {
                     <Route path="/cms/ciudades" element={<ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute>} />
                     <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />
                     
-                    {/* Formularios Nuevos & Entrevista Clínica */}
-                    <Route path="/matchmaking/datos-objetivos" element={<ProtectedRoute module="matching" action="view"><DatosObjetivos /></ProtectedRoute>} />
-                    <Route path="/matchmaking/percepcion-psicologa" element={<ProtectedRoute module="matching" action="view"><PercepcionPsicologa /></ProtectedRoute>} />
+                    {/* Formularios & Entrevista Clínica */}
+                    <Route path="/matchmaking/datos-objetivos" element={<Navigate to="/matchmaking/entrevista?tab=objetivos" replace />} />
+                    <Route path="/matchmaking/percepcion-psicologa" element={<Navigate to="/matchmaking/entrevista?tab=percepcion" replace />} />
                     <Route path="/matchmaking/entrevista" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute>} />
                     <Route path="/matchmaking/cola-atrasados" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute>} />
                     <Route path="/matchmaking/matches-atrasados" element={<ProtectedRoute module="matching" action="view"><MatchesAtrasados /></ProtectedRoute>} />
                     <Route path="/cola-atrasados" element={<Navigate to="/matchmaking/cola-atrasados" replace />} />
                     <Route path="/matches-atrasados" element={<Navigate to="/matchmaking/matches-atrasados" replace />} />
                     <Route path="/entrevista" element={<Navigate to="/matchmaking/entrevista" replace />} />
-                    <Route path="/datos-objetivos" element={<Navigate to="/matchmaking/datos-objetivos" replace />} />
-                    <Route path="/percepcion-psicologa" element={<Navigate to="/matchmaking/percepcion-psicologa" replace />} />
+                    <Route path="/datos-objetivos" element={<Navigate to="/matchmaking/entrevista?tab=objetivos" replace />} />
+                    <Route path="/percepcion-psicologa" element={<Navigate to="/matchmaking/entrevista?tab=percepcion" replace />} />
 
-                    {/* 4 Páginas Independientes de Matchmaking Operativo */}
+                    {/* Matchmaking Operativo & MATCHES Oficial */}
                     <Route path="/matchmaking/mis-matches" element={<ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute>} />
+                    <Route path="/matchmaking/matches-aprobados" element={<ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute>} />
+                    <Route path="/matchmaking/matches" element={<ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute>} />
                     <Route path="/matchmaking/aprobados-maria" element={<ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute>} />
                     <Route path="/matchmaking/citas-agendadas" element={<ProtectedRoute module="matching" action="view"><CitasAgendadas /></ProtectedRoute>} />
                     <Route path="/matchmaking/aprobaciones-cruzadas" element={<ProtectedRoute module="matching" action="view"><AprobacionesCruzadas /></ProtectedRoute>} />

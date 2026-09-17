@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin, Tag, ShieldCheck, History, ExternalLink, AlertCircle, X, Check, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin, Tag, ShieldCheck, History, ExternalLink, AlertCircle, X, Check, Clock, ChevronLeft, ChevronRight, Sparkles, FileSpreadsheet, ClipboardList, Brain } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
+import EntrevistaResultados from './EntrevistaResultados'
+import DatosObjetivos from './DatosObjetivos'
+import PercepcionPsicologa from './PercepcionPsicologa'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
@@ -317,12 +321,20 @@ function PersonHistoryModal({ queryTarget, onClose }) {
   )
 }
 
-export default function MisMatches() {
+export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = false }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const isOfficialMatches = Boolean(
+    propIsOfficialMatches ||
+    location.pathname.includes('matches-aprobados') ||
+    location.pathname.endsWith('/matches')
+  )
+
   const { user, token } = useAuth()
   const isAdmin = user?.role && (user.role === 'Admin' || user.role === 'Super Admin' || user.role.toLowerCase().includes('admin') || user.role.toLowerCase().includes('director'))
   
   const getInitialPsyc = () => {
-    if (isAdmin) return 'all'
+    if (isOfficialMatches || isAdmin) return 'all'
     const name = user?.name || ''
     const email = user?.email || ''
     if (name.toLowerCase().includes('jenn') || email.toLowerCase().includes('jenn')) return 'JENN'
@@ -343,7 +355,7 @@ export default function MisMatches() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [cityFilter, setCityFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
-  const [approvedFilter, setApprovedFilter] = useState('all')
+  const [approvedFilter, setApprovedFilter] = useState(isOfficialMatches ? '1' : 'all')
   const [searchTerm, setSearchTerm] = useState('')
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(false)
@@ -354,9 +366,12 @@ export default function MisMatches() {
   const [viewMode, setViewMode] = useState('mine') // 'mine' | 'cross_review'
   const [crossReviewCount, setCrossReviewCount] = useState(0)
 
+  // Asistente Clínico & Sugerencias IA Modal: { clientName, crmId, matchRow, tab: 'sugerencias' | 'objetivos' | 'percepcion' }
+  const [aiModalTarget, setAiModalTarget] = useState(null)
+
   // Modos de visualización ergonómica (Sheets vs Cómodo)
   const [density, setDensity] = useState(() => localStorage.getItem('matches_density') || 'compact')
-  const [quickFilter, setQuickFilter] = useState('all') // 'all' | 'prioritarios' | 'sin_b' | 'listos' | 'pausa' | 'aprobados'
+  const [quickFilter, setQuickFilter] = useState(isOfficialMatches ? 'aprobados' : 'all') // 'all' | 'prioritarios' | 'sin_b' | 'listos' | 'pausa' | 'aprobados'
   const [syncStatus, setSyncStatus] = useState('synced') // 'synced' | 'saving' | 'error'
 
   const toggleDensity = () => {
@@ -478,6 +493,12 @@ export default function MisMatches() {
   }
 
   const displayedMatches = matches.filter(m => {
+    if (isOfficialMatches) {
+      // En la pestaña oficial MATCHES (Sheets), solo existen parejas aprobadas donde AMBAS personas están confirmadas
+      const hasBothPersons = m.person_a && m.person_a.trim() !== '' && m.person_b && m.person_b.trim() !== ''
+      const isApproved = m.is_locked || m.approved_by_maria || (m.status || '').toUpperCase().includes('APROBADO')
+      return hasBothPersons && isApproved
+    }
     if (quickFilter === 'prioritarios') return m.is_priority
     if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
     if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo')
@@ -497,30 +518,32 @@ export default function MisMatches() {
   const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
   const aprobadosCount = matches.filter(m => m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')).length
 
-  const handleUpdateField = async (matchId, field, value, matchRow) => {
+  const handleUpdateField = async (matchId, field, value, matchRow, bypassCrmValidation = false) => {
     let finalValue = value
 
     // Si se edita Persona B, resolver CRM y chequear duplicados
     if (field === 'person_b' && value) {
       const isUrlOrId = value.includes('http') || value.includes('smartmatchapp') || value.includes('client/') || value.includes('profile/') || /^\d{3,}$/.test(value.trim())
-      if (!isUrlOrId) {
+      if (!isUrlOrId && !bypassCrmValidation) {
         alert('⚠️ Operación Bloqueada: Es OBLIGATORIO ingresar el enlace directo de SmartMatchApp (ej: https://dailylover.smartmatchapp.com/#!/client/...) o el ID CRM de Persona B. El sistema bloquea nombres en texto plano sin enlace.')
         return
       }
-      try {
-        const resRes = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ url_or_query: value })
-        })
-        if (resRes.ok) {
-          const dataRes = await resRes.json()
-          if (dataRes.name) {
-            finalValue = dataRes.name
+      if (isUrlOrId) {
+        try {
+          const resRes = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ url_or_query: value })
+          })
+          if (resRes.ok) {
+            const dataRes = await resRes.json()
+            if (dataRes.name) {
+              finalValue = dataRes.name
+            }
           }
+        } catch (e) {
+          // ignore
         }
-      } catch (e) {
-        // ignore
       }
 
       // Check Duplicates / Conflicts en vivo
@@ -578,6 +601,23 @@ export default function MisMatches() {
     }
   }
 
+  const handleAssignCandidateFromAI = async (cand, targetMatch) => {
+    const candidateName = cand.name || cand.full_name
+    if (!candidateName || !targetMatch) return
+    const candidateId = cand.crm_id || cand.id
+
+    const confirmMsg = `¿Deseas asignar a "${candidateName}" como Persona B para "${targetMatch.person_a}"?`
+    if (!window.confirm(confirmMsg)) return
+
+    const valueToSet = candidateId ? `https://dailylover.smartmatchapp.com/#!/client/${candidateId}` : candidateName
+    await handleUpdateField(targetMatch.id, 'person_b', valueToSet, targetMatch, true)
+
+    setAiModalTarget(null)
+    setFeedbackMsg(`✓ Se asignó exitosamente a "${candidateName}" a la fila de ${targetMatch.person_a}`)
+    setTimeout(() => setFeedbackMsg(''), 4000)
+    fetchMatches()
+  }
+
   const handleCreateIntake = async (e) => {
     e.preventDefault()
     if (!intakeData.person_a.trim()) {
@@ -627,14 +667,26 @@ export default function MisMatches() {
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1700, margin: '0 auto' }}>
       {/* Header */}
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Heart size={26} color="#B8324F" fill="#B8324F" />
-            MATCHES{selectedPsyc && selectedPsyc !== 'all' ? ` ${selectedPsyc}` : ''}
+            {isOfficialMatches ? (
+              <>
+                <FileSpreadsheet size={26} color="#10B981" />
+                📑 MATCHES (Parejas Aprobadas por María)
+              </>
+            ) : (
+              <>
+                <Heart size={26} color="#B8324F" fill="#B8324F" />
+                💖 Matches Psicólogas{selectedPsyc && selectedPsyc !== 'all' ? ` — ${selectedPsyc}` : ' (Mesa de Trabajo)'}
+              </>
+            )}
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-            Gestión diaria de matches por psicóloga. Incluye cruce de psicóloga de B, historial con 1-clic y detección de duplicados.
+            {isOfficialMatches
+              ? 'Base oficial y consolidada de parejas aprobadas por María (Equivalente exacto a la pestaña MATCHES de Google Sheets).'
+              : 'Mesa de trabajo operativa para que las psicólogas propongan a Persona B con asistente clínico y sugerencias IA.'}
           </p>
         </div>
 
@@ -644,24 +696,26 @@ export default function MisMatches() {
               <CheckCircle size={14} /> {feedbackMsg}
             </span>
           )}
-          <button
-            onClick={() => setShowIntakeModal(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: '#B8324F',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: 8,
-              padding: '8px 16px',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer'
-            }}
-          >
-            <Plus size={16} /> + Ingresar Cliente (Slots Automáticos)
-          </button>
+          {!isOfficialMatches && (
+            <button
+              onClick={() => setShowIntakeModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: '#B8324F',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Plus size={16} /> + Ingresar Cliente (Slots Automáticos)
+            </button>
+          )}
         </div>
       </div>
 
@@ -685,67 +739,69 @@ export default function MisMatches() {
         </div>
       )}
 
-      {/* Selector de Modo: Mis Clientes vs Matches Cruzados (Psicóloga B) */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 18, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
-        <button
-          onClick={() => { setViewMode('mine'); setCurrentPage(1) }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '8px 18px',
-            borderRadius: 8,
-            border: viewMode === 'mine' ? '1px solid #B8324F' : '1px solid var(--border-color)',
-            background: viewMode === 'mine' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
-            color: viewMode === 'mine' ? '#B8324F' : 'var(--text-secondary)',
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: 'pointer',
-            transition: 'all 0.2s'
-          }}
-        >
-          <User size={16} />
-          Mis Clientes (Persona A)
-        </button>
+      {/* Selector de Modo: Mis Clientes vs Matches Cruzados (Psicóloga B) — Solo en mesa de trabajo */}
+      {!isOfficialMatches && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 18, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+          <button
+            onClick={() => { setViewMode('mine'); setCurrentPage(1) }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 18px',
+              borderRadius: 8,
+              border: viewMode === 'mine' ? '1px solid #B8324F' : '1px solid var(--border-color)',
+              background: viewMode === 'mine' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+              color: viewMode === 'mine' ? '#B8324F' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <User size={16} />
+            Mis Clientes (Persona A)
+          </button>
 
-        <button
-          onClick={() => { setViewMode('cross_review'); setCurrentPage(1) }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '8px 18px',
-            borderRadius: 8,
-            border: viewMode === 'cross_review' ? '1px solid #B8324F' : '1px solid var(--border-color)',
-            background: viewMode === 'cross_review' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
-            color: viewMode === 'cross_review' ? '#B8324F' : 'var(--text-secondary)',
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: 'pointer',
-            transition: 'all 0.2s',
-            position: 'relative'
-          }}
-        >
-          <ShieldCheck size={16} />
-          Matches Cruzados por Revisar (Psicóloga B)
-          {crossReviewCount > 0 && (
-            <span style={{
-              background: '#B8324F',
-              color: '#FFFFFF',
-              borderRadius: 20,
-              padding: '2px 7px',
-              fontSize: 11,
-              fontWeight: 800,
-              marginLeft: 4
-            }}>
-              {crossReviewCount}
-            </span>
-          )}
-        </button>
-      </div>
+          <button
+            onClick={() => { setViewMode('cross_review'); setCurrentPage(1) }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 18px',
+              borderRadius: 8,
+              border: viewMode === 'cross_review' ? '1px solid #B8324F' : '1px solid var(--border-color)',
+              background: viewMode === 'cross_review' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+              color: viewMode === 'cross_review' ? '#B8324F' : 'var(--text-secondary)',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              position: 'relative'
+            }}
+          >
+            <ShieldCheck size={16} />
+            Matches Cruzados por Revisar (Psicóloga B)
+            {crossReviewCount > 0 && (
+              <span style={{
+                background: '#B8324F',
+                color: '#FFFFFF',
+                borderRadius: 20,
+                padding: '2px 7px',
+                fontSize: 11,
+                fontWeight: 800,
+                marginLeft: 4
+              }}>
+                {crossReviewCount}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Selector de Píldoras por Psicóloga */}
-      {isAdmin && (
+      {(isAdmin || isOfficialMatches) && (
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
           <button
             onClick={() => setSelectedPsyc('all')}
@@ -784,44 +840,61 @@ export default function MisMatches() {
         </div>
       )}
 
-      {/* Barra de Filtros Rápidos de 1-Clic (Mentalidad Sheets) */}
+      {/* Barra de Filtros Rápidos de 1-Clic */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Vistas Rápidas:
         </span>
-        {[
-          { id: 'all', label: `Todos (${totalCount})`, activeBg: '#B8324F', activeColor: '#FFFFFF' },
-          { id: 'prioritarios', label: `⚡ Prioritarios (${prioritariosCount})`, activeBg: '#FFE599', activeColor: '#7F6000' },
-          { id: 'listos', label: `🟡 Listos para Match (${listosCount})`, activeBg: '#FFE599', activeColor: '#7F6000' },
-          { id: 'sin_b', label: `⏳ Sin Persona B (${sinBCount})`, activeBg: '#D9D2E9', activeColor: '#351C75' },
-          { id: 'pausa', label: `⏸️ En Pausa (${enPausaCount})`, activeBg: '#F9CB9C', activeColor: '#783F04' },
-          { id: 'aprobados', label: `🔒 Aprobados (${aprobadosCount})`, activeBg: '#B6D7A8', activeColor: '#274E13' },
-        ].map(pill => {
-          const isActive = quickFilter === pill.id
-          return (
-            <button
-              key={pill.id}
-              onClick={() => setQuickFilter(pill.id)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '4px 10px',
-                borderRadius: 20,
-                border: isActive ? `1px solid ${pill.activeColor}` : '1px solid var(--border-color)',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: isActive ? pill.activeBg : 'var(--bg-card)',
-                color: isActive ? pill.activeColor : 'var(--text-secondary)',
-                boxShadow: isActive ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
-                transition: 'all 0.15s ease'
-              }}
-            >
-              {pill.label}
-            </button>
-          )
-        })}
+        {isOfficialMatches ? (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 12px',
+            borderRadius: 20,
+            background: '#B6D7A8',
+            color: '#274E13',
+            fontSize: 12,
+            fontWeight: 800,
+            border: '1px solid #6AA84F'
+          }}>
+            🔒 Parejas Oficiales Confirmadas ({displayedMatches.length})
+          </div>
+        ) : (
+          [
+            { id: 'all', label: `Todos (${totalCount})`, activeBg: '#B8324F', activeColor: '#FFFFFF' },
+            { id: 'prioritarios', label: `⚡ Prioritarios (${prioritariosCount})`, activeBg: '#FFE599', activeColor: '#7F6000' },
+            { id: 'listos', label: `🟡 Listos para Match (${listosCount})`, activeBg: '#FFE599', activeColor: '#7F6000' },
+            { id: 'sin_b', label: `⏳ Sin Persona B (${sinBCount})`, activeBg: '#D9D2E9', activeColor: '#351C75' },
+            { id: 'pausa', label: `⏸️ En Pausa (${enPausaCount})`, activeBg: '#F9CB9C', activeColor: '#783F04' },
+            { id: 'aprobados', label: `🔒 Aprobados (${aprobadosCount})`, activeBg: '#B6D7A8', activeColor: '#274E13' },
+          ].map(pill => {
+            const isActive = quickFilter === pill.id
+            return (
+              <button
+                key={pill.id}
+                onClick={() => setQuickFilter(pill.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '4px 10px',
+                  borderRadius: 20,
+                  border: isActive ? `1px solid ${pill.activeColor}` : '1px solid var(--border-color)',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: isActive ? pill.activeBg : 'var(--bg-card)',
+                  color: isActive ? pill.activeColor : 'var(--text-secondary)',
+                  boxShadow: isActive ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {pill.label}
+              </button>
+            )
+          })
+        )}
       </div>
 
       {/* Filtros Bar */}
@@ -1225,135 +1298,242 @@ export default function MisMatches() {
             </tbody>
           </table>
         ) : (
-          <table style={{ width: '100%', minWidth: 1250, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
+          <table style={{ width: '100%', minWidth: isCompact ? 950 : 1050, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13.5 }}>
             <thead>
               <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>CIUDAD</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 6px' : '12px 8px', fontWeight: 700 }}>PREF</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>PLAN</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>PERSONA A</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, minWidth: 220 }}>PERSONA B (PROPUESTA)</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>PSICÓLOGA DE B</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 8px' : '12px 10px', fontWeight: 700 }}>FECHA</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>STATUS</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 6px' : '12px 8px', fontWeight: 700, textAlign: 'center' }}>APROBADO</th>
-              <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700 }}>OBSERVACIONES</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  Cargando matches...
-                </td>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 14px', fontWeight: 700, minWidth: isCompact ? 180 : 220 }}>PERSONA A</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 14px', fontWeight: 700, minWidth: isCompact ? 250 : 320 }}>PERSONA B (PROPUESTA)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, minWidth: isCompact ? 110 : 130 }}>PSICÓLOGA DE B</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, minWidth: isCompact ? 100 : 120 }}>FECHA</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 14px', fontWeight: 700, minWidth: isCompact ? 145 : 165 }}>STATUS</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 6px' : '12px 10px', fontWeight: 700, textAlign: 'center', width: 90 }}>APROBADO</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 14px', fontWeight: 700, minWidth: isCompact ? 220 : 320 }}>OBSERVACIONES</th>
               </tr>
-            ) : paginatedMatches.length === 0 ? (
-              <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                  No se encontraron matches para el filtro seleccionado.
-                </td>
-              </tr>
-            ) : (
-              paginatedMatches.map((m) => {
-                const isLocked = m.is_locked
-                const prefCfg = PREF_COLORS[m.pref] || (m.pref ? { bg: '#F3F3F3', color: '#333' } : { bg: '#FFF2CC', color: '#7F6000' })
-                const planCfg = PLAN_COLORS[m.plan_tier] || (m.plan_tier ? { bg: '#F3F3F3', color: '#434343' } : { bg: '#FFF2CC', color: '#7F6000' })
-                const statusCfg = STATUS_COLORS[m.status] || { bg: '#FFF2CC', color: '#7F6000' }
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    Cargando matches...
+                  </td>
+                </tr>
+              ) : paginatedMatches.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    No se encontraron matches para el filtro seleccionado.
+                  </td>
+                </tr>
+              ) : (
+                paginatedMatches.map((m) => {
+                  const isLocked = m.is_locked
+                  const statusCfg = STATUS_COLORS[m.status] || { bg: '#FFF2CC', color: '#7F6000' }
+                  const extraMeta = [m.city, m.pref, m.plan_tier].filter(Boolean).join(' • ')
 
-                return (
-                  <tr
-                    key={m.id}
-                    style={{
-                      borderBottom: '1px solid var(--border-color)',
-                      background: m.is_priority ? 'rgba(255, 229, 153, 0.12)' : isLocked ? 'rgba(182, 215, 168, 0.05)' : 'transparent',
-                      transition: 'background 0.15s'
-                    }}
-                  >
-                    {/* CIUDAD */}
-                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px', fontWeight: 500, fontSize: isCompact ? 12 : 13 }}>
-                      {m.city ? (
-                        <span>{m.city}</span>
-                      ) : (
-                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '1px 4px', borderRadius: 3, fontSize: isCompact ? 9 : 10, fontWeight: 700 }}>
-                          Falta ciudad
-                        </span>
-                      )}
-                    </td>
+                  return (
+                    <tr
+                      key={m.id}
+                      style={{
+                        borderBottom: '1px solid var(--border-color)',
+                        background: m.is_priority ? 'rgba(255, 229, 153, 0.12)' : isLocked ? 'rgba(182, 215, 168, 0.05)' : 'transparent',
+                        transition: 'background 0.15s'
+                      }}
+                    >
+                      {/* PERSONA A */}
+                      <td
+                        style={{ padding: isCompact ? '6px 10px' : '12px 14px', fontSize: isCompact ? 12 : 13.5 }}
+                        title={extraMeta ? `${m.person_a} (${extraMeta})` : m.person_a}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id} />
+                          {m.is_priority && (
+                            <span style={{ fontSize: isCompact ? 8 : 9, padding: '1px 4px', borderRadius: 3, background: '#FFE599', color: '#7F6000', fontWeight: 800 }}>
+                              ⚡ PRIORITARIO
+                            </span>
+                          )}
+                          <button
+                            onClick={() => setHistoryTarget(m.person_a_crm_id || m.person_a)}
+                            title="Ver historial de Persona A"
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                          >
+                            <History size={isCompact ? 12 : 14} />
+                          </button>
+                          {/* BOTÓN ASISTENTE CLÍNICO & SUGERENCIAS IA */}
+                          <button
+                            onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id, matchRow: m, tab: 'sugerencias' })}
+                            title={`Ver Sugerencias IA, Datos Objetivos y Percepción de ${m.person_a}`}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              padding: isCompact ? '2px 6px' : '3px 8px',
+                              borderRadius: 4,
+                              border: '1px solid rgba(184, 50, 79, 0.4)',
+                              background: 'rgba(184, 50, 79, 0.12)',
+                              color: '#B8324F',
+                              fontSize: isCompact ? 10 : 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              whiteSpace: 'nowrap',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <Sparkles size={isCompact ? 11 : 12} /> Sugerencias IA
+                          </button>
+                        </div>
+                      </td>
 
-                    {/* PREF */}
-                    <td style={{ padding: isCompact ? '4px 6px' : '10px 8px' }}>
-                      {m.pref ? (
-                        <span style={{
-                          display: 'inline-block',
-                          padding: isCompact ? '1px 5px' : '2px 7px',
-                          borderRadius: 3,
-                          fontSize: isCompact ? 9 : 10,
-                          fontWeight: 700,
-                          textTransform: 'uppercase',
-                          background: prefCfg.bg,
-                          color: prefCfg.color
-                        }}>
-                          {m.pref}
-                        </span>
-                      ) : (
-                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '1px 4px', borderRadius: 3, fontSize: isCompact ? 9 : 10, fontWeight: 700 }}>
-                          Falta pref
-                        </span>
-                      )}
-                    </td>
+                      {/* PERSONA B - EDITABLE */}
+                      <td style={{ padding: isCompact ? '4px 10px' : '10px 14px', minWidth: isCompact ? 250 : 320 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="text"
+                            defaultValue={m.person_b || ''}
+                            placeholder="Nombre o link CRM Persona B..."
+                            disabled={isLocked}
+                            onBlur={e => {
+                              if (e.target.value !== (m.person_b || '')) {
+                                handleUpdateField(m.id, 'person_b', e.target.value, m)
+                              }
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') e.target.blur()
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: isCompact ? '4px 8px' : '6px 10px',
+                              height: isCompact ? 28 : 34,
+                              borderRadius: 6,
+                              border: '1px solid var(--border-color)',
+                              background: isLocked ? 'var(--bg-card-hover)' : 'var(--bg-base)',
+                              color: 'var(--text-primary)',
+                              fontSize: isCompact ? 12 : 13,
+                              fontWeight: 600,
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                          {(!m.person_b || m.person_b.trim() === '') && !isLocked && (
+                            <button
+                              onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id, matchRow: m, tab: 'sugerencias' })}
+                              title={`Buscar candidatos afines con IA para ${m.person_a}`}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                padding: isCompact ? '3px 8px' : '5px 10px',
+                                borderRadius: 6,
+                                border: '1px dashed #10B981',
+                                background: 'rgba(16, 185, 129, 0.12)',
+                                color: '#10B981',
+                                fontSize: isCompact ? 10 : 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0
+                              }}
+                            >
+                              <Sparkles size={isCompact ? 11 : 12} /> Buscar con IA
+                            </button>
+                          )}
+                          {m.person_b && m.person_b.trim() !== '' && (
+                            <button
+                              onClick={() => setHistoryTarget(m.person_b_crm_id || m.person_b)}
+                              title={`Ver historial de ${m.person_b}`}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                            >
+                              <History size={isCompact ? 12 : 14} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
 
-                    {/* PLAN */}
-                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px' }}>
-                      {m.plan_tier ? (
-                        <span style={{
-                          display: 'inline-block',
-                          padding: isCompact ? '1px 5px' : '2px 7px',
-                          borderRadius: 3,
-                          fontSize: isCompact ? 10 : 11,
-                          fontWeight: 600,
-                          background: planCfg.bg,
-                          color: planCfg.color,
-                          whiteSpace: 'nowrap'
-                        }}>
-                          {m.plan_tier}
-                        </span>
-                      ) : (
-                        <span style={{ background: '#FFF2CC', color: '#7F6000', padding: '1px 4px', borderRadius: 3, fontSize: isCompact ? 9 : 10, fontWeight: 700 }}>
-                          Falta plan
-                        </span>
-                      )}
-                    </td>
-
-                    {/* PERSONA A */}
-                    <td style={{ padding: isCompact ? '4px 10px' : '10px 12px', fontSize: isCompact ? 12 : 13 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id} />
-                        {m.is_priority && (
-                          <span style={{ fontSize: isCompact ? 8 : 9, padding: '1px 4px', borderRadius: 3, background: '#FFE599', color: '#7F6000', fontWeight: 800 }}>
-                            ⚡ PRIORITARIO
+                      {/* PSICÓLOGA DE B (CRUCE INFORMATIVO) */}
+                      <td style={{ padding: isCompact ? '6px 10px' : '12px 12px' }}>
+                        {m.psychologist_b ? (
+                          <span style={{
+                            display: 'inline-block',
+                            padding: isCompact ? '2px 6px' : '3px 9px',
+                            borderRadius: 4,
+                            fontSize: isCompact ? 11 : 12,
+                            fontWeight: 700,
+                            background: 'rgba(184, 50, 79, 0.12)',
+                            color: '#B8324F'
+                          }}>
+                            {m.psychologist_b}
                           </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: isCompact ? 11 : 12 }}>—</span>
                         )}
-                        <button
-                          onClick={() => setHistoryTarget(m.person_a_crm_id || m.person_a)}
-                          title="Ver historial de Persona A"
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
-                        >
-                          <History size={isCompact ? 12 : 13} />
-                        </button>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* PERSONA B - EDITABLE */}
-                    <td style={{ padding: isCompact ? '3px 10px' : '8px 12px', minWidth: isCompact ? 200 : 220 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {/* FECHA */}
+                      <td style={{ padding: isCompact ? '6px 10px' : '12px 12px', fontSize: isCompact ? 11 : 12, color: 'var(--text-secondary)' }}>
+                        {m.fecha}
+                      </td>
+
+                      {/* STATUS */}
+                      <td style={{ padding: isCompact ? '4px 10px' : '10px 14px' }}>
+                        {isLocked ? (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: isCompact ? '3px 7px' : '4px 10px',
+                            borderRadius: 4,
+                            fontSize: isCompact ? 11 : 12,
+                            fontWeight: 700,
+                            background: statusCfg.bg,
+                            color: statusCfg.color
+                          }}>
+                            <Lock size={isCompact ? 11 : 12} /> {m.status}
+                          </span>
+                        ) : (
+                          <select
+                            value={m.status}
+                            onChange={e => handleUpdateField(m.id, 'status', e.target.value, m)}
+                            style={{
+                              width: '100%',
+                              padding: isCompact ? '3px 6px' : '5px 8px',
+                              height: isCompact ? 28 : 32,
+                              borderRadius: 4,
+                              border: `1px solid ${statusCfg.bg}`,
+                              background: statusCfg.bg,
+                              color: statusCfg.color,
+                              fontSize: isCompact ? 11 : 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              outline: 'none'
+                            }}
+                          >
+                            {STATUS_OPTIONS.map(st => (
+                              <option key={st} value={st} style={{ background: '#FFFFFF', color: '#000000' }}>
+                                {st}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+
+                      {/* APROBADO POR MARÍA */}
+                      <td style={{ padding: isCompact ? '6px 6px' : '12px 10px', textAlign: 'center' }}>
+                        {isLocked ? (
+                          <span title="Aprobado por María (Fila Bloqueada)" style={{ display: 'inline-flex', color: '#274E13' }}>
+                            <Lock size={isCompact ? 13 : 16} />
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* OBSERVACIONES */}
+                      <td style={{ padding: isCompact ? '4px 10px' : '10px 14px', minWidth: isCompact ? 220 : 320 }}>
                         <input
                           type="text"
-                          defaultValue={m.person_b || ''}
-                          placeholder="Nombre o link CRM Persona B..."
-                          disabled={isLocked}
+                          defaultValue={m.observations || ''}
+                          placeholder="Notas..."
                           onBlur={e => {
-                            if (e.target.value !== (m.person_b || '')) {
-                              handleUpdateField(m.id, 'person_b', e.target.value, m)
+                            if (e.target.value !== (m.observations || '')) {
+                              handleUpdateField(m.id, 'observations', e.target.value, m)
                             }
                           }}
                           onKeyDown={e => {
@@ -1361,142 +1541,24 @@ export default function MisMatches() {
                           }}
                           style={{
                             width: '100%',
-                            padding: isCompact ? '3px 6px' : '5px 8px',
-                            height: isCompact ? 26 : 32,
-                            borderRadius: 4,
+                            padding: isCompact ? '4px 8px' : '6px 10px',
+                            height: isCompact ? 28 : 34,
+                            borderRadius: 6,
                             border: '1px solid var(--border-color)',
-                            background: isLocked ? 'var(--bg-card-hover)' : 'var(--bg-base)',
+                            background: 'var(--bg-base)',
                             color: 'var(--text-primary)',
-                            fontSize: isCompact ? 11 : 12,
-                            fontWeight: 600,
+                            fontSize: isCompact ? 12 : 13,
                             outline: 'none',
                             boxSizing: 'border-box'
                           }}
                         />
-                        {m.person_b && m.person_b.trim() !== '' && (
-                          <button
-                            onClick={() => setHistoryTarget(m.person_b_crm_id || m.person_b)}
-                            title={`Ver historial de ${m.person_b}`}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
-                          >
-                            <History size={isCompact ? 12 : 13} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* PSICÓLOGA DE B (CRUCE INFORMATIVO) */}
-                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px' }}>
-                      {m.psychologist_b ? (
-                        <span style={{
-                          display: 'inline-block',
-                          padding: isCompact ? '1px 5px' : '2px 8px',
-                          borderRadius: 3,
-                          fontSize: isCompact ? 10 : 11,
-                          fontWeight: 700,
-                          background: 'rgba(184, 50, 79, 0.12)',
-                          color: '#B8324F'
-                        }}>
-                          {m.psychologist_b}
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: isCompact ? 10 : 11 }}>—</span>
-                      )}
-                    </td>
-
-                    {/* FECHA */}
-                    <td style={{ padding: isCompact ? '4px 8px' : '10px 10px', fontSize: isCompact ? 10 : 11, color: 'var(--text-secondary)' }}>
-                      {m.fecha}
-                    </td>
-
-                    {/* STATUS */}
-                    <td style={{ padding: isCompact ? '3px 8px' : '8px 10px' }}>
-                      {isLocked ? (
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: isCompact ? '2px 5px' : '3px 8px',
-                          borderRadius: 3,
-                          fontSize: isCompact ? 10 : 11,
-                          fontWeight: 700,
-                          background: statusCfg.bg,
-                          color: statusCfg.color
-                        }}>
-                          <Lock size={isCompact ? 10 : 11} /> {m.status}
-                        </span>
-                      ) : (
-                        <select
-                          value={m.status}
-                          onChange={e => handleUpdateField(m.id, 'status', e.target.value, m)}
-                          style={{
-                            width: '100%',
-                            padding: isCompact ? '2px 4px' : '4px 6px',
-                            height: isCompact ? 24 : 28,
-                            borderRadius: 3,
-                            border: `1px solid ${statusCfg.bg}`,
-                            background: statusCfg.bg,
-                            color: statusCfg.color,
-                            fontSize: isCompact ? 10 : 11,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            outline: 'none'
-                          }}
-                        >
-                          {STATUS_OPTIONS.map(st => (
-                            <option key={st} value={st} style={{ background: '#FFFFFF', color: '#000000' }}>
-                              {st}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </td>
-
-                    {/* APROBADO POR MARÍA */}
-                    <td style={{ padding: isCompact ? '4px 6px' : '10px 8px', textAlign: 'center' }}>
-                      {isLocked ? (
-                        <span title="Aprobado por María (Fila Bloqueada)" style={{ display: 'inline-flex', color: '#274E13' }}>
-                          <Lock size={isCompact ? 13 : 15} />
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>—</span>
-                      )}
-                    </td>
-
-                    {/* OBSERVACIONES */}
-                    <td style={{ padding: isCompact ? '3px 10px' : '8px 12px', minWidth: isCompact ? 150 : 180 }}>
-                      <input
-                        type="text"
-                        defaultValue={m.observations || ''}
-                        placeholder="Notas..."
-                        onBlur={e => {
-                          if (e.target.value !== (m.observations || '')) {
-                            handleUpdateField(m.id, 'observations', e.target.value, m)
-                          }
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') e.target.blur()
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: isCompact ? '3px 6px' : '5px 8px',
-                          height: isCompact ? 26 : 32,
-                          borderRadius: 4,
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--bg-base)',
-                          color: 'var(--text-primary)',
-                          fontSize: isCompact ? 11 : 12,
-                          outline: 'none',
-                          boxSizing: 'border-box'
-                        }}
-                      />
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
         )}
       </div>
 
@@ -1709,6 +1771,171 @@ export default function MisMatches() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ASISTENTE CLÍNICO: SUGERENCIAS IA, DATOS OBJETIVOS Y PERCEPCIÓN */}
+      {aiModalTarget && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1100, padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            borderRadius: 14,
+            border: '1px solid var(--border-color)',
+            width: '100%',
+            maxWidth: 1180,
+            maxHeight: '94vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 12px 48px rgba(0,0,0,0.7)',
+            overflow: 'hidden'
+          }}>
+            {/* Top Bar */}
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid var(--border-color)',
+              background: 'rgba(150, 21, 0, 0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'linear-gradient(135deg, #961500, #B8324F)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', flexShrink: 0
+                }}>
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                      {aiModalTarget.clientName}
+                    </h2>
+                    {aiModalTarget.matchRow?.city && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
+                        📍 {aiModalTarget.matchRow.city}
+                      </span>
+                    )}
+                    {aiModalTarget.matchRow?.pref && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(207, 226, 243, 0.3)', color: '#1B365D' }}>
+                        {aiModalTarget.matchRow.pref}
+                      </span>
+                    )}
+                    {aiModalTarget.matchRow?.plan_tier && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'rgba(182, 215, 168, 0.3)', color: '#274E13' }}>
+                        {aiModalTarget.matchRow.plan_tier}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Fila #{aiModalTarget.matchRow?.id} • Psicóloga: {aiModalTarget.matchRow?.psychologist_name || 'Asignada'} • Asistente Clínico Inteligente
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de Tab del Modal */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setAiModalTarget(prev => ({ ...prev, tab: 'sugerencias' }))}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '8px 14px', borderRadius: 8, border: 'none',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: aiModalTarget.tab === 'sugerencias' ? '#961500' : 'rgba(255,255,255,0.06)',
+                    color: aiModalTarget.tab === 'sugerencias' ? '#FFFFFF' : 'var(--text-secondary)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Sparkles size={14} /> ✨ Sugerencias IA
+                </button>
+                <button
+                  onClick={() => setAiModalTarget(prev => ({ ...prev, tab: 'objetivos' }))}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '8px 14px', borderRadius: 8, border: 'none',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: aiModalTarget.tab === 'objetivos' ? '#961500' : 'rgba(255,255,255,0.06)',
+                    color: aiModalTarget.tab === 'objetivos' ? '#FFFFFF' : 'var(--text-secondary)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <ClipboardList size={14} /> 📋 Datos Objetivos
+                </button>
+                <button
+                  onClick={() => setAiModalTarget(prev => ({ ...prev, tab: 'percepcion' }))}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '8px 14px', borderRadius: 8, border: 'none',
+                    fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: aiModalTarget.tab === 'percepcion' ? '#961500' : 'rgba(255,255,255,0.06)',
+                    color: aiModalTarget.tab === 'percepcion' ? '#FFFFFF' : 'var(--text-secondary)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Brain size={14} /> 🧠 Percepción Psicóloga
+                </button>
+
+                <button
+                  onClick={() => setAiModalTarget(null)}
+                  style={{
+                    background: 'rgba(255,255,255,0.08)',
+                    border: 'none',
+                    borderRadius: 8,
+                    width: 34, height: 34,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    marginLeft: 8
+                  }}
+                  title="Cerrar ventana"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Area del Modal */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+              {aiModalTarget.tab === 'sugerencias' && (
+                <EntrevistaResultados
+                  clientName={aiModalTarget.clientName}
+                  onGoToTab={(tab) => {
+                    if (tab === 'objetivos' || tab === 'percepcion') {
+                      setAiModalTarget(prev => ({ ...prev, tab }))
+                    }
+                  }}
+                  onAssignCandidate={(cand) => handleAssignCandidateFromAI(cand, aiModalTarget.matchRow)}
+                />
+              )}
+              {aiModalTarget.tab === 'objetivos' && (
+                <DatosObjetivos
+                  standalone={false}
+                  client={{
+                    id: aiModalTarget.crmId || aiModalTarget.clientName,
+                    name: aiModalTarget.clientName,
+                    crm_id: aiModalTarget.crmId
+                  }}
+                />
+              )}
+              {aiModalTarget.tab === 'percepcion' && (
+                <PercepcionPsicologa
+                  standalone={false}
+                  client={{
+                    id: aiModalTarget.crmId || aiModalTarget.clientName,
+                    name: aiModalTarget.clientName,
+                    crm_id: aiModalTarget.crmId
+                  }}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
