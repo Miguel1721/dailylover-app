@@ -13,10 +13,11 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL_SYNC", 
-    "postgresql://postgres:dailylover2026@127.0.0.1:5432/dailylover"
-)
+raw_db_url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL")
+if raw_db_url:
+    DATABASE_URL = raw_db_url.replace("postgresql+asyncpg://", "postgresql://")
+else:
+    DATABASE_URL = "postgresql://postgres:your_secure_postgres_password@postgres:5432/dailylover"
 
 def run_enrichment():
     print("=== INICIANDO MIGRACIÓN DE DATOS AUDITORÍA WHATSAPP ===")
@@ -30,13 +31,29 @@ def run_enrichment():
         base_dir = os.path.dirname(os.path.abspath(__file__))
         repo_root = os.path.dirname(base_dir)
         
-        # Buscar en scratch
-        scratch_dir = os.path.join(repo_root, "scratch")
-        if not os.path.exists(scratch_dir):
-            scratch_dir = os.path.join(os.path.dirname(repo_root), "scratch")
+        possible_dirs = [
+            os.path.join(repo_root, "scratch"),
+            os.path.join(repo_root, "..", "scratch"),
+            os.path.join(base_dir, "scratch"),
+            "/app/scratch",
+            "/home/ubuntu/dailylover/scratch"
+        ]
+        
+        unregistered_file = None
+        enrichment_file = None
+        
+        for p in possible_dirs:
+            u_candidate = os.path.join(p, "clean_unregistered_clients_whatsapp.json")
+            e_candidate = os.path.join(p, "whatsapp_db_enrichment_candidates.json")
+            if os.path.exists(u_candidate) and os.path.exists(e_candidate):
+                unregistered_file = u_candidate
+                enrichment_file = e_candidate
+                break
+                
+        if not unregistered_file or not enrichment_file:
+            raise FileNotFoundError(f"No se encontraron los archivos JSON en ninguna de las rutas posibles: {possible_dirs}")
 
-        unregistered_file = os.path.join(scratch_dir, "clean_unregistered_clients_whatsapp.json")
-        enrichment_file = os.path.join(scratch_dir, "whatsapp_db_enrichment_candidates.json")
+        print(f"Archivos de migración encontrados en: {os.path.dirname(unregistered_file)}")
 
         with open(unregistered_file, "r", encoding="utf-8") as f:
             unregistered_clients = json.load(f)
