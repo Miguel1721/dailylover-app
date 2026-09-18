@@ -3175,5 +3175,334 @@ async def get_clients_plans(
     }
 
 
+# ─── QUICK CLIENT CREATION & CS NOVEDADES ─────────────────────────────────────
+
+class QuickCreateClientRequest(BaseModel):
+    name: str
+    phone: str
+    city: Optional[str] = "Bogotá"
+    gender: Optional[str] = None
+    orientation: Optional[str] = "hetero"
+    plan_tier: Optional[str] = "Estándar 65k (2 citas)"
+    responsable: Optional[str] = "SILVI"
+    initial_notes: Optional[str] = None
+    create_slots: Optional[bool] = True
+
+class RegisterNovedadRequest(BaseModel):
+    client_id: Optional[int] = None
+    client_name: str
+    novedad_type: str  # 'EXTRA_DATE', 'UPGRADE_PLAN', 'CITY_CHANGE', 'PAUSE', 'GENERAL_NOTE'
+    details: str
+    extra_dates: Optional[int] = 0
+    new_city: Optional[str] = None
+    new_plan: Optional[str] = None
+    assigned_to: Optional[str] = None
+
+
+@router.post("/users/quick-create")
+async def quick_create_client(
+    payload: QuickCreateClientRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("clientes", "view"))
+):
+    """
+    Alta Rápida de Cliente Exprés (en 30 segundos):
+    - Valida si ya existe por teléfono o nombre.
+    - Crea en users asignándole client_code único oficial (DL-XXXX).
+    - Crea en profiles con psicóloga, ciudad, orientación y plan.
+    - Inserta nota clínica inicial si fue provista.
+    - Si create_slots = true, crea slot en operational_matches para búsqueda inmediata.
+    """
+    name_clean = payload.name.strip()
+    phone_clean = re.sub(r"[^0-9+]", "", payload.phone.strip()) if payload.phone else ""
+
+    if not name_clean:
+        raise HTTPException(status_code=400, detail="El nombre del cliente es obligatorio")
+    if not phone_clean or len(phone_clean) < 7:
+        raise HTTPException(status_code=400, detail="Número de teléfono/WhatsApp válido obligatorio")
+
+    existing = await db.execute(text("""
+        SELECT u.id, u.name, u.client_code, p.responsable
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE (u.phone = :p AND u.phone IS NOT NULL AND u.phone != '')
+           OR LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+        LIMIT 1
+    """), {"p": phone_clean, "n": name_clean})
+    dup_row = existing.fetchone()
+
+    if dup_row:
+        code_str = dup_row.client_code or f"DL-{dup_row.id:04d}"
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ya existe un cliente registrado con ese nombre o teléfono: {dup_row.name} ({code_str}), asignado a {dup_row.responsable or 'Sin psicóloga'}."
+        )
+
+    ins_u = await db.execute(text("""
+        INSERT INTO users (name, phone, created_at)
+        VALUES (:n, :p, NOW())
+        RETURNING id
+    """), {"n": name_clean, "p": phone_clean})
+    new_id = ins_u.scalar()
+
+    client_code = f"DL-{new_id:04d}"
+    await db.execute(text("""
+        UPDATE users SET client_code = :code WHERE id = :id
+    """), {"code": client_code, "id": new_id})
+
+    plan_clean = payload.plan_tier or "Estándar 65k (2 citas)"
+    city_clean = payload.city or "Bogotá"
+    resp_clean = (payload.responsable or "SILVI").upper().replace("MATCHES ", "").strip()
+    notes_clean = payload.initial_notes.strip() if payload.initial_notes else ""
+
+    await db.execute(text("""
+        INSERT INTO profiles (
+            user_id, city, gender, orientation, plan_tier, responsable, bio_notes, updated_at
+        ) VALUES (
+            :uid, :city, :gender, :orientation, :plan, :resp, :notes, NOW()
+        )
+    """), {
+        "uid": new_id,
+        "city": city_clean,
+        "gender": payload.gender or "No especificado",
+        "orientation": payload.orientation or "hetero",
+        "plan": plan_clean,
+        "resp": resp_clean,
+        "notes": notes_clean
+    })
+
+    if notes_clean:
+        await db.execute(text("""
+            INSERT INTO client_notes (user_id, note, source, created_at)
+            VALUES (:uid, :note, 'alta_expres', NOW())
+        """), {
+            "uid": new_id,
+            "note": f"⚡ Alta Exprés: {notes_clean}"
+        })
+
+    slot_id = None
+    if payload.create_slots:
+        ins_slot = await db.execute(text("""
+            INSERT INTO operational_matches (
+                city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, created_at, updated_at
+            ) VALUES (
+                :city, :pref, :plan, :pa, :psyc, 1, 'Listo para match', :obs, NOW(), NOW()
+            ) RETURNING id
+        """), {
+            "city": city_clean,
+            "pref": payload.orientation or "hetero",
+            "plan": plan_clean,
+            "pa": name_clean,
+            "psyc": resp_clean,
+            "obs": f"Cliente registrado vía Alta Exprés ({client_code})."
+        })
+        slot_id = ins_slot.scalar()
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Cliente {name_clean} registrado exitosamente con código {client_code}",
+        "client": {
+            "id": new_id,
+            "name": name_clean,
+            "client_code": client_code,
+            "phone": phone_clean,
+            "city": city_clean,
+            "plan_tier": plan_clean,
+            "responsable": resp_clean,
+            "slot_id": slot_id
+        }
+    }
+
+
+@router.post("/client-notes/novedad")
+async def register_client_novedad(
+    payload: RegisterNovedadRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Registra una novedad de Customer Service:
+    - Compra de Cita Extra / Upgrade de Membresía.
+    - Cambio de Ciudad.
+    - Pausa / Congelación.
+    - Nota general importante.
+    Notifica a la psicóloga y guarda en cs_novedades y client_notes.
+    """
+    client_name_clean = payload.client_name.strip()
+    client_id = payload.client_id
+
+    if not client_id and client_name_clean:
+        u_res = await db.execute(text("""
+            SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n)) LIMIT 1
+        """), {"n": client_name_clean})
+        u_row = u_res.fetchone()
+        if u_row:
+            client_id = u_row.id
+
+    assigned_psyc = payload.assigned_to
+    if not assigned_psyc and client_id:
+        p_res = await db.execute(text("SELECT responsable FROM profiles WHERE user_id = :uid"), {"uid": client_id})
+        p_row = p_res.fetchone()
+        if p_row and p_row.responsable:
+            assigned_psyc = p_row.responsable.replace("MATCHES ", "").strip()
+
+    creator_name = current_user.get("name") or current_user.get("email") or "Customer Service"
+
+    novedad_res = await db.execute(text("""
+        INSERT INTO cs_novedades (
+            client_id, client_name, novedad_type, details, extra_dates, created_by, assigned_to, status, created_at
+        ) VALUES (
+            :cid, :cname, :ntype, :det, :edates, :cby, :asg, 'PENDIENTE', NOW()
+        ) RETURNING id
+    """), {
+        "cid": client_id,
+        "cname": client_name_clean,
+        "ntype": payload.novedad_type,
+        "det": payload.details.strip(),
+        "edates": payload.extra_dates or 0,
+        "cby": creator_name,
+        "asg": assigned_psyc or "General"
+    })
+    novedad_id = novedad_res.scalar()
+
+    if client_id:
+        note_text = f"📢 Novedad CS ({payload.novedad_type}): {payload.details.strip()} [Por: {creator_name}]"
+        await db.execute(text("""
+            INSERT INTO client_notes (user_id, note, source, created_at)
+            VALUES (:uid, :note, 'cs_novedades', NOW())
+        """), {"uid": client_id, "note": note_text})
+
+    if payload.novedad_type == "EXTRA_DATE" and payload.extra_dates and payload.extra_dates > 0:
+        for i in range(payload.extra_dates):
+            await db.execute(text("""
+                INSERT INTO operational_matches (
+                    city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, created_at, updated_at
+                ) VALUES (
+                    (SELECT COALESCE(city, 'Bogotá') FROM profiles WHERE user_id = :cid),
+                    (SELECT COALESCE(orientation, 'hetero') FROM profiles WHERE user_id = :cid),
+                    (SELECT COALESCE(plan_tier, 'Cita Extra') FROM profiles WHERE user_id = :cid),
+                    :pa, :psyc, 99, 'Listo para match', :obs, NOW(), NOW()
+                )
+            """), {
+                "cid": client_id,
+                "pa": client_name_clean,
+                "psyc": assigned_psyc or "SILVI",
+                "obs": f"Cita extra ({i+1}/{payload.extra_dates}) pagada por WhatsApp/CS: {payload.details}"
+            })
+
+    elif payload.novedad_type == "CITY_CHANGE" and payload.new_city:
+        if client_id:
+            await db.execute(text("""
+                UPDATE profiles SET city = :c, updated_at = NOW() WHERE user_id = :uid
+            """), {"c": payload.new_city.strip(), "uid": client_id})
+        await db.execute(text("""
+            UPDATE operational_matches SET city = :c, updated_at = NOW()
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa)) AND status NOT IN ('CITA COMPLETADA', 'APROBADO')
+        """), {"c": payload.new_city.strip(), "pa": client_name_clean})
+
+    elif payload.novedad_type == "UPGRADE_PLAN" and payload.new_plan:
+        if client_id:
+            await db.execute(text("""
+                UPDATE profiles SET plan_tier = :p, updated_at = NOW() WHERE user_id = :uid
+            """), {"p": payload.new_plan.strip(), "uid": client_id})
+
+    elif payload.novedad_type == "PAUSE":
+        await db.execute(text("""
+            UPDATE operational_matches SET status = 'EN PAUSA', updated_at = NOW()
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa)) AND status NOT IN ('CITA COMPLETADA', 'APROBADO')
+        """), {"pa": client_name_clean})
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Novedad registrada exitosamente para {client_name_clean}",
+        "novedad_id": novedad_id
+    }
+
+
+@router.get("/cs-novedades")
+async def get_cs_novedades(
+    status_filter: Optional[str] = Query("PENDIENTE", description="PENDIENTE, ATENDIDO o ALL"),
+    assigned_to: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Retorna la lista de novedades reportadas por Customer Service para el badge/campanita de notificaciones.
+    """
+    where_clauses = ["1=1"]
+    params = {"limit": limit}
+
+    if status_filter and status_filter.upper() != "ALL":
+        where_clauses.append("n.status = :sf")
+        params["sf"] = status_filter.upper()
+
+    if assigned_to and assigned_to.upper() != "ALL":
+        where_clauses.append("(n.assigned_to ILIKE :asg OR n.assigned_to = 'General')")
+        params["asg"] = f"%{assigned_to.strip()}%"
+
+    query = f"""
+        SELECT 
+            n.id, n.client_id, n.client_name, n.novedad_type, n.details,
+            n.extra_dates, n.created_by, n.assigned_to, n.status, n.created_at, n.resolved_at,
+            u.client_code, u.phone
+        FROM cs_novedades n
+        LEFT JOIN users u ON u.id = n.client_id
+        WHERE {' AND '.join(where_clauses)}
+        ORDER BY n.created_at DESC
+        LIMIT :limit
+    """
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    items = []
+    for r in rows:
+        items.append({
+            "id": r.id,
+            "client_id": r.client_id,
+            "client_name": r.client_name,
+            "client_code": r.client_code or (f"#{r.client_id}" if r.client_id else ""),
+            "phone": r.phone or "",
+            "novedad_type": r.novedad_type,
+            "details": r.details,
+            "extra_dates": r.extra_dates,
+            "created_by": r.created_by,
+            "assigned_to": r.assigned_to,
+            "status": r.status,
+            "created_at": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
+            "resolved_at": r.resolved_at.strftime("%Y-%m-%d %H:%M") if r.resolved_at else None
+        })
+
+    unread_count = (await db.execute(text("SELECT COUNT(*) FROM cs_novedades WHERE status = 'PENDIENTE'"))).scalar() or 0
+
+    return {
+        "novedades": items,
+        "unread_count": unread_count,
+        "total": len(items)
+    }
+
+
+@router.patch("/cs-novedades/{novedad_id}/resolve")
+async def resolve_cs_novedad(
+    novedad_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Marca una novedad como atendida por la psicóloga o admin.
+    """
+    await db.execute(text("""
+        UPDATE cs_novedades
+        SET status = 'ATENDIDO', resolved_at = NOW()
+        WHERE id = :id
+    """), {"id": novedad_id})
+    await db.commit()
+    return {"status": "success", "message": "Novedad marcada como atendida"}
+
+
 
 

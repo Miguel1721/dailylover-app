@@ -1627,6 +1627,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       return hasBothPersons && isApproved
     }
     if (quickFilter === 'prioritarios') return m.is_priority
+    if (quickFilter === 'novedades') return Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)
     if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
     if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== ''
     if (quickFilter === 'pausa') return (m.status || '').toUpperCase().includes('PAUSA')
@@ -1640,6 +1641,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   // Métricas para píldoras de acceso rápido
   const totalCount = matches.length
   const prioritariosCount = matches.filter(m => m.is_priority).length
+  const conNovedadCount = matches.filter(m => Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)).length
   const sinBCount = matches.filter(m => !m.person_b || m.person_b.trim() === '').length
   const listosCount = matches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
   const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
@@ -2041,6 +2043,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             {[
               { id: 'all', icon: '👥', label: 'Todos', count: totalCount, activeBg: '#B8324F', activeColor: '#FFFFFF' },
               { id: 'prioritarios', icon: '⚡', label: 'Prioritarios', count: prioritariosCount, activeBg: '#D97706', activeColor: '#FFFFFF' },
+              { id: 'novedades', icon: '📢', label: 'Con Novedad CS', count: conNovedadCount, activeBg: '#EA580C', activeColor: '#FFFFFF' },
               { id: 'listos', icon: '🟡', label: 'Listos para Match', count: listosCount, activeBg: '#CA8A04', activeColor: '#FFFFFF' },
               { id: 'sin_b', icon: '⏳', label: 'Sin Persona B', count: sinBCount, activeBg: '#7C3AED', activeColor: '#FFFFFF' },
               { id: 'pausa', icon: '⏸️', label: 'En Pausa', count: enPausaCount, activeBg: '#EA580C', activeColor: '#FFFFFF' },
@@ -2930,6 +2933,23 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               letterSpacing: '0.03em'
                             }}>
                               ⚡ PRIORITARIO
+                            </span>
+                          )}
+                          {Boolean(m.cs_novedades_count && m.cs_novedades_count > 0) && (
+                            <span style={{
+                              fontSize: isCompact ? 9 : 10,
+                              padding: isCompact ? '2px 5px' : '3px 7px',
+                              borderRadius: 4,
+                              background: 'rgba(234, 88, 12, 0.15)',
+                              border: '1px solid rgba(234, 88, 12, 0.5)',
+                              color: '#F97316',
+                              fontWeight: 800,
+                              letterSpacing: '0.03em',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }} title={`${m.cs_novedades_count} Novedad(es) registrada(s) por CS`}>
+                              📢 NOVEDAD CS ({m.cs_novedades_count})
                             </span>
                           )}
                           <button

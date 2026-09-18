@@ -275,6 +275,23 @@ class ManualRefundRequest(BaseModel):
     plan_tier: Optional[str] = ""
     reason: Optional[str] = "Solicitud de refund vía Servicio al Cliente / WhatsApp"
 
+class NoShowRequest(BaseModel):
+    person_failed: str  # "person_a", "person_b", "both"
+    reason: str
+    action: str = "reschedule"  # "reschedule", "penalty", "archive"
+    notes: Optional[str] = ""
+
+class DateFeedbackRequest(BaseModel):
+    rating_general: int = 5
+    quimica: Optional[int] = 5
+    atraccion: Optional[int] = 5
+    valores: Optional[int] = 5
+    second_date: str = "si"  # "si", "no", "amistad"
+    recommend_candidate: bool = True
+    feedback_ella: Optional[str] = ""
+    feedback_el: Optional[str] = ""
+    general_notes: Optional[str] = ""
+
 
 # ─── 1. PANTALLA 1: MIS MATCHES (VISTA PSICÓLOGA) ────────────────────────────
 
@@ -369,6 +386,7 @@ async def get_my_matches(
             mc.person_a_confirmation, mc.person_b_confirmation, mc.stage AS confirmation_stage, mc.observations AS cs_observations,
             COALESCE(sp.payment_date, p.last_payment_date, sp_name.payment_date) AS stripe_pay_date,
             COALESCE(sp.plan_tier, sp_name.plan_tier) AS stripe_pay_plan,
+            COALESCE(csn.open_novedades_count, 0) AS cs_novedades_count,
             COALESCE(
                 NULLIF(TRIM(pB.responsable), ''),
                 (
@@ -427,6 +445,12 @@ async def get_my_matches(
             WHERE match_id IS NOT NULL
             ORDER BY match_id, id DESC
         ) mc ON mc.match_id = m.id
+        LEFT JOIN (
+            SELECT LOWER(TRIM(client_name)) AS client_name_clean, COUNT(*) AS open_novedades_count
+            FROM cs_novedades
+            WHERE status = 'PENDIENTE'
+            GROUP BY LOWER(TRIM(client_name))
+        ) csn ON csn.client_name_clean = LOWER(TRIM(m.person_a))
         WHERE 1=1
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
@@ -547,6 +571,7 @@ async def get_my_matches(
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
             "psychologist_b": p_b_psyc,
             "is_priority": bool(d.get("is_priority")),
+            "cs_novedades_count": int(d.get("cs_novedades_count") or 0),
             "fecha": effective_date.strftime("%Y-%m-%d %H:%M") if effective_date else "",
             "fecha_pago_stripe": stripe_date.strftime("%Y-%m-%d %H:%M") if stripe_date else None,
             "fecha_slot": slot_date.strftime("%Y-%m-%d %H:%M") if slot_date else "",
@@ -2096,6 +2121,199 @@ async def update_calendar_date(
 
     await db.commit()
     return {"status": "success", "message": f"Cita {calendar_id} actualizada correctamente"}
+
+
+@router.post("/calendar/{calendar_id}/no-show")
+async def record_calendar_no_show(
+    calendar_id: int,
+    payload: NoShowRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Registra un No-Show (inasistencia a la cita) de manera estructurada y sin fricción:
+    - Actualiza scheduled_dates con motivo, persona que faltó y detalle.
+    - Registra en person_history y en client_notes para expediente clínico.
+    - Si action == 'reschedule', crea automáticamente fila de reprogramación.
+    - Si action == 'penalty', descuenta cuota / marca estado 'NO-SHOW (PENALIDAD)'.
+    """
+    res = await db.execute(text("""
+        SELECT id, match_id, person_a, person_b, date_time, venue, city
+        FROM scheduled_dates
+        WHERE id = :id
+    """), {"id": calendar_id})
+    cal_row = res.fetchone()
+    if not cal_row:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    failed_names = []
+    if payload.person_failed == "person_a":
+        failed_names.append(cal_row.person_a)
+    elif payload.person_failed == "person_b":
+        failed_names.append(cal_row.person_b)
+    else:
+        failed_names.extend([cal_row.person_a, cal_row.person_b])
+
+    failed_str = ", ".join([f for f in failed_names if f])
+    no_show_summary = f"🚨 NO-SHOW: {failed_str} no asistió ({payload.reason}). Acción: {payload.action}."
+    if payload.notes:
+        no_show_summary += f" Notas: {payload.notes.strip()}"
+
+    await db.execute(text("""
+        UPDATE scheduled_dates
+        SET had_date = false,
+            feedback = :fb,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {"id": calendar_id, "fb": no_show_summary})
+
+    # Registrar en person_history y client_notes para los que faltaron
+    for fn in failed_names:
+        if not fn:
+            continue
+        await db.execute(text("""
+            INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+            VALUES (:name, :mid, 'NO_SHOW', :det, NOW())
+        """), {
+            "name": fn,
+            "mid": cal_row.match_id,
+            "det": f"Inasistencia a cita del {cal_row.date_time} en {cal_row.venue}. Motivo: {payload.reason}. Acción: {payload.action}."
+        })
+
+        # Si existe en users, registrar nota clínica
+        u_res = await db.execute(text("""
+            SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n)) LIMIT 1
+        """), {"n": fn})
+        u_row = u_res.fetchone()
+        if u_row:
+            await db.execute(text("""
+                INSERT INTO client_notes (user_id, note, source, created_at)
+                VALUES (:uid, :note, 'no_show_log', NOW())
+            """), {
+                "uid": u_row.id,
+                "note": f"🚨 Inasistencia (No-Show) a cita del {cal_row.date_time} ({payload.reason}). Acción: {payload.action}. {payload.notes or ''}".strip()
+            })
+
+    # Si se pide reprogramar
+    if payload.action == "reschedule":
+        await db.execute(text("""
+            INSERT INTO scheduled_dates (
+                match_id, person_a, person_b, date_time, venue, city, reservation_name, reservation_confirmed, had_date, reschedule, created_at, updated_at
+            ) VALUES (
+                :mid, :pa, :pb, 'Por reprogramar (No-Show)', :ven, :city, 'María Paula Salinas', false, false, true, NOW(), NOW()
+            )
+        """), {
+            "mid": cal_row.match_id,
+            "pa": cal_row.person_a,
+            "pb": cal_row.person_b,
+            "ven": cal_row.venue or "Por definir",
+            "city": cal_row.city or ""
+        })
+        if cal_row.match_id:
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'REPROGRAMAR POR NO-SHOW', updated_at = NOW()
+                WHERE id = :mid
+            """), {"mid": cal_row.match_id})
+    elif payload.action == "penalty" and cal_row.match_id:
+        await db.execute(text("""
+            UPDATE operational_matches
+            SET status = 'NO-SHOW (PENALIDAD)', updated_at = NOW()
+            WHERE id = :mid
+        """), {"mid": cal_row.match_id})
+
+    await db.commit()
+    return {"status": "success", "message": f"No-Show registrado exitosamente para {failed_str}"}
+
+
+@router.post("/calendar/{calendar_id}/feedback")
+async def record_calendar_feedback(
+    calendar_id: int,
+    payload: DateFeedbackRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Registra el feedback post-cita estructurado:
+    - Calificación por estrellas (Química, Atracción, Valores).
+    - Decisión sobre 2da cita (Sí / No / Amistad).
+    - Recomendación del candidato para otros clientes.
+    - Guarda en scheduled_dates, operational_matches ('CITA COMPLETADA'), person_history y client_notes.
+    """
+    res = await db.execute(text("""
+        SELECT id, match_id, person_a, person_b, date_time, venue, city
+        FROM scheduled_dates
+        WHERE id = :id
+    """), {"id": calendar_id})
+    cal_row = res.fetchone()
+    if not cal_row:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    rec_str = "Candidato Recomendable" if payload.recommend_candidate else "Precaución con Candidato"
+    summary_parts = [
+        f"⭐ Evaluación: {payload.rating_general}/5",
+        f"Química: {payload.quimica or 5}/5",
+        f"Atracción: {payload.atraccion or 5}/5",
+        f"Valores: {payload.valores or 5}/5",
+        f"¿2da Cita?: {payload.second_date.upper()}",
+        f"[{rec_str}]"
+    ]
+    if payload.general_notes:
+        summary_parts.append(f'Comentario: "{payload.general_notes.strip()}"')
+
+    feedback_full = " • ".join(summary_parts)
+
+    await db.execute(text("""
+        UPDATE scheduled_dates
+        SET had_date = true,
+            feedback = :fb,
+            feedback_ella = :fbe,
+            feedback_el = :fbel,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {
+        "id": calendar_id,
+        "fb": feedback_full,
+        "fbe": payload.feedback_ella or "",
+        "fbel": payload.feedback_el or ""
+    })
+
+    if cal_row.match_id:
+        await db.execute(text("""
+            UPDATE operational_matches
+            SET status = 'CITA COMPLETADA', updated_at = NOW()
+            WHERE id = :mid
+        """), {"mid": cal_row.match_id})
+
+    # Historial de ambas personas
+    for person_name, person_fb in [
+        (cal_row.person_a, payload.feedback_ella or feedback_full),
+        (cal_row.person_b, payload.feedback_el or feedback_full)
+    ]:
+        if not person_name:
+            continue
+        await db.execute(text("""
+            INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+            VALUES (:name, :mid, 'DATE_FEEDBACK', :det, NOW())
+        """), {
+            "name": person_name,
+            "mid": cal_row.match_id,
+            "det": f"Feedback cita {cal_row.date_time}: {person_fb}"
+        })
+
+        u_res = await db.execute(text("""
+            SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n)) LIMIT 1
+        """), {"n": person_name})
+        u_row = u_res.fetchone()
+        if u_row:
+            await db.execute(text("""
+                INSERT INTO client_notes (user_id, note, source, created_at)
+                VALUES (:uid, :note, 'post_date_feedback', NOW())
+            """), {
+                "uid": u_row.id,
+                "note": f"⭐ Feedback Cita ({cal_row.date_time} en {cal_row.venue}): {feedback_full}"
+            })
+
+    await db.commit()
+    return {"status": "success", "message": "Feedback post-cita guardado exitosamente"}
 
 
 # ─── 5. HISTORIAL DE PERSONA & PSICÓLOGAS ACTIVAS ────────────────────────────

@@ -52,6 +52,7 @@ import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet } from 'lucide-react'
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
+import CsNovedadesNotificationBell from './components/CsNovedadesNotificationBell'
 
 import './index.css'
 
@@ -614,26 +615,29 @@ function AppContent() {
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={toggleTheme}
-                    aria-label={theme === 'light' ? "Modo Oscuro" : "Modo Claro"}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 8,
-                      width: 36,
-                      height: 36,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--text-primary)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                    title={theme === 'light' ? "Modo Oscuro" : "Modo Claro"}
-                  >
-                    {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <CsNovedadesNotificationBell />
+                    <button
+                      onClick={toggleTheme}
+                      aria-label={theme === 'light' ? "Modo Oscuro" : "Modo Claro"}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 8,
+                        width: 36,
+                        height: 36,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--text-primary)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      title={theme === 'light' ? "Modo Oscuro" : "Modo Claro"}
+                    >
+                      {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+                    </button>
+                  </div>
                 </header>
                 <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
                   <Routes>

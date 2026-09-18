@@ -11,6 +11,8 @@ const CITIES = [
 ]
 
 import RestaurantFilterModal from '../../components/RestaurantFilterModal'
+import NoShowModal from '../../components/NoShowModal'
+import FeedbackModal from '../../components/FeedbackModal'
 
 export default function CitasAgendadas() {
   const { token } = useAuth()
@@ -24,6 +26,8 @@ export default function CitasAgendadas() {
   const [copiedId, setCopiedId] = useState(null)
   const [successBanner, setSuccessBanner] = useState('')
   const [rescheduleModalItem, setRescheduleModalItem] = useState(null)
+  const [noShowModalItem, setNoShowModalItem] = useState(null)
+  const [feedbackModalItem, setFeedbackModalItem] = useState(null)
   const [quickDateFilter, setQuickDateFilter] = useState('all')
 
   const getTodayStr = () => {
@@ -401,6 +405,7 @@ export default function CitasAgendadas() {
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Reserva</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Mensajería WhatsApp</th>
                   <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Reprogramar</th>
+                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Seguimiento &amp; Feedback</th>
                 </tr>
               </thead>
               <tbody>
@@ -563,6 +568,93 @@ export default function CitasAgendadas() {
                         <RotateCcw size={12} /> Reprogramar
                       </button>
                     </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        {c.feedback && c.feedback.includes('NO-SHOW') ? (
+                          <button
+                            onClick={() => setNoShowModalItem(c)}
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.2)',
+                              color: '#EF4444',
+                              border: '1px solid rgba(239, 68, 68, 0.4)',
+                              borderRadius: 6,
+                              padding: '4px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title={c.feedback}
+                          >
+                            🚨 No-Show
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setNoShowModalItem(c)}
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              color: '#EF4444',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              borderRadius: 6,
+                              padding: '4px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title="Registrar inasistencia o plantón"
+                          >
+                            <AlertTriangle size={12} /> No-Show
+                          </button>
+                        )}
+
+                        {c.had_date && c.feedback && !c.feedback.includes('NO-SHOW') ? (
+                          <button
+                            onClick={() => setFeedbackModalItem(c)}
+                            style={{
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#10B981',
+                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                              borderRadius: 6,
+                              padding: '4px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title={c.feedback}
+                          >
+                            ⭐ Evaluada
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setFeedbackModalItem(c)}
+                            style={{
+                              background: 'rgba(168, 85, 247, 0.15)',
+                              color: '#C084FC',
+                              border: '1px solid rgba(168, 85, 247, 0.35)',
+                              borderRadius: 6,
+                              padding: '4px 8px',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
+                            title="Cargar calificación y retroalimentación post-cita"
+                          >
+                            ⭐ Feedback
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -588,6 +680,30 @@ export default function CitasAgendadas() {
               venue: newVenue,
               reschedule_reason: isDirect ? 'Asignación de restaurante y fecha' : 'Reprogramación de cita'
             })
+          }}
+        />
+      )}
+
+      {noShowModalItem && (
+        <NoShowModal
+          item={noShowModalItem}
+          onClose={() => setNoShowModalItem(null)}
+          onSuccess={(msg) => {
+            setSuccessBanner(msg)
+            setTimeout(() => setSuccessBanner(''), 4000)
+            fetchCalendar()
+          }}
+        />
+      )}
+
+      {feedbackModalItem && (
+        <FeedbackModal
+          item={feedbackModalItem}
+          onClose={() => setFeedbackModalItem(null)}
+          onSuccess={(msg) => {
+            setSuccessBanner(msg)
+            setTimeout(() => setSuccessBanner(''), 4000)
+            fetchCalendar()
           }}
         />
       )}

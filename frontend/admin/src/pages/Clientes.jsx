@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Search, Eye, ChevronLeft, ChevronRight, History, User, Heart, MapPin, Briefcase, GraduationCap, Sparkles, BookOpen, UserCheck, Phone, Cake, Ruler, Shield, Smile, Filter } from 'lucide-react'
+import { Search, Eye, ChevronLeft, ChevronRight, History, User, Heart, MapPin, Briefcase, GraduationCap, Sparkles, BookOpen, UserCheck, Phone, Cake, Ruler, Shield, Smile, Filter, CheckCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ClinicalNotesViewer from '../components/ClinicalNotesViewer'
+import NuevoClienteExpresModal from '../components/NuevoClienteExpresModal'
+import RegistrarNovedadModal from '../components/RegistrarNovedadModal'
 
 const API = 'https://prueba-daily.agentesia.cloud'
 
@@ -707,6 +709,9 @@ export default function Clientes() {
   const [difficultFilter, setDifficultFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [showNuevoClienteModal, setShowNuevoClienteModal] = useState(false)
+  const [showNovedadModal, setShowNovedadModal] = useState(false)
+  const [successBanner, setSuccessBanner] = useState('')
   const limit = 20
 
   useEffect(() => {
@@ -775,12 +780,75 @@ export default function Clientes() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1>Clientes Daily Lover</h1>
           <p className="page-subtitle">Expedientes clínicos reales de clientes ({total} clientes encontrados)</p>
         </div>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            onClick={() => setShowNovedadModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(59, 130, 246, 0.15)',
+              color: '#3B82F6',
+              border: '1px solid rgba(59, 130, 246, 0.35)',
+              borderRadius: 8,
+              padding: '9px 15px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+            title="Registrar citas extras, cambios de ciudad o novedades de CS"
+          >
+            📢 + Novedad / Cita Extra
+          </button>
+          <button
+            onClick={() => setShowNuevoClienteModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--color-primary)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 18px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(150, 21, 0, 0.3)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Alta inmediata en 30 segundos con código DL"
+          >
+            ➕ + Cliente Exprés
+          </button>
+        </div>
       </div>
+
+      {successBanner && (
+        <div style={{
+          background: 'rgba(16, 185, 129, 0.15)',
+          border: '1px solid #10B981',
+          color: '#10B981',
+          padding: '10px 16px',
+          borderRadius: 8,
+          margin: '0 32px 16px',
+          fontSize: 13,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }}>
+          <CheckCircle size={16} />
+          {successBanner}
+        </div>
+      )}
 
       <div className="content-area">
         {/* ── FILTROS (COMPACTO Y ALINEADO HORIZONTALMENTE) ───────────────── */}
@@ -1101,6 +1169,28 @@ export default function Clientes() {
       </div>
 
       {selected && <ClienteModal cliente={selected} token={token} onClose={() => setSelected(null)} />}
+
+      {showNuevoClienteModal && (
+        <NuevoClienteExpresModal
+          onClose={() => setShowNuevoClienteModal(false)}
+          onSuccess={(msg) => {
+            setSuccessBanner(msg)
+            setTimeout(() => setSuccessBanner(''), 4000)
+            fetchUsers()
+          }}
+        />
+      )}
+
+      {showNovedadModal && (
+        <RegistrarNovedadModal
+          onClose={() => setShowNovedadModal(false)}
+          onSuccess={(msg) => {
+            setSuccessBanner(msg)
+            setTimeout(() => setSuccessBanner(''), 4000)
+            fetchUsers()
+          }}
+        />
+      )}
     </div>
   )
 }
