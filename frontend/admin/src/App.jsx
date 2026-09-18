@@ -51,11 +51,7 @@ import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet } from 'lucide-react'
-
-
-
-
-
+import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
 
 import './index.css'
 
@@ -234,7 +230,12 @@ function Sidebar({ isOpen, onClose }) {
       (user?.role && ADMIN_ROLES.includes(user.role))
     ))
   )
-  const isCs = !isAtrasadosOnly && effectiveRole === 'Servicio al Cliente'
+  const isCs = !isAtrasadosOnly && (
+    effectiveRole === 'Servicio al Cliente' ||
+    effectiveRole === 'Customer Service' ||
+    effectiveRole.toLowerCase().includes('customer') ||
+    effectiveRole.toLowerCase().includes('servicio')
+  )
   const isPsyc = !isAtrasadosOnly && (effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker'))
   const isLina = !isAtrasadosOnly && effectiveRole === 'Lina (Refunds)'
 
@@ -710,6 +711,7 @@ function AppContent() {
                 </main>
               </div>
               <CopilotWidget />
+              <ForcePasswordChangeModal />
             </div>
           ) : (
             <Login />
