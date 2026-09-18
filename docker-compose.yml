@@ -48,6 +48,8 @@ services:
     volumes:
       - ./backend:/app
       - dl_uploads:/app/static/uploads
+      - /home/ubuntu/backups:/home/ubuntu/backups:ro
+      - /home/ubuntu/dailylover/.git:/app/.git:ro
     networks:
       - dl_network
       - produccion_web_network
