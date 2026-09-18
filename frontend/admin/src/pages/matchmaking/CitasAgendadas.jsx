@@ -24,6 +24,62 @@ export default function CitasAgendadas() {
   const [copiedId, setCopiedId] = useState(null)
   const [successBanner, setSuccessBanner] = useState('')
   const [rescheduleModalItem, setRescheduleModalItem] = useState(null)
+  const [quickDateFilter, setQuickDateFilter] = useState('all')
+
+  const getTodayStr = () => {
+    const d = new Date()
+    return d.toISOString().slice(0, 10)
+  }
+
+  const getYesterdayStr = () => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    return d.toISOString().slice(0, 10)
+  }
+
+  const getTomorrowStr = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().slice(0, 10)
+  }
+
+  const getThisWeekRange = () => {
+    const now = new Date()
+    const day = now.getDay()
+    const diffToMonday = (day === 0 ? -6 : 1) - day
+    const monday = new Date(now)
+    monday.setDate(now.getDate() + diffToMonday)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    return {
+      from: monday.toISOString().slice(0, 10),
+      to: sunday.toISOString().slice(0, 10)
+    }
+  }
+
+  const handleQuickDate = (type) => {
+    setQuickDateFilter(type)
+    if (type === 'today') {
+      const t = getTodayStr()
+      setDateFrom(t)
+      setDateTo(t)
+    } else if (type === 'yesterday') {
+      const y = getYesterdayStr()
+      setDateFrom(y)
+      setDateTo(y)
+    } else if (type === 'tomorrow') {
+      const tm = getTomorrowStr()
+      setDateFrom(tm)
+      setDateTo(tm)
+    } else if (type === 'this_week') {
+      const { from, to } = getThisWeekRange()
+      setDateFrom(from)
+      setDateTo(to)
+    } else if (type === 'all') {
+      setDateFrom('')
+      setDateTo('')
+    }
+  }
 
   const fetchCalendar = useCallback(() => {
     setLoading(true)
@@ -176,6 +232,57 @@ export default function CitasAgendadas() {
         </div>
       )}
 
+      {/* Barra de Acceso Rápido por Fecha */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 16,
+        flexWrap: 'wrap'
+      }}>
+        <span style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em'
+        }}>
+          ⚡ Vistas Rápidas:
+        </span>
+        {[
+          { id: 'today', label: '📅 Citas de Hoy', activeBg: '#10B981', color: '#fff' },
+          { id: 'yesterday', label: '⏮️ Citas de Ayer', activeBg: '#3B82F6', color: '#fff' },
+          { id: 'tomorrow', label: '⏭️ Citas de Mañana', activeBg: '#8B5CF6', color: '#fff' },
+          { id: 'this_week', label: '🗓️ Esta Semana', activeBg: '#F59E0B', color: '#fff' },
+          { id: 'all', label: '🌐 Todas las Citas', activeBg: '#B8324F', color: '#fff' },
+        ].map(btn => {
+          const isActive = quickDateFilter === btn.id
+          return (
+            <button
+              key={btn.id}
+              onClick={() => handleQuickDate(btn.id)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 14px',
+                borderRadius: 20,
+                border: isActive ? `1.5px solid ${btn.activeBg}` : '1px solid var(--border-color)',
+                background: isActive ? btn.activeBg : 'var(--bg-card)',
+                color: isActive ? btn.color : 'var(--text-secondary)',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.25)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {btn.label}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Filters */}
       <div style={{
         background: 'var(--bg-card)',
@@ -213,7 +320,10 @@ export default function CitasAgendadas() {
           <input
             type="date"
             value={dateFrom}
-            onChange={e => setDateFrom(e.target.value)}
+            onChange={e => {
+              setDateFrom(e.target.value)
+              setQuickDateFilter('custom')
+            }}
             style={{
               padding: '5px 8px',
               borderRadius: 6,
@@ -231,7 +341,10 @@ export default function CitasAgendadas() {
           <input
             type="date"
             value={dateTo}
-            onChange={e => setDateTo(e.target.value)}
+            onChange={e => {
+              setDateTo(e.target.value)
+              setQuickDateFilter('custom')
+            }}
             style={{
               padding: '5px 8px',
               borderRadius: 6,

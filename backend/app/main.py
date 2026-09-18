@@ -6,6 +6,7 @@ from app.config import get_settings, Settings
 from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking, scheduling, form_builder
 import structlog
 import os
+import asyncio
 
 # Initialize structured logging
 logger = structlog.get_logger()
@@ -255,6 +256,19 @@ async def startup_seed():
             """))
             await db.commit()
 
+            # Tarea periódica de fondo: revisión diaria de clientes prioritarios (>15 días sin cita desde el pago)
+            async def daily_priority_reviewer():
+                while True:
+                    try:
+                        from app.routers.matchmaking import auto_refresh_priority_matches
+                        async with AsyncSessionLocal() as session:
+                            await auto_refresh_priority_matches(session)
+                    except Exception as ex_p:
+                        logger.warning(f"Error en daily_priority_reviewer: {ex_p}")
+                    # Revisa cada 12 horas (43,200 segundos)
+                    await asyncio.sleep(43200)
+
+            asyncio.create_task(daily_priority_reviewer())
 
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")

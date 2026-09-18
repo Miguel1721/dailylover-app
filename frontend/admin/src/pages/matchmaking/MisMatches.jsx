@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw, User, MapPin, Tag, ShieldCheck, History, ExternalLink, AlertCircle, X, Check, Clock, ChevronLeft, ChevronRight, Sparkles, FileSpreadsheet, ClipboardList, Brain } from 'lucide-react'
+import {
+  Heart, Search, Filter, Lock, Plus, CheckCircle, AlertTriangle, RefreshCw,
+  User, MapPin, Tag, ShieldCheck, History, ExternalLink, AlertCircle, X, Check,
+  Clock, ChevronLeft, ChevronRight, Sparkles, FileSpreadsheet, ClipboardList, Brain,
+  Phone, MessageSquare, Utensils, Copy, Send, Calendar as CalendarIcon
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 import EntrevistaResultados from './EntrevistaResultados'
@@ -386,6 +391,1052 @@ function PersonHistoryModal({ queryTarget, onClose }) {
   )
 }
 
+// ─── AUXILIARES DE MENSAJERÍA, FECHAS Y ZONA HORARIA COLOMBIA (UTC-5) ────────
+function getColombiaTodayYMD() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date())
+  } catch (e) {
+    const d = new Date()
+    const utc = d.getTime() + (d.getTimezoneOffset() * 60000)
+    const colTime = new Date(utc - (5 * 3600000))
+    return colTime.toISOString().split('T')[0]
+  }
+}
+
+function parseMatchDateToYMD(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null
+  const s = dateStr.trim()
+
+  // 1. YYYY-MM-DD
+  const mYMD = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (mYMD) {
+    return mYMD[1] + '-' + String(mYMD[2]).padStart(2, '0') + '-' + String(mYMD[3]).padStart(2, '0')
+  }
+
+  // 2. DD/MM/YYYY o DD-MM-YYYY
+  const mDMY = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+  if (mDMY) {
+    return mDMY[3] + '-' + String(mDMY[2]).padStart(2, '0') + '-' + String(mDMY[1]).padStart(2, '0')
+  }
+
+  // 3. MM.DD o MM/DD (asume año 2026)
+  const mMD = s.match(/^(\d{1,2})[\.](\d{1,2})/)
+  if (mMD) {
+    return '2026-' + String(mMD[1]).padStart(2, '0') + '-' + String(mMD[2]).padStart(2, '0')
+  }
+
+  // 4. Texto español: 'Septiembre 18', '18 de septiembre', etc.
+  const months = {
+    enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+    julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
+    sep: '09', oct: '10', nov: '11', dic: '12'
+  }
+  const sLower = s.toLowerCase()
+  for (const [mName, mNum] of Object.entries(months)) {
+    if (sLower.includes(mName)) {
+      const dayMatch = sLower.match(/(\d{1,2})/)
+      if (dayMatch) {
+        const d = String(dayMatch[1]).padStart(2, '0')
+        const yMatch = sLower.match(/(202\d)/)
+        const y = yMatch ? yMatch[1] : '2026'
+        return y + '-' + mNum + '-' + d
+      }
+    }
+  }
+
+  return null
+}
+
+function getWhatsAppButtonStatus(scheduledDateTime) {
+  const colombiaToday = getColombiaTodayYMD()
+  const matchYMD = parseMatchDateToYMD(scheduledDateTime)
+
+  const canConfirm = true
+
+  if (!matchYMD) {
+    return {
+      canConfirm: true,
+      canDiaAntes: false,
+      diaAntesReason: 'Requiere definir fecha de cita para activar (Día Antes)',
+      canHoy: false,
+      hoyReason: 'Requiere definir fecha de cita para activar (Día de Hoy)',
+      colombiaToday,
+      matchYMD: null,
+      diffDays: null
+    }
+  }
+
+  const [y1, m1, d1] = colombiaToday.split('-').map(Number)
+  const [y2, m2, d2] = matchYMD.split('-').map(Number)
+  const utcToday = Date.UTC(y1, m1 - 1, d1)
+  const utcMatch = Date.UTC(y2, m2 - 1, d2)
+  const diffDays = Math.round((utcMatch - utcToday) / 86400000)
+
+  // canDiaAntes: activo si diffDays === 1 (día antes) o si es hoy (diffDays === 0)
+  const canDiaAntes = (diffDays === 1 || diffDays === 0)
+  const diaAntesReason = diffDays === 1
+    ? '¡Día Antes! Listo para enviar recordatorio previo'
+    : diffDays === 0
+      ? 'La cita es hoy (Día antes ya transcurrió)'
+      : diffDays > 1
+        ? `Se activará 1 día antes de la cita (faltan ${diffDays} días)`
+        : 'La fecha de la cita ya pasó'
+
+  // canHoy: activo SOLO el mismo día de la cita (diffDays === 0)
+  const canHoy = (diffDays === 0)
+  const hoyReason = diffDays === 0
+    ? '¡HOY es la cita! Listo para enviar recordatorio de puntualidad x2'
+    : diffDays > 0
+      ? `Se activará el día de la cita (${matchYMD})`
+      : 'La fecha de la cita ya pasó'
+
+  return {
+    canConfirm,
+    canDiaAntes,
+    diaAntesReason,
+    canHoy,
+    hoyReason,
+    colombiaToday,
+    matchYMD,
+    diffDays
+  }
+}
+
+function formatWhatsAppLink(phone, messageText = '') {
+  if (!phone) return null
+  let clean = String(phone).replace(/[^0-9]/g, '')
+  if (!clean) return null
+  if (clean.length === 10 && clean.startsWith('3')) {
+    clean = '57' + clean
+  }
+  const url = `https://wa.me/${clean}`
+  return messageText ? `${url}?text=${encodeURIComponent(messageText)}` : url
+}
+
+function getCanonicalWhatsAppTemplates({ personA, personB, dateTime, venue, reservationName = 'María Paula Salinas' }) {
+  let dateFormatted = 'Por definir'
+  let timeFormatted = ''
+  if (dateTime && dateTime.trim()) {
+    const parts = dateTime.trim().split(' ')
+    dateFormatted = parts[0]
+    if (parts.length > 1) {
+      timeFormatted = parts[1]
+    }
+  }
+  const place = venue && venue.trim() ? venue.trim() : 'Por definir'
+  const timeStr = timeFormatted ? ` ${timeFormatted}` : ''
+
+  const confirmacion = `Para confirmarte tu date! 💛 Fecha y hora: ${dateFormatted}${timeStr} en ${place}\nLa reserva estará a nombre de ${reservationName}.\nEl restaurante estará atento para ayudarte a ubicarte y acompañarte con cualquier detalle logístico o de seguridad.\n\nAdemás, ese mismo día en la mañana te escribiremos para estar pendientes de ti y acompañarte *antes, durante y después de la cita*, para que solo tengas que disfrutar la experiencia.💌💌\nGracias por confiar en nosotras y por permitirnos ser parte de este momento💓`
+
+  const diaAntes = `Para recordarte tu date de mañana! 💛 Fecha y hora: ${dateFormatted}${timeStr} en ${place} Esperamos tu confirmación para asegurarnos de que la cita este en pie!`
+
+  const hoy = `Para recordarte tu date de hoy! 💛 Fecha y hora: ${dateFormatted}${timeStr} en ${place}\nLa reserva estará a nombre de ${reservationName}!! Por favor avisanos cuando vayas en camino para estar pendiente de ti! Recuerda que hay alguien que te esta esperando, y la puntualidad vale X2!! Disfrútalo muchísimo, es solo una cita!! Avísanos cuando vayas en camino para estar pendiente de tiii!`
+
+  return { confirmacion, diaAntes, hoy }
+}
+
+// ─── MODAL DE PLANTILLAS WHATSAPP ─────────────────────────────────────────────
+function WhatsAppTemplateModal({ match, templateType, onClose, onCopy }) {
+  const [copied, setCopied] = useState(false)
+  const templates = getCanonicalWhatsAppTemplates({
+    personA: match.person_a,
+    personB: match.person_b,
+    dateTime: match.scheduled_date_time,
+    venue: match.scheduled_venue,
+    reservationName: match.reservation_name || 'María Paula Salinas'
+  })
+
+  let title = 'Plantilla de WhatsApp'
+  let messageText = ''
+  if (templateType === 'confirmacion') {
+    title = '📩 Mensaje de Confirmación de Cita'
+    messageText = templates.confirmacion
+  } else if (templateType === 'dia_antes') {
+    title = '⏰ Mensaje Recordatorio: Día Antes'
+    messageText = templates.diaAntes
+  } else if (templateType === 'hoy') {
+    title = '🚀 Mensaje Recordatorio: Día de Hoy (Puntualidad x2)'
+    messageText = templates.hoy
+  }
+
+  const phoneA = match.person_a_phone
+  const phoneB = match.person_b_phone
+  const waUrlA = formatWhatsAppLink(phoneA, messageText)
+  const waUrlB = formatWhatsAppLink(phoneB, messageText)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(messageText)
+    setCopied(true)
+    if (onCopy) onCopy('Mensaje copiado al portapapeles')
+    setTimeout(() => setCopied(false), 2500)
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 1200, padding: 16
+    }}>
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: 14,
+        border: '1px solid var(--border-color)',
+        width: '100%',
+        maxWidth: 580,
+        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+        overflow: 'hidden'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'rgba(150, 21, 0, 0.08)'
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MessageSquare size={18} color="#10B981" />
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {title}
+              </h3>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Pareja: {match.person_a} & {match.person_b}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: 20 }}>
+          <div style={{
+            background: 'var(--bg-base)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 8,
+            padding: 14,
+            fontSize: 13,
+            color: 'var(--text-primary)',
+            whiteSpace: 'pre-wrap',
+            lineHeight: 1.5,
+            maxHeight: 260,
+            overflowY: 'auto',
+            fontFamily: 'monospace'
+          }}>
+            {messageText}
+          </div>
+
+          <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleCopy}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: copied ? '#10B981' : 'var(--bg-card)',
+                color: copied ? '#fff' : 'var(--text-primary)',
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              <Copy size={14} /> {copied ? '¡Copiado!' : 'Copiar Texto'}
+            </button>
+
+            {waUrlA ? (
+              <a
+                href={waUrlA}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 6,
+                  background: '#25D366',
+                  color: '#fff',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <Send size={14} /> Enviar a Persona A ({match.person_a.split(' ')[0]})
+              </a>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>
+                (Sin tel. A)
+              </span>
+            )}
+
+            {waUrlB ? (
+              <a
+                href={waUrlB}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 6,
+                  background: '#25D366',
+                  color: '#fff',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                <Send size={14} /> Enviar a Persona B ({match.person_b.split(' ')[0]})
+              </a>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center' }}>
+                (Sin tel. B)
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── MODAL DE FILTROS POR PERSONA Y ASIGNACIÓN DE RESTAURANTE ─────────────────
+function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClose, onSave }) {
+  const initialYMD = parseMatchDateToYMD(match?.scheduled_date_time) || ''
+  let initialTime = '7:00 PM'
+  if (match?.scheduled_date_time) {
+    const tMatch = match.scheduled_date_time.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?|\d{1,2}\s*(?:AM|PM|am|pm))/i)
+    if (tMatch) initialTime = tMatch[1].toUpperCase()
+  }
+
+  const [tab, setTab] = useState(initialTab) // 'person_a' | 'person_b' | 'restaurants'
+  const [city, setCity] = useState(match?.city || 'Bogotá')
+  const [citaDate, setCitaDate] = useState(initialYMD)
+  const [citaTime, setCitaTime] = useState(initialTime)
+  const [venue, setVenue] = useState(match?.scheduled_venue || '')
+  const [customVenue, setCustomVenue] = useState('')
+  const [budgetAgreed, setBudgetAgreed] = useState('200k-300k')
+  const [csNotes, setCsNotes] = useState(match?.cs_observations || '')
+
+  // Preferencias persona A
+  const [budgetA, setBudgetA] = useState('100k-200k')
+  const [zoneA, setZoneA] = useState(match?.person_a_neighborhood || '')
+  const [foodA, setFoodA] = useState('')
+
+  // Preferencias persona B
+  const [budgetB, setBudgetB] = useState('100k-200k')
+  const [zoneB, setZoneB] = useState(match?.person_b_neighborhood || '')
+  const [foodB, setFoodB] = useState('')
+
+  // Restaurantes desde API
+  const [restaurants, setRestaurants] = useState([])
+  const [loadingRest, setLoadingRest] = useState(false)
+  const [budgetFilter, setBudgetFilter] = useState('100k-200k')
+  const [searchRest, setSearchRest] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let url = `${API}/api/v1/matchmaking/restaurants?`
+    if (city && city !== 'all') url += `city=${encodeURIComponent(city)}&`
+    if (budgetFilter && budgetFilter !== 'all') url += `budget_category=${encodeURIComponent(budgetFilter)}&`
+    if (searchRest) url += `search=${encodeURIComponent(searchRest)}&`
+
+    setLoadingRest(true)
+    fetch(url)
+      .then(r => r.json())
+      .then(d => {
+        setRestaurants(d.restaurants || [])
+        setLoadingRest(false)
+      })
+      .catch(() => setLoadingRest(false))
+  }, [city, budgetFilter, searchRest])
+
+  const handleSelectRest = (r) => {
+    const vName = `${r.name} (${r.zone || r.city})`
+    setVenue(vName)
+    setCustomVenue('')
+    setTab('restaurants')
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    const finalVenue = customVenue.trim() || venue
+    let finalDateTime = ''
+    if (citaDate) {
+      finalDateTime = citaTime ? `${citaDate} ${citaTime}`.trim() : citaDate
+    } else if (match?.scheduled_date_time) {
+      finalDateTime = match.scheduled_date_time
+    }
+
+    try {
+      await onSave({
+        date_time: finalDateTime,
+        venue: finalVenue,
+        city,
+        cs_observations: csNotes
+      })
+      onClose()
+    } catch (err) {
+      alert('Error al guardar la cita')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const phoneA = match.person_a_phone
+  const phoneB = match.person_b_phone
+  const waUrlA = formatWhatsAppLink(phoneA)
+  const waUrlB = formatWhatsAppLink(phoneB)
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 1150, padding: 16
+    }}>
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: 14,
+        border: '1px solid var(--border-color)',
+        width: '100%',
+        maxWidth: 820,
+        maxHeight: '94vh',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 12px 48px rgba(0,0,0,0.6)',
+        overflow: 'hidden'
+      }}>
+        {/* Modal Top */}
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid var(--border-color)',
+          background: 'rgba(150, 21, 0, 0.08)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12
+        }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Utensils size={18} color="#B8324F" />
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                Filtros de Restaurante & Coordinación de Cita
+              </h3>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Pareja #{match.id}: <strong style={{ color: 'var(--text-primary)' }}>{match.person_a}</strong> y <strong style={{ color: 'var(--text-primary)' }}>{match.person_b}</strong>
+            </div>
+          </div>
+
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Barra Superior con Resumen de Cita visible en TODAS las pestañas */}
+        <div style={{
+          padding: '10px 20px',
+          background: 'var(--bg-base)',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
+            <span>📅 <strong>Día:</strong> <span style={{ color: citaDate ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: 600 }}>{citaDate || 'Por definir'}</span></span>
+            <span>⏰ <strong>Hora:</strong> <span style={{ color: citaTime ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: 600 }}>{citaTime || 'Por definir'}</span></span>
+            <span>📍 <strong>Ciudad:</strong> <span style={{ fontWeight: 600 }}>{city}</span></span>
+            <span>🍽️ <strong>Lugar:</strong> <span style={{ color: (venue || customVenue) ? '#10B981' : 'var(--text-muted)', fontWeight: 700 }}>{venue || customVenue || 'Sin restaurante'}</span></span>
+          </div>
+          <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+            🇨🇴 Hora Colombia: {getColombiaTodayYMD()}
+          </div>
+        </div>
+
+        {/* Tab Buttons */}
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid var(--border-color)',
+          background: 'var(--bg-card)',
+          padding: '0 12px'
+        }}>
+          <button
+            onClick={() => setTab('person_a')}
+            style={{
+              padding: '10px 16px',
+              border: 'none',
+              borderBottom: tab === 'person_a' ? '2px solid #B8324F' : '2px solid transparent',
+              background: 'transparent',
+              color: tab === 'person_a' ? '#B8324F' : 'var(--text-secondary)',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            👤 Filtros Persona A ({match.person_a.split(' ')[0]})
+          </button>
+          <button
+            onClick={() => setTab('person_b')}
+            style={{
+              padding: '10px 16px',
+              border: 'none',
+              borderBottom: tab === 'person_b' ? '2px solid #B8324F' : '2px solid transparent',
+              background: 'transparent',
+              color: tab === 'person_b' ? '#B8324F' : 'var(--text-secondary)',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            👤 Filtros Persona B ({match.person_b.split(' ')[0]})
+          </button>
+          <button
+            onClick={() => setTab('restaurants')}
+            style={{
+              padding: '10px 16px',
+              border: 'none',
+              borderBottom: tab === 'restaurants' ? '2px solid #B8324F' : '2px solid transparent',
+              background: 'transparent',
+              color: tab === 'restaurants' ? '#B8324F' : 'var(--text-secondary)',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <Utensils size={14} /> 🍽️ Coordinación de Cita (Día, Hora & Restaurante)
+          </button>
+        </div>
+
+        {/* Content Area */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          {/* TAB PERSONA A */}
+          {tab === 'person_a' && (
+            <div>
+              <div style={{
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 8,
+                padding: 14,
+                marginBottom: 16
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Datos de Contacto
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Nombre Completo:</div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                      <CrmPersonLink name={match.person_a} crmId={match.person_a_crm_id} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Teléfono Móvil:</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      {phoneA ? (
+                        <>
+                          <a
+                            href={`tel:${phoneA}`}
+                            style={{ fontWeight: 700, color: '#60A5FA', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <Phone size={13} /> {phoneA}
+                          </a>
+                          {waUrlA && (
+                            <a
+                              href={waUrlA}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                background: '#25D366',
+                                color: '#fff',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                textDecoration: 'none'
+                              }}
+                            >
+                              WhatsApp
+                            </a>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No registrado en CRM</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Presupuesto Máximo Persona A
+                  </label>
+                  <select
+                    value={budgetA}
+                    onChange={e => setBudgetA(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 6,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                      color: 'var(--text-primary)', fontSize: 12.5, outline: 'none'
+                    }}
+                  >
+                    <option value="Menos de 100k">Menos de 100k</option>
+                    <option value="100k-200k">100k - 200k</option>
+                    <option value="200k-300k">200k - 300k</option>
+                    <option value="Más de 300k">Más de 300k</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Zona o Barrio Preferido
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Parque 93, Zona G, Usaquén..."
+                    value={zoneA}
+                    onChange={e => setZoneA(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 6,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                      color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Restricciones Alimenticias / Preferencias de Comida
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Vegetariano, alérgico a mariscos, comida italiana, sushi..."
+                  value={foodA}
+                  onChange={e => setFoodA(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: 6,
+                    border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                    color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB PERSONA B */}
+          {tab === 'person_b' && (
+            <div>
+              <div style={{
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 8,
+                padding: 14,
+                marginBottom: 16
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Datos de Contacto
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Nombre Completo:</div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                      <CrmPersonLink name={match.person_b} crmId={match.person_b_crm_id} />
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Teléfono Móvil:</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      {phoneB ? (
+                        <>
+                          <a
+                            href={`tel:${phoneB}`}
+                            style={{ fontWeight: 700, color: '#60A5FA', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <Phone size={13} /> {phoneB}
+                          </a>
+                          {waUrlB && (
+                            <a
+                              href={waUrlB}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                background: '#25D366',
+                                color: '#fff',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                textDecoration: 'none'
+                              }}
+                            >
+                              WhatsApp
+                            </a>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No registrado en CRM</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Presupuesto Máximo Persona B
+                  </label>
+                  <select
+                    value={budgetB}
+                    onChange={e => setBudgetB(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 6,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                      color: 'var(--text-primary)', fontSize: 12.5, outline: 'none'
+                    }}
+                  >
+                    <option value="Menos de 100k">Menos de 100k</option>
+                    <option value="100k-200k">100k - 200k</option>
+                    <option value="200k-300k">200k - 300k</option>
+                    <option value="Más de 300k">Más de 300k</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Zona o Barrio Preferido
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Parque 93, Zona G, Usaquén..."
+                    value={zoneB}
+                    onChange={e => setZoneB(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 6,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                      color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Restricciones Alimenticias / Preferencias de Comida
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Vegetariano, alérgico a mariscos, comida italiana, sushi..."
+                  value={foodB}
+                  onChange={e => setFoodB(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 10px', borderRadius: 6,
+                    border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                    color: 'var(--text-primary)', fontSize: 12.5, outline: 'none', boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB COORDINACIÓN DE CITA & RESTAURANTES */}
+          {tab === 'restaurants' && (
+            <div>
+              {/* Sección de Día, Hora, Ciudad y Presupuesto idéntica a Google Sheets */}
+              <div style={{
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 10,
+                padding: 16,
+                marginBottom: 16
+              }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#B8324F', textTransform: 'uppercase', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CalendarIcon size={15} /> Agendamiento de Cita (Día, Hora & Presupuesto)
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14 }}>
+                  {/* DÍA */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      DÍA DE LA CITA *
+                    </label>
+                    <input
+                      type="date"
+                      value={citaDate}
+                      onChange={e => setCitaDate(e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 6,
+                        border: '1px solid var(--border-color)', background: 'var(--bg-card)',
+                        color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 600, outline: 'none', boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  {/* HORA */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      HORA DE LA CITA *
+                    </label>
+                    <select
+                      value={citaTime}
+                      onChange={e => setCitaTime(e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 6,
+                        border: '1px solid var(--border-color)', background: 'var(--bg-card)',
+                        color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 600, outline: 'none'
+                      }}
+                    >
+                      <option value="6:00 PM">6:00 PM</option>
+                      <option value="6:30 PM">6:30 PM</option>
+                      <option value="7:00 PM">7:00 PM</option>
+                      <option value="7:30 PM">7:30 PM</option>
+                      <option value="8:00 PM">8:00 PM</option>
+                      <option value="8:30 PM">8:30 PM</option>
+                      <option value="9:00 PM">9:00 PM</option>
+                    </select>
+                  </div>
+
+                  {/* CIUDAD */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      CIUDAD
+                    </label>
+                    <select
+                      value={city}
+                      onChange={e => setCity(e.target.value)}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 6,
+                        border: '1px solid var(--border-color)', background: 'var(--bg-card)',
+                        color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 600, outline: 'none'
+                      }}
+                    >
+                      {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+
+                  {/* PRESUPUESTO ACORDADO */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      PRESUPUESTO ACORDADO
+                    </label>
+                    <select
+                      value={budgetAgreed}
+                      onChange={e => {
+                        setBudgetAgreed(e.target.value)
+                        setBudgetFilter(e.target.value)
+                      }}
+                      style={{
+                        width: '100%', padding: '8px 10px', borderRadius: 6,
+                        border: '1px solid var(--border-color)', background: 'var(--bg-card)',
+                        color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 600, outline: 'none'
+                      }}
+                    >
+                      <option value="Menos de 100k">Menos de 100k</option>
+                      <option value="100k-200k">100k - 200k</option>
+                      <option value="200k-300k">200k - 300k</option>
+                      <option value="Más de 300k">Más de 300k</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* RESTAURANTE ASIGNADO */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    LUGAR / RESTAURANTE ASIGNADO *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Selecciona un restaurante de la lista o escribe uno personalizado..."
+                    value={customVenue || venue}
+                    onChange={e => {
+                      setCustomVenue(e.target.value)
+                      setVenue(e.target.value)
+                    }}
+                    style={{
+                      width: '100%', padding: '9px 12px', borderRadius: 6,
+                      border: '1.5px solid #10B981', background: 'rgba(16, 185, 129, 0.08)',
+                      color: '#10B981', fontSize: 13, fontWeight: 800, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                {/* OBSERVACIONES CS */}
+                <div>
+                  <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    OBSERVACIONES CS (NOTAS INTERNAS DE RESERVA)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Notas internas sobre la reserva o preferencias..."
+                    value={csNotes}
+                    onChange={e => setCsNotes(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 10px', borderRadius: 6,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-card)',
+                      color: 'var(--text-primary)', fontSize: 12, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Buscador & Recomendador de Restaurantes desde Base de Datos */}
+              <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                  🍽️ Recomendador de Restaurantes ({city} • {budgetFilter})
+                </div>
+                <div style={{ position: 'relative', width: 260 }}>
+                  <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por zona, nombre o comida..."
+                    value={searchRest}
+                    onChange={e => setSearchRest(e.target.value)}
+                    style={{
+                      width: '100%', padding: '5px 8px 5px 26px', borderRadius: 6,
+                      border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+                      color: 'var(--text-primary)', fontSize: 12, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Lista de Restaurantes Disponibles */}
+              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8 }}>
+                {loadingRest ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    Cargando restaurantes...
+                  </div>
+                ) : restaurants.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    No se encontraron restaurantes con este filtro. Escribe uno personalizado arriba.
+                  </div>
+                ) : (
+                  restaurants.map(r => {
+                    const isSel = (venue || '').includes(r.name) || (customVenue || '').includes(r.name)
+                    return (
+                      <div
+                        key={r.id}
+                        onClick={() => handleSelectRest(r)}
+                        style={{
+                          padding: '9px 12px',
+                          borderBottom: '1px solid rgba(255,255,255,0.05)',
+                          cursor: 'pointer',
+                          background: isSel ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: isSel ? '#10B981' : 'var(--text-primary)', fontSize: 12.5 }}>
+                            {r.name} {isSel && '✓'}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {r.food_type || 'Restaurante'} • {r.zone || r.city} • {r.price_range_raw || r.budget_category}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleSelectRest(r)
+                          }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 4,
+                            border: 'none',
+                            background: isSel ? '#10B981' : 'rgba(255,255,255,0.08)',
+                            color: isSel ? '#fff' : 'var(--text-primary)',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {isSel ? 'Seleccionado' : 'Elegir'}
+                        </button>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div style={{
+          padding: '14px 20px',
+          borderTop: '1px solid var(--border-color)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 10,
+          background: 'var(--bg-base)'
+        }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'transparent',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontSize: 13
+            }}
+          >
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving}
+            style={{
+              padding: '8px 20px',
+              borderRadius: 6,
+              border: 'none',
+              background: '#B8324F',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: 'pointer'
+            }}
+          >
+            {saving ? 'Guardando...' : 'Guardar y Asignar Cita & Restaurante'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = false }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -440,6 +1491,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   // Asistente Clínico & Sugerencias IA Modal: { clientName, crmId, matchRow, tab: 'sugerencias' | 'objetivos' | 'percepcion' }
   const [aiModalTarget, setAiModalTarget] = useState(null)
+
+  // Modales para mesa oficial MATCHES (Servicio al Cliente)
+  const [personFilterTarget, setPersonFilterTarget] = useState(null) // { match, person: 'A' | 'B' }
+  const [waTemplateTarget, setWaTemplateTarget] = useState(null) // { match, templateType: 'confirmacion' | 'dia_antes' | 'hoy' }
 
   // Modos de visualización ergonómica (Sheets vs Cómodo)
   const [density, setDensity] = useState(() => localStorage.getItem('matches_density') || 'comfortable')
@@ -573,7 +1628,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     }
     if (quickFilter === 'prioritarios') return m.is_priority
     if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
-    if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo')
+    if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== ''
     if (quickFilter === 'pausa') return (m.status || '').toUpperCase().includes('PAUSA')
     if (quickFilter === 'aprobados') return m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')
     return true
@@ -585,8 +1640,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   // Métricas para píldoras de acceso rápido
   const totalCount = matches.length
   const prioritariosCount = matches.filter(m => m.is_priority).length
-  const listosCount = matches.filter(m => (m.status || '').toLowerCase().includes('listo')).length
   const sinBCount = matches.filter(m => !m.person_b || m.person_b.trim() === '').length
+  const listosCount = matches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
   const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
   const aprobadosCount = matches.filter(m => m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')).length
 
@@ -668,6 +1723,35 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     } catch (e) {
       setSyncStatus('error')
       alert('Error de conexión al actualizar')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const handleUpdateScheduleDetails = async (matchId, updates) => {
+    setSavingId(matchId)
+    setSyncStatus('saving')
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}/schedule-details`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updates)
+      })
+      if (res.ok) {
+        setMatches(prev => prev.map(m => m.id === matchId ? { ...m, ...updates } : m))
+        setFeedbackMsg('✓ Cita y restaurante actualizados correctamente')
+        setSyncStatus('synced')
+        setTimeout(() => setFeedbackMsg(''), 2500)
+      } else {
+        setSyncStatus('error')
+        alert('Error al actualizar datos de cita')
+      }
+    } catch (e) {
+      setSyncStatus('error')
+      alert('Error de conexión al actualizar cita')
     } finally {
       setSavingId(null)
     }
@@ -815,7 +1899,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       {!isOfficialMatches && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 18, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
           <button
-            onClick={() => { setViewMode('mine'); setCurrentPage(1) }}
+            onClick={() => { setViewMode('mine'); setQuickFilter('all'); setCurrentPage(1) }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -836,7 +1920,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           </button>
 
           <button
-            onClick={() => { setViewMode('cross_review'); setCurrentPage(1) }}
+            onClick={() => { setViewMode('cross_review'); setQuickFilter('all'); setCurrentPage(1) }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1383,6 +2467,403 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                             <X size={12} /> Rechazar
                           </button>
                         </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        ) : isOfficialMatches ? (
+          <table style={{ width: '100%', minWidth: 1440, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
+            <thead>
+              <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, width: 140 }}>ESTADO FINAL</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 310 }}>PERSONA A (CONTACTO & CONFIRMACIÓN)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 310 }}>PERSONA B (CONTACTO & CONFIRMACIÓN)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 250 }}>RESTAURANTE / CITA</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 240, textAlign: 'center' }}>PLANTILLAS WHATSAPP</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 180 }}>OBSERVACIONES CS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    Cargando parejas oficiales aprobadas...
+                  </td>
+                </tr>
+              ) : paginatedMatches.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    <ShieldCheck size={32} style={{ color: '#10B981', margin: '0 auto 8px', display: 'block' }} />
+                    No hay parejas aprobadas pendientes por coordinar restaurante.
+                  </td>
+                </tr>
+              ) : (
+                paginatedMatches.map((m) => {
+                  const phoneA = m.person_a_phone || ''
+                  const phoneB = m.person_b_phone || ''
+                  const waA = formatWhatsAppLink(phoneA)
+                  const waB = formatWhatsAppLink(phoneB)
+                  const currentDateTime = m.scheduled_date_time || ''
+                  const currentVenue = m.scheduled_venue || ''
+                  const waStatus = getWhatsAppButtonStatus(currentDateTime)
+
+                  return (
+                    <tr
+                      key={m.id}
+                      style={{
+                        borderBottom: '1px solid var(--border-color)',
+                        background: currentVenue ? 'rgba(16, 185, 129, 0.03)' : 'transparent',
+                        transition: 'background 0.15s'
+                      }}
+                    >
+                      {/* 1. ESTADO FINAL (A la izquierda de Persona A) */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        <select
+                          value={m.status || 'APROBADO'}
+                          onChange={e => handleUpdateField(m.id, 'status', e.target.value, m)}
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-color)',
+                            background: STATUS_COLORS[m.status]?.bg || 'rgba(182, 215, 168, 0.2)',
+                            color: STATUS_COLORS[m.status]?.color || '#274E13',
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            outline: 'none',
+                            cursor: 'pointer',
+                            width: '100%',
+                            maxWidth: 140
+                          }}
+                        >
+                          <option value="APROBADO">APROBADO</option>
+                          <option value="AGENDADA">AGENDADA</option>
+                          <option value="CONFIRMADA">CONFIRMADA</option>
+                          <option value="HECHO">HECHO</option>
+                          <option value="CITA COMPLETADA">CITA COMPLETADA</option>
+                          <option value="Listo para match">Listo para match</option>
+                          <option value="REVISAR">REVISAR</option>
+                          <option value="EN PAUSA">EN PAUSA</option>
+                          <option value="CANCELADA">CANCELADA</option>
+                          <option value="TROUBLEMAKER">TROUBLEMAKER</option>
+                        </select>
+                      </td>
+
+                      {/* 2. PERSONA A (Contacto + Confirmación al lado derecho) */}
+                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                              <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id || m.ua_crm_id} />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              {phoneA ? (
+                                <>
+                                  <a
+                                    href={`tel:${phoneA}`}
+                                    style={{ fontSize: 11.5, color: '#60A5FA', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}
+                                    title="Llamar a Persona A"
+                                  >
+                                    <Phone size={11} /> {phoneA}
+                                  </a>
+                                  {waA && (
+                                    <a
+                                      href={waA}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{
+                                        background: '#25D366',
+                                        color: '#fff',
+                                        padding: '1px 5px',
+                                        borderRadius: 4,
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        textDecoration: 'none'
+                                      }}
+                                      title="Abrir WhatsApp con Persona A"
+                                    >
+                                      WA
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sin teléfono en CRM</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Confirmación Persona A al lado derecho */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                              Confirmación
+                            </span>
+                            <select
+                              value={m.person_a_confirmation || 'Pendiente'}
+                              onChange={e => handleUpdateScheduleDetails(m.id, { person_a_confirmation: e.target.value })}
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: 5,
+                                border: '1px solid var(--border-color)',
+                                background: m.person_a_confirmation === 'Aceptó' ? 'rgba(16, 185, 129, 0.15)' : m.person_a_confirmation === 'Rechazó' ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-base)',
+                                color: m.person_a_confirmation === 'Aceptó' ? '#10B981' : m.person_a_confirmation === 'Rechazó' ? '#EF4444' : 'var(--text-primary)',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="Pendiente">Pendiente</option>
+                              <option value="Aceptó">Aceptó ✓</option>
+                              <option value="Rechazó">Rechazó ✗</option>
+                              <option value="No contesta">No contesta</option>
+                              <option value="De viaje">De viaje</option>
+                              <option value="Pausa">Pausa</option>
+                            </select>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 3. PERSONA B (Contacto + Confirmación al lado derecho) */}
+                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--color-primary)' }}>
+                              <CrmPersonLink name={m.person_b} crmId={m.person_b_crm_id || m.ub_crm_id} />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              {phoneB ? (
+                                <>
+                                  <a
+                                    href={`tel:${phoneB}`}
+                                    style={{ fontSize: 11.5, color: '#60A5FA', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 3, fontWeight: 600 }}
+                                    title="Llamar a Persona B"
+                                  >
+                                    <Phone size={11} /> {phoneB}
+                                  </a>
+                                  {waB && (
+                                    <a
+                                      href={waB}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{
+                                        background: '#25D366',
+                                        color: '#fff',
+                                        padding: '1px 5px',
+                                        borderRadius: 4,
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        textDecoration: 'none'
+                                      }}
+                                      title="Abrir WhatsApp con Persona B"
+                                    >
+                                      WA
+                                    </a>
+                                  )}
+                                </>
+                              ) : (
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sin teléfono en CRM</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Confirmación Persona B al lado derecho */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                              Confirmación
+                            </span>
+                            <select
+                              value={m.person_b_confirmation || 'Pendiente'}
+                              onChange={e => handleUpdateScheduleDetails(m.id, { person_b_confirmation: e.target.value })}
+                              style={{
+                                padding: '4px 8px',
+                                borderRadius: 5,
+                                border: '1px solid var(--border-color)',
+                                background: m.person_b_confirmation === 'Aceptó' ? 'rgba(16, 185, 129, 0.15)' : m.person_b_confirmation === 'Rechazó' ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-base)',
+                                color: m.person_b_confirmation === 'Aceptó' ? '#10B981' : m.person_b_confirmation === 'Rechazó' ? '#EF4444' : 'var(--text-primary)',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="Pendiente">Pendiente</option>
+                              <option value="Aceptó">Aceptó ✓</option>
+                              <option value="Rechazó">Rechazó ✗</option>
+                              <option value="No contesta">No contesta</option>
+                              <option value="De viaje">De viaje</option>
+                              <option value="Pausa">Pausa</option>
+                            </select>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 4. RESTAURANTE / CITA (Botón que abre el modal únicamente) */}
+                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                        {currentVenue ? (
+                          <div
+                            onClick={() => setPersonFilterTarget({ match: m })}
+                            style={{
+                              cursor: 'pointer',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 3,
+                              background: 'rgba(16, 185, 129, 0.08)',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              borderRadius: 8,
+                              padding: '6px 10px',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title="Hacer clic para ver filtros y coordinar restaurante, día y hora"
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#10B981', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                🍽️ {currentVenue}
+                              </span>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>✏️</span>
+                            </div>
+                            {currentDateTime && (
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                                <CalendarIcon size={11} color="#10B981" /> {currentDateTime}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setPersonFilterTarget({ match: m })}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '8px 14px',
+                              borderRadius: 8,
+                              border: '1.5px dashed #10B981',
+                              background: 'rgba(16, 185, 129, 0.08)',
+                              color: '#10B981',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              width: '100%',
+                              justifyContent: 'center',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title="Abrir modal para filtrar y coordinar restaurante, día y hora"
+                          >
+                            <Utensils size={14} /> Elegir Restaurante
+                          </button>
+                        )}
+                      </td>
+
+                      {/* 5. PLANTILLAS WHATSAPP (Activación secuencial por hora de Colombia) */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', flexWrap: 'wrap' }}>
+                          {/* Botón 1: Confirmar (Siempre habilitado primero) */}
+                          <button
+                            onClick={() => setWaTemplateTarget({ match: m, templateType: 'confirmacion' })}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              border: '1px solid #10B981',
+                              background: 'rgba(16, 185, 129, 0.12)',
+                              color: '#10B981',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease'
+                            }}
+                            title="Plantilla 1: Confirmación de Cita (Activa para enviar)"
+                          >
+                            📩 Confirmar
+                          </button>
+
+                          {/* Botón 2: Día Antes (Habilitado solo 1 día antes según hora Colombia) */}
+                          <button
+                            onClick={() => {
+                              if (waStatus.canDiaAntes) {
+                                setWaTemplateTarget({ match: m, templateType: 'dia_antes' })
+                              }
+                            }}
+                            disabled={!waStatus.canDiaAntes}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              border: waStatus.canDiaAntes ? '1.5px solid #F59E0B' : '1px solid rgba(255,255,255,0.1)',
+                              background: waStatus.canDiaAntes ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
+                              color: waStatus.canDiaAntes ? '#F59E0B' : 'var(--text-muted)',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: waStatus.canDiaAntes ? 'pointer' : 'not-allowed',
+                              opacity: waStatus.canDiaAntes ? 1 : 0.38,
+                              transition: 'all 0.15s ease'
+                            }}
+                            title={waStatus.diaAntesReason}
+                          >
+                            ⏰ Día Antes
+                          </button>
+
+                          {/* Botón 3: Hoy (Habilitado solo el mismo día de la cita según hora Colombia) */}
+                          <button
+                            onClick={() => {
+                              if (waStatus.canHoy) {
+                                setWaTemplateTarget({ match: m, templateType: 'hoy' })
+                              }
+                            }}
+                            disabled={!waStatus.canHoy}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              border: waStatus.canHoy ? '1.5px solid #3B82F6' : '1px solid rgba(255,255,255,0.1)',
+                              background: waStatus.canHoy ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.03)',
+                              color: waStatus.canHoy ? '#3B82F6' : 'var(--text-muted)',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: waStatus.canHoy ? 'pointer' : 'not-allowed',
+                              opacity: waStatus.canHoy ? 1 : 0.38,
+                              transition: 'all 0.15s ease'
+                            }}
+                            title={waStatus.hoyReason}
+                          >
+                            🚀 Hoy
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* 6. OBSERVACIONES CS */}
+                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                        <input
+                          type="text"
+                          defaultValue={m.cs_observations || ''}
+                          placeholder="Notas CS..."
+                          onBlur={e => {
+                            if (e.target.value !== (m.cs_observations || '')) {
+                              handleUpdateScheduleDetails(m.id, { cs_observations: e.target.value })
+                            }
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') e.target.blur()
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '6px 8px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-base)',
+                            color: 'var(--text-primary)',
+                            fontSize: 12,
+                            outline: 'none',
+                            boxSizing: 'border-box'
+                          }}
+                        />
                       </td>
                     </tr>
                   )
@@ -2142,6 +3623,31 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL DE FILTROS POR PERSONA Y RESTAURANTE (MESA OFICIAL MATCHES) */}
+      {personFilterTarget && (
+        <PersonRestaurantFilterModal
+          match={personFilterTarget.match}
+          initialTab={personFilterTarget.person === 'B' ? 'person_b' : 'person_a'}
+          onClose={() => setPersonFilterTarget(null)}
+          onSave={async (details) => {
+            await handleUpdateScheduleDetails(personFilterTarget.match.id, details)
+          }}
+        />
+      )}
+
+      {/* MODAL DE PLANTILLAS CANÓNICAS DE WHATSAPP */}
+      {waTemplateTarget && (
+        <WhatsAppTemplateModal
+          match={waTemplateTarget.match}
+          templateType={waTemplateTarget.templateType}
+          onClose={() => setWaTemplateTarget(null)}
+          onCopy={(msg) => {
+            setFeedbackMsg(msg)
+            setTimeout(() => setFeedbackMsg(''), 3000)
+          }}
+        />
       )}
     </div>
   )

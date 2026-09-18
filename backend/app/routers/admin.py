@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, Header, Request
+from fastapi import APIRouter, Depends, Query, HTTPException, Header, Request, status
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import os
+import hashlib
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
 from app.config import get_settings
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, get_current_user
 from typing import Optional
 import math
 import json
@@ -66,7 +67,195 @@ def clean_excel_date_str(raw):
 
 
 
-# ─── DATA DIAGNOSTICS ─────────────────────────────────────────────────────────
+# ─── SYSTEM & DATA DIAGNOSTICS ───────────────────────────────────────────────
+
+@router.get("/diagnostics")
+async def get_system_diagnostics(
+    check_file: Optional[str] = Query(None, description="Ruta absoluta o relativa del archivo a verificar en el servidor"),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Endpoint de diagnóstico para auditoría independiente:
+    - Hash de Git actualmente desplegado
+    - Conteos reales de tablas clave
+    - Verificación y cálculo de hash SHA-256 de archivos en el servidor
+    """
+    role_name = (current_user.get("role_name") or "").upper()
+    is_system = current_user.get("is_system", False)
+    perms = current_user.get("permissions") or []
+
+    is_admin = is_system or "ADMIN" in role_name or "AUDITOR" in role_name or "SUPERADMIN" in role_name or "dashboard.view" in perms or "diagnostics.view" in perms
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: se requiere rol de administrador o auditor para acceder a diagnósticos."
+        )
+
+    # 1. Resolver Git Commit
+    git_info = {"commit": "unknown", "ref": None, "source": "none"}
+    
+    # Intento 1: Directorio .git (montado o local)
+    candidate_gits = [
+        "/app/.git",
+        "/home/ubuntu/dailylover/.git",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.git")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.git"))
+    ]
+    for c_git in candidate_gits:
+        if os.path.isdir(c_git):
+            head_p = os.path.join(c_git, "HEAD")
+            if os.path.isfile(head_p):
+                try:
+                    with open(head_p, "r", encoding="utf-8") as hf:
+                        head_val = hf.read().strip()
+                    if head_val.startswith("ref:"):
+                        ref_rel = head_val.split(":", 1)[1].strip()
+                        ref_full = os.path.join(c_git, ref_rel)
+                        if os.path.isfile(ref_full):
+                            with open(ref_full, "r", encoding="utf-8") as rf:
+                                git_info = {"commit": rf.read().strip(), "ref": ref_rel, "source": "git_ref"}
+                                break
+                        # Comprobar packed-refs
+                        packed_p = os.path.join(c_git, "packed-refs")
+                        if os.path.isfile(packed_p):
+                            with open(packed_p, "r", encoding="utf-8") as pf:
+                                for line in pf:
+                                    if line.strip().endswith(ref_rel):
+                                        git_info = {"commit": line.split()[0], "ref": ref_rel, "source": "packed-refs"}
+                                        break
+                                if git_info["commit"] != "unknown":
+                                    break
+                    elif len(head_val) == 40:
+                        git_info = {"commit": head_val, "ref": "HEAD", "source": "git_head_direct"}
+                        break
+                except Exception as e:
+                    git_info["read_error"] = str(e)
+
+    # Intento 2: Archivo estático .git_commit
+    if git_info["commit"] == "unknown":
+        candidate_files = [
+            "/app/.git_commit",
+            "/home/ubuntu/dailylover/.git_commit",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../.git_commit")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.git_commit"))
+        ]
+        for cf_path in candidate_files:
+            if os.path.isfile(cf_path):
+                try:
+                    with open(cf_path, "r", encoding="utf-8") as cf:
+                        val = cf.read().strip()
+                        if val:
+                            git_info = {"commit": val, "ref": "main", "source": "file_git_commit"}
+                            break
+                except Exception:
+                    pass
+
+    # 2. Conteos reales de tablas clave
+    tables_to_count = [
+        "users",
+        "profiles",
+        "operational_matches",
+        "scheduled_dates",
+        "trouble_matches",
+        "historical_matches",
+        "match_confirmations",
+        "events"
+    ]
+    table_counts = {}
+    for tbl in tables_to_count:
+        try:
+            cnt_res = await db.execute(text(f"SELECT COUNT(*) FROM {tbl};"))
+            table_counts[tbl] = cnt_res.scalar()
+        except Exception as e:
+            table_counts[tbl] = f"error: {str(e)}"
+
+    # 3. Verificación de archivo si se solicitó (?check_file=...)
+    file_info = None
+    if check_file:
+        raw_p = check_file.strip()
+        resolved_p = os.path.abspath(raw_p)
+        
+        # Si no existe directamente, probar rutas candidatas
+        actual_path = resolved_p
+        if not os.path.exists(actual_path):
+            base_name = os.path.basename(raw_p)
+            for cand in [
+                raw_p,
+                resolved_p,
+                f"/home/ubuntu/backups/{base_name}",
+                f"/backups/{base_name}",
+                f"/app/{raw_p.lstrip('/')}",
+                f"/home/ubuntu/dailylover/{raw_p.lstrip('/')}"
+            ]:
+                if os.path.exists(cand):
+                    actual_path = os.path.abspath(cand)
+                    break
+        
+        # Permitir rutas en backups, app, tmp, dailylover
+        allowed_prefixes = ["/home/ubuntu/backups", "/backups", "/app", "/tmp", "/var/log", "/home/ubuntu/dailylover"]
+        is_allowed = any(actual_path.startswith(p) for p in allowed_prefixes)
+        
+        if not is_allowed:
+            file_info = {
+                "requested_path": raw_p,
+                "error": "Acceso restringido: Solo se permite inspeccionar archivos en /home/ubuntu/backups, /backups, /app, /home/ubuntu/dailylover o /tmp."
+            }
+        elif not os.path.exists(actual_path):
+            file_info = {
+                "requested_path": raw_p,
+                "resolved_path": resolved_p,
+                "exists": False,
+                "error": "Archivo no encontrado en el servidor"
+            }
+        else:
+            try:
+                st = os.stat(actual_path)
+                size_bytes = st.st_size
+                mtime = datetime.fromtimestamp(st.st_mtime).isoformat()
+                
+                # Calcular SHA-256 en bloques de 64KB
+                sha = hashlib.sha256()
+                with open(actual_path, "rb") as f:
+                    while chunk := f.read(65536):
+                        sha.update(chunk)
+                file_hash = sha.hexdigest()
+                
+                size_mb = size_bytes / (1024 * 1024)
+                file_info = {
+                    "requested_path": raw_p,
+                    "resolved_path": actual_path,
+                    "exists": True,
+                    "size_bytes": size_bytes,
+                    "size_human": f"{size_mb:.2f} MB" if size_mb >= 1.0 else f"{size_bytes / 1024:.2f} KB",
+                    "sha256": file_hash,
+                    "modified_at": mtime
+                }
+            except Exception as e:
+                file_info = {
+                    "requested_path": raw_p,
+                    "resolved_path": actual_path,
+                    "exists": True,
+                    "error": f"Error calculando hash: {str(e)}"
+                }
+
+    return {
+        "status": "ok",
+        "server_time_utc": datetime.utcnow().isoformat() + "Z",
+        "git_commit": git_info["commit"],
+        "git_details": git_info,
+        "caller": {
+            "user_id": current_user.get("id"),
+            "email": current_user.get("email"),
+            "role": current_user.get("role_name"),
+            "is_readonly": ("AUDITOR" in role_name or "CONSULTA" in role_name)
+        },
+        "table_row_counts": table_counts,
+        "file_check": file_info
+    }
+
+
+# ─── DATA HEALTH ─────────────────────────────────────────────────────────────
 
 @router.get("/data-health")
 async def get_data_health(

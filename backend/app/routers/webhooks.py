@@ -382,7 +382,7 @@ def verify_signature(body_bytes: bytes, signature_header: str, secret: str) -> b
 
 
 
-async def process_webhook_payload(event_type: str, data: dict):
+async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int = None):
     """
     Worker asíncrono para procesar eventos en segundo plano sin demorar la respuesta HTTP 200.
     """
@@ -562,17 +562,23 @@ async def process_webhook_payload(event_type: str, data: dict):
                         elif "40" in r_low or "básico" in r_low or "basico" in r_low or "1 cita" in r_low:
                             plan_val = "Básico 40k"
 
+                    notes = (
+                        data.get("quick_note") or data.get("quick_notes") or
+                        data.get("bio_notes") or data.get("bio") or
+                        data.get("notes") or data.get("observaciones") or data.get("comment")
+                    )
+
                     await db.execute(text("""
                         INSERT INTO profiles (user_id, age, gender, city, orientation, occupation, plan_tier, bio_notes, updated_at)
                         VALUES (:uid, :age, :gender, :city, :orientation, :occupation, :plan, :notes, NOW())
                         ON CONFLICT (user_id) DO UPDATE SET
                             age = COALESCE(EXCLUDED.age, profiles.age),
-                            gender = COALESCE(EXCLUDED.gender, profiles.gender),
+                            gender = COALESCE(NULLIF(EXCLUDED.gender, ''), profiles.gender),
                             city = COALESCE(NULLIF(EXCLUDED.city, ''), profiles.city),
                             orientation = COALESCE(NULLIF(EXCLUDED.orientation, ''), profiles.orientation),
-                            occupation = COALESCE(EXCLUDED.occupation, profiles.occupation),
+                            occupation = COALESCE(NULLIF(EXCLUDED.occupation, ''), profiles.occupation),
                             plan_tier = COALESCE(NULLIF(EXCLUDED.plan_tier, ''), profiles.plan_tier),
-                            bio_notes = COALESCE(EXCLUDED.bio_notes, profiles.bio_notes),
+                            bio_notes = COALESCE(NULLIF(EXCLUDED.bio_notes, ''), profiles.bio_notes),
                             updated_at = NOW()
                     """), {
                         "uid": user_id,
@@ -582,7 +588,7 @@ async def process_webhook_payload(event_type: str, data: dict):
                         "orientation": orientation or "",
                         "occupation": occupation or data.get("occupation") or data.get("profesion") or "",
                         "plan": plan_val or "",
-                        "notes": data.get("notes") or data.get("bio") or data.get("observaciones")
+                        "notes": notes
                     })
                     await db.commit()
                     logger.info(f"Cliente procesado exitosamente vía Webhook: CRM ID {crm_id} - {name} (User ID: {user_id})")
@@ -737,21 +743,39 @@ async def process_webhook_payload(event_type: str, data: dict):
             # 3. EVENTOS DE NOTAS Y SURVEYS (note.created, survey.completed)
             elif any(k in event_type.lower() for k in ["note", "survey", "encuesta", "comentario"]):
                 user_name = data.get("client_name") or data.get("user_name") or data.get("nombre")
-                note_text = data.get("note") or data.get("comment") or data.get("respuesta") or json.dumps(data, ensure_ascii=False)
+                note_text = data.get("note") or data.get("comment") or data.get("respuesta") or data.get("quick_note") or json.dumps(data, ensure_ascii=False)
+                crm_id = str(data.get("id") or data.get("client_id") or data.get("crm_id") or "").strip()
 
-                if user_name and note_text:
+                uid = None
+                if crm_id:
+                    res_c = await db.execute(text("SELECT id FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": crm_id})
+                    uid = res_c.scalar()
+                if not uid and user_name:
                     res = await db.execute(text("SELECT id FROM users WHERE LOWER(name) LIKE :n LIMIT 1"), {"n": f"%{user_name.lower()}%"})
                     uid = res.scalar()
-                    if uid:
-                        await db.execute(text("""
-                            INSERT INTO client_notes (user_id, note, source, created_at)
-                            VALUES (:uid, :note, 'smartmatchapp_webhook', NOW())
-                        """), {"uid": uid, "note": note_text})
-                        await db.commit()
-                        logger.info(f"Nota/Encuesta guardada para cliente ID: {uid}")
+
+                if uid and note_text:
+                    await db.execute(text("""
+                        INSERT INTO client_notes (user_id, note, source, created_at)
+                        VALUES (:uid, :note, 'smartmatchapp_webhook', NOW())
+                    """), {"uid": uid, "note": note_text})
+                    await db.execute(text("""
+                        UPDATE profiles 
+                        SET bio_notes = COALESCE(NULLIF(bio_notes, ''), :note), updated_at = NOW()
+                        WHERE user_id = :uid
+                    """), {"uid": uid, "note": note_text})
+                    await db.commit()
+                    logger.info(f"Nota/Encuesta guardada para cliente ID: {uid} (CRM: {crm_id})")
 
         except Exception as e:
             logger.error(f"Error procesando payload de evento {event_type}: {e}")
+        finally:
+            if raw_event_id:
+                try:
+                    await db.execute(text("UPDATE webhook_events_raw SET processed = true WHERE id = :rid"), {"rid": raw_event_id})
+                    await db.commit()
+                except Exception as ex_u:
+                    logger.warning(f"No se pudo marcar webhook {raw_event_id} como procesado: {ex_u}")
 
 
 @router.api_route("/smartmatchapp", methods=["GET", "POST"])
@@ -825,21 +849,24 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
     event_type = payload.get("event") or payload.get("type") or payload.get("action") or "generic.update"
     data = payload.get("payload") or payload.get("data") or payload
 
+    raw_id = None
     try:
         # Guardar copia RAW en DB
-        await db.execute(text("""
+        res_raw = await db.execute(text("""
             INSERT INTO webhook_events_raw (source, event_type, payload, processed, received_at)
             VALUES ('smartmatchapp', :etype, :payload, false, NOW())
+            RETURNING id
         """), {
             "etype": event_type,
             "payload": json.dumps(payload, ensure_ascii=False)
         })
+        raw_id = res_raw.scalar()
         await db.commit()
     except Exception as e:
         logger.warning(f"No se pudo guardar raw event: {e}")
 
     # 5. Despachar a segundo plano para responder HTTP 200 de inmediato (< 50ms)
-    background_tasks.add_task(process_webhook_payload, event_type, data)
+    background_tasks.add_task(process_webhook_payload, event_type, data, raw_id)
 
     return {"status": "success", "message": "Evento recibido y encolado correctamente"}
 

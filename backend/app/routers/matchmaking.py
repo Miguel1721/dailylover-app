@@ -242,6 +242,14 @@ class UpdateConfirmationRequest(BaseModel):
     date_time: Optional[str] = None
     venue: Optional[str] = None
 
+class UpdateMatchScheduleRequest(BaseModel):
+    date_time: Optional[str] = None
+    venue: Optional[str] = None
+    city: Optional[str] = None
+    person_a_confirmation: Optional[str] = None
+    person_b_confirmation: Optional[str] = None
+    cs_observations: Optional[str] = None
+
 class UpdateCalendarDateRequest(BaseModel):
     date_time: Optional[str] = None
     scheduled_date: Optional[str] = None
@@ -270,6 +278,59 @@ class ManualRefundRequest(BaseModel):
 
 # ─── 1. PANTALLA 1: MIS MATCHES (VISTA PSICÓLOGA) ────────────────────────────
 
+async def auto_refresh_priority_matches(db: AsyncSession):
+    """
+    Revisa automáticamente a los clientes en la mesa de trabajo operativa (operational_matches).
+    Si han transcurrido más de 15 días desde su pago o creación de slot,
+    y no han tenido actividad de cita (sin fecha agendada o última cita > 15 días),
+    se marcan automáticamente como is_priority = true.
+    Esto reemplaza el 'corazoncito' manual de Sheets y asegura que la psicóloga
+    vea inmediatamente la alerta '⚡ Prioritario' al tope de su mesa de trabajo.
+    """
+    try:
+        res = await db.execute(text("""
+            WITH client_activity AS (
+                SELECT 
+                    om.id as match_id,
+                    COALESCE(
+                        (SELECT MAX(sp.payment_date) 
+                         FROM stripe_payments sp 
+                         WHERE (om.user_id_a IS NOT NULL AND sp.user_id = om.user_id_a)
+                            OR LOWER(TRIM(sp.customer_name)) = LOWER(TRIM(om.person_a))),
+                        p.last_payment_date,
+                        om.created_at
+                    ) as start_date,
+                    (
+                        SELECT MAX(sd.created_at) 
+                        FROM scheduled_dates sd 
+                        WHERE sd.match_id = om.id 
+                           OR LOWER(TRIM(sd.person_a)) = LOWER(TRIM(om.person_a))
+                           OR LOWER(TRIM(sd.person_b)) = LOWER(TRIM(om.person_a))
+                    ) as last_date_activity
+                FROM operational_matches om
+                LEFT JOIN profiles p ON p.user_id = om.user_id_a
+                WHERE om.status NOT IN ('CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'EN PAUSA INDEFINIDA')
+            )
+            UPDATE operational_matches om
+            SET is_priority = true, updated_at = NOW()
+            FROM client_activity ca
+            WHERE om.id = ca.match_id
+              AND ca.start_date < NOW() - INTERVAL '15 days'
+              AND (ca.last_date_activity IS NULL OR ca.last_date_activity < NOW() - INTERVAL '15 days')
+              AND om.is_priority = false;
+        """))
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"Error actualizando prioridades automáticas por inactividad >15d: {e}")
+
+@router.post("/refresh-priorities")
+async def trigger_refresh_priorities(db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint para ejecutar manualmente o por cron la actualización de clientes prioritarios (>15d sin cita).
+    """
+    await auto_refresh_priority_matches(db)
+    return {"status": "success", "message": "Prioridades automáticas actualizadas correctamente"}
+
 @router.get("/my-matches")
 async def get_my_matches(
     psychologist: Optional[str] = Query(None),
@@ -287,15 +348,25 @@ async def get_my_matches(
     view_mode="mine": Parejas donde la psicóloga es dueña de Persona A.
     view_mode="cross_review": Parejas propuestas por otras psicólogas para candidatos de esta psicóloga (Psicóloga B).
     """
+    await auto_refresh_priority_matches(db)
+
     query = """
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.psychologist_id,
             m.city, m.pref, m.plan_tier, m.status, m.status_a, m.status_b, m.approved_by_maria, m.approved_at,
             m.observations, m.slot_number, m.is_priority, m.created_at, m.updated_at,
             m.person_a_crm_id, m.person_b_crm_id,
-            uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id,
+            COALESCE(m.person_a_crm_id, uA.crm_id, '') AS ua_crm_id,
+            COALESCE(m.person_b_crm_id, uB.crm_id, '') AS ub_crm_id,
+            uA.phone AS person_a_phone, uA.email AS person_a_email,
+            uB.phone AS person_b_phone, uB.email AS person_b_email,
             p.city AS profile_city, p.orientation AS profile_orientation, 
             p.gender AS profile_gender, p.plan_tier AS profile_plan_tier,
+            p.neighborhood AS person_a_neighborhood,
+            pB.neighborhood AS person_b_neighborhood,
+            sd.venue AS scheduled_venue, sd.date_time AS scheduled_date_time, sd.city AS scheduled_city,
+            sd.had_date, sd.reschedule, sd.reservation_name, sd.feedback_ella, sd.feedback_el,
+            mc.person_a_confirmation, mc.person_b_confirmation, mc.stage AS confirmation_stage, mc.observations AS cs_observations,
             COALESCE(sp.payment_date, p.last_payment_date, sp_name.payment_date) AS stripe_pay_date,
             COALESCE(sp.plan_tier, sp_name.plan_tier) AS stripe_pay_plan,
             COALESCE(
@@ -311,16 +382,14 @@ async def get_my_matches(
             ) AS psyc_of_b
         FROM operational_matches m
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone, email
             FROM users
-            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
-            ORDER BY LOWER(TRIM(name)), id DESC
+            ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
         ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone, email
             FROM users
-            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
-            ORDER BY LOWER(TRIM(name)), id DESC
+            ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
         LEFT JOIN (
             SELECT DISTINCT ON (LOWER(TRIM(name))) id, name
@@ -346,6 +415,18 @@ async def get_my_matches(
             ORDER BY LOWER(TRIM(name)), id DESC
         ) uB_user ON LOWER(TRIM(uB_user.name)) = LOWER(TRIM(m.person_b))
         LEFT JOIN profiles pB ON pB.user_id = uB_user.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (match_id) match_id, date_time, venue, city, had_date, reschedule, reservation_name, feedback_ella, feedback_el
+            FROM scheduled_dates
+            WHERE match_id IS NOT NULL
+            ORDER BY match_id, id DESC
+        ) sd ON sd.match_id = m.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (match_id) match_id, person_a_confirmation, person_b_confirmation, stage, pause_reason, observations
+            FROM match_confirmations
+            WHERE match_id IS NOT NULL
+            ORDER BY match_id, id DESC
+        ) mc ON mc.match_id = m.id
         WHERE 1=1
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
@@ -471,6 +552,24 @@ async def get_my_matches(
             "fecha_slot": slot_date.strftime("%Y-%m-%d %H:%M") if slot_date else "",
             "tiene_pago_stripe": has_stripe,
             "plan_pago_stripe": stripe_plan,
+            "person_a_phone": d.get("person_a_phone") or "",
+            "person_a_email": d.get("person_a_email") or "",
+            "person_a_neighborhood": d.get("person_a_neighborhood") or "",
+            "person_b_phone": d.get("person_b_phone") or "",
+            "person_b_email": d.get("person_b_email") or "",
+            "person_b_neighborhood": d.get("person_b_neighborhood") or "",
+            "scheduled_venue": d.get("scheduled_venue") or "",
+            "scheduled_date_time": d.get("scheduled_date_time") or "",
+            "scheduled_city": d.get("scheduled_city") or "",
+            "had_date": d.get("had_date") or False,
+            "reschedule": d.get("reschedule") or False,
+            "reservation_name": d.get("reservation_name") or "María Paula Salinas",
+            "feedback_ella": d.get("feedback_ella") or "",
+            "feedback_el": d.get("feedback_el") or "",
+            "person_a_confirmation": d.get("person_a_confirmation") or "Pendiente",
+            "person_b_confirmation": d.get("person_b_confirmation") or "Pendiente",
+            "confirmation_stage": d.get("confirmation_stage") or "pendientes",
+            "cs_observations": d.get("cs_observations") or "",
             "status": d.get("status") or "Listo para match",
             "status_a": d.get("status_a") or "Listo para match",
             "status_b": d.get("status_b") or "",
@@ -885,14 +984,30 @@ async def get_approval_queue(
         SELECT 
             m.id, m.psychologist_name, m.person_a, m.person_b, m.city, m.plan_tier, m.pref,
             m.created_at, m.updated_at, m.observations,
-            m.person_a_crm_id, m.person_b_crm_id,
-            uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id
+            COALESCE(m.person_a_crm_id, uA.crm_id, '') AS person_a_crm_id,
+            COALESCE(m.person_b_crm_id, uB.crm_id, '') AS person_b_crm_id
         FROM operational_matches m
-        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE (m.status IN ('HECHO', 'PENDIENTE APROBACIÓN MARÍA', 'Listo para match') OR m.status ILIKE '%APROBA%MARIA%')
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
+            FROM users
+            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
+            ORDER BY LOWER(TRIM(name)), id DESC
+        ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
+            FROM users
+            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
+            ORDER BY LOWER(TRIM(name)), id DESC
+        ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        WHERE (m.status IN ('HECHO', 'PENDIENTE APROBACIÓN MARÍA') OR m.status ILIKE '%APROBA%MARIA%')
           AND m.approved_by_maria = false
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
+          AND m.person_b IS NOT NULL 
+          AND TRIM(m.person_b) != ''
+          AND LOWER(TRIM(m.person_b)) NOT IN ('por definir', 'se envía mns', 'se envia mns', 'pendiente', 'none', 'null', '')
+          AND m.person_b NOT ILIKE '%definir%'
+          AND m.person_b NOT ILIKE '%mns%'
+          AND m.person_b NOT ILIKE '%mensaje%'
     """
     params = {}
 
@@ -1643,6 +1758,97 @@ async def update_confirmation(
         "person_a_confirmation": conf_a,
         "person_b_confirmation": conf_b
     }
+
+
+@router.patch("/matches/{match_id}/schedule-details")
+async def update_match_schedule_details(
+    match_id: int,
+    payload: UpdateMatchScheduleRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualiza los detalles de agendamiento y confirmación de la cita desde la mesa oficial de MATCHES.
+    Sincroniza simultáneamente:
+    1. operational_matches (observations si aplica)
+    2. match_confirmations (person_a_confirmation, person_b_confirmation, observations, venue_name)
+    3. scheduled_dates (si tiene date_time y venue definidos, crea o actualiza la cita para el calendario)
+    """
+    res = await db.execute(text("SELECT id, person_a, person_b, city FROM operational_matches WHERE id = :mid"), {"mid": match_id})
+    match_row = res.fetchone()
+    if not match_row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    # 1. Actualizar o crear match_confirmations
+    mc_res = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+    mc_row = mc_res.fetchone()
+    if mc_row:
+        updates = []
+        params = {"id": mc_row.id}
+        if payload.person_a_confirmation is not None:
+            updates.append("person_a_confirmation = :ca")
+            params["ca"] = payload.person_a_confirmation
+        if payload.person_b_confirmation is not None:
+            updates.append("person_b_confirmation = :cb")
+            params["cb"] = payload.person_b_confirmation
+        if payload.cs_observations is not None:
+            updates.append("observations = :obs")
+            params["obs"] = payload.cs_observations
+        if payload.venue is not None:
+            updates.append("venue_name = :ven")
+            params["ven"] = payload.venue
+        if updates:
+            updates.append("updated_at = NOW()")
+            await db.execute(text(f"UPDATE match_confirmations SET {', '.join(updates)} WHERE id = :id"), params)
+    else:
+        await db.execute(text("""
+            INSERT INTO match_confirmations (match_id, person_a_confirmation, person_b_confirmation, stage, venue_name, observations, created_at, updated_at)
+            VALUES (:mid, :ca, :cb, 'pendientes', :ven, :obs, NOW(), NOW())
+        """), {
+            "mid": match_id,
+            "ca": payload.person_a_confirmation or "Pendiente",
+            "cb": payload.person_b_confirmation or "Pendiente",
+            "ven": payload.venue or "",
+            "obs": payload.cs_observations or ""
+        })
+
+    # 2. Si se especifica fecha/hora o venue, sincronizar con scheduled_dates
+    v_date = payload.date_time
+    v_venue = payload.venue
+    v_city = payload.city or match_row.city or "Bogotá"
+    if v_date or v_venue:
+        sd_res = await db.execute(text("SELECT id FROM scheduled_dates WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+        sd_row = sd_res.fetchone()
+        if sd_row:
+            sd_updates = []
+            sd_params = {"id": sd_row.id}
+            if v_date is not None:
+                sd_updates.append("date_time = :dt")
+                sd_params["dt"] = v_date
+            if v_venue is not None:
+                sd_updates.append("venue = :ven")
+                sd_params["ven"] = v_venue
+            if v_city is not None:
+                sd_updates.append("city = :city")
+                sd_params["city"] = v_city
+            if sd_updates:
+                sd_updates.append("updated_at = NOW()")
+                await db.execute(text(f"UPDATE scheduled_dates SET {', '.join(sd_updates)} WHERE id = :id"), sd_params)
+        else:
+            if v_date and v_venue and "por definir" not in v_date.lower() and "por definir" not in v_venue.lower():
+                await db.execute(text("""
+                    INSERT INTO scheduled_dates (match_id, person_a, person_b, date_time, venue, city, reservation_name, had_date, reschedule, created_at, updated_at)
+                    VALUES (:mid, :pA, :pB, :dt, :ven, :city, 'María Paula Salinas', false, false, NOW(), NOW())
+                """), {
+                    "mid": match_id,
+                    "pA": match_row.person_a,
+                    "pB": match_row.person_b,
+                    "dt": v_date,
+                    "ven": v_venue,
+                    "city": v_city
+                })
+
+    await db.commit()
+    return {"status": "success", "message": "Detalles de cita actualizados exitosamente"}
 
 
 # ─── 4. PANTALLA 4: CALENDARIO DE CITAS & WHATSAPP ──────────────────────────

@@ -265,7 +265,6 @@ function Sidebar({ isOpen, onClose }) {
     ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Aceptadas', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/matchmaking/intake', icon: UserPlus, label: '📥 Intake Clientes (PROFILES)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
