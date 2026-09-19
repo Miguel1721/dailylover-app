@@ -365,8 +365,6 @@ async def get_my_matches(
     view_mode="mine": Parejas donde la psicóloga es dueña de Persona A.
     view_mode="cross_review": Parejas propuestas por otras psicólogas para candidatos de esta psicóloga (Psicóloga B).
     """
-    await auto_refresh_priority_matches(db)
-
     query = """
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.psychologist_id,
@@ -387,52 +385,32 @@ async def get_my_matches(
             COALESCE(sp.payment_date, p.last_payment_date, sp_name.payment_date) AS stripe_pay_date,
             COALESCE(sp.plan_tier, sp_name.plan_tier) AS stripe_pay_plan,
             COALESCE(csn.open_novedades_count, 0) AS cs_novedades_count,
-            COALESCE(
-                NULLIF(TRIM(pB.responsable), ''),
-                (
-                    SELECT mOwner.psychologist_name 
-                    FROM operational_matches mOwner 
-                    WHERE LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(m.person_b)) 
-                      AND mOwner.psychologist_name IS NOT NULL 
-                      AND mOwner.psychologist_name != ''
-                    LIMIT 1
-                )
-            ) AS psyc_of_b
+            COALESCE(NULLIF(TRIM(pB.responsable), ''), '') AS psyc_of_b
         FROM operational_matches m
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone, email
+            SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, crm_id, phone, email
             FROM users
             ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
         ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone, email
+            SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, crm_id, phone, email
             FROM users
             ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) id, name
-            FROM users
-            ORDER BY LOWER(TRIM(name)), id DESC
-        ) uA_user ON LOWER(TRIM(uA_user.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN profiles p ON p.user_id = uA_user.id
+        LEFT JOIN profiles p ON p.user_id = uA.id
         LEFT JOIN (
             SELECT DISTINCT ON (user_id) user_id, payment_date, plan_tier
             FROM stripe_payments
             WHERE payment_status = 'succeeded'
             ORDER BY user_id, payment_date DESC
-        ) sp ON sp.user_id = uA_user.id
+        ) sp ON sp.user_id = uA.id
         LEFT JOIN (
             SELECT DISTINCT ON (LOWER(TRIM(customer_name))) customer_name, payment_date, plan_tier
             FROM stripe_payments
             WHERE payment_status = 'succeeded' AND customer_name IS NOT NULL AND LENGTH(customer_name) > 4
             ORDER BY LOWER(TRIM(customer_name)), payment_date DESC
         ) sp_name ON LOWER(TRIM(sp_name.customer_name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) id, name
-            FROM users
-            ORDER BY LOWER(TRIM(name)), id DESC
-        ) uB_user ON LOWER(TRIM(uB_user.name)) = LOWER(TRIM(m.person_b))
-        LEFT JOIN profiles pB ON pB.user_id = uB_user.id
+        LEFT JOIN profiles pB ON pB.user_id = uB.id
         LEFT JOIN (
             SELECT DISTINCT ON (match_id) match_id, date_time, venue, city, had_date, reschedule, reservation_name, feedback_ella, feedback_el
             FROM scheduled_dates
@@ -506,16 +484,11 @@ async def get_my_matches(
             cross_res = await db.execute(text("""
                 SELECT COUNT(DISTINCT m.id)
                 FROM operational_matches m
-                LEFT JOIN (
-                    SELECT DISTINCT ON (LOWER(TRIM(name))) id, name
-                    FROM users
-                    ORDER BY LOWER(TRIM(name)), id DESC
-                ) uB_user ON LOWER(TRIM(uB_user.name)) = LOWER(TRIM(m.person_b))
-                LEFT JOIN profiles pB ON pB.user_id = uB_user.id
+                LEFT JOIN profiles pB ON (m.user_id_b IS NOT NULL AND pB.user_id = m.user_id_b)
                 WHERE m.person_b IS NOT NULL AND TRIM(m.person_b) != ''
                   AND (
-                      UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), (SELECT mOwner.psychologist_name FROM operational_matches mOwner WHERE LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(m.person_b)) LIMIT 1))) = UPPER(:psyc)
-                      OR UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), (SELECT mOwner.psychologist_name FROM operational_matches mOwner WHERE LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(m.person_b)) LIMIT 1))) LIKE UPPER(:psyc_like)
+                      UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), '')) = UPPER(:psyc)
+                      OR UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), '')) LIKE UPPER(:psyc_like)
                   )
                   AND UPPER(m.psychologist_name) != UPPER(:psyc)
                   AND (m.status IN ('HECHO', 'HECHO POR MAPE', 'REVISAR', 'PROPUESTO') OR m.status_b = 'REVISAR')
@@ -6358,6 +6331,7 @@ async def get_prioritarios(
     psychologist: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     urgency: Optional[str] = Query(None),
+    sync: bool = Query(False),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -6370,57 +6344,61 @@ async def get_prioritarios(
     - Enlaces directos a SmartMatchApp
     - KPIs de control en cabecera
     """
-    # 1. Sincronizar clientes con >= 15 días de inactividad que aún no estén en tracking
-    await db.execute(text("""
-        WITH inactive_clients AS (
-            SELECT 
-                u.id as user_id,
-                u.name as client_name,
-                u.crm_id,
-                COALESCE(NULLIF(trim(p.city), ''), 'Bogotá') as city,
-                COALESCE(NULLIF(trim(p.plan_tier), ''), 'Estándar 65k (2 citas)') as plan_tier,
-                p.responsable,
-                GREATEST(
-                    u.created_at,
-                    MAX(om.updated_at),
-                    MAX(om.created_at),
-                    MAX(sd.created_at)
-                ) as last_activity
-            FROM users u
-            JOIN profiles p ON p.user_id = u.id
-            LEFT JOIN operational_matches om ON (om.user_id_a = u.id OR om.user_id_b = u.id)
-            LEFT JOIN scheduled_dates sd ON (sd.person_a ILIKE u.name OR sd.person_b ILIKE u.name)
-            WHERE u.merged_into_id IS NULL
-              AND u.name NOT ILIKE 'Cliente CRM%'
-              AND u.name NOT ILIKE 'Sin nombre%'
-              AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble)'
-              AND p.plan_tier IS NOT NULL
-              AND p.plan_tier != ''
-              AND p.plan_tier NOT ILIKE '%NO PAGO%'
-              AND u.id NOT IN (SELECT user_id FROM priority_client_tracking WHERE user_id IS NOT NULL)
-            GROUP BY u.id, u.name, u.crm_id, p.city, p.plan_tier, p.responsable, u.created_at
-        )
-        INSERT INTO priority_client_tracking
-        (user_id, client_name, crm_id, city, plan_tier, assigned_psychologist, cs_comment,
-         status, inactivity_days, urgency_level, source, created_at, updated_at)
-        SELECT 
-            user_id, client_name, crm_id, city, plan_tier, responsable,
-            'Alerta de sistema: ' || EXTRACT(DAY FROM (NOW() - last_activity))::int || ' dias sin nueva cita ni match',
-            'Pendiente',
-            EXTRACT(DAY FROM (NOW() - last_activity))::int,
-            CASE 
-                WHEN EXTRACT(DAY FROM (NOW() - last_activity)) > 30 THEN 'CRITICA'
-                WHEN EXTRACT(DAY FROM (NOW() - last_activity)) >= 21 THEN 'ALTA'
-                ELSE 'MODERADA'
-            END,
-            'auto_inactivity',
-            last_activity,
-            NOW()
-        FROM inactive_clients
-        WHERE EXTRACT(DAY FROM (NOW() - last_activity)) >= 15
-        ON CONFLICT DO NOTHING;
-    """))
-    await db.commit()
+    # 1. Sincronización opcional (solo si se solicita explícitamente vía ?sync=true)
+    if sync:
+        try:
+            await db.execute(text("""
+                WITH inactive_clients AS (
+                    SELECT 
+                        u.id as user_id,
+                        u.name as client_name,
+                        u.crm_id,
+                        COALESCE(NULLIF(trim(p.city), ''), 'Bogotá') as city,
+                        COALESCE(NULLIF(trim(p.plan_tier), ''), 'Estándar 65k (2 citas)') as plan_tier,
+                        p.responsable,
+                        GREATEST(
+                            u.created_at,
+                            MAX(om.updated_at),
+                            MAX(om.created_at),
+                            MAX(sd.created_at)
+                        ) as last_activity
+                    FROM users u
+                    JOIN profiles p ON p.user_id = u.id
+                    LEFT JOIN operational_matches om ON (om.user_id_a = u.id OR om.user_id_b = u.id)
+                    LEFT JOIN scheduled_dates sd ON (sd.person_a ILIKE u.name OR sd.person_b ILIKE u.name)
+                    WHERE u.merged_into_id IS NULL
+                      AND u.name NOT ILIKE 'Cliente CRM%'
+                      AND u.name NOT ILIKE 'Sin nombre%'
+                      AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble)'
+                      AND p.plan_tier IS NOT NULL
+                      AND p.plan_tier != ''
+                      AND p.plan_tier NOT ILIKE '%NO PAGO%'
+                      AND u.id NOT IN (SELECT user_id FROM priority_client_tracking WHERE user_id IS NOT NULL)
+                    GROUP BY u.id, u.name, u.crm_id, p.city, p.plan_tier, p.responsable, u.created_at
+                )
+                INSERT INTO priority_client_tracking
+                (user_id, client_name, crm_id, city, plan_tier, assigned_psychologist, cs_comment,
+                 status, inactivity_days, urgency_level, source, created_at, updated_at)
+                SELECT 
+                    user_id, client_name, crm_id, city, plan_tier, responsable,
+                    'Alerta de sistema: ' || EXTRACT(DAY FROM (NOW() - last_activity))::int || ' dias sin nueva cita ni match',
+                    'Pendiente',
+                    EXTRACT(DAY FROM (NOW() - last_activity))::int,
+                    CASE 
+                        WHEN EXTRACT(DAY FROM (NOW() - last_activity)) > 30 THEN 'CRITICA'
+                        WHEN EXTRACT(DAY FROM (NOW() - last_activity)) >= 21 THEN 'ALTA'
+                        ELSE 'MODERADA'
+                    END,
+                    'auto_inactivity',
+                    last_activity,
+                    NOW()
+                FROM inactive_clients
+                WHERE EXTRACT(DAY FROM (NOW() - last_activity)) >= 15
+                ON CONFLICT DO NOTHING;
+            """))
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"Error sincronizando casos prioritarios: {e}")
 
     # 2. Consultar todos los casos
     query = """
@@ -7182,36 +7160,32 @@ async def get_matches_atrasados(
     Retorna los matches que fueron aprobados desde el backlog de Agosto 27
     (batch_tag = 'agosto27_backlog') para gestión exclusiva de Servicio al Cliente.
     """
-    base_query = """
+    tables_from = """
         FROM operational_matches m
         LEFT JOIN match_confirmations c ON c.match_id = m.id
-        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE m.batch_tag = 'agosto27_backlog'
     """
-    where_extra = []
+    where_clauses = ["m.batch_tag = 'agosto27_backlog'"]
     params = {}
 
     if city and city.lower() not in ("all", "todas"):
-        where_extra.append("m.city ILIKE :city")
+        where_clauses.append("m.city ILIKE :city")
         params["city"] = f"%{city.strip()}%"
 
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        where_extra.append("m.psychologist_name ILIKE :psyc")
+        where_clauses.append("m.psychologist_name ILIKE :psyc")
         params["psyc"] = f"%{psychologist.strip()}%"
 
     if status and status.lower() not in ("all", "todos"):
-        where_extra.append("COALESCE(c.stage, 'pendiente') = :st")
+        where_clauses.append("COALESCE(c.stage, 'pendiente') = :st")
         params["st"] = status.strip()
 
     if search:
-        where_extra.append("(m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)")
+        where_clauses.append("(m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)")
         params["srch"] = f"%{search.strip()}%"
 
-    if where_extra:
-        base_query += " AND " + " AND ".join(where_extra)
+    where_str = " WHERE " + " AND ".join(where_clauses)
 
-    count_res = await db.execute(text(f"SELECT COUNT(*) {base_query}"), params)
+    count_res = await db.execute(text(f"SELECT COUNT(*) {tables_from} {where_str}"), params)
     total_items = count_res.scalar() or 0
 
     select_query = f"""
@@ -7224,7 +7198,10 @@ async def get_matches_atrasados(
             c.person_a_confirmation, c.person_b_confirmation,
             c.scheduled_date, c.venue_name AS restaurant_name, c.observations AS cs_notes,
             uA.phone AS phone_a, uB.phone AS phone_b
-        {base_query}
+        {tables_from}
+        LEFT JOIN users uA ON (m.user_id_a IS NOT NULL AND uA.id = m.user_id_a)
+        LEFT JOIN users uB ON (m.user_id_b IS NOT NULL AND uB.id = m.user_id_b)
+        {where_str}
         ORDER BY m.updated_at DESC, m.id DESC
         LIMIT :lim OFFSET :off
     """
@@ -7550,20 +7527,18 @@ async def get_trouble_cases(
     """Fetch trouble cases, difficult clients, and operational rejections with search and filters."""
     offset = max(0, (page - 1) * limit)
 
-    # 1. Counts summary for KPIs
-    cnt_tr = await db.execute(text("SELECT COUNT(*) FROM trouble_matches;"))
-    total_trouble_matches = cnt_tr.scalar() or 0
-
-    cnt_diff = await db.execute(text("SELECT COUNT(*) FROM difficult_clients;"))
-    total_difficult_clients = cnt_diff.scalar() or 0
-
-    cnt_op = await db.execute(text("SELECT COUNT(*) FROM operational_matches WHERE status ILIKE '%TROUBLE%' OR status ILIKE '%TROUBLEMAKER%';"))
-    total_operational_trouble = cnt_op.scalar() or 0
+    # 1. Counts summary for KPIs (en 1 solo round-trip a la BD)
+    cnt_row = (await db.execute(text("""
+        SELECT 
+            (SELECT COUNT(*) FROM trouble_matches) as tr,
+            (SELECT COUNT(*) FROM difficult_clients) as diff,
+            (SELECT COUNT(*) FROM operational_matches WHERE status ILIKE '%TROUBLE%' OR status ILIKE '%TROUBLEMAKER%') as op
+    """))).fetchone()
 
     counts = {
-        "trouble_matches_count": total_trouble_matches,
-        "difficult_clients_count": total_difficult_clients,
-        "operational_trouble_count": total_operational_trouble
+        "trouble_matches_count": cnt_row[0] if cnt_row else 0,
+        "difficult_clients_count": cnt_row[1] if cnt_row else 0,
+        "operational_trouble_count": cnt_row[2] if cnt_row else 0
     }
 
     items = []

@@ -633,23 +633,31 @@ async def get_stats(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("dashboard", "view"))
 ):
-    """Dashboard KPI summary."""
-    total_users = (await db.execute(text("SELECT COUNT(*) FROM users WHERE merged_into_id IS NULL"))).scalar() or 0
+    """Dashboard KPI summary optimized to execute in a single round-trip."""
+    kpi_row = (await db.execute(text("""
+        SELECT
+            (SELECT COUNT(*) FROM users WHERE merged_into_id IS NULL) AS total_users,
+            (SELECT COUNT(*) FROM events WHERE date >= date_trunc('month', NOW()) AND date < date_trunc('month', NOW()) + INTERVAL '1 month') AS events_this_month,
+            ((SELECT COUNT(*) FROM match_requests WHERE status = 'pending') + (SELECT COUNT(*) FROM historical_matches)) AS active_matches,
+            (SELECT ROUND(AVG(satisfaccion)::numeric, 1) FROM post_event_feedback WHERE satisfaccion IS NOT NULL) AS avg_sat,
+            (SELECT COUNT(*) FROM accounts_receivable WHERE status = 'pending' AND due_date < CURRENT_DATE) AS active_debts,
+            (SELECT COUNT(*) FROM payroll_runs WHERE status = 'draft') AS pending_payrolls,
+            (SELECT COUNT(*) FROM (
+                SELECT e.id, e.capacity, COUNT(ea.user_id) as attendees_count
+                FROM events e
+                LEFT JOIN event_attendees ea ON ea.event_id = e.id AND ea.status IN ('confirmed', 'attended')
+                WHERE e.date > NOW()
+                GROUP BY e.id, e.capacity
+            ) sub WHERE attendees_count >= (capacity * 0.85) AND capacity > 0) AS critical_events
+    """))).fetchone()
 
-    events_this_month = (await db.execute(text("""
-        SELECT COUNT(*) FROM events
-        WHERE date >= date_trunc('month', NOW())
-          AND date < date_trunc('month', NOW()) + INTERVAL '1 month'
-    """))).scalar() or 0
-
-    active_matches = (await db.execute(text(
-        "SELECT (SELECT COUNT(*) FROM match_requests WHERE status = 'pending') + (SELECT COUNT(*) FROM historical_matches)"
-    ))).scalar() or 0
-
-    avg_sat_row = (await db.execute(text(
-        "SELECT ROUND(AVG(satisfaccion)::numeric, 1) FROM post_event_feedback WHERE satisfaccion IS NOT NULL"
-    ))).scalar()
-    avg_satisfaction = float(avg_sat_row) if avg_sat_row else None
+    total_users = kpi_row[0] if kpi_row else 0
+    events_this_month = kpi_row[1] if kpi_row else 0
+    active_matches = kpi_row[2] if kpi_row else 0
+    avg_satisfaction = float(kpi_row[3]) if (kpi_row and kpi_row[3] is not None) else None
+    active_debts = kpi_row[4] if kpi_row else 0
+    pending_payrolls = kpi_row[5] if kpi_row else 0
+    critical_events = kpi_row[6] if kpi_row else 0
 
     # Weekly growth: new users per week for last 8 weeks (excluding merged users)
     weekly_rows = (await db.execute(text("""
@@ -662,25 +670,6 @@ async def get_stats(
         ORDER BY wk
     """))).fetchall()
     weekly_growth = [int(r.cnt) for r in weekly_rows]
-
-    # Alert-specific metrics
-    active_debts = (await db.execute(text(
-        "SELECT COUNT(*) FROM accounts_receivable WHERE status = 'pending' AND due_date < CURRENT_DATE"
-    ))).scalar() or 0
-
-    pending_payrolls = (await db.execute(text(
-        "SELECT COUNT(*) FROM payroll_runs WHERE status = 'draft'"
-    ))).scalar() or 0
-
-    critical_events = (await db.execute(text("""
-        SELECT COUNT(*) FROM (
-            SELECT e.id, e.capacity, COUNT(ea.user_id) as attendees_count
-            FROM events e
-            LEFT JOIN event_attendees ea ON ea.event_id = e.id AND ea.status IN ('confirmed', 'attended')
-            WHERE e.date > NOW()
-            GROUP BY e.id, e.capacity
-        ) sub WHERE attendees_count >= (capacity * 0.85) AND capacity > 0
-    """))).scalar() or 0
 
     return {
         "total_users": total_users,
@@ -849,8 +838,10 @@ async def get_users(
     params: dict = {"limit": limit, "offset": offset}
 
     if search:
-        where_clauses.append("(unaccent(u.name) ILIKE unaccent(:search) OR u.email ILIKE :search OR u.phone ILIKE :search OR COALESCE(u.client_code,'') ILIKE :search OR COALESCE(u.id_number,'') ILIKE :search OR unaccent(COALESCE(p.occupation, '')) ILIKE unaccent(:search) OR unaccent(COALESCE(p.city, '')) ILIKE unaccent(:search))")
-        params["search"] = f"%{search}%"
+        s_clean = search.strip().lower()
+        where_clauses.append("(immutable_unaccent(lower(u.name)) LIKE immutable_unaccent(:search) OR u.email ILIKE :search_raw OR u.phone ILIKE :search_raw OR COALESCE(u.client_code,'') ILIKE :search_raw OR COALESCE(u.id_number,'') ILIKE :search_raw OR immutable_unaccent(COALESCE(p.occupation, '')) LIKE immutable_unaccent(:search) OR immutable_unaccent(COALESCE(p.city, '')) LIKE immutable_unaccent(:search))")
+        params["search"] = f"%{s_clean}%"
+        params["search_raw"] = f"%{search.strip()}%"
 
     if responsable and responsable != "all":
         r_clean = responsable.strip().upper()
@@ -870,7 +861,6 @@ async def get_users(
     if is_difficult == "difficult_only":
         where_clauses.append("COALESCE(p.is_difficult, false) = true")
 
-
     if has_notes == "with_notes":
         where_clauses.append("p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) > 2")
     elif has_notes == "without_notes":
@@ -879,13 +869,12 @@ async def get_users(
     if city and city != "all":
         city_clean = city.strip()
         if "bogot" in city_clean.lower():
-            where_clauses.append("(p.city ILIKE '%bogot%' OR p.city ILIKE '%bogot%' OR unaccent(COALESCE(p.city, '')) ILIKE '%bogot%' OR p.bio_notes ILIKE '%bogot%')")
+            where_clauses.append("(p.city ILIKE '%bogot%' OR unaccent(COALESCE(p.city, '')) ILIKE '%bogot%' OR p.bio_notes ILIKE '%bogot%')")
         elif "medell" in city_clean.lower():
             where_clauses.append("(p.city ILIKE '%medell%' OR unaccent(COALESCE(p.city, '')) ILIKE '%medell%' OR p.bio_notes ILIKE '%medell%')")
         else:
             where_clauses.append("(unaccent(COALESCE(p.city, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(p.bio_notes, '')) ILIKE unaccent(:city) OR unaccent(COALESCE(CAST(p.search_preferences AS text), '')) ILIKE unaccent(:city))")
             params["city"] = f"%{city_clean}%"
-
 
     if plan_tier and plan_tier != "all":
         if plan_tier == "sin_plan":
@@ -894,26 +883,26 @@ async def get_users(
             where_clauses.append("UPPER(COALESCE(p.plan_tier, '')) LIKE UPPER(:plan_tier)")
             params["plan_tier"] = f"%{plan_tier}%"
 
-
     if has_matches == "with_matches":
-        where_clauses.append("""unaccent(lower(u.name)) IN (
-            SELECT DISTINCT unaccent(lower(person_a)) FROM historical_matches WHERE person_a IS NOT NULL
+        where_clauses.append("""u.id IN (
+            SELECT DISTINCT user_id_a FROM historical_matches WHERE user_id_a IS NOT NULL
             UNION
-            SELECT DISTINCT unaccent(lower(person_b)) FROM historical_matches WHERE person_b IS NOT NULL
+            SELECT DISTINCT user_id_b FROM historical_matches WHERE user_id_b IS NOT NULL
         )""")
     elif has_matches == "without_matches":
-        where_clauses.append("""unaccent(lower(u.name)) NOT IN (
-            SELECT DISTINCT unaccent(lower(person_a)) FROM historical_matches WHERE person_a IS NOT NULL
+        where_clauses.append("""u.id NOT IN (
+            SELECT DISTINCT user_id_a FROM historical_matches WHERE user_id_a IS NOT NULL
             UNION
-            SELECT DISTINCT unaccent(lower(person_b)) FROM historical_matches WHERE person_b IS NOT NULL
+            SELECT DISTINCT user_id_b FROM historical_matches WHERE user_id_b IS NOT NULL
         )""")
 
     where_str = " AND ".join(where_clauses)
+    has_profile_filters = any(x in where_str for x in ["p.", ":city", ":plan_tier", "bio_notes", "is_difficult"])
+    count_from = "FROM users u LEFT JOIN profiles p ON p.user_id = u.id" if has_profile_filters else "FROM users u"
 
     total = (await db.execute(text(f"""
         SELECT COUNT(*)
-        FROM users u
-        LEFT JOIN profiles p ON p.user_id = u.id
+        {count_from}
         WHERE {where_str}
     """), params)).scalar() or 0
 
@@ -926,16 +915,13 @@ async def get_users(
             p.city, p.occupation, p.education, p.religion, p.love_language,
             p.bio_notes, p.lifestyle, p.responsable, p.estatura, p.age, p.plan_tier, p.search_preferences,
             COALESCE(p.is_difficult, false) AS is_difficult, p.difficult_notes,
-            COALESCE(hm_count.cnt, 0) AS total_matches
+            (
+                SELECT COUNT(*)
+                FROM historical_matches hm
+                WHERE hm.user_id_a = u.id OR hm.user_id_b = u.id
+            ) AS total_matches
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
-        LEFT JOIN (
-            SELECT uid, COUNT(*) as cnt FROM (
-                SELECT user_id_a AS uid FROM historical_matches WHERE user_id_a IS NOT NULL
-                UNION ALL
-                SELECT user_id_b AS uid FROM historical_matches WHERE user_id_b IS NOT NULL
-            ) sub GROUP BY uid
-        ) hm_count ON hm_count.uid = u.id
         WHERE {where_str}
         ORDER BY u.id DESC
         LIMIT :limit OFFSET :offset
@@ -2078,25 +2064,7 @@ async def get_historical_matches(
 
 
 
-    # 0. Auto-vinculación masiva limpia sin múltiples sentencias en un solo execute
-    try:
-        await db.execute(text("""
-            UPDATE historical_matches hm
-            SET user_id_a = u.id
-            FROM users u
-            WHERE hm.user_id_a IS NULL
-              AND unaccent(lower(trim(hm.person_a))) = unaccent(lower(trim(u.name)))
-        """))
-        await db.execute(text("""
-            UPDATE historical_matches hm
-            SET user_id_b = u.id
-            FROM users u
-            WHERE hm.user_id_b IS NULL
-              AND unaccent(lower(trim(hm.person_b))) = unaccent(lower(trim(u.name)))
-        """))
-        await db.commit()
-    except Exception as e:
-        logger.warning(f"Non-fatal auto-link notice: {str(e)}")
+
 
 
     # Filtros prioritarios por ID numérico o código DL único (ESTRICTO Y SIN MEZCLAR PERSONAS CON NOMBRES PARCIALES SIMILARES)
@@ -2173,7 +2141,11 @@ async def get_historical_matches(
         LEFT JOIN profiles pb_name ON ub_name.id IS NOT NULL AND pb_name.user_id = ub_name.id
     """
 
-    total_res = await db.execute(text(f"SELECT COUNT(DISTINCT hm.id) {query_from} WHERE {where_str}"), params)
+    needs_user_joins_for_count = any(k in where_str for k in ["ua_", "ub_", "client_code", ":cc", ":u_code"])
+    if needs_user_joins_for_count:
+        total_res = await db.execute(text(f"SELECT COUNT(DISTINCT hm.id) {query_from} WHERE {where_str}"), params)
+    else:
+        total_res = await db.execute(text(f"SELECT COUNT(*) FROM historical_matches hm WHERE {where_str}"), params)
     total = total_res.scalar() or 0
 
     rows_res = await db.execute(text(f"""

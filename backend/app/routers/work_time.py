@@ -69,8 +69,13 @@ class ActivityLogCreate(BaseModel):
     details: Optional[Dict[str, Any]] = None
 
 # ─── TABLE INITIALIZATION ────────────────────────────────────────────────────
+_tables_initialized = False
+
 async def ensure_work_time_tables(db: AsyncSession):
     """Ensure work_sessions, work_activity_logs and psychologist_rates tables exist."""
+    global _tables_initialized
+    if _tables_initialized:
+        return
     await db.execute(text("""
         CREATE TABLE IF NOT EXISTS psychologist_rates (
             psychologist_key VARCHAR(50) PRIMARY KEY,
@@ -142,6 +147,7 @@ async def ensure_work_time_tables(db: AsyncSession):
                 "idle": r["idle_timeout"]
             })
         await db.commit()
+    _tables_initialized = True
 
 
 # ─── ENDPOINTS: WORK SESSIONS & TIMERS ───────────────────────────────────────

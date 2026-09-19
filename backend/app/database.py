@@ -4,13 +4,20 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# Create async engine for PostgreSQL
+# Create async engine for PostgreSQL with optimized settings
 engine = create_async_engine(
     settings.database_url,
     echo=False,
     future=True,
-    pool_size=10,
-    max_overflow=20
+    pool_size=20,
+    max_overflow=30,
+    pool_recycle=1800,
+    connect_args={
+        "server_settings": {
+            "jit": "off",
+            "application_name": "dailylover_api",
+        }
+    }
 )
 
 # Async session factory
