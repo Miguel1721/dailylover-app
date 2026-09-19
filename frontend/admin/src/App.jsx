@@ -56,6 +56,8 @@ import TroubleMatches from './pages/matchmaking/TroubleMatches'
 import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet, AlertTriangle } from 'lucide-react'
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
 import CsNovedadesNotificationBell from './components/CsNovedadesNotificationBell'
+import { NotificationProvider } from './context/NotificationContext'
+import NotificationToastContainer from './components/NotificationToastContainer'
 
 import './index.css'
 
@@ -808,6 +810,7 @@ function AppContent() {
               </div>
               <CopilotWidget />
               <ForcePasswordChangeModal />
+              <NotificationToastContainer />
             </div>
           ) : (
             <Login />
@@ -821,9 +824,11 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename="/admin">
-        <AppContent />
-      </BrowserRouter>
+      <NotificationProvider>
+        <BrowserRouter basename="/admin">
+          <AppContent />
+        </BrowserRouter>
+      </NotificationProvider>
     </AuthProvider>
   )
 }

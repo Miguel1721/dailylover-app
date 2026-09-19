@@ -12,6 +12,7 @@ from app.core.permissions import require_permission, get_current_user
 from typing import Optional
 import math
 import json
+from urllib.parse import quote
 
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 
@@ -3502,6 +3503,160 @@ async def resolve_cs_novedad(
     """), {"id": novedad_id})
     await db.commit()
     return {"status": "success", "message": "Novedad marcada como atendida"}
+
+
+# ─── SISTEMA GLOBAL DE ALERTAS Y NOTIFICACIONES EN VIVO ───────────────────────
+
+class SimulateAlertRequest(BaseModel):
+    type: str = "STATUS_CHANGE"  # "STATUS_CHANGE", "NO_SHOW", "APPROVAL", "TROUBLE", "CS_NOVEDAD"
+    title: Optional[str] = None
+    message: Optional[str] = None
+    person_name: Optional[str] = "Carlos Mendoza & Laura Rincón"
+
+@router.get("/live-alerts")
+async def get_live_alerts(
+    limit: int = 25,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Retorna el flujo unificado de alertas en tiempo real:
+    - Cambios de estado en matches (HECHO, APROBADO, TROUBLE)
+    - Novedades de Customer Service
+    - Registros de No-Shows y Feedbacks
+    """
+    alerts = []
+
+    # 1. Eventos de person_history
+    hist_res = await db.execute(text("""
+        SELECT id, person_name, match_id, event_type, details, created_at
+        FROM person_history
+        ORDER BY id DESC
+        LIMIT :limit
+    """), {"limit": limit})
+    for r in hist_res.fetchall():
+        ev_type = r[3] or "EVENTO"
+        urgency = "normal"
+        icon_type = "info"
+        link = "/matchmaking/citas-agendadas"
+
+        if "NO_SHOW" in ev_type:
+            urgency = "urgent"
+            icon_type = "no_show"
+            link = "/matchmaking/citas-agendadas"
+        elif "HECHO" in ev_type:
+            urgency = "high"
+            icon_type = "hecho"
+            link = "/matchmaking/mis-matches"
+        elif "APROBADO" in ev_type:
+            urgency = "high"
+            icon_type = "approval"
+            link = "/matchmaking/aprobados-maria"
+        elif "FEEDBACK" in ev_type:
+            urgency = "normal"
+            icon_type = "feedback"
+            link = "/matchmaking/citas-agendadas"
+        elif "TROUBLE" in ev_type:
+            urgency = "high"
+            icon_type = "trouble"
+            link = "/matchmaking/trouble"
+
+        alerts.append({
+            "id": f"hist_{r[0]}",
+            "raw_id": r[0],
+            "category": "HISTORIAL",
+            "type": ev_type,
+            "icon_type": icon_type,
+            "title": "No-Show Reportado" if "NO_SHOW" in ev_type else
+                     "Match Listo (HECHO)" if "HECHO" in ev_type else
+                     "Match Aprobado" if "APROBADO" in ev_type else
+                     "Feedback Post-Cita" if "FEEDBACK" in ev_type else "Actualización Clínica",
+            "message": r[4] or f"Evento registrado para {r[1]}",
+            "target_person": r[1] or "",
+            "urgency": urgency,
+            "link": link,
+            "created_at": r[5].isoformat() if r[5] else ""
+        })
+
+    # 2. Novedades de CS pendientes
+    cs_res = await db.execute(text("""
+        SELECT id, client_name, novedad_type, details, created_by, status, created_at
+        FROM cs_novedades
+        ORDER BY id DESC
+        LIMIT :limit
+    """), {"limit": limit})
+    for r in cs_res.fetchall():
+        is_pending = (r[5] == "PENDIENTE")
+        alerts.append({
+            "id": f"cs_{r[0]}",
+            "raw_id": r[0],
+            "category": "CS_NOVEDAD",
+            "type": r[2] or "NOVEDAD",
+            "icon_type": "novedad",
+            "title": f"📢 Novedad CS: {r[2]}",
+            "message": f"{r[1]}: {r[3]} (por {r[4]})",
+            "target_person": r[1] or "",
+            "urgency": "urgent" if is_pending else "normal",
+            "link": f"/clientes?q={quote(r[1] or '')}",
+            "status": r[5],
+            "created_at": r[6].isoformat() if r[6] else ""
+        })
+
+    # Ordenar cronológicamente descendente
+    alerts.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    alerts = alerts[:limit]
+
+    unread_cs = (await db.execute(text("SELECT COUNT(*) FROM cs_novedades WHERE status = 'PENDIENTE'"))).scalar() or 0
+
+    return {
+        "status": "success",
+        "alerts": alerts,
+        "unread_count": unread_cs,
+        "total": len(alerts)
+    }
+
+@router.post("/live-alerts/simulate")
+async def simulate_live_alert(
+    payload: SimulateAlertRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Simula un evento para disparar una notificación de prueba en tiempo real."""
+    person = payload.person_name or "Carlos Mendoza & Laura Rincón"
+    
+    if payload.type == "APPROVAL":
+        ev_type = "APROBADO_MARIA"
+        details = f"María Paula aprobó el match de {person}. Listo para que CS agende mesa."
+    elif payload.type == "NO_SHOW":
+        ev_type = "NO_SHOW"
+        details = f"Alerta: {person} no se presentó a su cita de las 8:00 PM. Requiere reprogramación o penalidad."
+    elif payload.type == "TROUBLE":
+        ev_type = "TROUBLE_REPORT"
+        details = f"Alerta Trouble: {person} reportó incompatibilidad en el segundo date."
+    elif payload.type == "CS_NOVEDAD":
+        ev_type = "CS_NOVEDAD"
+        details = f"Cliente {person} compró +1 cita extra. Psicóloga asignada ya puede buscar nuevo match."
+        await db.execute(text("""
+            INSERT INTO cs_novedades (client_name, novedad_type, details, extra_dates, created_by, status, created_at)
+            VALUES (:name, 'CITA_EXTRA', :det, 1, 'Simulador Admin', 'PENDIENTE', NOW())
+        """), {"name": person.split("&")[0].strip(), "det": details})
+    else:  # STATUS_CHANGE / HECHO
+        ev_type = "MARKED_HECHO"
+        details = f"Psicóloga Manu marcó el match de {person} como HECHO. Enviado para revisión de María Paula."
+
+    await db.execute(text("""
+        INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+        VALUES (:name, NULL, :ev, :det, NOW())
+    """), {"name": person, "ev": ev_type, "det": details})
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": "Alerta simulada registrada correctamente",
+        "event_type": ev_type,
+        "details": details
+    }
+
 
 
 
