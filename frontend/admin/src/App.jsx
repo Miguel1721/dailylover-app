@@ -25,6 +25,9 @@ import CashFlow from './pages/CashFlow'
 import Roles from './pages/Roles'
 import UserAccounts from './pages/UserAccounts'
 import ConfiguracionFormularios from './pages/ConfiguracionFormularios'
+import ConfiguracionAlertas from './pages/ConfiguracionAlertas'
+import ManualesCapacitacion from './pages/ManualesCapacitacion'
+import ControlHorasPsicologas from './pages/ControlHorasPsicologas'
 import Login from './pages/Login'
 import Proveedores from './pages/Proveedores'
 
@@ -53,9 +56,10 @@ import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import TroubleMatches from './pages/matchmaking/TroubleMatches'
-import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet, AlertTriangle } from 'lucide-react'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet, AlertTriangle, BellRing, BookOpen, Clock } from 'lucide-react'
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
 import CsNovedadesNotificationBell from './components/CsNovedadesNotificationBell'
+import WorkTimerWidget from './components/WorkTimerWidget'
 import { NotificationProvider } from './context/NotificationContext'
 import NotificationToastContainer from './components/NotificationToastContainer'
 
@@ -273,7 +277,8 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
     { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Citas Aprobadas por María' },
     { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
-    { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' }
+    { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
+    { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación' }
   ]
 
   // Groups and items configuration — Zero noise per role
@@ -307,6 +312,7 @@ function Sidebar({ isOpen, onClose }) {
 
   const personalItems = isMaria ? [
     { to: '/empleados', icon: Users, label: 'Empleados', module: 'empleados', action: 'view' },
+    { to: '/horas-psicologas', icon: Clock, label: '⏱️ Horas & Rendimiento', module: 'empleados', action: 'view' },
     { to: '/nomina', icon: Wallet, label: 'Nómina', module: 'nomina', action: 'view' },
     { to: '/comisiones', icon: Percent, label: 'Comisiones', module: 'comisiones', action: 'view' },
   ] : []
@@ -321,7 +327,11 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/roles', icon: Shield, label: 'Roles de Sistema', module: 'roles', action: 'view' },
     { to: '/usuarios', icon: UserCheck, label: 'Cuentas de Acceso', module: 'usuarios', action: 'view' },
     { to: '/configuracion/formularios', icon: Settings, label: '⚙️ Configurar Formularios', module: 'roles', action: 'view' },
-  ] : []
+    { to: '/configuracion/alertas', icon: BellRing, label: '🔔 Configurar Alertas', module: 'roles', action: 'view' },
+    { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación', module: 'roles', action: 'view' },
+  ] : [
+    { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación', module: 'dashboard', action: 'view' },
+  ]
 
   const showMatchmaking = matchmakingItems.some(i => hasPermission(i.module, i.action))
   const showPersonal = personalItems.some(i => hasPermission(i.module, i.action))
@@ -753,7 +763,8 @@ function AppContent() {
                       </div>
                     )}
                   </div>
-                  <div className="header-right">
+                  <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <WorkTimerWidget />
                     <CsNovedadesNotificationBell />
                     <button
                       onClick={toggleTheme}
@@ -837,6 +848,9 @@ function AppContent() {
                     
                     {/* Personal */}
                     <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />
+                    <Route path="/horas-psicologas" element={<ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute>} />
+                    <Route path="/admin/horas-psicologas" element={<Navigate to="/horas-psicologas" replace />} />
+                    <Route path="/control-horas" element={<Navigate to="/horas-psicologas" replace />} />
                     <Route path="/nomina" element={<ProtectedRoute module="nomina" action="view"><Payroll /></ProtectedRoute>} />
                     <Route path="/comisiones" element={<ProtectedRoute module="comisiones" action="view"><Commissions /></ProtectedRoute>} />
 
@@ -853,6 +867,11 @@ function AppContent() {
                     <Route path="/usuarios" element={<ProtectedRoute module="usuarios" action="view"><UserAccounts /></ProtectedRoute>} />
                     <Route path="/configuracion/formularios" element={<ProtectedRoute module="roles" action="view"><ConfiguracionFormularios /></ProtectedRoute>} />
                     <Route path="/admin/configuracion/formularios" element={<Navigate to="/configuracion/formularios" replace />} />
+                    <Route path="/configuracion/alertas" element={<ProtectedRoute module="roles" action="view"><ConfiguracionAlertas /></ProtectedRoute>} />
+                    <Route path="/admin/configuracion/alertas" element={<Navigate to="/configuracion/alertas" replace />} />
+                    <Route path="/capacitacion" element={<ProtectedRoute module="dashboard" action="view"><ManualesCapacitacion /></ProtectedRoute>} />
+                    <Route path="/manuales" element={<Navigate to="/capacitacion" replace />} />
+                    <Route path="/admin/capacitacion" element={<Navigate to="/capacitacion" replace />} />
 
                     <Route path="*" element={<Dashboard />} />
                   </Routes>

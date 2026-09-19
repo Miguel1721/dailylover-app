@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from app.config import get_settings, Settings
-from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking, scheduling, form_builder
+from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking, scheduling, form_builder, work_time
 import structlog
 import os
 import asyncio
@@ -256,6 +256,12 @@ async def startup_seed():
             """))
             await db.commit()
 
+            # Asegurar tablas de control de horas trabajadas y tarifas de psicólogas
+            try:
+                await work_time.ensure_work_time_tables(db)
+            except Exception as e_wt:
+                logger.warning(f"Warning ensuring work_time tables: {e_wt}")
+
             # Tarea periódica de fondo: revisión diaria de clientes prioritarios (>15 días sin cita desde el pago)
             async def daily_priority_reviewer():
                 while True:
@@ -309,6 +315,7 @@ app.include_router(webhooks.router)
 app.include_router(matchmaking.router)
 app.include_router(scheduling.router)
 app.include_router(form_builder.router)
+app.include_router(work_time.router)
 
 # ─── STATIC FILES (Admin Panel & App Preview) ─────────────────────────────────
 

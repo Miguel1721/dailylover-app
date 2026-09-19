@@ -3748,6 +3748,580 @@ async def simulate_live_alert(
     }
 
 
+# ==============================================================================
+# MÓDULO DE CONFIGURACIÓN DE ALERTAS & REGLAS DEL SISTEMA
+# ==============================================================================
+
+class AlertRuleUpdate(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    target_role: Optional[str] = None
+    trigger_event: Optional[str] = None
+    channels: Optional[list] = None
+    urgency: Optional[str] = None
+    target_link: Optional[str] = None
+    is_active: Optional[bool] = None
+    threshold_days: Optional[int] = None
+    message_template: Optional[str] = None
+
+class AlertRuleCreate(BaseModel):
+    code: str
+    title: str
+    category: str = "General"
+    target_role: str = "Psicóloga"
+    trigger_event: str = "Disparador personalizado"
+    channels: list = ["campana", "toast", "push"]
+    urgency: str = "high"
+    target_link: str = "/matchmaking/mis-matches"
+    is_active: bool = True
+    threshold_days: Optional[int] = 0
+    message_template: Optional[str] = ""
+
+DEFAULT_ALERT_RULES = [
+    {
+        "code": "INACTIVITY_15D",
+        "title": "⚡ Inactividad de Clientes (+15 días)",
+        "category": "Seguimiento & Prioridades",
+        "target_role": "Psicólogas & Dirección",
+        "trigger_event": "Cliente activo sin cita agendada ni propuesta por 15 o más días",
+        "channels": ["push", "campana", "toast"],
+        "urgency": "urgent",
+        "target_link": "/matchmaking/mis-matches?psychologist=all&filter=prioritarios&search={cliente}",
+        "is_active": True,
+        "threshold_days": 15,
+        "message_template": "⚠️ Alerta de Seguimiento: {cliente} lleva {dias} días sin actividad. Requiere nueva propuesta de match prioritario."
+    },
+    {
+        "code": "VIP_650K",
+        "title": "👑 Nuevo Cliente VIP Plan 650k",
+        "category": "Clientes & Facturación",
+        "target_role": "María Paula (MPS)",
+        "trigger_event": "Inscripción o pago confirmado de cliente en Plan 650k (MPS)",
+        "channels": ["push", "campana", "toast"],
+        "urgency": "urgent",
+        "target_link": "/clientes?q={cliente}",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "👑 Nuevo Cliente VIP: {cliente} se inscribió en el Plan 650k (MPS). Supervisión directa de María Paula."
+    },
+    {
+        "code": "MATCH_HECHO",
+        "title": "✨ Match Listo (HECHO)",
+        "category": "Matchmaking Clínico",
+        "target_role": "María Paula (Supervisión)",
+        "trigger_event": "Psicóloga asigna a Persona B y marca la pareja como HECHO",
+        "channels": ["push", "campana", "toast"],
+        "urgency": "high",
+        "target_link": "/matchmaking/aprobados-maria",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "Psicóloga {psicologa} marcó el match de {pareja} como HECHO. Enviado para revisión de María Paula."
+    },
+    {
+        "code": "MATCH_APROBADO",
+        "title": "🔒 Match Aprobado por María Paula",
+        "category": "Operación & CS",
+        "target_role": "Servicio al Cliente (CS)",
+        "trigger_event": "María Paula aprueba el match oficial para agendamiento de mesa",
+        "channels": ["push", "campana", "toast"],
+        "urgency": "high",
+        "target_link": "/matchmaking/citas-agendadas",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "María Paula aprobó el match de {pareja}. Listo para coordinar fecha y restaurante aliado."
+    },
+    {
+        "code": "NO_SHOW",
+        "title": "🚨 Inasistencia a Cita (No-Show)",
+        "category": "Citas & Asistencia",
+        "target_role": "CS & Dirección",
+        "trigger_event": "Cliente no se presenta a la cita confirmada en el restaurante",
+        "channels": ["push", "campana", "toast"],
+        "urgency": "urgent",
+        "target_link": "/matchmaking/citas-agendadas",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "Alerta No-Show: {cliente} no asistió a su cita de las {hora}. Requiere reprogramación o penalidad."
+    },
+    {
+        "code": "TROUBLE_REPORT",
+        "title": "⚠️ Alerta de Trouble Clínico",
+        "category": "Casos Difíciles",
+        "target_role": "Psicólogas & Dirección",
+        "trigger_event": "Incompatibilidad severa en cita, descarte o conducta reportada",
+        "channels": ["campana", "toast"],
+        "urgency": "high",
+        "target_link": "/matchmaking/trouble",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "Alerta Trouble: {cliente} reportó incompatibilidad o descarte en segundo date."
+    },
+    {
+        "code": "CS_NOVEDAD",
+        "title": "📢 Novedad de Servicio al Cliente",
+        "category": "Servicio al Cliente",
+        "target_role": "Psicóloga Asignada",
+        "trigger_event": "CS registra compra de cita extra (+1) o requerimiento especial",
+        "channels": ["push", "campana", "toast"],
+        "urgency": "urgent",
+        "target_link": "/clientes?q={cliente}",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "Cliente {cliente} compró +1 cita extra. Psicóloga asignada ya puede buscar nuevo match."
+    },
+    {
+        "code": "RECORDATORIO_24H",
+        "title": "💛 Recordatorio de Cita: Día Antes (24h)",
+        "category": "Recordatorios para Clientes",
+        "target_role": "Clientes de la Cita",
+        "trigger_event": "Falta 1 día (24 horas) para la fecha agendada de la cita",
+        "channels": ["push", "whatsapp"],
+        "urgency": "normal",
+        "target_link": "/mi-cita?t={token}",
+        "is_active": True,
+        "threshold_days": 1,
+        "message_template": "💛 Para recordarte tu date de mañana en {restaurante}. Esperamos tu confirmación para tener todo listo!"
+    },
+    {
+        "code": "RECORDATORIO_HOY",
+        "title": "✨ Recordatorio de Cita: Hoy (Puntualidad x2)",
+        "category": "Recordatorios para Clientes",
+        "target_role": "Clientes de la Cita",
+        "trigger_event": "Mismo día de la cita agendada (2 a 4 horas antes)",
+        "channels": ["push", "whatsapp"],
+        "urgency": "high",
+        "target_link": "/mi-cita?t={token}",
+        "is_active": True,
+        "threshold_days": 0,
+        "message_template": "✨ ¡Hoy es tu date a las {hora} en {restaurante}! Reserva a nombre de María Paula Salinas. ¡La puntualidad vale x2!"
+    }
+]
+
+async def ensure_alert_rules_table(db: AsyncSession):
+    await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS system_alert_rules (
+            id SERIAL PRIMARY KEY,
+            code VARCHAR(100) UNIQUE NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            target_role VARCHAR(100) NOT NULL,
+            trigger_event TEXT NOT NULL,
+            channels JSONB NOT NULL DEFAULT '["campana", "toast", "push"]'::jsonb,
+            urgency VARCHAR(50) NOT NULL DEFAULT 'high',
+            target_link VARCHAR(255) NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            threshold_days INT DEFAULT 0,
+            message_template TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+    """))
+    await db.commit()
+
+    # Verificar si está vacía para sembrar las reglas oficiales
+    count = (await db.execute(text("SELECT COUNT(*) FROM system_alert_rules"))).scalar() or 0
+    if count == 0:
+        for r in DEFAULT_ALERT_RULES:
+            await db.execute(text("""
+                INSERT INTO system_alert_rules 
+                (code, title, category, target_role, trigger_event, channels, urgency, target_link, is_active, threshold_days, message_template)
+                VALUES (:code, :title, :category, :target_role, :trigger_event, CAST(:channels AS jsonb), :urgency, :target_link, :is_active, :threshold_days, :message_template)
+                ON CONFLICT (code) DO NOTHING
+            """), {
+                "code": r["code"],
+                "title": r["title"],
+                "category": r["category"],
+                "target_role": r["target_role"],
+                "trigger_event": r["trigger_event"],
+                "channels": json.dumps(r["channels"]),
+                "urgency": r["urgency"],
+                "target_link": r["target_link"],
+                "is_active": r["is_active"],
+                "threshold_days": r["threshold_days"],
+                "message_template": r["message_template"]
+            })
+        await db.commit()
+
+@router.get("/alerts/config")
+async def get_alert_rules(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Devuelve el listado completo de reglas de notificación configuradas en el sistema."""
+    await ensure_alert_rules_table(db)
+
+    res = await db.execute(text("""
+        SELECT id, code, title, category, target_role, trigger_event, channels, urgency,
+               target_link, is_active, threshold_days, message_template, updated_at
+        FROM system_alert_rules
+        ORDER BY id ASC
+    """))
+    rows = res.fetchall()
+    
+    rules = []
+    for r in rows:
+        ch = r[6]
+        if isinstance(ch, str):
+            try:
+                ch = json.loads(ch)
+            except Exception:
+                ch = ["campana", "toast"]
+        elif not isinstance(ch, list):
+            ch = ["campana", "toast"]
+
+        rules.append({
+            "id": r[0],
+            "code": r[1],
+            "title": r[2],
+            "category": r[3],
+            "target_role": r[4],
+            "trigger_event": r[5],
+            "channels": ch,
+            "urgency": r[7],
+            "target_link": r[8],
+            "is_active": bool(r[9]),
+            "threshold_days": r[10] or 0,
+            "message_template": r[11] or "",
+            "updated_at": r[12].isoformat() if r[12] else None
+        })
+
+    total_active = sum(1 for rule in rules if rule["is_active"])
+    
+    return {
+        "status": "success",
+        "rules": rules,
+        "metrics": {
+            "total_rules": len(rules),
+            "active_rules": total_active,
+            "for_psychologists": sum(1 for rule in rules if "Psicól" in rule["target_role"]),
+            "for_cs": sum(1 for rule in rules if "CS" in rule["target_role"] or "Servicio" in rule["target_role"]),
+            "for_maria": sum(1 for rule in rules if "María" in rule["target_role"] or "Dirección" in rule["target_role"]),
+            "for_clients": sum(1 for rule in rules if "Cliente" in rule["target_role"])
+        }
+    }
+
+@router.put("/alerts/config/{rule_id}")
+async def update_alert_rule(
+    rule_id: int,
+    payload: AlertRuleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Actualiza los parámetros de una regla de alerta (destinatario, estado, canales, urgencia)."""
+    await ensure_alert_rules_table(db)
+
+    # Verificar existencia
+    check = await db.execute(text("SELECT id FROM system_alert_rules WHERE id = :id"), {"id": rule_id})
+    if not check.scalar():
+        raise HTTPException(status_code=404, detail="Regla de alerta no encontrada")
+
+    updates = []
+    params = {"id": rule_id}
+
+    if payload.title is not None:
+        updates.append("title = :title")
+        params["title"] = payload.title
+    if payload.category is not None:
+        updates.append("category = :category")
+        params["category"] = payload.category
+    if payload.target_role is not None:
+        updates.append("target_role = :target_role")
+        params["target_role"] = payload.target_role
+    if payload.trigger_event is not None:
+        updates.append("trigger_event = :trigger_event")
+        params["trigger_event"] = payload.trigger_event
+    if payload.channels is not None:
+        updates.append("channels = :channels::jsonb")
+        params["channels"] = json.dumps(payload.channels)
+    if payload.urgency is not None:
+        updates.append("urgency = :urgency")
+        params["urgency"] = payload.urgency
+    if payload.target_link is not None:
+        updates.append("target_link = :target_link")
+        params["target_link"] = payload.target_link
+    if payload.is_active is not None:
+        updates.append("is_active = :is_active")
+        params["is_active"] = payload.is_active
+    if payload.threshold_days is not None:
+        updates.append("threshold_days = :threshold_days")
+        params["threshold_days"] = payload.threshold_days
+    if payload.message_template is not None:
+        updates.append("message_template = :message_template")
+        params["message_template"] = payload.message_template
+
+    updates.append("updated_at = NOW()")
+
+    if updates:
+        sql = f"UPDATE system_alert_rules SET {', '.join(updates)} WHERE id = :id"
+        await db.execute(text(sql), params)
+        await db.commit()
+
+    return {"status": "success", "message": "Regla de alerta actualizada correctamente"}
+
+@router.post("/alerts/config")
+async def create_alert_rule(
+    payload: AlertRuleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Crea una nueva regla de alerta personalizada."""
+    await ensure_alert_rules_table(db)
+
+    slug = re.sub(r'[^a-zA-Z0-9_]', '_', payload.code.upper())
+    res = await db.execute(text("""
+        INSERT INTO system_alert_rules
+        (code, title, category, target_role, trigger_event, channels, urgency, target_link, is_active, threshold_days, message_template)
+        VALUES (:code, :title, :category, :target_role, :trigger_event, :channels::jsonb, :urgency, :target_link, :is_active, :threshold_days, :message_template)
+        RETURNING id
+    """), {
+        "code": slug,
+        "title": payload.title,
+        "category": payload.category,
+        "target_role": payload.target_role,
+        "trigger_event": payload.trigger_event,
+        "channels": json.dumps(payload.channels),
+        "urgency": payload.urgency,
+        "target_link": payload.target_link,
+        "is_active": payload.is_active,
+        "threshold_days": payload.threshold_days or 0,
+        "message_template": payload.message_template or ""
+    })
+    new_id = res.scalar()
+    await db.commit()
+
+    return {"status": "success", "message": "Nueva regla de alerta creada", "rule_id": new_id}
+
+@router.delete("/alerts/config/{rule_id}")
+async def delete_alert_rule(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Elimina una regla de alerta personalizada."""
+    await ensure_alert_rules_table(db)
+    await db.execute(text("DELETE FROM system_alert_rules WHERE id = :id"), {"id": rule_id})
+    await db.commit()
+    return {"status": "success", "message": "Regla de alerta eliminada correctamente"}
+
+@router.post("/alerts/config/reset")
+async def reset_alert_rules(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Restablece todas las alertas a los valores predeterminados oficiales."""
+    await db.execute(text("DROP TABLE IF EXISTS system_alert_rules"))
+    await db.commit()
+    await ensure_alert_rules_table(db)
+    return {"status": "success", "message": "Alertas restablecidas a la configuración oficial"}
+
+
+# ==============================================================================
+# MÓDULO DE MANUALES & CAPACITACIÓN POR ÁREA
+# ==============================================================================
+
+@router.get("/manuals")
+async def get_system_manuals(
+    current_user: dict = Depends(get_current_user)
+):
+    """Devuelve los manuales estructurados de capacitación paso a paso por área/rol."""
+    manuals = [
+        {
+            "id": "psicologas",
+            "title": "🩺 Manual Operativo para Psicólogas & Matchmakers",
+            "subtitle": "Guía clínica diaria: entrevistas, mesa de matches, copiloto IA y gestión de prioridades.",
+            "target_role": "Psicólogas",
+            "badge_color": "#A855F7",
+            "steps": [
+                {
+                    "step": 1,
+                    "title": "Entrevista Clínica Inicial",
+                    "route": "/matchmaking/entrevista",
+                    "description": "Una vez el cliente compra su membresía, se agenda la entrevista clínica. Diligencia los Datos Objetivos (edad, profesión, estatura, motivaciones) y la Percepción de la Psicóloga (estilo de apego, madurez emocional, no-negociables).",
+                    "tips": ["Guarda cada sección para que el radar de compatibilidad se autocalibre.", "Si el cliente presenta exigencias extremas o red flags, clasifícalo en observaciones."],
+                    "shortcut_label": "Ir a Entrevista Clínica"
+                },
+                {
+                    "step": 2,
+                    "title": "Mesa de Trabajo (Mis Matches)",
+                    "route": "/matchmaking/mis-matches",
+                    "description": "En tu mesa de trabajo tienes tus clientes asignados como Persona A. Utiliza el selector de Persona B, el Copiloto Clínico IA y el Radar de Compatibilidad para proponer candidatos óptimos.",
+                    "tips": ["Puedes filtrar por ciudad, plan y tipo de afinidad.", "Usa 'Matches Cruzados' para revisar propuestas que otras psicólogas hayan hecho para tus candidatos."],
+                    "shortcut_label": "Ir a Mis Matches"
+                },
+                {
+                    "step": 3,
+                    "title": "Marcar Match como HECHO",
+                    "route": "/matchmaking/mis-matches",
+                    "description": "Cuando tengas definida la Persona B con alta afinidad, cambia el estado a HECHO. El sistema enviará automáticamente una notificación a María Paula para su revisión y visto bueno.",
+                    "tips": ["Verifica que Persona B no tenga citas cruzadas en conflicto antes de marcar HECHO."],
+                    "shortcut_label": "Ver Mis Matches"
+                },
+                {
+                    "step": 4,
+                    "title": "Atención de Casos Prioritarios (>15 días)",
+                    "route": "/matchmaking/mis-matches?filter=prioritarios",
+                    "description": "Los clientes que llevan más de 15 días sin cita ni propuesta activa se marcan automáticamente con la píldora naranja '⚡ Prioritarios'. Tu deber es priorizarles un match esta misma semana.",
+                    "tips": ["Recibirás una notificación en tu celular y en la campana cuando un caso supere los 15 días."],
+                    "shortcut_label": "Ver Casos Prioritarios"
+                },
+                {
+                    "step": 5,
+                    "title": "Protocolo ante Casos Trouble o Descarte",
+                    "route": "/matchmaking/trouble",
+                    "description": "Si un cliente reporta una experiencia negativa post-cita o resulta incompatible en segunda instancia, regístralo en el Módulo Trouble para que todo el equipo conozca la restricción y no se repita el error.",
+                    "tips": ["Revisa siempre el módulo Trouble antes de proponer candidatos con historial."],
+                    "shortcut_label": "Ir a Módulo Trouble"
+                }
+            ],
+            "faqs": [
+                {"q": "¿Qué hago si no encuentro candidato en mi base?", "a": "Usa la pestaña 'Todos los Matches' o consulta en el Copiloto Clínico IA para buscar compatibilidad en las bases de las demás psicólogas."},
+                {"q": "¿Quién confirma el restaurante?", "a": "Servicio al Cliente se encarga de la llamada/chat de coordinación logística una vez María Paula aprueba el match."}
+            ]
+        },
+        {
+            "id": "servicio_cliente",
+            "title": "🎧 Manual para Servicio al Cliente (CS)",
+            "subtitle": "Guía logística: confirmación de citas, elección de restaurantes y pases digitales.",
+            "target_role": "Servicio al Cliente",
+            "badge_color": "#3B82F6",
+            "steps": [
+                {
+                    "step": 1,
+                    "title": "Recepción de Matches Aprobados",
+                    "route": "/matchmaking/citas-agendadas",
+                    "description": "Cuando María Paula aprueba una pareja, el caso entra inmediatamente a tu bandeja de 'Citas Agendadas' y a la mesa oficial 'MATCHES'.",
+                    "tips": ["Verifica los teléfonos y correos de ambas partes antes de iniciar el contacto."],
+                    "shortcut_label": "Ir a Citas Agendadas"
+                },
+                {
+                    "step": 2,
+                    "title": "Coordinación Humana (1 a 1 por WhatsApp)",
+                    "route": "/matchmaking/citas-agendadas",
+                    "description": "Escríbeles personalmente para consensuar qué día de la semana tienen libre, su horario preferido (almuerzo/cena) y qué presupuesto manejan. Esta charla debe ser cálida y empática.",
+                    "tips": ["Anota cualquier preferencia de comida o zona en las observaciones de la cita."],
+                    "shortcut_label": "Ver Calendario de Citas"
+                },
+                {
+                    "step": 3,
+                    "title": "Fijar Restaurante Aliado",
+                    "route": "/matchmaking/citas-agendadas",
+                    "description": "Presiona el botón 'Reagendar / Restaurante'. Selecciona la ciudad, el día acordado y el rango de presupuesto. El sistema te mostrará los restaurantes aliados con convenio activo.",
+                    "tips": ["La reserva siempre se registra a nombre de 'María Paula Salinas'."],
+                    "shortcut_label": "Catálogo de Restaurantes"
+                },
+                {
+                    "step": 4,
+                    "title": "Envío de Confirmación + Pase Digital",
+                    "route": "/matchmaking/citas-agendadas",
+                    "description": "Toca el botón 'Confirmación'. Se abrirá el mensaje listo para enviar con la fecha, hora, restaurante y el enlace a su Pase Digital donde el cliente activará sus recordatorios en su celular.",
+                    "tips": ["Este es el ÚNICO mensaje manual formal que debes enviar; los recordatorios del día antes y del día de la cita los enviará el sistema automáticamente por notificación push."],
+                    "shortcut_label": "Ver Botones de Mensajes"
+                },
+                {
+                    "step": 5,
+                    "title": "Gestión de No-Shows y Feedbacks",
+                    "route": "/matchmaking/citas-agendadas",
+                    "description": "Si un cliente no asiste, presiona 'No-Show' para tipificar si fue justificado o con penalidad. Al día siguiente de la cita, registra el Feedback (calificación del 1 al 10 y química percibida).",
+                    "tips": ["El feedback positivo (+8) le permite a la psicóloga continuar la fase o cerrar el ciclo con éxito."],
+                    "shortcut_label": "Ir a Citas Agendadas"
+                }
+            ],
+            "faqs": [
+                {"q": "¿Qué pasa si el cliente cancela 2 horas antes?", "a": "Usa el modal de Reagendamiento y marca la causal. Si es injustificada, el sistema registra la penalidad de cita consumida."},
+                {"q": "¿Cómo sé si el cliente activó las alertas?", "a": "En la tarjeta de la cita en tu panel aparecerá la campanita verde indicando que el cliente ya tiene las alertas activas en su móvil."}
+            ]
+        },
+        {
+            "id": "direccion",
+            "title": "👑 Manual para Dirección & Supervisión (María Paula)",
+            "subtitle": "Supervisión estratégica: aprobación de matches, clientes VIP 650k, auditorías y configuración.",
+            "target_role": "Dirección General",
+            "badge_color": "#10B981",
+            "steps": [
+                {
+                    "step": 1,
+                    "title": "Cola de Aprobación de Matches",
+                    "route": "/matchmaking/aprobados-maria",
+                    "description": "Revisa las propuestas que las psicólogas marcaron como HECHO. Verifica la compatibilidad psicológica, el nivel sociocultural y presiona 'Aprobar' para que pase a agendamiento con CS.",
+                    "tips": ["Si una pareja no te convence, puedes devolverla a la psicóloga con una nota explicativa."],
+                    "shortcut_label": "Ir a Cola de Aprobación"
+                },
+                {
+                    "step": 2,
+                    "title": "Supervisión de Clientes VIP Plan 650k",
+                    "route": "/clientes",
+                    "description": "Cada vez que ingresa un cliente de 650k, recibes una alerta inmediata en tu celular. Al abrirla, te lleva directo a su ficha para que supervises su asignación y tiempos.",
+                    "tips": ["El Plan 650k tiene garantía de atención prioritaria y acompañamiento directo."],
+                    "shortcut_label": "Ver Listado de Clientes"
+                },
+                {
+                    "step": 3,
+                    "title": "Configuración de Alertas & Umbrales",
+                    "route": "/configuracion/alertas",
+                    "description": "Desde la pestaña 'Configurar Alertas' en la sección SISTEMA, puedes activar/desactivar cualquier notificación, cambiar destinatarios (Psicólogas, CS, Clientes) o ajustar los días de inactividad.",
+                    "tips": ["Puedes simular cualquier alerta con un solo clic para comprobar cómo se ve en el móvil."],
+                    "shortcut_label": "Ir a Configuración de Alertas"
+                },
+                {
+                    "step": 4,
+                    "title": "Auditoría de Psicólogas & Rendimiento",
+                    "route": "/auditoria-psicologas",
+                    "description": "Supervisa cuántos matches tiene activos cada psicóloga, cuántos slots están atrasados (>15d) y cuántas citas exitosas han generado en el mes.",
+                    "tips": ["Utiliza el conmutador 'Ver como' arriba para inspeccionar la vista exacta de cualquier rol."],
+                    "shortcut_label": "Ir a Auditoría de Psicólogas"
+                }
+            ],
+            "faqs": [
+                {"q": "¿Puedo cambiar el restaurante que eligió CS?", "a": "Sí, desde la mesa oficial MATCHES o en Citas Agendadas puedes reasignar el restaurante en cualquier momento."},
+                {"q": "¿Cómo creo un nuevo rol o usuaria?", "a": "En la sección SISTEMA > Cuentas de Acceso puedes crear nuevas psicólogas y asignarles sus permisos."}
+            ]
+        },
+        {
+            "id": "finanzas",
+            "title": "💰 Manual de Finanzas, Facturación & Reembolsos (Lina)",
+            "subtitle": "Control de cobros Stripe, cola de devoluciones, gestión de egresos y flujo de caja.",
+            "target_role": "Finanzas & Refunds",
+            "badge_color": "#F59E0B",
+            "steps": [
+                {
+                    "step": 1,
+                    "title": "Cola de Reembolsos & Garantías",
+                    "route": "/matchmaking/refunds",
+                    "description": "Supervisa los casos de clientes que solicitaron garantía o devolución según la política de citas no consumidas o inconformidad contractual.",
+                    "tips": ["Verifica el comprobante en Stripe antes de marcar un reembolso como ejecutado."],
+                    "shortcut_label": "Ir a Cola de Refunds"
+                },
+                {
+                    "step": 2,
+                    "title": "Monitoreo de Ingresos & Pagos Stripe",
+                    "route": "/ingresos",
+                    "description": "Revisa los pagos ingresados por pasarela y transferencias, segmentados por tipo de membresía (Estándar 65k, VIP 650k, Citas Extras).",
+                    "tips": ["El sistema sincroniza automáticamente los webhooks de Stripe en tiempo real."],
+                    "shortcut_label": "Ver Ingresos"
+                },
+                {
+                    "step": 3,
+                    "title": "Flujo de Caja & Gastos Operativos",
+                    "route": "/flujo-de-caja",
+                    "description": "Controla los pagos a proveedores (restaurantes aliados) y gastos fijos de la operación para mantener la rentabilidad mensual.",
+                    "tips": ["Registra cada consumo de restaurante con el número de reserva asociado."],
+                    "shortcut_label": "Ver Flujo de Caja"
+                }
+            ],
+            "faqs": [
+                {"q": "¿Qué pasa si un pago de Stripe falla?", "a": "El sistema no crea el slot de match hasta que el webhook de Stripe confirma el estado 'succeeded'."}
+            ]
+        }
+    ]
+
+    return {
+        "status": "success",
+        "manuals": manuals,
+        "total_manuals": len(manuals)
+    }
+
+
+
 
 
 
