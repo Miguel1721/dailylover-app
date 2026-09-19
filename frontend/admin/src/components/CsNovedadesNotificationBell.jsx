@@ -120,22 +120,18 @@ export default function CsNovedadesNotificationBell() {
       </button>
 
       {isOpen && (
-        <div style={{
-          position: 'absolute',
-          top: '100%',
-          right: 0,
-          marginTop: 8,
-          width: 390,
-          maxWidth: '92vw',
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 14,
-          boxShadow: '0 16px 40px rgba(0,0,0,0.6)',
-          zIndex: 2000,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
+        <>
+          <div
+            onClick={() => setIsOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1999,
+              background: 'rgba(0,0,0,0.4)',
+              backdropFilter: 'blur(2px)'
+            }}
+          />
+          <div className="bell-dropdown-popover">
           {/* Header */}
           <div style={{
             padding: '12px 16px',
@@ -301,101 +297,111 @@ export default function CsNovedadesNotificationBell() {
             )}
           </div>
 
-          {/* SIMULADOR EN VIVO (Para que el usuario experimente cómo llega la notificación) */}
+          {/* SIMULADOR EN VIVO */}
           <div style={{
-            padding: '10px 14px',
+            padding: '12px 14px',
             background: 'var(--bg-base)',
             borderTop: '1px solid var(--border-color)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 6
+            gap: 8,
+            flexShrink: 0
           }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              ⚡ Probar Alerta en Vivo (Simulador Instantáneo)
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⚡</span> Probar Alertas en Vivo (Simulador)
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <button
                 disabled={simulating}
                 onClick={() => handleSimulate('APPROVAL')}
                 style={{
-                  background: 'rgba(16, 185, 129, 0.12)',
+                  background: 'rgba(16, 185, 129, 0.15)',
                   color: '#10B981',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: 6,
-                  padding: '5px 8px',
-                  fontSize: 10,
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 40
                 }}
               >
-                <Sparkles size={11} /> Cita Aprobada
+                <Sparkles size={13} /> Cita Aprobada
               </button>
 
               <button
                 disabled={simulating}
                 onClick={() => handleSimulate('NO_SHOW')}
                 style={{
-                  background: 'rgba(239, 68, 68, 0.12)',
+                  background: 'rgba(239, 68, 68, 0.15)',
                   color: '#EF4444',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: 6,
-                  padding: '5px 8px',
-                  fontSize: 10,
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 40
                 }}
               >
-                <AlertTriangle size={11} /> Alerta No-Show
+                <AlertTriangle size={13} /> Alerta No-Show
               </button>
 
               <button
                 disabled={simulating}
                 onClick={() => handleSimulate('STATUS_CHANGE')}
                 style={{
-                  background: 'rgba(168, 85, 247, 0.12)',
+                  background: 'rgba(168, 85, 247, 0.15)',
                   color: '#A855F7',
-                  border: '1px solid rgba(168, 85, 247, 0.3)',
-                  borderRadius: 6,
-                  padding: '5px 8px',
-                  fontSize: 10,
+                  border: '1px solid rgba(168, 85, 247, 0.4)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 40
                 }}
               >
-                <Heart size={11} /> Match Hecho
+                <Heart size={13} /> Match Hecho
               </button>
 
               <button
                 disabled={simulating}
                 onClick={() => handleSimulate('TROUBLE')}
                 style={{
-                  background: 'rgba(255, 107, 53, 0.12)',
+                  background: 'rgba(255, 107, 53, 0.15)',
                   color: '#FF6B35',
-                  border: '1px solid rgba(255, 107, 53, 0.3)',
-                  borderRadius: 6,
-                  padding: '5px 8px',
-                  fontSize: 10,
+                  border: '1px solid rgba(255, 107, 53, 0.4)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
                   fontWeight: 700,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 4
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 40
                 }}
               >
-                <Flame size={11} /> Alerta Trouble
+                <Flame size={13} /> Alerta Trouble
               </button>
             </div>
           </div>
         </div>
+        </>
       )}
     </div>
   )

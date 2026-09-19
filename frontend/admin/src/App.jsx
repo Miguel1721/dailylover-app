@@ -107,9 +107,9 @@ function GlobalSearch() {
   }
 
   return (
-    <div style={{ position: 'relative', width: 320 }}>
+    <div className="global-search-wrapper" style={{ position: 'relative', flex: 1, minWidth: 60, maxWidth: 300 }}>
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <Search size={15} style={{ position: 'absolute', left: 12, color: 'var(--text-muted)' }} />
+        <Search size={15} style={{ position: 'absolute', left: 10, color: 'var(--text-muted)' }} />
         <input
           type="text"
           placeholder="Buscar clientes, eventos o personal..."
@@ -119,7 +119,8 @@ function GlobalSearch() {
           onBlur={() => setTimeout(() => setFocused(false), 200)}
           style={{
             width: '100%',
-            padding: '8px 12px 8px 36px',
+            boxSizing: 'border-box',
+            padding: '8px 12px 8px 32px',
             background: 'var(--bg-base)',
             border: '1px solid var(--border-color)',
             borderRadius: 8,
@@ -215,7 +216,7 @@ function GlobalSearch() {
 }
 
 function Sidebar({ isOpen, onClose }) {
-  const { logout, user, config, hasPermission, previewRole, isOriginalAdmin } = useAuth()
+  const { logout, user, config, hasPermission, previewRole, setPreviewRole, isOriginalAdmin } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -494,7 +495,62 @@ function Sidebar({ isOpen, onClose }) {
             <span>Modo Demo Activo</span>
           </div>
         )}
-        
+        {isOriginalAdmin && (
+          <div style={{
+            marginBottom: 12,
+            padding: '8px 10px',
+            background: 'rgba(150, 21, 0, 0.12)',
+            borderRadius: 8,
+            border: '1px solid var(--border-color)'
+          }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--color-primary)',
+              textTransform: 'uppercase',
+              marginBottom: 6,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4
+            }}>
+              <Eye size={12} /> Ver como (Simulador):
+            </div>
+            <select
+              value={previewRole || 'Admin'}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'Admin') {
+                  setPreviewRole(null);
+                  navigate('/');
+                } else {
+                  setPreviewRole(val);
+                  if (val === 'Cliente') navigate('/portal-cliente');
+                  else if (val === 'Servicio al Cliente') navigate('/cs-dashboard');
+                  else if (val === 'Psicóloga') navigate('/psicologa');
+                }
+                if (onClose) onClose();
+              }}
+              style={{
+                width: '100%',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 6,
+                padding: '5px 8px',
+                fontSize: 12,
+                fontWeight: 600,
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="Admin">👑 Admin (Dirección)</option>
+              <option value="Psicóloga">🩺 Psicóloga / Matchmaker</option>
+              <option value="Servicio al Cliente">🎧 Servicio al Cliente (CS)</option>
+              <option value="Cliente">💖 Cliente (Portal de Citas)</option>
+            </select>
+          </div>
+        )}
+
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -613,20 +669,12 @@ function AppContent() {
                 />
               )}
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
-                <header style={{
-                  height: 56,
-                  borderBottom: '1px solid var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '0 24px',
-                  background: 'var(--bg-sidebar)',
-                  flexShrink: 0
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <header className="app-main-header">
+                  <div className="header-left">
                     <button
                       onClick={() => setSidebarOpen(prev => !prev)}
                       className="sidebar-toggle-btn"
+                      style={{ flexShrink: 0 }}
                       aria-label={sidebarOpen ? "Ocultar menú lateral" : "Mostrar menú lateral"}
                       title={sidebarOpen ? "Ocultar menú lateral" : "Mostrar menú lateral"}
                     >
@@ -634,9 +682,9 @@ function AppContent() {
                     </button>
                     <GlobalSearch />
 
-                    {/* Selector 'Ver como' — visible EXCLUSIVAMENTE para la cuenta admin / de prueba */}
+                    {/* Selector 'Ver como' — visible EXCLUSIVAMENTE en escritorio (en móvil está en el menú lateral) */}
                     {isOriginalAdmin && (
-                      <div style={{
+                      <div className="desktop-only-role-picker" style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
@@ -644,7 +692,8 @@ function AppContent() {
                         border: `1px solid ${previewRole ? 'var(--color-primary)' : 'var(--border-color)'}`,
                         borderRadius: 8,
                         padding: '4px 10px',
-                        marginLeft: 12
+                        marginLeft: 8,
+                        flexShrink: 0
                       }}>
                         <Eye size={14} style={{ color: previewRole ? 'var(--color-primary)' : 'var(--text-secondary)' }} />
                         <span style={{ fontSize: 11, fontWeight: 700, color: previewRole ? 'var(--color-primary)' : 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -704,7 +753,7 @@ function AppContent() {
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="header-right">
                     <CsNovedadesNotificationBell />
                     <button
                       onClick={toggleTheme}
@@ -720,6 +769,7 @@ function AppContent() {
                         justifyContent: 'center',
                         color: 'var(--text-primary)',
                         cursor: 'pointer',
+                        flexShrink: 0,
                         transition: 'all 0.2s'
                       }}
                       title={theme === 'light' ? "Modo Oscuro" : "Modo Claro"}

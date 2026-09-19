@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   AlertTriangle, Flame, UserX, Search, Filter, RefreshCw, Plus,
   ChevronLeft, ChevronRight, MessageSquare, Copy, CheckCircle,
-  Edit3, ExternalLink, HelpCircle, UserCheck, HeartCrack, Info, X
+  Edit3, ExternalLink, HelpCircle, UserCheck, HeartCrack, Info, X,
+  Bell, Sparkles, Heart
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useNotifications } from '../../context/NotificationContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia')))
@@ -22,6 +24,14 @@ const CITIES = [
 
 export default function TroubleMatches() {
   const { token, user } = useAuth()
+  const { simulateAlert } = useNotifications()
+  const [simulating, setSimulating] = useState(false)
+
+  const handleQuickSimulate = async (type) => {
+    setSimulating(true)
+    await simulateAlert(type)
+    setSimulating(false)
+  }
 
   // Estado general
   const [activeTab, setActiveTab] = useState('trouble_matches') // 'trouble_matches' | 'difficult_clients' | 'operational'
@@ -190,7 +200,7 @@ export default function TroubleMatches() {
   const totalPages = Math.ceil(total / limit) || 1
 
   return (
-    <div style={{ padding: '24px 32px', minHeight: '100%', background: 'var(--bg-base)' }}>
+    <div className="trouble-page-container" style={{ padding: '20px 24px', minHeight: '100%', background: 'var(--bg-base)' }}>
       {/* Toast Notification */}
       {notification && (
         <div style={{
@@ -214,7 +224,7 @@ export default function TroubleMatches() {
       )}
 
       {/* HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
@@ -277,10 +287,120 @@ export default function TroubleMatches() {
         </div>
       </div>
 
+      {/* BARRA DE PRUEBA RÁPIDA DE ALERTAS EN VIVO (Móvil & Escritorio) */}
+      <div style={{
+        background: 'rgba(150, 21, 0, 0.08)',
+        border: '1px solid rgba(150, 21, 0, 0.25)',
+        borderRadius: 12,
+        padding: '12px 16px',
+        marginBottom: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Bell size={16} color="var(--color-primary)" />
+            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+              ⚡ Simulador de Alertas en Tiempo Real
+            </span>
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Toca cualquier botón para probar cómo te llega la notificación con audio y banner flotante:
+          </span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+          <button
+            disabled={simulating}
+            onClick={() => handleQuickSimulate('APPROVAL')}
+            style={{
+              background: 'rgba(16, 185, 129, 0.15)',
+              color: '#10B981',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              minHeight: 40
+            }}
+          >
+            <Sparkles size={13} /> Cita Aprobada
+          </button>
+          <button
+            disabled={simulating}
+            onClick={() => handleQuickSimulate('NO_SHOW')}
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              color: '#EF4444',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              minHeight: 40
+            }}
+          >
+            <AlertTriangle size={13} /> Alerta No-Show
+          </button>
+          <button
+            disabled={simulating}
+            onClick={() => handleQuickSimulate('STATUS_CHANGE')}
+            style={{
+              background: 'rgba(168, 85, 247, 0.15)',
+              color: '#A855F7',
+              border: '1px solid rgba(168, 85, 247, 0.4)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              minHeight: 40
+            }}
+          >
+            <Heart size={13} /> Match Hecho
+          </button>
+          <button
+            disabled={simulating}
+            onClick={() => handleQuickSimulate('TROUBLE')}
+            style={{
+              background: 'rgba(255, 107, 53, 0.15)',
+              color: '#FF6B35',
+              border: '1px solid rgba(255, 107, 53, 0.4)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              minHeight: 40
+            }}
+          >
+            <Flame size={13} /> Alerta Trouble
+          </button>
+        </div>
+      </div>
+
       {/* KPI STAT CARDS */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
         gap: 16,
         marginBottom: 24
       }}>

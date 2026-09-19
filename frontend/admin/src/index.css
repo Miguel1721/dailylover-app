@@ -1566,7 +1566,100 @@ body.light-mode .ai-report-text {
   }
 }
 
+/* ============================================================
+   HEADER & NOTIFICATIONS RESPONSIVE ENFORCEMENT
+   ============================================================ */
+.app-main-header {
+  height: 56px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--bg-sidebar);
+  flex-shrink: 0;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 
+.global-search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 60px;
+  max-width: 320px;
+}
 
+.bell-dropdown-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  width: 390px;
+  max-width: 92vw;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.6);
+  z-index: 2000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .app-main-header {
+    padding: 0 10px !important;
+    gap: 6px !important;
+  }
+  .desktop-only-role-picker {
+    display: none !important;
+  }
+  .global-search-wrapper {
+    max-width: 100% !important;
+  }
+  .global-search-input {
+    font-size: 12px !important;
+    padding-left: 28px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .bell-dropdown-popover {
+    position: fixed !important;
+    top: 60px !important;
+    left: 8px !important;
+    right: 8px !important;
+    width: auto !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: 84vh !important;
+    margin: 0 !important;
+    border-radius: 14px !important;
+  }
+  .notification-toast-container {
+    top: 60px !important;
+    left: 8px !important;
+    right: 8px !important;
+    width: auto !important;
+    max-width: calc(100vw - 16px) !important;
+  }
+  .trouble-page-container {
+    padding: 14px 10px !important;
+  }
+}
