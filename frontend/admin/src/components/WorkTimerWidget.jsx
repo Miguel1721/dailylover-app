@@ -9,12 +9,29 @@ const API = (typeof window !== 'undefined' && (window.location.origin.includes('
 export default function WorkTimerWidget() {
   const { user, token, previewRole } = useAuth()
   
-  // No mostrar el widget a clientes externos
+  const userEmail = (user?.email || '').toLowerCase().trim()
+  const rawRole = (user?.role || '').toLowerCase()
   const effectiveRole = (previewRole || user?.role || '').toLowerCase()
-  if (effectiveRole.includes('cliente')) return null
+  const rawName = (user?.name || user?.full_name || '').toLowerCase()
+
+  // EXCLUSIÓN TOTAL: María Paula, administradores y directivos (no facturan horas)
+  // "el usuario de maria no debe facturar"
+  const isMariaOrAdmin = 
+    userEmail.includes('maria') || 
+    userEmail.includes('admin') || 
+    ['mariapaula@dailylover.com', 'admin@dailylover.co', 'admin@dailylover.com', 'miguel.lozano1408@gmail.com'].includes(userEmail) ||
+    rawName.includes('maria paula') ||
+    rawName.includes('maría paula') ||
+    ['super admin', 'superadmin', 'admin', 'maría', 'maria', 'dirección', 'direccion'].includes(rawRole)
+
+  // El trabajo por horas es EXCLUSIVO para Psicólogas / Matchmakers:
+  const isPsych = !isMariaOrAdmin && (effectiveRole.includes('psicolog') || effectiveRole.includes('matchmaker'))
+
+  if (!isPsych || isMariaOrAdmin) {
+    return null
+  }
 
   const userName = user?.name || user?.full_name || (user?.email ? user.email.split('@')[0] : 'Psicóloga')
-  const isPsych = effectiveRole.includes('psicolog') || effectiveRole.includes('matchmaker')
 
   const [session, setSession] = useState(null)
   const [activeSeconds, setActiveSeconds] = useState(0)

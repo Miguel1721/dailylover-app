@@ -640,6 +640,25 @@ function AppContent() {
     setTheme(prev => prev === 'light' ? 'dark' : 'light')
   }
 
+  // El trabajo por horas es exclusivo para Psicólogas / Matchmakers.
+  // Se excluye terminantemente a María Paula, administradores y dirección (no facturan horas).
+  const userEmail = (user?.email || '').toLowerCase().trim()
+  const rawRole = (user?.role || '').toLowerCase()
+  const rawName = (user?.name || user?.full_name || '').toLowerCase()
+  const isMariaOrAdmin = 
+    userEmail.includes('maria') ||
+    userEmail.includes('admin') ||
+    ADMIN_EMAILS.includes(userEmail) ||
+    rawName.includes('maria paula') ||
+    rawName.includes('maría paula') ||
+    ADMIN_ROLES.map(r => r.toLowerCase()).includes(rawRole) ||
+    isOriginalAdmin
+
+  const isPsychologistUser = !isMariaOrAdmin && (
+    rawRole.includes('psicolog') ||
+    rawRole.includes('matchmaker')
+  )
+
   if (loading && token) {
     return (
       <div style={{
@@ -764,7 +783,7 @@ function AppContent() {
                     )}
                   </div>
                   <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <WorkTimerWidget />
+                    {isPsychologistUser && <WorkTimerWidget />}
                     <CsNovedadesNotificationBell />
                     <button
                       onClick={toggleTheme}

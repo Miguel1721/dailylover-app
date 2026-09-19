@@ -23,12 +23,10 @@ DEFAULT_RATES = [
     {"key": "SILVI", "name": "Silvi", "role": "Psicóloga Matchmaker Senior", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "STEFFY", "name": "Steffy", "role": "Psicóloga & Evaluadora Clínica", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "SOFI", "name": "Sofi", "role": "Psicóloga Matchmaker", "hourly_rate": 30000.0, "idle_timeout": 10},
-    {"key": "MAPE D", "name": "María Paula (MAPE)", "role": "Psicóloga & Coordinadora", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "ALEJA", "name": "Aleja", "role": "Psicóloga Matchmaker", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "MANU", "name": "Manu", "role": "Matchmaker & Asesora de Pareja", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "PIA", "name": "Pia", "role": "Psicóloga Matchmaker", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "ISA", "name": "Isa", "role": "Psicóloga Matchmaker", "hourly_rate": 30000.0, "idle_timeout": 10},
-    {"key": "MPS", "name": "María (MPS)", "role": "Directora de Matchmaking", "hourly_rate": 30000.0, "idle_timeout": 10},
     {"key": "GLOBAL", "name": "Tarifa Estándar Global", "role": "Tarifa por Defecto", "hourly_rate": 30000.0, "idle_timeout": 10}
 ]
 
@@ -156,6 +154,17 @@ async def ensure_work_time_tables(db: AsyncSession):
 async def start_work_session(req: SessionStartRequest, db: AsyncSession = Depends(get_db)):
     """Inicia un turno de trabajo (Clock-In) para la psicóloga."""
     await ensure_work_time_tables(db)
+
+    # 0. Excluir a María Paula y cuentas administrativas / dirección de facturar por horas
+    name_clean = req.user_name.strip().upper()
+    role_clean = (req.user_role or "").strip().upper()
+    EXCLUDED_PATTERNS = ["MARIA PAULA", "MARIAPAULA", "MARIA", "MARÍA", "ADMIN", "SUPER ADMIN", "DIRECCION", "DIRECCIÓN"]
+    if any(p in name_clean for p in EXCLUDED_PATTERNS) or any(p in role_clean for p in ["ADMIN", "SUPER ADMIN", "DIRECCION", "DIRECCIÓN"]):
+        return {
+            "status": "skipped",
+            "message": f"El usuario {req.user_name} no factura por horas. Seguimiento omitido.",
+            "session_id": None
+        }
 
     # 1. Resolver clave de psicóloga si no se proveyó
     pkey = req.psychologist_key
@@ -433,6 +442,16 @@ async def get_current_session(
     db: AsyncSession = Depends(get_db)
 ):
     """Consulta si la psicóloga tiene una sesión activa o en pausa en este momento."""
+    name_clean = user_name.strip().upper()
+    EXCLUDED_PATTERNS = ["MARIA PAULA", "MARIAPAULA", "MARIA", "MARÍA", "ADMIN", "SUPER ADMIN", "DIRECCION", "DIRECCIÓN"]
+    if any(p in name_clean for p in EXCLUDED_PATTERNS):
+        return {
+            "has_active_session": False,
+            "session": None,
+            "tracking_enabled": False,
+            "message": "Usuario no habilitado para facturación de horas."
+        }
+
     await ensure_work_time_tables(db)
 
     # Auto-cerrar sesiones abandonadas (sin heartbeat hace > 45 mins)

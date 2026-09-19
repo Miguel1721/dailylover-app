@@ -18,12 +18,10 @@ const PSYCHOLOGISTS_LIST = [
   'Silvi',
   'Steffy',
   'Sofi',
-  'María Paula (MAPE)',
   'Aleja',
   'Manu',
   'Pia',
-  'Isa',
-  'María (MPS)'
+  'Isa'
 ]
 
 export default function ControlHorasPsicologas() {
