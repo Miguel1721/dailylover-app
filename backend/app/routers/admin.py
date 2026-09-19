@@ -3665,17 +3665,20 @@ async def simulate_live_alert(
         ev_type = "MARKED_HECHO"
         details = f"Psicóloga Manu marcó el match de {person} como HECHO. Enviado para revisión de María Paula."
 
-    await db.execute(text("""
+    res = await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
         VALUES (:name, NULL, :ev, :det, NOW())
+        RETURNING id
     """), {"name": person, "ev": ev_type, "det": details})
+    new_id = res.scalar()
     await db.commit()
 
     return {
         "status": "success",
         "message": "Alerta simulada registrada correctamente",
         "event_type": ev_type,
-        "details": details
+        "details": details,
+        "alert_id": f"hist_{new_id}"
     }
 
 

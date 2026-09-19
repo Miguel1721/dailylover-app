@@ -75,7 +75,7 @@ export function NotificationProvider({ children }) {
   }, [])
 
   // Disparar notificación de escritorio / móvil del sistema operativo
-  const triggerDesktopNotification = useCallback((title, body, url = '/admin/') => {
+  const triggerDesktopNotification = useCallback((title, body, url = '/admin/', tag = null) => {
     if (typeof window === 'undefined') return
 
     // Vibración física táctil si el hardware lo soporta
@@ -90,27 +90,19 @@ export function NotificationProvider({ children }) {
     if (!hasPerm) return
 
     try {
+      const notifTag = tag || `dl_${Date.now()}`
       const notifOptions = {
         body: body || 'Nueva actualización en el sistema',
         icon: '/admin/icon-192.png',
         badge: '/admin/icon-192.png',
-        tag: `dl_${Date.now()}`,
+        tag: notifTag,
         vibrate: [200, 100, 200],
-        renotify: true,
+        renotify: false, // Deduplicación nativa del SO: si el tag ya existe no repite el banner
         data: { url: url || '/admin/' }
       }
 
-      // Vía Service Worker (Obligatorio en móviles Android Chrome y Safari iOS PWA)
+      // Vía Service Worker (Móviles Android Chrome y Safari iOS PWA)
       if ('serviceWorker' in navigator) {
-        // Enviar vía postMessage al SW si está activo
-        if (navigator.serviceWorker.controller) {
-          navigator.serviceWorker.controller.postMessage({
-            type: 'SHOW_NOTIFICATION',
-            title: `💌 Daily Lover · ${title}`,
-            options: notifOptions
-          })
-        }
-
         navigator.serviceWorker.getRegistration('/admin/').then(reg => {
           if (reg && reg.showNotification) {
             return reg.showNotification(`💌 Daily Lover · ${title}`, notifOptions)
@@ -152,7 +144,7 @@ export function NotificationProvider({ children }) {
 
   // Disparar nuevo Toast visual
   const triggerToast = useCallback((toastData) => {
-    const id = Date.now() + Math.random().toString(36).substring(2, 6)
+    const id = toastData.id || (Date.now() + Math.random().toString(36).substring(2, 6))
     const newToast = {
       id,
       title: toastData.title || 'Alerta del Sistema',
@@ -164,9 +156,13 @@ export function NotificationProvider({ children }) {
       created_at: new Date()
     }
 
-    setToasts(prev => [newToast, ...prev.slice(0, 4)]) // máximo 5 toasts simultáneos
+    // Prevenir duplicados visuales por ID
+    setToasts(prev => {
+      if (prev.some(t => t.id === id)) return prev
+      return [newToast, ...prev.slice(0, 4)]
+    })
     playChime()
-    triggerDesktopNotification(newToast.title, newToast.message, newToast.link)
+    triggerDesktopNotification(newToast.title, newToast.message, newToast.link, id)
 
     // Auto-dismiss tras 7 segundos
     setTimeout(() => {
@@ -193,6 +189,7 @@ export function NotificationProvider({ children }) {
           if (lastSeenAlertIdRef.current && lastSeenAlertIdRef.current !== newest.id) {
             // Se detectó un nuevo evento en tiempo real
             triggerToast({
+              id: newest.id,
               title: newest.title,
               message: newest.message,
               urgency: newest.urgency,
@@ -229,7 +226,13 @@ export function NotificationProvider({ children }) {
       })
       if (res.ok) {
         const data = await res.json()
+        const alertId = data.alert_id || `sim_${Date.now()}`
+        
+        // Sincronizar inmediatamente el ID visto para evitar duplicación con el próximo poll
+        lastSeenAlertIdRef.current = alertId
+
         triggerToast({
+          id: alertId,
           title: type === 'APPROVAL' ? '🎉 Match Aprobado por María Paula' :
                  type === 'NO_SHOW' ? '🚨 Alerta: Inasistencia (No-Show)' :
                  type === 'TROUBLE' ? '⚠️ Alerta de Trouble Clínico' :
