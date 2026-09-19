@@ -3575,18 +3575,31 @@ async def get_live_alerts(
             urgency = "high"
             icon_type = "trouble"
             link = "/matchmaking/trouble"
+        elif "INACTIVITY" in ev_type or "PRIORITY" in ev_type:
+            urgency = "urgent"
+            icon_type = "trouble"
+            link = f"/matchmaking/mis-matches?psychologist=all&filter=prioritarios&search={quote(r[1] or '')}"
+        elif "VIP" in ev_type or "650" in ev_type:
+            urgency = "urgent"
+            icon_type = "approval"
+            link = f"/clientes?q={quote(r[1] or '')}"
 
         iso_str, time_col, time_col_display = format_colombia_time(r[5])
+        title = (
+            f"⚠️ Inactividad: {r[1]} (+15 días)" if ("INACTIVITY" in ev_type or "PRIORITY" in ev_type) else
+            f"👑 Cliente VIP Plan 650k: {r[1]}" if ("VIP" in ev_type or "650" in ev_type) else
+            "No-Show Reportado" if "NO_SHOW" in ev_type else
+            "Match Listo (HECHO)" if "HECHO" in ev_type else
+            "Match Aprobado" if "APROBADO" in ev_type else
+            "Feedback Post-Cita" if "FEEDBACK" in ev_type else "Actualización Clínica"
+        )
         alerts.append({
             "id": f"hist_{r[0]}",
             "raw_id": r[0],
             "category": "HISTORIAL",
             "type": ev_type,
             "icon_type": icon_type,
-            "title": "No-Show Reportado" if "NO_SHOW" in ev_type else
-                     "Match Listo (HECHO)" if "HECHO" in ev_type else
-                     "Match Aprobado" if "APROBADO" in ev_type else
-                     "Feedback Post-Cita" if "FEEDBACK" in ev_type else "Actualización Clínica",
+            "title": title,
             "message": r[4] or f"Evento registrado para {r[1]}",
             "target_person": r[1] or "",
             "urgency": urgency,
@@ -3623,6 +3636,38 @@ async def get_live_alerts(
             "time_col_display": time_col_display
         })
 
+    # 3. Inactividad >= 15 días desde priority_client_tracking
+    try:
+        prio_res = await db.execute(text("""
+            SELECT id, client_name, assigned_psychologist, inactivity_days, urgency_level, updated_at
+            FROM priority_client_tracking
+            WHERE status = 'Pendiente' AND inactivity_days >= 15
+            ORDER BY inactivity_days DESC, updated_at DESC
+            LIMIT 5
+        """))
+        for p in prio_res.fetchall():
+            cname = p[1] or ""
+            psyc = p[2] or "Psicóloga asignada"
+            days = p[3] or 15
+            iso_str, time_col, time_col_display = format_colombia_time(p[5])
+            alerts.append({
+                "id": f"inact_{p[0]}",
+                "raw_id": p[0],
+                "category": "INACTIVITY_15D",
+                "type": "INACTIVITY_15D",
+                "icon_type": "trouble",
+                "title": f"⚠️ Alerta de Seguimiento: {cname} lleva {days} días sin actividad",
+                "message": f"Requiere nueva propuesta de match prioritario. Asignada a {psyc}.",
+                "target_person": cname,
+                "urgency": "urgent" if days >= 21 else "high",
+                "link": f"/matchmaking/mis-matches?psychologist=all&filter=prioritarios&search={quote(cname)}",
+                "created_at": iso_str,
+                "time_col": time_col,
+                "time_col_display": time_col_display
+            })
+    except Exception:
+        pass
+
     # Ordenar cronológicamente descendente
     alerts.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     alerts = alerts[:limit]
@@ -3644,26 +3689,45 @@ async def simulate_live_alert(
 ):
     """Simula un evento para disparar una notificación de prueba en tiempo real."""
     person = payload.person_name or "Carlos Mendoza & Laura Rincón"
+    target_link = "/matchmaking/mis-matches"
     
     if payload.type == "APPROVAL":
         ev_type = "APROBADO_MARIA"
         details = f"María Paula aprobó el match de {person}. Listo para que CS agende mesa."
+        target_link = "/matchmaking/aprobados-maria"
     elif payload.type == "NO_SHOW":
         ev_type = "NO_SHOW"
         details = f"Alerta: {person} no se presentó a su cita de las 8:00 PM. Requiere reprogramación o penalidad."
+        target_link = "/matchmaking/citas-agendadas"
     elif payload.type == "TROUBLE":
         ev_type = "TROUBLE_REPORT"
         details = f"Alerta Trouble: {person} reportó incompatibilidad en el segundo date."
+        target_link = "/matchmaking/trouble"
     elif payload.type == "CS_NOVEDAD":
         ev_type = "CS_NOVEDAD"
-        details = f"Cliente {person} compró +1 cita extra. Psicóloga asignada ya puede buscar nuevo match."
+        target_name = person.split("&")[0].strip()
+        details = f"Cliente {target_name} compró +1 cita extra. Psicóloga asignada ya puede buscar nuevo match."
+        target_link = f"/clientes?q={quote(target_name)}"
         await db.execute(text("""
             INSERT INTO cs_novedades (client_name, novedad_type, details, extra_dates, created_by, status, created_at)
             VALUES (:name, 'CITA_EXTRA', :det, 1, 'Simulador Admin', 'PENDIENTE', NOW())
-        """), {"name": person.split("&")[0].strip(), "det": details})
+        """), {"name": target_name, "det": details})
+    elif payload.type == "INACTIVITY_15D":
+        ev_type = "INACTIVITY_15D"
+        target_name = payload.person_name if (payload.person_name and "Laura" not in payload.person_name) else "Carlos Mendoza"
+        person = target_name
+        details = f"⚠️ Alerta de Seguimiento: {person} lleva 16 días sin actividad. Requiere nueva propuesta de match prioritario."
+        target_link = f"/matchmaking/mis-matches?psychologist=all&filter=prioritarios&search={quote(person)}"
+    elif payload.type == "VIP_650K":
+        ev_type = "VIP_SIGNUP_650K"
+        target_name = payload.person_name if (payload.person_name and "Laura" not in payload.person_name) else "Daniela Restrepo"
+        person = target_name
+        details = f"👑 Nuevo Cliente VIP: {person} se inscribió en el Plan 650k (MPS). Supervisión directa de María Paula."
+        target_link = f"/clientes?q={quote(person)}"
     else:  # STATUS_CHANGE / HECHO
         ev_type = "MARKED_HECHO"
         details = f"Psicóloga Manu marcó el match de {person} como HECHO. Enviado para revisión de María Paula."
+        target_link = "/matchmaking/mis-matches"
 
     res = await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
@@ -3678,7 +3742,9 @@ async def simulate_live_alert(
         "message": "Alerta simulada registrada correctamente",
         "event_type": ev_type,
         "details": details,
-        "alert_id": f"hist_{new_id}"
+        "alert_id": f"hist_{new_id}",
+        "person_name": person,
+        "link": target_link
     }
 
 

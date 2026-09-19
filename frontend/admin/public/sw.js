@@ -50,18 +50,21 @@ self.addEventListener('push', (event) => {
 // Listener al hacer clic sobre la notificación en el celular
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = (event.notification.data && event.notification.data.url) || '/admin/';
+  const rawUrl = (event.notification.data && event.notification.data.url) || '/admin/';
+  const fullUrl = new URL(rawUrl, self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         if (client.url.includes('/admin') && 'focus' in client) {
-          client.navigate(urlToOpen);
+          if ('navigate' in client) {
+            client.navigate(fullUrl);
+          }
           return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
+        return clients.openWindow(fullUrl);
       }
     })
   );

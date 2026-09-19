@@ -1489,6 +1489,17 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const [viewMode, setViewMode] = useState('mine') // 'mine' | 'cross_review'
   const [crossReviewCount, setCrossReviewCount] = useState(0)
 
+  // Sincronizar parámetros de URL (Ej: /matchmaking/mis-matches?filter=prioritarios&search=Carlos+Mendoza)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const q = params.get('search') || params.get('q')
+    const filter = params.get('filter') || params.get('tab')
+    const psyc = params.get('psychologist') || params.get('psyc')
+    if (q) setSearchTerm(q)
+    if (filter === 'prioritarios') setQuickFilter('prioritarios')
+    if (psyc) setSelectedPsyc(psyc)
+  }, [location.search])
+
   // Asistente Clínico & Sugerencias IA Modal: { clientName, crmId, matchRow, tab: 'sugerencias' | 'objetivos' | 'percepcion' }
   const [aiModalTarget, setAiModalTarget] = useState(null)
 

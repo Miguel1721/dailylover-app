@@ -333,6 +333,52 @@ export default function CsNovedadesNotificationBell() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <button
                 disabled={simulating}
+                onClick={() => handleSimulate('INACTIVITY_15D')}
+                style={{
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  color: '#F59E0B',
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 40
+                }}
+                title="Simular inactividad >15d con redirección directa a Prioritarios de Psicóloga"
+              >
+                <Flame size={13} /> ⚡ Inactividad 16d
+              </button>
+
+              <button
+                disabled={simulating}
+                onClick={() => handleSimulate('VIP_650K')}
+                style={{
+                  background: 'rgba(234, 179, 8, 0.15)',
+                  color: '#EAB308',
+                  border: '1px solid rgba(234, 179, 8, 0.4)',
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 40
+                }}
+                title="Simular nuevo cliente VIP Plan 650k con redirección y apertura automática de perfil"
+              >
+                <Sparkles size={13} /> 👑 VIP Plan 650k
+              </button>
+
+              <button
+                disabled={simulating}
                 onClick={() => handleSimulate('APPROVAL')}
                 style={{
                   background: 'rgba(16, 185, 129, 0.15)',

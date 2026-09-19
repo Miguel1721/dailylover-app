@@ -4,71 +4,72 @@ Script oficial de enriquecimiento y migración de datos extraídos de la auditor
 2. Carga 31 compras de citas extra / upgrades de plan con sus correspondientes slots y tickets en cs_novedades.
 3. Carga 347 registros de No-Shows en client_notes y person_history.
 4. Carga 76 registros de feedback post-cita en client_notes y person_history.
+Utiliza AsyncSessionLocal de app.database para ejecutarse de forma nativa en dl_api.
 """
 
+import asyncio
 import os
 import sys
 import json
 import re
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import uuid
 
-raw_db_url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL")
-if raw_db_url:
-    DATABASE_URL = raw_db_url.replace("postgresql+asyncpg://", "postgresql://")
-else:
-    DATABASE_URL = "postgresql://postgres:your_secure_postgres_password@postgres:5432/dailylover"
+# Asegurar que /app y el directorio raíz del backend estén en sys.path
+base_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.dirname(base_dir)
+if "/app" not in sys.path:
+    sys.path.insert(0, "/app")
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
 
-def run_enrichment():
+from sqlalchemy import text
+from app.database import AsyncSessionLocal
+
+async def run_enrichment():
     print("=== INICIANDO MIGRACIÓN DE DATOS AUDITORÍA WHATSAPP ===")
     
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = False
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    # 1. Cargar archivos JSON de datos
+    possible_dirs = [
+        os.path.join(repo_root, "scratch"),
+        os.path.join(repo_root, "..", "scratch"),
+        os.path.join(base_dir, "scratch"),
+        "/app/scratch",
+        "/home/ubuntu/dailylover/scratch",
+        "/home/ubuntu/dailylover/backend/scratch"
+    ]
+    
+    unregistered_file = None
+    enrichment_file = None
+    
+    for p in possible_dirs:
+        u_candidate = os.path.join(p, "clean_unregistered_clients_whatsapp.json")
+        e_candidate = os.path.join(p, "whatsapp_db_enrichment_candidates.json")
+        if os.path.exists(u_candidate) and os.path.exists(e_candidate):
+            unregistered_file = u_candidate
+            enrichment_file = e_candidate
+            break
+            
+    if not unregistered_file or not enrichment_file:
+        raise FileNotFoundError(f"No se encontraron los archivos JSON en ninguna de las rutas posibles: {possible_dirs}")
 
-    try:
-        # 1. Cargar archivos JSON de datos
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        repo_root = os.path.dirname(base_dir)
-        
-        possible_dirs = [
-            os.path.join(repo_root, "scratch"),
-            os.path.join(repo_root, "..", "scratch"),
-            os.path.join(base_dir, "scratch"),
-            "/app/scratch",
-            "/home/ubuntu/dailylover/scratch"
-        ]
-        
-        unregistered_file = None
-        enrichment_file = None
-        
-        for p in possible_dirs:
-            u_candidate = os.path.join(p, "clean_unregistered_clients_whatsapp.json")
-            e_candidate = os.path.join(p, "whatsapp_db_enrichment_candidates.json")
-            if os.path.exists(u_candidate) and os.path.exists(e_candidate):
-                unregistered_file = u_candidate
-                enrichment_file = e_candidate
-                break
-                
-        if not unregistered_file or not enrichment_file:
-            raise FileNotFoundError(f"No se encontraron los archivos JSON en ninguna de las rutas posibles: {possible_dirs}")
+    print(f"Archivos de migración encontrados en: {os.path.dirname(unregistered_file)}")
 
-        print(f"Archivos de migración encontrados en: {os.path.dirname(unregistered_file)}")
+    with open(unregistered_file, "r", encoding="utf-8") as f:
+        unregistered_clients = json.load(f)
 
-        with open(unregistered_file, "r", encoding="utf-8") as f:
-            unregistered_clients = json.load(f)
+    with open(enrichment_file, "r", encoding="utf-8") as f:
+        enrichment_data = json.load(f)
 
-        with open(enrichment_file, "r", encoding="utf-8") as f:
-            enrichment_data = json.load(f)
+    print(f"Candidatos no registrados a procesar: {len(unregistered_clients)}")
+    print(f"Upgrades: {len(enrichment_data.get('upgrades', []))}")
+    print(f"No-Shows: {len(enrichment_data.get('noshows', []))}")
+    print(f"Feedbacks: {len(enrichment_data.get('feedback', []))}")
 
-        print(f"Candidatos no registrados a procesar: {len(unregistered_clients)}")
-        print(f"Upgrades: {len(enrichment_data.get('upgrades', []))}")
-        print(f"No-Shows: {len(enrichment_data.get('noshows', []))}")
-        print(f"Feedbacks: {len(enrichment_data.get('feedback', []))}")
-
+    async with AsyncSessionLocal() as db:
         # 2. Obtener usuarios actuales de DB
-        cur.execute("SELECT id, LOWER(TRIM(name)) AS name_lower, name FROM users;")
-        existing_users = {row["name_lower"]: row["id"] for row in cur.fetchall()}
+        res = await db.execute(text("SELECT id, LOWER(TRIM(name)) AS name_lower, name FROM users;"))
+        rows = res.fetchall()
+        existing_users = {row.name_lower: row.id for row in rows}
         print(f"Usuarios existentes en DB antes de migración: {len(existing_users)}")
 
         # 3. Insertar los 83 clientes no registrados
@@ -77,34 +78,37 @@ def run_enrichment():
             n_clean = name.strip()
             n_lower = n_clean.lower()
             if n_lower not in existing_users:
-                # Insertar en users
-                cur.execute(
-                    "INSERT INTO users (name, created_at) VALUES (%s, NOW()) RETURNING id;",
-                    (n_clean,)
+                # Generar teléfono placeholder para cumplir la restricción NOT NULL UNIQUE
+                gen_phone = f"WA_{uuid.uuid4().hex[:12]}"
+                
+                # Insertar en users (trigger asigna client_code automáticamente)
+                insert_user = await db.execute(
+                    text("INSERT INTO users (name, phone, created_at) VALUES (:name, :phone, NOW()) RETURNING id, client_code;"),
+                    {"name": n_clean, "phone": gen_phone}
                 )
-                new_id = cur.fetchone()["id"]
-                client_code = f"DL-{new_id:04d}"
-                cur.execute("UPDATE users SET client_code = %s WHERE id = %s;", (client_code, new_id))
+                user_row = insert_user.fetchone()
+                new_id = user_row.id
+                client_code = user_row.client_code or f"DL-{new_id:04d}"
 
                 # Insertar en profiles
-                cur.execute("""
+                await db.execute(text("""
                     INSERT INTO profiles (
                         user_id, city, responsable, plan_tier, bio_notes, updated_at
                     ) VALUES (
-                        %s, 'Bogotá', 'SILVI', 'Estándar 65k (2 citas)',
+                        :uid, 'Bogotá', 'SILVI', 'Estándar 65k (2 citas)',
                         'Cliente identificado en auditoría de chat de WhatsApp.', NOW()
                     );
-                """, (new_id,))
+                """), {"uid": new_id})
 
                 # Insertar slot inicial en operational_matches
-                cur.execute("""
+                await db.execute(text("""
                     INSERT INTO operational_matches (
                         city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, created_at, updated_at
                     ) VALUES (
-                        'Bogotá', 'hetero', 'Estándar 65k (2 citas)', %s, 'SILVI', 1,
-                        'Listo para match', %s, NOW(), NOW()
+                        'Bogotá', 'hetero', 'Estándar 65k (2 citas)', :name, 'SILVI', 1,
+                        'Listo para match', :obs, NOW(), NOW()
                     );
-                """, (n_clean, f"Identificado en auditoría de WhatsApp ({client_code})."))
+                """), {"name": n_clean, "obs": f"Identificado en auditoría de WhatsApp ({client_code})."})
 
                 existing_users[n_lower] = new_id
                 inserted_clients_count += 1
@@ -137,31 +141,38 @@ def run_enrichment():
             target_name = matched_name or sender
             novedad_type = "UPGRADE_PLAN" if "upgrade" in msg.lower() or "vip" in msg.lower() else "EXTRA_DATE"
 
-            cur.execute("""
+            await db.execute(text("""
                 INSERT INTO cs_novedades (
                     client_id, client_name, novedad_type, details, extra_dates, created_by, assigned_to, status, created_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, 'General', 'ATENDIDO', NOW()
+                    :cid, :cname, :ntype, :details, :extra_dates, :created_by, 'General', 'ATENDIDO', NOW()
                 );
-            """, (matched_uid, target_name, novedad_type, f"[{dt_str}] {msg}", extra_num, sender))
+            """), {
+                "cid": matched_uid,
+                "cname": target_name,
+                "ntype": novedad_type,
+                "details": f"[{dt_str}] {msg}",
+                "extra_dates": extra_num,
+                "created_by": sender
+            })
 
             if matched_uid:
-                cur.execute("""
+                await db.execute(text("""
                     INSERT INTO client_notes (user_id, note, source, created_at)
-                    VALUES (%s, %s, 'whatsapp_audit_upgrade', NOW());
-                """, (matched_uid, f"💳 Compra registrada en WhatsApp ({dt_str}): {msg}"))
+                    VALUES (:uid, :note, 'whatsapp_audit_upgrade', NOW());
+                """), {"uid": matched_uid, "note": f"💳 Compra registrada en WhatsApp ({dt_str}): {msg}"})
 
                 # Crear slots si son citas extra
                 if novedad_type == "EXTRA_DATE" and extra_num > 0:
                     for i in range(extra_num):
-                        cur.execute("""
+                        await db.execute(text("""
                             INSERT INTO operational_matches (
                                 city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, created_at, updated_at
                             ) VALUES (
-                                'Bogotá', 'hetero', 'Cita Extra', %s, 'SILVI', 99, 'Listo para match',
-                                %s, NOW(), NOW()
+                                'Bogotá', 'hetero', 'Cita Extra', :pA, 'SILVI', 99, 'Listo para match',
+                                :obs, NOW(), NOW()
                             );
-                        """, (target_name, f"Cita extra ({i+1}/{extra_num}) de auditoría WhatsApp: {msg}"))
+                        """), {"pA": target_name, "obs": f"Cita extra ({i+1}/{extra_num}) de auditoría WhatsApp: {msg}"})
                         slots_created_from_upgrades += 1
 
             upgrades_processed += 1
@@ -191,16 +202,16 @@ def run_enrichment():
                         break
 
             # Registrar en person_history
-            cur.execute("""
+            await db.execute(text("""
                 INSERT INTO person_history (person_name, event_type, details, created_at)
-                VALUES (%s, 'NO_SHOW_HISTORICAL', %s, NOW());
-            """, (target_name, f"[{dt_str}] No-Show reportado por {sender}: {msg}"))
+                VALUES (:pname, 'NO_SHOW_HISTORICAL', :details, NOW());
+            """), {"pname": target_name, "details": f"[{dt_str}] No-Show reportado por {sender}: {msg}"})
 
             if matched_uid:
-                cur.execute("""
+                await db.execute(text("""
                     INSERT INTO client_notes (user_id, note, source, created_at)
-                    VALUES (%s, %s, 'whatsapp_audit_noshow', NOW());
-                """, (matched_uid, f"🚨 Inasistencia (No-Show) reportada en WhatsApp ({dt_str}) por {sender}: {msg}"))
+                    VALUES (:uid, :note, 'whatsapp_audit_noshow', NOW());
+                """), {"uid": matched_uid, "note": f"🚨 Inasistencia (No-Show) reportada en WhatsApp ({dt_str}) por {sender}: {msg}"})
                 noshows_notes_added += 1
 
             noshows_processed += 1
@@ -224,33 +235,25 @@ def run_enrichment():
                     target_name = uname_lower.title()
                     break
 
-            cur.execute("""
+            await db.execute(text("""
                 INSERT INTO person_history (person_name, event_type, details, created_at)
-                VALUES (%s, 'DATE_FEEDBACK_HISTORICAL', %s, NOW());
-            """, (target_name, f"[{dt_str}] Feedback reportado por {sender}: {msg}"))
+                VALUES (:pname, 'DATE_FEEDBACK_HISTORICAL', :details, NOW());
+            """), {"pname": target_name, "details": f"[{dt_str}] Feedback reportado por {sender}: {msg}"})
 
             if matched_uid:
-                cur.execute("""
+                await db.execute(text("""
                     INSERT INTO client_notes (user_id, note, source, created_at)
-                    VALUES (%s, %s, 'whatsapp_audit_feedback', NOW());
-                """, (matched_uid, f"⭐ Feedback de cita reportado en WhatsApp ({dt_str}): {msg}"))
+                    VALUES (:uid, :note, 'whatsapp_audit_feedback', NOW());
+                """), {"uid": matched_uid, "note": f"⭐ Feedback de cita reportado en WhatsApp ({dt_str}): {msg}"})
                 feedbacks_notes_added += 1
 
             feedbacks_processed += 1
 
         print(f"✅ Feedbacks procesados: {feedbacks_processed} (Notas clínicas vinculadas a usuarios: {feedbacks_notes_added})")
 
-        # Confirmar transacción completa
-        conn.commit()
+        # Commit final
+        await db.commit()
         print("\n🎉 MIGRACIÓN Y ENRIQUECIMIENTO COMPLETADO CON ÉXITO.")
 
-    except Exception as e:
-        conn.rollback()
-        print(f"❌ ERROR DURANTE LA MIGRACIÓN: {e}")
-        raise
-    finally:
-        cur.close()
-        conn.close()
-
 if __name__ == "__main__":
-    run_enrichment()
+    asyncio.run(run_enrichment())

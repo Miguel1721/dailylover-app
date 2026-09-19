@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Clock, Plus, CheckSquare, Square, MessageCircle, AlertCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Clock, Plus, CheckSquare, Square, MessageCircle, AlertCircle, Flame } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
@@ -13,6 +14,7 @@ const PRIORITY_BADGES = {
 
 export default function RemindersWidget() {
   const { user, token } = useAuth()
+  const navigate = useNavigate()
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -199,18 +201,34 @@ export default function RemindersWidget() {
                     <span>{r.completed ? 'Completado' : 'Marcar Listo'}</span>
                   </button>
 
-                  {r.whatsapp_link && (
-                    <a 
-                      href={r.whatsapp_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-ghost btn-sm"
-                      style={{ color: '#25D366', borderColor: 'rgba(37,211,102,0.4)', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', fontSize: 11, background: 'rgba(37,211,102,0.08)' }}
-                      onClick={e => e.stopPropagation()}
-                    >
-                      <MessageCircle size={13} /> WhatsApp 1-Clic
-                    </a>
-                  )}
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    {r.client_name && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigate(`/matchmaking/mis-matches?psychologist=all&filter=prioritarios&search=${encodeURIComponent(r.client_name)}`)
+                        }}
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: '#F59E0B', borderColor: 'rgba(245,158,11,0.4)', display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: 11, background: 'rgba(245,158,11,0.08)' }}
+                        title="Abrir caso en Matches Psicóloga (Pestaña Prioritarios)"
+                      >
+                        <Flame size={12} /> Prioritarios
+                      </button>
+                    )}
+
+                    {r.whatsapp_link && (
+                      <a 
+                        href={r.whatsapp_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: '#25D366', borderColor: 'rgba(37,211,102,0.4)', display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', fontSize: 11, background: 'rgba(37,211,102,0.08)' }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <MessageCircle size={13} /> WhatsApp
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             )

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Search, Eye, ChevronLeft, ChevronRight, History, User, Heart, MapPin, Briefcase, GraduationCap, Sparkles, BookOpen, UserCheck, Phone, Cake, Ruler, Shield, Smile, Filter, CheckCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ClinicalNotesViewer from '../components/ClinicalNotesViewer'
@@ -714,9 +715,11 @@ export default function Clientes() {
   const [successBanner, setSuccessBanner] = useState('')
   const limit = 20
 
+  const location = useLocation()
+
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search)
-    const q = searchParams.get('q')
+    const searchParams = new URLSearchParams(location.search)
+    const q = searchParams.get('q') || searchParams.get('search')
     const urlResp = searchParams.get('responsable')
     if (q) {
       setSearch(q)
@@ -726,7 +729,7 @@ export default function Clientes() {
       setPsychologistFilter(urlResp)
       setPage(1)
     }
-  }, [])
+  }, [location.search])
 
 
   const fetchUsers = useCallback(() => {
@@ -757,8 +760,18 @@ export default function Clientes() {
       })
       .then(d => {
         if (!d) return
-        setUsers(d.users || [])
+        const list = d.users || []
+        setUsers(list)
         setTotal(d.total || 0)
+
+        // Si venimos con parámetro ?q= o ?search= y hay resultados, abrir automáticamente el expediente del cliente
+        const currentParams = new URLSearchParams(location.search)
+        const q = currentParams.get('q') || currentParams.get('search')
+        if (q && list.length > 0 && !selected) {
+          // Coincidencia exacta o por coincidencia parcial
+          const exact = list.find(u => u.name && (u.name.toLowerCase() === q.toLowerCase() || u.name.toLowerCase().includes(q.toLowerCase()))) || list[0]
+          setSelected(exact)
+        }
       })
       .catch(() => {
         setUsers([])

@@ -17,6 +17,8 @@ export function NotificationProvider({ children }) {
   )
 
   const lastSeenAlertIdRef = useRef(null)
+  const seenAlertIdsRef = useRef(new Set())
+  const isInitialFetchRef = useRef(true)
   const audioCtxRef = useRef(null)
 
   // Generador de sonido sutil con Web Audio API (Cero descargas mp3, 100% confiable)
@@ -91,6 +93,7 @@ export function NotificationProvider({ children }) {
 
     try {
       const notifTag = tag || `dl_${Date.now()}`
+      const formattedUrl = url ? (url.startsWith('/admin') ? url : `/admin${url.startsWith('/') ? url : '/' + url}`) : '/admin/'
       const notifOptions = {
         body: body || 'Nueva actualización en el sistema',
         icon: '/admin/icon-192.png',
@@ -98,7 +101,7 @@ export function NotificationProvider({ children }) {
         tag: notifTag,
         vibrate: [200, 100, 200],
         renotify: false, // Deduplicación nativa del SO: si el tag ya existe no repite el banner
-        data: { url: url || '/admin/' }
+        data: { url: formattedUrl }
       }
 
       // Vía Service Worker (Móviles Android Chrome y Safari iOS PWA)
@@ -125,7 +128,7 @@ export function NotificationProvider({ children }) {
           const notif = new Notification(`💌 Daily Lover · ${title}`, notifOptions)
           notif.onclick = () => {
             window.focus()
-            if (url) window.location.href = url
+            if (formattedUrl) window.location.href = formattedUrl
             notif.close()
           }
         } catch (e) {
@@ -170,7 +173,7 @@ export function NotificationProvider({ children }) {
     }, 7000)
   }, [playChime, triggerDesktopNotification, dismissToast])
 
-  // Polling de alertas en vivo desde el backend
+  // Polling de alertas en vivo desde el backend con deduplicación estricta
   const fetchLiveAlerts = useCallback(async () => {
     if (!token) return
     try {
@@ -183,22 +186,30 @@ export function NotificationProvider({ children }) {
         setAlertsHistory(incomingAlerts)
         setUnreadCount(data.unread_count || 0)
 
-        // Verificar si hay eventos nuevos desde el último poll
+        // Deduplicación estricta:
         if (incomingAlerts.length > 0) {
-          const newest = incomingAlerts[0]
-          if (lastSeenAlertIdRef.current && lastSeenAlertIdRef.current !== newest.id) {
-            // Se detectó un nuevo evento en tiempo real
-            triggerToast({
-              id: newest.id,
-              title: newest.title,
-              message: newest.message,
-              urgency: newest.urgency,
-              icon_type: newest.icon_type,
-              link: newest.link,
-              target_person: newest.target_person
-            })
+          if (isInitialFetchRef.current) {
+            // Carga inicial: poblar IDs existentes para no disparar alertas de eventos antiguos
+            incomingAlerts.forEach(a => seenAlertIdsRef.current.add(a.id))
+            isInitialFetchRef.current = false
+          } else {
+            // Polls posteriores: SOLO disparar si el ID nunca antes ha sido visto
+            for (const alert of incomingAlerts) {
+              if (!seenAlertIdsRef.current.has(alert.id)) {
+                seenAlertIdsRef.current.add(alert.id)
+                triggerToast({
+                  id: alert.id,
+                  title: alert.title,
+                  message: alert.message,
+                  urgency: alert.urgency,
+                  icon_type: alert.icon_type,
+                  link: alert.link,
+                  target_person: alert.target_person
+                })
+              }
+            }
           }
-          lastSeenAlertIdRef.current = newest.id
+          lastSeenAlertIdRef.current = incomingAlerts[0].id
         }
       }
     } catch (e) {
@@ -228,20 +239,52 @@ export function NotificationProvider({ children }) {
         const data = await res.json()
         const alertId = data.alert_id || `sim_${Date.now()}`
         
-        // Sincronizar inmediatamente el ID visto para evitar duplicación con el próximo poll
+        // Registrar ID inmediatamente para evitar duplicación con el próximo poll
+        seenAlertIdsRef.current.add(alertId)
         lastSeenAlertIdRef.current = alertId
+
+        let title = '✨ Match Listo (HECHO)'
+        let link = data.link || '/matchmaking/mis-matches'
+        let icon_type = 'hecho'
+        let urgency = 'high'
+        let person = data.person_name || 'Carlos Mendoza & Laura Rincón'
+
+        if (type === 'APPROVAL') {
+          title = '🎉 Match Aprobado por María Paula'
+          icon_type = 'approval'
+          urgency = 'high'
+        } else if (type === 'NO_SHOW') {
+          title = '🚨 Alerta: Inasistencia (No-Show)'
+          icon_type = 'no_show'
+          urgency = 'urgent'
+        } else if (type === 'TROUBLE') {
+          title = '⚠️ Alerta de Trouble Clínico'
+          icon_type = 'trouble'
+          urgency = 'high'
+        } else if (type === 'CS_NOVEDAD') {
+          title = '📢 Cita Extra Comprada (+1)'
+          icon_type = 'novedad'
+          urgency = 'urgent'
+        } else if (type === 'INACTIVITY_15D') {
+          title = '⚠️ Alerta de Inactividad (16 días)'
+          icon_type = 'trouble'
+          urgency = 'urgent'
+          person = 'Carlos Mendoza'
+        } else if (type === 'VIP_650K') {
+          title = '👑 Nuevo Cliente VIP Plan 650k'
+          icon_type = 'approval'
+          urgency = 'urgent'
+          person = 'Daniela Restrepo'
+        }
 
         triggerToast({
           id: alertId,
-          title: type === 'APPROVAL' ? '🎉 Match Aprobado por María Paula' :
-                 type === 'NO_SHOW' ? '🚨 Alerta: Inasistencia (No-Show)' :
-                 type === 'TROUBLE' ? '⚠️ Alerta de Trouble Clínico' :
-                 type === 'CS_NOVEDAD' ? '📢 Cita Extra Comprada (+1)' : '✨ Match Listo (HECHO)',
+          title: data.title || title,
           message: data.details,
-          urgency: type === 'NO_SHOW' ? 'urgent' : 'high',
-          icon_type: type.toLowerCase(),
-          link: '/matchmaking/citas-agendadas',
-          target_person: 'Carlos Mendoza & Laura Rincón'
+          urgency: urgency,
+          icon_type: icon_type,
+          link: data.link || link,
+          target_person: person
         })
       }
     } catch (e) {
