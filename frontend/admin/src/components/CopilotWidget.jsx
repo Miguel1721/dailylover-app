@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { Bot, User, Send, X, MessageSquare } from 'lucide-react'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export default function CopilotWidget() {
   const { token, user, hasPermission } = useAuth()

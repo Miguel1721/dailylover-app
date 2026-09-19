@@ -3,7 +3,7 @@ import { Heart, Users, Calendar, AlertTriangle, ArrowRight, CheckCircle, Clock, 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const PRIORITY_BADGES = {
   URGENTE: { bg: 'rgba(255, 77, 77, 0.18)', color: '#FF4D4D', border: '1px solid rgba(255,77,77,0.3)', label: '🔴 URGENTE' },
@@ -226,12 +226,12 @@ export default function MatchmakerDashboard() {
         </div>
 
         {/* SECTION 1: PRIORITY REMINDERS & URGENT FOLLOW-UPS */}
-        <div className="card" style={{ marginBottom: 20, border: '1px solid rgba(255,77,77,0.3)', background: 'linear-gradient(180deg, #1D1316 0%, #170E10 100%)' }}>
+        <div className="card reminders-widget-card" style={{ marginBottom: 20, border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10, fontSize: 16 }}>
               <span style={{ fontSize: 20 }}>📌</span>
-              <span>Recordatorios & Tareas Prioritarias de Seguimiento</span>
-              <span style={{ fontSize: 11, background: 'rgba(255,77,77,0.2)', color: '#FF4D4D', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 800 }}>Recordatorios & Tareas Prioritarias de Seguimiento</span>
+              <span style={{ fontSize: 11, background: 'rgba(255,77,77,0.15)', color: '#FF4D4D', padding: '2px 8px', borderRadius: 12, fontWeight: 700 }}>
                 {reminders.filter(r => !r.completed).length} Pendientes
               </span>
             </div>
@@ -258,15 +258,16 @@ export default function MatchmakerDashboard() {
                   <div 
                     key={r.id}
                     style={{
-                      background: r.completed ? 'rgba(255,255,255,0.02)' : 'var(--bg-card)',
-                      border: r.completed ? '1px solid rgba(255,255,255,0.05)' : badge.border,
+                      background: r.completed ? 'var(--bg-base)' : 'var(--bg-card)',
+                      border: r.completed ? '1px solid var(--border-color)' : (badge.border || '1px solid var(--border-color)'),
                       borderRadius: 12,
                       padding: '14px 16px',
-                      opacity: r.completed ? 0.55 : 1,
+                      opacity: r.completed ? 0.6 : 1,
                       transition: 'all 0.2s',
                       display: 'flex',
                       flexDirection: 'column',
-                      justifyContent: 'space-between'
+                      justifyContent: 'space-between',
+                      boxShadow: r.completed ? 'none' : '0 2px 8px rgba(150, 21, 0, 0.05)'
                     }}
                   >
                     <div>
@@ -280,7 +281,7 @@ export default function MatchmakerDashboard() {
                         </span>
                       </div>
 
-                      <div style={{ fontWeight: 700, fontSize: 14, color: 'white', marginBottom: 4, textDecoration: r.completed ? 'line-through' : 'none' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginBottom: 4, textDecoration: r.completed ? 'line-through' : 'none' }}>
                         {r.title}
                       </div>
 
@@ -291,13 +292,13 @@ export default function MatchmakerDashboard() {
                       )}
 
                       {r.notes && (
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '6px 8px', borderRadius: 6, marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontStyle: 'italic', background: 'var(--bg-base)', border: '1px solid var(--border-color)', padding: '6px 8px', borderRadius: 6, marginBottom: 10 }}>
                           "{r.notes}"
                         </div>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: '1px solid var(--border-color)', marginTop: 8 }}>
                       <button 
                         onClick={() => handleToggleReminder(r.id)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: r.completed ? '#4CAF50' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}

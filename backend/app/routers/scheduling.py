@@ -1121,7 +1121,7 @@ async def reserve_booking_slot(
     await db.commit()
 
     meta = PSYCHOLOGISTS_METADATA[p_name]
-    videocall_url = f"https://prueba-daily.agentesia.cloud/admin/matchmaking/sala/{token}"
+    videocall_url = f"https://daily-lover.agentesia.cloud/admin/matchmaking/sala/{token}"
 
     # Contenido de archivo .ICS (Google / Apple Calendar)
     ics_content = f"""BEGIN:VCALENDAR

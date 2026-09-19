@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const FORM_TABS = [
   { id: 'datos_objetivos', label: '📊 Datos Objetivos' },

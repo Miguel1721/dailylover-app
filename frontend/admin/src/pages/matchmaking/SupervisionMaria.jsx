@@ -18,7 +18,7 @@ import { useAuth } from '../../context/AuthContext'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export default function SupervisionMaria() {
   const { token } = useAuth()

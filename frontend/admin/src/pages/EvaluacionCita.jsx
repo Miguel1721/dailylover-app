@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { Heart, Star, CheckCircle, MapPin, Calendar, UserCheck, Send, ShieldAlert } from 'lucide-react'
 
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export default function EvaluacionCita() {
   const [searchParams] = useSearchParams()

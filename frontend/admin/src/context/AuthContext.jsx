@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react'
 
 const AuthContext = createContext()
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export const ADMIN_EMAILS = [
   'mariapaula@dailylover.com',
@@ -85,9 +85,9 @@ export function AuthProvider({ children }) {
   }
 
   const isOriginalAdmin = Boolean(
-    user && user.role !== 'atrasados_only' && !user.email?.toLowerCase().includes('atrasados') && (
-      ADMIN_ROLES.includes(user.role) ||
-      (user.email && ADMIN_EMAILS.includes(user.email.trim().toLowerCase()))
+    user && !user.role?.toLowerCase().includes('atrasados') && !user.email?.toLowerCase().includes('atrasados') && (
+      (user.email && ADMIN_EMAILS.includes(user.email.trim().toLowerCase())) ||
+      (['Super Admin', 'SUPERADMIN', 'Admin'].includes(user.role))
     )
   )
 
@@ -121,6 +121,14 @@ export function AuthProvider({ children }) {
       return true
     }
 
+    if (role === 'Cliente') {
+      if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos', 'clientes'].includes(module)) {
+        return false
+      }
+      if (module === 'dashboard' && action === 'view') return true
+      return false
+    }
+
     if (role === 'Psicóloga' || (typeof role === 'string' && (role.toLowerCase().includes('psicolog') || role.toLowerCase().includes('matchmaker')))) {
       if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos'].includes(module)) {
         return false
@@ -131,10 +139,11 @@ export function AuthProvider({ children }) {
       return false
     }
 
-    if (role === 'Servicio al Cliente') {
-      if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos', 'dashboard'].includes(module)) {
+    if (role === 'Servicio al Cliente' || (typeof role === 'string' && (role.toLowerCase().includes('servicio') || role.toLowerCase().includes('customer')))) {
+      if (['roles', 'usuarios', 'empleados', 'nomina', 'comisiones', 'ingresos', 'gastos', 'flujo_caja', 'proveedores', 'importar', 'eventos'].includes(module)) {
         return false
       }
+      if (module === 'dashboard' && action === 'view') return true
       if (module === 'clientes' && action === 'view') return true
       if (module === 'matching' && action === 'view') return true
       return false

@@ -11,7 +11,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "no-reply@dailylover.app")
-APP_BASE_URL = os.getenv("APP_BASE_URL", "https://prueba-daily.agentesia.cloud")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "https://daily-lover.agentesia.cloud")
 
 def send_email_html(to_email: str, subject: str, html_content: str) -> bool:
     """Envía un correo electrónico HTML o simula el envío si no hay credenciales SMTP."""

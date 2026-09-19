@@ -9,7 +9,7 @@ import { Wallet, Landmark, TrendingUp, TrendingDown, RefreshCw, FileText } from 
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler)
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 function CategoryProgress({ label, value, maxVal }) {
   const pct = maxVal > 0 ? Math.round((value / maxVal) * 100) : 0

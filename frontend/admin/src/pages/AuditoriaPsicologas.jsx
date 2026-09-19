@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export default function AuditoriaPsicologas() {
   const { token } = useAuth()
@@ -102,7 +102,7 @@ export default function AuditoriaPsicologas() {
   if (error && !data) {
     return (
       <div style={{ padding: 32, color: 'var(--text-primary)' }}>
-        <div className="card" style={{ border: '1px solid rgba(244,67,54,0.3)', background: '#1A1214', padding: 24 }}>
+        <div className="card" style={{ border: '1px solid rgba(244,67,54,0.3)', background: 'var(--bg-card)', padding: 24 }}>
           <AlertCircle size={32} style={{ color: '#F44336', marginBottom: 12 }} />
           <h3>Error al cargar Auditoría</h3>
           <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>{error}</p>

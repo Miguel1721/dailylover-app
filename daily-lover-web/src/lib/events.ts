@@ -3,7 +3,7 @@ import localEvents from "@/data/events.json";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_EVENTS_API_URL ||
-  "https://prueba-daily.agentesia.cloud/api/v1/public";
+  "https://daily-lover.agentesia.cloud/api/v1/public";
 
 /**
  * Service to fetch public events.

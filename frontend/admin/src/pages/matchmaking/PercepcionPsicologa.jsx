@@ -9,7 +9,7 @@ import RatingSlider10 from '../../components/RatingSlider10'
 import ClientSelectorBar from '../../components/ClientSelectorBar'
 import DynamicFormSection from '../../components/DynamicFormSection'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const LOVE_LANGUAGES = [
   'Palabras de afirmación',

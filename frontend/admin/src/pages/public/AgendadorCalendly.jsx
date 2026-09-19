@@ -5,7 +5,7 @@ import {
   ChevronRight, ArrowLeft, Download, ShieldCheck, Heart, User, Phone, Mail, Sparkles, Award
 } from 'lucide-react'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export default function AgendadorCalendly() {
   const { psicologaSlug } = useParams()

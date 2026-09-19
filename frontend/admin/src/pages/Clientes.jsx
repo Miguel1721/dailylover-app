@@ -5,7 +5,7 @@ import ClinicalNotesViewer from '../components/ClinicalNotesViewer'
 import NuevoClienteExpresModal from '../components/NuevoClienteExpresModal'
 import RegistrarNovedadModal from '../components/RegistrarNovedadModal'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const MOTIVACION_BADGES = {
   exploracion: 'badge-blue',
@@ -333,7 +333,7 @@ function ClienteModal({ cliente, token, onClose }) {
               <select
                 value={newPsyc}
                 onChange={e => setNewPsyc(e.target.value)}
-                style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
+                style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 10px', borderRadius: 6, fontSize: 12 }}
               >
                 <option value="AUTO">⚡ Auto (Siguiente con menor carga)</option>
                 <option value="Silvi">Silvi</option>
@@ -349,7 +349,7 @@ function ClienteModal({ cliente, token, onClose }) {
                 placeholder="Motivo de derivación (ej: tiempo, afinidad)..."
                 value={reassignReason}
                 onChange={e => setReassignReason(e.target.value)}
-                style={{ background: '#0D0A0B', border: '1px solid var(--border-color)', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 12, flex: 1 }}
+                style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 10px', borderRadius: 6, fontSize: 12, flex: 1 }}
               />
               <button
                 className="btn btn-primary btn-sm"

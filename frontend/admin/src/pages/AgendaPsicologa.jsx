@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Calendar as CalendarIcon, Users, Phone, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 const DAYS_ES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const HOURS_START = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00']
 const HOURS_END   = ['12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00']

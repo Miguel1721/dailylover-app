@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Star, Heart, X, CheckCircle, MessageSquare } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 function StarRating({ value, onChange, label }) {
   return (

@@ -9,6 +9,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [showForgotModal, setShowForgotModal] = useState(false)
   const navigate = useNavigate()
 
   // Redirect if already authenticated

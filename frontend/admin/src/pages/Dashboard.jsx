@@ -18,7 +18,7 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 import RemindersWidget from '../components/RemindersWidget'
 
-const API = 'https://prueba-daily.agentesia.cloud'
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const PLACEHOLDER_STATS = {
   total_users: 0,
@@ -382,36 +382,34 @@ export default function Dashboard() {
         </div>
 
         {/* AI Executive Report */}
-        <div className="card" style={{
-          background: 'linear-gradient(135deg, #1a0a2e 0%, #2d0050 50%, #1a0a2e 100%)',
-          border: '1px solid rgba(176,106,255,0.3)',
-          marginTop: 24
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div className="card ai-report-card" style={{ marginTop: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 20 }}>✨</span>
-                <span style={{ fontWeight: 700, fontSize: 16, color: '#e8b4ff' }}>Reporte Ejecutivo IA</span>
+                <span className="ai-report-title" style={{ fontWeight: 700, fontSize: 16, color: '#e8b4ff' }}>Reporte Ejecutivo IA</span>
                 <span style={{ fontSize: 11, background: 'rgba(176,106,255,0.2)', color: '#b06aff', padding: '2px 8px', borderRadius: 20 }}>Claude AI</span>
               </div>
-              <p style={{ fontSize: 12, color: 'rgba(232,180,255,0.6)', marginTop: 4 }}>Análisis automático del desempeño del negocio</p>
+              <p className="ai-report-subtitle" style={{ fontSize: 12, color: 'rgba(232,180,255,0.7)', marginTop: 4 }}>Análisis automático del desempeño del negocio</p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <select
                 value={reportPeriod.month}
                 onChange={e => setReportPeriod(p => ({ ...p, month: Number(e.target.value) }))}
-                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(176,106,255,0.3)', color: '#e8b4ff', borderRadius: 8, padding: '4px 8px', fontSize: 12 }}
+                className="ai-report-select"
+                style={{ borderRadius: 8, padding: '4px 8px', fontSize: 12 }}
               >
                 {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
-                  <option key={i+1} value={i+1} style={{ background: '#1a0a2e' }}>{m}</option>
+                  <option key={i+1} value={i+1}>{m}</option>
                 ))}
               </select>
               <select
                 value={reportPeriod.year}
                 onChange={e => setReportPeriod(p => ({ ...p, year: Number(e.target.value) }))}
-                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(176,106,255,0.3)', color: '#e8b4ff', borderRadius: 8, padding: '4px 8px', fontSize: 12 }}
+                className="ai-report-select"
+                style={{ borderRadius: 8, padding: '4px 8px', fontSize: 12 }}
               >
-                {[2024,2025,2026].map(y => <option key={y} value={y} style={{ background: '#1a0a2e' }}>{y}</option>)}
+                {[2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               <button
                 onClick={generateReport}
@@ -424,15 +422,15 @@ export default function Dashboard() {
           </div>
 
           {report ? (
-            <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 16 }}>
+            <div className="ai-report-box" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 11, color: 'rgba(232,180,255,0.5)' }}>Periodo: {report.period}</span>
-                <span style={{ fontSize: 11, color: 'rgba(232,180,255,0.5)' }}>Generado: {new Date(report.generated_at).toLocaleDateString('es-CO')}</span>
+                <span style={{ fontSize: 11, color: 'rgba(232,180,255,0.7)' }}>Periodo: {report.period}</span>
+                <span style={{ fontSize: 11, color: 'rgba(232,180,255,0.7)' }}>Generado: {new Date(report.generated_at).toLocaleDateString('es-CO')}</span>
               </div>
-              <p style={{ color: '#e8b4ff', lineHeight: 1.7, fontSize: 14, whiteSpace: 'pre-line' }}>{report.summary}</p>
+              <p className="ai-report-text" style={{ color: '#e8b4ff', lineHeight: 1.7, fontSize: 14, whiteSpace: 'pre-line' }}>{report.summary}</p>
             </div>
           ) : (
-            <div style={{ textAlign: 'center', padding: '32px 0', color: 'rgba(232,180,255,0.4)' }}>
+            <div style={{ textAlign: 'center', padding: '32px 0', color: 'rgba(232,180,255,0.6)' }}>
               <div style={{ fontSize: 32, marginBottom: 8 }}>✨</div>
               <p style={{ fontSize: 13 }}>Selecciona un periodo y presiona "Generar Reporte" para obtener un análisis ejecutivo con IA</p>
             </div>

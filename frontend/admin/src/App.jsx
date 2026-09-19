@@ -29,6 +29,8 @@ import Login from './pages/Login'
 import Proveedores from './pages/Proveedores'
 
 import MatchmakerDashboard from './pages/MatchmakerDashboard'
+import CustomerServiceDashboard from './pages/CustomerServiceDashboard'
+import ClientePortalDashboard from './pages/ClientePortalDashboard'
 import AgendaPsicologa from './pages/AgendaPsicologa'
 import EvaluacionCita from './pages/EvaluacionCita'
 import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
@@ -71,7 +73,7 @@ function GlobalSearch() {
     }
     const delayDebounce = setTimeout(() => {
       setLoading(true)
-      fetch(`https://prueba-daily.agentesia.cloud/api/v1/admin/global-search?query=${encodeURIComponent(query)}`, {
+      fetch(`/api/v1/admin/global-search?query=${encodeURIComponent(query)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(r => r.json())
@@ -224,36 +226,59 @@ function Sidebar({ isOpen, onClose }) {
 
   const effectiveRole = user?.role || ''
   const isAtrasadosOnly = effectiveRole === 'atrasados_only' || user?.role === 'atrasados_only'
-  const isMaria = !isAtrasadosOnly && (
-    effectiveRole === 'María' ||
-    (!previewRole && (
-      (user?.email && ADMIN_EMAILS.includes(user.email.trim().toLowerCase())) ||
-      (user?.role && ADMIN_ROLES.includes(user.role))
-    ))
-  )
-  const isCs = !isAtrasadosOnly && (
+  const isCliente = effectiveRole === 'Cliente'
+  const isCs = !isAtrasadosOnly && !isCliente && (
     effectiveRole === 'Servicio al Cliente' ||
     effectiveRole === 'Customer Service' ||
     effectiveRole.toLowerCase().includes('customer') ||
     effectiveRole.toLowerCase().includes('servicio')
   )
-  const isPsyc = !isAtrasadosOnly && (effectiveRole === 'Psicóloga' || effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker'))
-  const isLina = !isAtrasadosOnly && effectiveRole === 'Lina (Refunds)'
+  const isPsyc = !isAtrasadosOnly && !isCliente && !isCs && (
+    effectiveRole === 'Psicóloga' ||
+    effectiveRole.toLowerCase().includes('psicolog') ||
+    effectiveRole.toLowerCase().includes('matchmaker')
+  )
+  const isLina = !isAtrasadosOnly && !isCliente && effectiveRole === 'Lina (Refunds)'
+  const isMaria = !isAtrasadosOnly && !isCliente && !isCs && (
+    effectiveRole === 'María' ||
+    effectiveRole === 'Admin' ||
+    effectiveRole === 'Super Admin' ||
+    (!previewRole && (
+      (user?.email && ADMIN_EMAILS.includes(user.email.trim().toLowerCase())) ||
+      (user?.role && ADMIN_ROLES.includes(user.role))
+    ))
+  )
 
-  const homePath = isAtrasadosOnly ? '/matchmaking/cola-atrasados' : isCs ? '/matchmaking/aprobados-maria' : isLina ? '/matchmaking/refunds' : '/'
+  const homePath = isAtrasadosOnly ? '/matchmaking/cola-atrasados' : isCliente ? '/portal-cliente' : isCs ? '/cs-dashboard' : isPsyc ? '/psicologa' : '/'
 
-  // Navegación exclusiva para usuario de Atrasados (Zero ruido)
+  // Navegación exclusiva para usuario de Atrasados
   const atrasadosNavItems = [
     { to: '/matchmaking/cola-atrasados', icon: Sparkles, label: '🎙️ Cola de Atrasados' },
     { to: '/matchmaking/matches-atrasados', icon: Calendar, label: '📅 Matches Atrasados' }
   ]
 
+  // Navegación exclusiva para Cliente
+  const clienteNavItems = [
+    { to: '/portal-cliente', icon: Heart, label: '💖 Mi Próxima Cita' },
+    { to: '/evaluacion-cita', icon: Sparkles, label: '⭐ Evaluación de Cita' }
+  ]
+
+  // Navegación exclusiva para Servicio al Cliente (CS)
+  const csNavItems = [
+    { to: '/cs-dashboard', icon: Headphones, label: '🎧 Mesa de Control CS' },
+    { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
+    { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Citas Aprobadas por María' },
+    { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
+    { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' }
+  ]
+
   // Groups and items configuration — Zero noise per role
   const coreItems = [
-    ...(isPsyc || isMaria ? [{ to: '/', icon: Heart, label: isMaria ? 'Panel Clínico (Psicólogas)' : 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
+    ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
+    ...(isMaria ? [{ to: '/', icon: LayoutDashboard, label: 'Dashboard Dirección', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
-    ...(!isLina ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
+    ...(!isLina && !isCliente ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
   ]
@@ -372,6 +397,54 @@ function Sidebar({ isOpen, onClose }) {
               </NavLink>
             ))}
           </div>
+        ) : isCliente ? (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--color-primary)',
+              padding: '0 12px 6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              Portal del Cliente
+            </div>
+            {clienteNavItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        ) : isCs ? (
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--color-primary)',
+              padding: '0 12px 6px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              Mesa de Control CS
+            </div>
+            {csNavItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
         ) : (
           <>
             {coreItems.filter(i => hasPermission(i.module, i.action)).map(({ to, icon: Icon, label, end }) => (
@@ -448,22 +521,24 @@ function Sidebar({ isOpen, onClose }) {
 }
 
 function HomeRoute() {
-  const { user } = useAuth()
-  const effectiveRole = user?.role || ''
+  const { user, previewRole } = useAuth()
+  const effectiveRole = previewRole || user?.role || ''
   if (effectiveRole === 'atrasados_only') {
     return <Navigate to="/matchmaking/cola-atrasados" replace />
   }
-  if (effectiveRole === 'Servicio al Cliente') {
-    return <Navigate to="/matchmaking/aprobados-maria" replace />
+  if (effectiveRole === 'Cliente') {
+    return <ClientePortalDashboard />
+  }
+  if (effectiveRole === 'Servicio al Cliente' || (typeof effectiveRole === 'string' && (effectiveRole.toLowerCase().includes('servicio') || effectiveRole.toLowerCase().includes('customer')))) {
+    return <CustomerServiceDashboard />
+  }
+  if (effectiveRole === 'Psicóloga' || (typeof effectiveRole === 'string' && (effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker')))) {
+    return <MatchmakerDashboard />
   }
   if (effectiveRole === 'Lina (Refunds)') {
     return <Navigate to="/matchmaking/refunds" replace />
   }
-  return (
-    <ProtectedRoute module="dashboard" action="view">
-      <MatchmakerDashboard />
-    </ProtectedRoute>
-  )
+  return <Dashboard />
 }
 
 function AppContent() {
@@ -575,7 +650,15 @@ function AppContent() {
                           value={previewRole || 'Admin'}
                           onChange={(e) => {
                             const val = e.target.value;
-                            setPreviewRole(val === 'Admin' ? null : val);
+                            if (val === 'Admin') {
+                              setPreviewRole(null);
+                              navigate('/');
+                            } else {
+                              setPreviewRole(val);
+                              if (val === 'Cliente') navigate('/portal-cliente');
+                              else if (val === 'Servicio al Cliente') navigate('/cs-dashboard');
+                              else if (val === 'Psicóloga') navigate('/psicologa');
+                            }
                           }}
                           style={{
                             background: 'var(--bg-card)',
@@ -589,15 +672,17 @@ function AppContent() {
                             outline: 'none'
                           }}
                         >
-                          <option value="Admin">Admin (Vista Completa)</option>
-                          <option value="Psicóloga">Psicóloga</option>
-                          <option value="María">María</option>
-                          <option value="Servicio al Cliente">Servicio al Cliente</option>
-                          <option value="Lina (Refunds)">Lina (Refunds)</option>
+                          <option value="Admin">👑 Admin (Dirección / Vista Completa)</option>
+                          <option value="Psicóloga">🩺 Psicóloga / Matchmaker</option>
+                          <option value="Servicio al Cliente">🎧 Servicio al Cliente (CS)</option>
+                          <option value="Cliente">💖 Cliente (Portal de Citas)</option>
                         </select>
                         {previewRole && (
                           <button
-                            onClick={() => setPreviewRole(null)}
+                            onClick={() => {
+                              setPreviewRole(null);
+                              navigate('/');
+                            }}
                             style={{
                               background: 'transparent',
                               border: 'none',
@@ -643,6 +728,9 @@ function AppContent() {
                   <Routes>
                     <Route path="/" element={<HomeRoute />} />
                     <Route path="/general" element={<ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute>} />
+                    <Route path="/psicologa" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
+                    <Route path="/cs-dashboard" element={<ProtectedRoute module="dashboard" action="view"><CustomerServiceDashboard /></ProtectedRoute>} />
+                    <Route path="/portal-cliente" element={<ProtectedRoute module="dashboard" action="view"><ClientePortalDashboard /></ProtectedRoute>} />
                     <Route path="/clinico" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
                     <Route path="/auditoria-psicologas" element={<ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute>} />
                     <Route path="/clientes" element={<ProtectedRoute module="clientes" action="view"><Clientes /></ProtectedRoute>} />
