@@ -52,7 +52,8 @@ import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
-import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet } from 'lucide-react'
+import TroubleMatches from './pages/matchmaking/TroubleMatches'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet, AlertTriangle } from 'lucide-react'
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
 import CsNovedadesNotificationBell from './components/CsNovedadesNotificationBell'
 
@@ -292,6 +293,7 @@ function Sidebar({ isOpen, onClose }) {
     ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Aceptadas', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc || isCs ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
@@ -766,10 +768,12 @@ function AppContent() {
                     
                     <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
                     <Route path="/matchmaking/prioritarios" element={<ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute>} />
+                    <Route path="/matchmaking/trouble" element={<ProtectedRoute module="matching" action="view"><TroubleMatches /></ProtectedRoute>} />
                     <Route path="/matchmaking/refunds" element={<ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute>} />
                     <Route path="/matchmaking/supervision-maria" element={<ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute>} />
 
                     {/* Redirecciones de compatibilidad */}
+                    <Route path="/trouble" element={<Navigate to="/matchmaking/trouble" replace />} />
                     <Route path="/prioritarios" element={<Navigate to="/matchmaking/prioritarios" replace />} />
                     <Route path="/corazoncito" element={<Navigate to="/matchmaking/prioritarios" replace />} />
                     <Route path="/supervision-maria" element={<Navigate to="/matchmaking/supervision-maria" replace />} />

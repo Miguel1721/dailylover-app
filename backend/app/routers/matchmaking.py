@@ -7517,3 +7517,254 @@ HISTORIAL DE LA CONVERSACIÓN:
         "person_b": name_b
     }
 
+
+# ─── GESTIÓN INTEGRAL DE TROUBLE Y CLIENTES DIFÍCILES ────────────────────────
+
+class CreateTroubleCaseRequest(BaseModel):
+    type: str = "trouble_match"  # "trouble_match" or "difficult_client"
+    person_a: str
+    person_b: Optional[str] = None
+    psychologist: Optional[str] = None
+    reason: Optional[str] = None
+    notes: Optional[str] = None
+    city: Optional[str] = "Bogotá"
+    category: Optional[str] = "Caso Especial"
+
+class UpdateTroubleCaseRequest(BaseModel):
+    notes: Optional[str] = None
+    reason: Optional[str] = None
+    status: Optional[str] = None
+    category: Optional[str] = None
+
+@router.get("/trouble-cases")
+async def get_trouble_cases(
+    tab: str = "trouble_matches",
+    search: Optional[str] = None,
+    psychologist: Optional[str] = None,
+    city: Optional[str] = None,
+    page: int = 1,
+    limit: int = 30,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("matching", "view"))
+):
+    """Fetch trouble cases, difficult clients, and operational rejections with search and filters."""
+    offset = max(0, (page - 1) * limit)
+
+    # 1. Counts summary for KPIs
+    cnt_tr = await db.execute(text("SELECT COUNT(*) FROM trouble_matches;"))
+    total_trouble_matches = cnt_tr.scalar() or 0
+
+    cnt_diff = await db.execute(text("SELECT COUNT(*) FROM difficult_clients;"))
+    total_difficult_clients = cnt_diff.scalar() or 0
+
+    cnt_op = await db.execute(text("SELECT COUNT(*) FROM operational_matches WHERE status ILIKE '%TROUBLE%' OR status ILIKE '%TROUBLEMAKER%';"))
+    total_operational_trouble = cnt_op.scalar() or 0
+
+    counts = {
+        "trouble_matches_count": total_trouble_matches,
+        "difficult_clients_count": total_difficult_clients,
+        "operational_trouble_count": total_operational_trouble
+    }
+
+    items = []
+    total = 0
+
+    if tab == "difficult_clients":
+        where = ["1=1"]
+        params = {"limit": limit, "offset": offset}
+        if search:
+            where.append("(client_name ILIKE :s OR interviewed_by ILIKE :s OR notes ILIKE :s OR reason ILIKE :s OR city ILIKE :s)")
+            params["s"] = f"%{search.strip()}%"
+        if psychologist and psychologist != "all":
+            where.append("interviewed_by ILIKE :psyc")
+            params["psyc"] = f"%{psychologist.strip()}%"
+        if city and city != "all":
+            where.append("city ILIKE :city")
+            params["city"] = f"%{city.strip()}%"
+
+        where_sql = " AND ".join(where)
+        tot_res = await db.execute(text(f"SELECT COUNT(*) FROM difficult_clients WHERE {where_sql}"), params)
+        total = tot_res.scalar() or 0
+
+        rows_res = await db.execute(text(f"""
+            SELECT id, client_name, interviewed_by, city, plan, reason, status, notes, category, created_at
+            FROM difficult_clients
+            WHERE {where_sql}
+            ORDER BY id ASC
+            LIMIT :limit OFFSET :offset
+        """), params)
+        for r in rows_res.fetchall():
+            items.append({
+                "id": r[0],
+                "client_name": r[1] or "",
+                "interviewed_by": r[2] or "",
+                "city": r[3] or "Bogotá",
+                "plan": r[4] or "",
+                "reason": r[5] or "",
+                "status": r[6] or "DIFICIL",
+                "notes": r[7] or "",
+                "category": r[8] or "Caso Especial",
+                "created_at": str(r[9]) if r[9] else ""
+            })
+
+    elif tab == "operational":
+        where = ["(status ILIKE '%TROUBLE%' OR status ILIKE '%REVISAR%' OR status ILIKE '%RECHAZ%')"]
+        params = {"limit": limit, "offset": offset}
+        if search:
+            where.append("(person_a ILIKE :s OR person_b ILIKE :s OR observations ILIKE :s OR psychologist_name ILIKE :s)")
+            params["s"] = f"%{search.strip()}%"
+        if psychologist and psychologist != "all":
+            where.append("psychologist_name ILIKE :psyc")
+            params["psyc"] = f"%{psychologist.strip()}%"
+        if city and city != "all":
+            where.append("city ILIKE :city")
+            params["city"] = f"%{city.strip()}%"
+
+        where_sql = " AND ".join(where)
+        tot_res = await db.execute(text(f"SELECT COUNT(*) FROM operational_matches WHERE {where_sql}"), params)
+        total = tot_res.scalar() or 0
+
+        rows_res = await db.execute(text(f"""
+            SELECT id, person_a, person_b, psychologist_name, city, slot_number, status, observations, created_at, updated_at
+            FROM operational_matches
+            WHERE {where_sql}
+            ORDER BY updated_at DESC NULLS LAST, id DESC
+            LIMIT :limit OFFSET :offset
+        """), params)
+        for r in rows_res.fetchall():
+            items.append({
+                "id": r[0],
+                "person_a": r[1] or "",
+                "person_b": r[2] or "",
+                "psychologist_name": r[3] or "",
+                "city": r[4] or "Bogotá",
+                "slot_number": r[5],
+                "status": r[6] or "TROUBLE",
+                "observations": r[7] or "",
+                "created_at": str(r[8]) if r[8] else "",
+                "updated_at": str(r[9]) if r[9] else ""
+            })
+
+    else:  # default: "trouble_matches"
+        where = ["1=1"]
+        params = {"limit": limit, "offset": offset}
+        if search:
+            where.append("(person_a ILIKE :s OR person_b ILIKE :s OR reason ILIKE :s OR notes ILIKE :s OR venue ILIKE :s)")
+            params["s"] = f"%{search.strip()}%"
+        if psychologist and psychologist != "all":
+            where.append("reported_by ILIKE :psyc")
+            params["psyc"] = f"%{psychologist.strip()}%"
+
+        where_sql = " AND ".join(where)
+        tot_res = await db.execute(text(f"SELECT COUNT(*) FROM trouble_matches WHERE {where_sql}"), params)
+        total = tot_res.scalar() or 0
+
+        rows_res = await db.execute(text(f"""
+            SELECT id, person_a, person_b, reported_by, reason, notes, venue, created_at
+            FROM trouble_matches
+            WHERE {where_sql}
+            ORDER BY id DESC
+            LIMIT :limit OFFSET :offset
+        """), params)
+        for r in rows_res.fetchall():
+            items.append({
+                "id": r[0],
+                "person_a": r[1] or "",
+                "person_b": r[2] or "",
+                "reported_by": r[3] or "",
+                "reason": r[4] or "",
+                "notes": r[5] or "",
+                "venue": r[6] or "",
+                "created_at": str(r[7]) if r[7] else ""
+            })
+
+    return {
+        "status": "success",
+        "tab": tab,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "counts": counts,
+        "items": items
+    }
+
+@router.post("/trouble-cases")
+async def create_trouble_case(
+    payload: CreateTroubleCaseRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("matching", "edit"))
+):
+    """Create a new trouble case or difficult client."""
+    if payload.type == "difficult_client":
+        await db.execute(text("""
+            INSERT INTO difficult_clients (client_name, interviewed_by, city, reason, status, notes, category, created_at)
+            VALUES (:name, :psyc, :city, :reason, 'DIFICIL', :notes, :cat, NOW())
+        """), {
+            "name": payload.person_a.strip(),
+            "psyc": (payload.psychologist or user.get("name") or "").strip(),
+            "city": (payload.city or "Bogotá").strip(),
+            "reason": (payload.reason or "").strip(),
+            "notes": (payload.notes or "").strip(),
+            "cat": (payload.category or "Caso Especial").strip()
+        })
+    else:
+        await db.execute(text("""
+            INSERT INTO trouble_matches (person_a, person_b, reported_by, reason, notes, venue, created_at)
+            VALUES (:pa, :pb, :rep, :reason, :notes, :venue, NOW())
+        """), {
+            "pa": payload.person_a.strip(),
+            "pb": (payload.person_b or "").strip(),
+            "rep": (payload.psychologist or user.get("name") or "Staff").strip(),
+            "reason": (payload.reason or "").strip(),
+            "notes": (payload.notes or "").strip(),
+            "venue": ""
+        })
+    await db.commit()
+    return {"status": "success", "message": "Caso registrado exitosamente"}
+
+@router.put("/trouble-cases/{table_type}/{item_id}")
+async def update_trouble_case(
+    table_type: str,
+    item_id: int,
+    payload: UpdateTroubleCaseRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_permission("matching", "edit"))
+):
+    """Update notes or status for a trouble case."""
+    if table_type == "difficult_clients":
+        updates = []
+        params = {"id": item_id}
+        if payload.notes is not None:
+            updates.append("notes = :notes")
+            params["notes"] = payload.notes
+        if payload.status is not None:
+            updates.append("status = :status")
+            params["status"] = payload.status
+        if payload.category is not None:
+            updates.append("category = :cat")
+            params["cat"] = payload.category
+        if payload.reason is not None:
+            updates.append("reason = :reason")
+            params["reason"] = payload.reason
+
+        if updates:
+            await db.execute(text(f"UPDATE difficult_clients SET {', '.join(updates)} WHERE id = :id"), params)
+            await db.commit()
+
+    elif table_type == "trouble_matches":
+        updates = []
+        params = {"id": item_id}
+        if payload.notes is not None:
+            updates.append("notes = :notes")
+            params["notes"] = payload.notes
+        if payload.reason is not None:
+            updates.append("reason = :reason")
+            params["reason"] = payload.reason
+
+        if updates:
+            await db.execute(text(f"UPDATE trouble_matches SET {', '.join(updates)} WHERE id = :id"), params)
+            await db.commit()
+
+    return {"status": "success", "message": "Actualizado correctamente"}
+
+
