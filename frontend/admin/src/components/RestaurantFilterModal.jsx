@@ -265,11 +265,11 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
         </div>
 
         {/* ── BÚSQUEDA RÁPIDA DENTRO DE LOS RESULTADOS ── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>
             Restaurantes Disponibles ({restaurants.length} opciones en {city} para el día {currentDayFullName}):
           </div>
-          <div style={{ position: 'relative', width: 240 }}>
+          <div style={{ position: 'relative', width: 240, maxWidth: '100%', flex: '1 1 200px' }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               type="text"

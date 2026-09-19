@@ -1,0 +1,30 @@
+{
+  "short_name": "Daily Lover",
+  "name": "Daily Lover Admin",
+  "description": "Panel Operativo y Clínico Daily Lover",
+  "icons": [
+    {
+      "src": "/admin/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/admin/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/admin/favicon.png",
+      "type": "image/png",
+      "sizes": "64x64"
+    }
+  ],
+  "start_url": "/admin/",
+  "scope": "/admin/",
+  "background_color": "#0D0A0B",
+  "theme_color": "#961500",
+  "display": "standalone",
+  "orientation": "portrait"
+}

@@ -103,9 +103,9 @@ export default function RemindersWidget() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%', justifyContent: 'space-between' }}>
           {/* Priority filter tabs */}
-          <div style={{ display: 'flex', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 3, gap: 2 }}>
+          <div style={{ display: 'flex', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 3, gap: 2, overflowX: 'auto', maxWidth: '100%' }}>
             {['ALL', 'URGENTE', 'ALTA', 'MEDIA', 'BAJA'].map(p => (
               <button
                 key={p}
@@ -115,10 +115,11 @@ export default function RemindersWidget() {
                   color: filterPriority === p ? 'white' : 'var(--text-secondary)',
                   border: 'none',
                   borderRadius: 6,
-                  padding: '4px 8px',
+                  padding: '5px 8px',
                   fontSize: 11,
                   fontWeight: 600,
                   cursor: 'pointer',
+                  whiteSpace: 'nowrap',
                   transition: 'all 0.2s'
                 }}
               >
@@ -130,7 +131,7 @@ export default function RemindersWidget() {
           <button 
             className="btn btn-primary btn-sm"
             onClick={() => setShowModal(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '6px 12px' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '7px 14px', flexShrink: 0 }}
           >
             <Plus size={14} /> Nuevo Pendiente
           </button>
@@ -142,7 +143,7 @@ export default function RemindersWidget() {
       ) : filtered.length === 0 ? (
         <div className="empty-state">No hay tareas pendientes en este filtro. ¡Excelente!</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(310px, 1fr))', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 14 }}>
           {filtered.map(r => {
             const badge = PRIORITY_BADGES[r.priority] || PRIORITY_BADGES.ALTA
             return (
@@ -220,7 +221,7 @@ export default function RemindersWidget() {
       {/* CREATE REMINDER MODAL */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)} style={{ zIndex: 2000 }}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 440 }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '92vw' }}>
             <div className="modal-header">
               <div style={{ fontWeight: 700, fontSize: 18 }}>📌 Crear Nuevo Recordatorio</div>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>✕</button>

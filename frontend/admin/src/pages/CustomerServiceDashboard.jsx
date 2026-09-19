@@ -14,6 +14,26 @@ import RestaurantFilterModal from '../components/RestaurantFilterModal'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
+function formatAlertTime(dateStr) {
+  if (!dateStr) return ''
+  try {
+    let str = String(dateStr)
+    if (!str.endsWith('Z') && !str.includes('+') && !str.slice(10).includes('-')) {
+      str += 'Z'
+    }
+    const d = new Date(str)
+    if (isNaN(d.getTime())) return str.slice(11, 16)
+    return d.toLocaleTimeString('es-CO', {
+      timeZone: 'America/Bogota',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  } catch (e) {
+    return String(dateStr).slice(11, 16)
+  }
+}
+
 export default function CustomerServiceDashboard() {
   const { token, user } = useAuth()
   const navigate = useNavigate()
@@ -367,7 +387,7 @@ export default function CustomerServiceDashboard() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                       <span>{nov.tipo || 'Novedad'}</span>
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{String(nov.created_at || '').slice(11, 16)}</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{nov.time_col || formatAlertTime(nov.created_at)}</span>
                     </div>
                     <div style={{ color: 'var(--text-secondary)', marginTop: 2, fontSize: 11 }}>
                       {nov.descripcion || nov.notas || 'Sin detalle adicional'}

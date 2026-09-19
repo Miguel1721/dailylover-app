@@ -3527,6 +3527,21 @@ async def get_live_alerts(
     """
     alerts = []
 
+    def format_colombia_time(dt):
+        if not dt:
+            return "", "", ""
+        from datetime import timezone, timedelta
+        col_tz = timezone(timedelta(hours=-5))
+        if dt.tzinfo is None:
+            utc_dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            utc_dt = dt.astimezone(timezone.utc)
+        col_dt = utc_dt.astimezone(col_tz)
+        iso_utc = utc_dt.isoformat()
+        time_col_24h = col_dt.strftime("%H:%M")
+        time_col_display = col_dt.strftime("%I:%M %p")
+        return iso_utc, time_col_24h, time_col_display
+
     # 1. Eventos de person_history
     hist_res = await db.execute(text("""
         SELECT id, person_name, match_id, event_type, details, created_at
@@ -3561,6 +3576,7 @@ async def get_live_alerts(
             icon_type = "trouble"
             link = "/matchmaking/trouble"
 
+        iso_str, time_col, time_col_display = format_colombia_time(r[5])
         alerts.append({
             "id": f"hist_{r[0]}",
             "raw_id": r[0],
@@ -3575,7 +3591,9 @@ async def get_live_alerts(
             "target_person": r[1] or "",
             "urgency": urgency,
             "link": link,
-            "created_at": r[5].isoformat() if r[5] else ""
+            "created_at": iso_str,
+            "time_col": time_col,
+            "time_col_display": time_col_display
         })
 
     # 2. Novedades de CS pendientes
@@ -3587,6 +3605,7 @@ async def get_live_alerts(
     """), {"limit": limit})
     for r in cs_res.fetchall():
         is_pending = (r[5] == "PENDIENTE")
+        iso_str, time_col, time_col_display = format_colombia_time(r[6])
         alerts.append({
             "id": f"cs_{r[0]}",
             "raw_id": r[0],
@@ -3599,7 +3618,9 @@ async def get_live_alerts(
             "urgency": "urgent" if is_pending else "normal",
             "link": f"/clientes?q={quote(r[1] or '')}",
             "status": r[5],
-            "created_at": r[6].isoformat() if r[6] else ""
+            "created_at": iso_str,
+            "time_col": time_col,
+            "time_col_display": time_col_display
         })
 
     # Ordenar cronológicamente descendente

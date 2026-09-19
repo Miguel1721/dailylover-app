@@ -11,6 +11,26 @@ const API = (typeof window !== 'undefined' && (window.location.origin.includes('
   ? window.location.origin
   : 'https://daily-lover.agentesia.cloud'
 
+function formatAlertTime(dateStr) {
+  if (!dateStr) return ''
+  try {
+    let str = String(dateStr)
+    if (!str.endsWith('Z') && !str.includes('+') && !str.slice(10).includes('-')) {
+      str += 'Z'
+    }
+    const d = new Date(str)
+    if (isNaN(d.getTime())) return str.slice(11, 16)
+    return d.toLocaleTimeString('es-CO', {
+      timeZone: 'America/Bogota',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    })
+  } catch (e) {
+    return String(dateStr).slice(11, 16)
+  }
+}
+
 export default function CsNovedadesNotificationBell() {
   const { token, user } = useAuth()
   const {
@@ -285,7 +305,7 @@ export default function CsNovedadesNotificationBell() {
                       </span>
                     </div>
                     <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                      {alert.created_at ? alert.created_at.slice(11, 16) : ''}
+                      {alert.time_col || formatAlertTime(alert.created_at)}
                     </span>
                   </div>
 

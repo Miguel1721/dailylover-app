@@ -74,25 +74,74 @@ export function NotificationProvider({ children }) {
     return 'denied'
   }, [])
 
-  // Disparar notificación de escritorio del sistema operativo
-  const triggerDesktopNotification = useCallback((title, body, url = '/admin') => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      try {
-        const notif = new Notification(`💌 Daily Lover · ${title}`, {
-          body: body || 'Nueva actualización en el sistema',
-          icon: '/admin/favicon.svg',
-          badge: '/admin/favicon.svg',
-          tag: 'dailylover-alert',
-          silent: false
-        })
-        notif.onclick = () => {
-          window.focus()
-          if (url) window.location.href = url
-          notif.close()
-        }
-      } catch (e) {
-        console.warn('Error al disparar notificación de escritorio:', e)
+  // Disparar notificación de escritorio / móvil del sistema operativo
+  const triggerDesktopNotification = useCallback((title, body, url = '/admin/') => {
+    if (typeof window === 'undefined') return
+
+    // Vibración física táctil si el hardware lo soporta
+    try {
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate([200, 100, 200])
       }
+    } catch (e) {}
+
+    // Verificar permiso concedido
+    const hasPerm = typeof Notification !== 'undefined' && Notification.permission === 'granted'
+    if (!hasPerm) return
+
+    try {
+      const notifOptions = {
+        body: body || 'Nueva actualización en el sistema',
+        icon: '/admin/icon-192.png',
+        badge: '/admin/icon-192.png',
+        tag: `dl_${Date.now()}`,
+        vibrate: [200, 100, 200],
+        renotify: true,
+        data: { url: url || '/admin/' }
+      }
+
+      // Vía Service Worker (Obligatorio en móviles Android Chrome y Safari iOS PWA)
+      if ('serviceWorker' in navigator) {
+        // Enviar vía postMessage al SW si está activo
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            title: `💌 Daily Lover · ${title}`,
+            options: notifOptions
+          })
+        }
+
+        navigator.serviceWorker.getRegistration('/admin/').then(reg => {
+          if (reg && reg.showNotification) {
+            return reg.showNotification(`💌 Daily Lover · ${title}`, notifOptions)
+          }
+          return navigator.serviceWorker.ready.then(activeReg => {
+            if (activeReg && activeReg.showNotification) {
+              return activeReg.showNotification(`💌 Daily Lover · ${title}`, notifOptions)
+            }
+            tryDesktopConstructor()
+          })
+        }).catch(() => {
+          tryDesktopConstructor()
+        })
+      } else {
+        tryDesktopConstructor()
+      }
+
+      function tryDesktopConstructor() {
+        try {
+          const notif = new Notification(`💌 Daily Lover · ${title}`, notifOptions)
+          notif.onclick = () => {
+            window.focus()
+            if (url) window.location.href = url
+            notif.close()
+          }
+        } catch (e) {
+          // Ignorado si móvil restringe constructor
+        }
+      }
+    } catch (e) {
+      console.warn('Error al disparar notificación de escritorio/móvil:', e)
     }
   }, [])
 

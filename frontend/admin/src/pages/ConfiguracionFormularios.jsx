@@ -882,7 +882,7 @@ export default function ConfiguracionFormularios() {
       {/* Modal: New Section */}
       {sectionModal && (
         <div className="modal-overlay" onClick={() => setSectionModal(false)}>
-          <div className="modal" style={{ width: 480 }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ width: 480, maxWidth: '92vw' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Nueva Sección</h2>
               <button className="btn btn-ghost btn-sm" onClick={() => setSectionModal(false)}>✕</button>
@@ -918,7 +918,7 @@ export default function ConfiguracionFormularios() {
       {/* Modal: Confirm Delete Field with Non-destructive Guarantee */}
       {confirmDelete && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
-          <div className="modal" style={{ width: 480 }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ width: 480, maxWidth: '92vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{
                 width: 40,
@@ -980,7 +980,7 @@ export default function ConfiguracionFormularios() {
       {/* Modal: Confirm Reset to Factory Defaults */}
       {confirmReset && (
         <div className="modal-overlay" onClick={() => setConfirmReset(false)}>
-          <div className="modal" style={{ width: 480 }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ width: 480, maxWidth: '92vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{
                 width: 40,

@@ -1663,3 +1663,74 @@ body.light-mode .ai-report-text {
     padding: 14px 10px !important;
   }
 }
+
+/* ============================================================
+   UNIVERSAL MOBILE RESPONSIVE ENFORCEMENT ACROSS ALL VIEWS
+   ============================================================ */
+/* Prevent horizontal overflow globally */
+html, body, #root, .app, .main-content {
+  max-width: 100vw !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* Modals: strictly contained within viewport on all devices */
+.modal-overlay {
+  padding: 10px !important;
+  box-sizing: border-box !important;
+}
+
+.modal, .modal-dialog, div[class*="modal"] {
+  max-width: calc(100vw - 20px) !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 768px) {
+  .modal {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    padding: 16px !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* Tables: horizontal touch scrolling without breaking page width */
+.table-container,
+div[style*="overflowX: auto"],
+div[style*="overflow-x: auto"],
+div[style*="overflowX: 'auto'"],
+div[style*="overflow-x: 'auto'"] {
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Toolbars, filters and button strips */
+@media (max-width: 768px) {
+  .filters-row,
+  div[style*="display: flex"][style*="justify-content: space-between"],
+  div[style*="display: 'flex'"][style*="justifyContent: 'space-between'"] {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* Stat cards */
+  .stats-grid,
+  div[style*="gridTemplateColumns: repeat(auto-fit"] {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  /* Form groups */
+  .form-group, .form-row {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  /* Touch targets minimum 36px */
+  button, select, input {
+    min-height: 36px;
+  }
+}
+

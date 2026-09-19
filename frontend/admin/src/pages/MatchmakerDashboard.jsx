@@ -450,7 +450,7 @@ export default function MatchmakerDashboard() {
       {/* CREATE REMINDER MODAL */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 440 }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: '92vw' }}>
             <div className="modal-header">
               <div style={{ fontWeight: 700, fontSize: 18 }}>📌 Crear Nuevo Recordatorio</div>
               <button className="btn btn-ghost btn-sm" onClick={() => setShowModal(false)}>✕</button>

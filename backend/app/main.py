@@ -345,7 +345,27 @@ if os.path.isdir(ADMIN_STATIC):
     @app.get("/admin/", include_in_schema=False)
     @app.get("/admin/{path:path}", include_in_schema=False)
     async def serve_admin(path: str = ""):
-        """Serve the React admin SPA — all routes fall back to index.html."""
+        """Serve the React admin SPA — specific static files first, then fallback to index.html."""
+        if path:
+            file_path = os.path.join(ADMIN_STATIC, path)
+            if os.path.isfile(file_path):
+                media_type = None
+                headers = {}
+                if path.endswith(".js"):
+                    media_type = "application/javascript"
+                    if path == "sw.js":
+                        headers = {
+                            "Service-Worker-Allowed": "/admin/",
+                            "Cache-Control": "no-cache, no-store, must-revalidate"
+                        }
+                elif path.endswith(".json"):
+                    media_type = "application/manifest+json" if "manifest" in path else "application/json"
+                elif path.endswith(".png"):
+                    media_type = "image/png"
+                elif path.endswith(".svg"):
+                    media_type = "image/svg+xml"
+                return FileResponse(file_path, media_type=media_type, headers=headers)
+
         index = os.path.join(ADMIN_STATIC, "index.html")
         if os.path.isfile(index):
             return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
@@ -359,7 +379,12 @@ if os.path.isdir(APP_PREVIEW_STATIC):
     @app.get("/app-preview/", include_in_schema=False)
     @app.get("/app-preview/{path:path}", include_in_schema=False)
     async def serve_app_preview(path: str = ""):
-        """Serve the React app preview SPA — all routes fall back to index.html."""
+        """Serve the React app preview SPA — specific static files first, then fallback to index.html."""
+        if path:
+            file_path = os.path.join(APP_PREVIEW_STATIC, path)
+            if os.path.isfile(file_path):
+                return FileResponse(file_path)
+
         index = os.path.join(APP_PREVIEW_STATIC, "index.html")
         if os.path.isfile(index):
             return FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
