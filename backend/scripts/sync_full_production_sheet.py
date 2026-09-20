@@ -94,23 +94,83 @@ def clean_str(val: str) -> str:
     return str(val).strip()
 
 
-def normalize_city(city_raw: str) -> str:
+KNOWN_CITIES = {
+    "bogota": "Bogotá", "bogotá": "Bogotá", "bog": "Bogotá", "bgta": "Bogotá", "bgota": "Bogotá",
+    "medellin": "Medellín", "medellín": "Medellín", "med": "Medellín",
+    "cali": "Cali",
+    "barranquilla": "Barranquilla", "baq": "Barranquilla", "bquilla": "Barranquilla", "quilla": "Barranquilla",
+    "cartagena": "Cartagena", "ctg": "Cartagena", "ctagena": "Cartagena",
+    "bucaramanga": "Bucaramanga", "buca": "Bucaramanga", "bga": "Bucaramanga", "bmanga": "Bucaramanga", "bcamanga": "Bucaramanga",
+    "pereira": "Pereira", "perei": "Pereira", "peira": "Pereira",
+    "manizales": "Manizales", "mani": "Manizales",
+    "santa marta": "Santa Marta", "smr": "Santa Marta", "sta marta": "Santa Marta",
+    "miami": "Miami", "mia": "Miami",
+    "cucuta": "Cúcuta", "cúcuta": "Cúcuta",
+    "ibague": "Ibagué", "ibagué": "Ibagué", "ibag": "Ibagué",
+    "chia": "Chía", "chía": "Chía",
+    "cajica": "Cajicá", "cajicá": "Cajicá",
+    "tunja": "Tunja",
+    "armenia": "Armenia",
+    "monteria": "Montería", "montería": "Montería",
+    "neiva": "Neiva",
+    "madrid": "Madrid", "mad": "Madrid",
+    "cdmx": "Ciudad de México", "mexico": "Ciudad de México", "méxico": "Ciudad de México", "ciudad de méxico": "Ciudad de México",
+    "dallas": "Dallas",
+    "panama": "Panamá", "panamá": "Panamá",
+    "zipaquira": "Zipaquirá", "zipaquirá": "Zipaquirá",
+    "envigado": "Envigado",
+    "sabaneta": "Sabaneta",
+    "bello": "Bello",
+    "villavicencio": "Villavicencio",
+    "popayan": "Popayán", "popayán": "Popayán",
+    "pasto": "Pasto",
+    "valledupar": "Valledupar",
+    "choconta": "Chocontá", "chocontá": "Chocontá",
+    "la calera": "La Calera",
+    "sopo": "Sopó", "sopó": "Sopó",
+    "duitama": "Duitama",
+    "tocancipa": "Tocancipá", "tocancipá": "Tocancipá",
+    "facatativa": "Facatativá", "facatativá": "Facatativá",
+    "funza": "Funza",
+    "barbosa": "Barbosa",
+    "la dorada": "La Dorada",
+    "palmira": "Palmira",
+    "floridablanca": "Floridablanca"
+}
+
+NOISE_WORDS = [
+    'date', 'citas', 'cita', 'pagar', 'paga', 'cobrar', 'restaurante', 'gluten', 
+    'alergico', 'alérgico', 'feedback', 'hora', 'minutos', 'alerta', 'reserva', 
+    'debe', 'abogado', 'slots', 'cliente', 'despues', 'después', 'yes', 'no', 
+    'si', 'sí', 'true', 'false', 'n/a', 'na', 'none', 'null', 'col', 'colombia', 
+    'vip', 'historico', 'histórico', 'gay', 'gays', 'lesb', 'lesbiana', 'lesbianas',
+    '300k', '40k', '65k', '98k', '150k', '195k', 'brunch', 'virtual'
+]
+
+
+def normalize_city(city_raw: str):
+    if not city_raw:
+        return None
     c = clean_str(city_raw).lower()
-    if not c:
-        return "Bogotá"
-    if "bgta" in c or "bog" in c:
-        return "Bogotá"
-    if "med" in c:
-        return "Medellín"
-    if "cali" in c:
-        return "Cali"
-    if "barr" in c:
-        return "Barranquilla"
-    if "cart" in c:
-        return "Cartagena"
-    if "col" in c:
-        return "Bogotá"
-    return clean_str(city_raw).capitalize()
+    if not c or len(c) < 3 or len(c) > 35:
+        return None
+    
+    for noise in NOISE_WORDS:
+        if re.search(r'\b' + re.escape(noise) + r'\b', c) or c == noise:
+            return None
+            
+    if re.search(r'^\d+', c) or 'años' in c or 'anios' in c:
+        return None
+        
+    if c in KNOWN_CITIES:
+        return KNOWN_CITIES[c]
+        
+    for k in sorted(KNOWN_CITIES.keys(), key=len, reverse=True):
+        if len(k) >= 3 and k in c:
+            return KNOWN_CITIES[k]
+            
+    return None
+
 
 
 STATUS_MAPPING = {
@@ -266,8 +326,8 @@ def fetch_sheet_data(creds_path: str) -> dict:
         diff_info = difficult_by_name.get(n_nm, {})
         vip_info = vip_650_by_name.get(n_nm, {})
         
-        plan_tier = "Plan 650k (MPS)" if vip_info else (plan_info.get("plan") or "Estándar")
-        responsable = vip_info.get("interviewer") if vip_info else (p["responsable"] or "Asignado")
+        plan_tier = "Plan 650k (MPS)" if vip_info else (plan_info.get("plan") or None)
+        responsable = vip_info.get("interviewer") if vip_info else (p["responsable"] or None)
         email = plan_info.get("email") or ""
         is_difficult = bool(diff_info)
         difficult_notes = diff_info.get("notes") or ""
@@ -278,7 +338,7 @@ def fetch_sheet_data(creds_path: str) -> dict:
             "norm_name": n_nm,
             "email": email,
             "responsable": responsable,
-            "city": p["ciudad_anos"] if p["ciudad_anos"] not in ("yes", "no") else "Bogotá",
+            "city": normalize_city(p["ciudad_anos"]),
             "plan_tier": plan_tier,
             "search_preferences": pref_info,
             "is_difficult": is_difficult,
@@ -294,9 +354,9 @@ def fetch_sheet_data(creds_path: str) -> dict:
                 "name": pl["name"],
                 "norm_name": n_nm,
                 "email": pl["email"],
-                "responsable": "Por asignar",
-                "city": "Bogotá",
-                "plan_tier": pl["plan"],
+                "responsable": None,
+                "city": None,
+                "plan_tier": pl.get("plan") or None,
                 "search_preferences": {},
                 "is_difficult": False,
                 "difficult_notes": "",
@@ -363,7 +423,7 @@ def fetch_sheet_data(creds_path: str) -> dict:
                     
                 st_raw = clean_str(r[st_idx]) if st_idx != -1 and len(r) > st_idx else ""
                 obs = clean_str(r[obs_idx]) if obs_idx != -1 and len(r) > obs_idx else ""
-                city_raw = clean_str(r[city_idx]) if city_idx != -1 and len(r) > city_idx else "Bogotá"
+                city_raw = clean_str(r[city_idx]) if city_idx != -1 and len(r) > city_idx else ""
                 pref = clean_str(r[pref_idx]) if pref_idx != -1 and len(r) > pref_idx else ""
                 plan = clean_str(r[plan_idx]) if plan_idx != -1 and len(r) > plan_idx else ""
                 dt_raw = clean_str(r[date_idx]) if date_idx != -1 and len(r) > date_idx else ""
@@ -412,7 +472,7 @@ def fetch_sheet_data(creds_path: str) -> dict:
                 
             dia_hora = clean_str(r[4]) if len(r) > 4 else ""
             lugar = clean_str(r[5]) if len(r) > 5 else ""
-            ciudad = normalize_city(clean_str(r[6]) if len(r) > 6 else "Bogotá")
+            ciudad = normalize_city(clean_str(r[6]) if len(r) > 6 else "")
             reserva = clean_str(r[7]) if len(r) > 7 else ""
             conf = clean_str(r[8]) if len(r) > 8 else ""
             dia_antes = clean_str(r[9]) if len(r) > 9 else ""
@@ -600,9 +660,9 @@ async def run_sync():
                 c_norm = c["norm_name"]
                 c_code = c.get("client_code") or ""
                 c_email = c.get("email") or ""
-                c_resp = c.get("responsable") or "Por asignar"
-                c_city = c.get("city") or "Bogotá"
-                c_plan = c.get("plan_tier") or "Estándar"
+                c_resp = c.get("responsable") or None
+                c_city = c.get("city") or None
+                c_plan = c.get("plan_tier") or None
                 c_diff = c.get("is_difficult", False)
                 c_diff_notes = c.get("difficult_notes") or ""
                 c_pref = json.dumps(c.get("search_preferences") or {}, ensure_ascii=False)
@@ -614,7 +674,7 @@ async def run_sync():
                         await session.execute(
                             text("""
                                 UPDATE users 
-                                SET email = COALESCE(NULLIF(email, ''), :email),
+                                SET email = COALESCE(NULLIF(:email, ''), email),
                                     client_code = COALESCE(NULLIF(client_code, ''), :code)
                                 WHERE id = :uid
                             """),
@@ -626,9 +686,9 @@ async def run_sync():
                         await session.execute(
                             text("""
                                 UPDATE profiles
-                                SET responsable = COALESCE(NULLIF(:resp, ''), responsable),
-                                    city = COALESCE(NULLIF(:city, ''), city),
-                                    plan_tier = COALESCE(NULLIF(:plan, ''), plan_tier),
+                                SET responsable = :resp,
+                                    city = :city,
+                                    plan_tier = COALESCE(:plan, plan_tier),
                                     is_difficult = :diff,
                                     difficult_notes = COALESCE(NULLIF(:d_notes, ''), difficult_notes),
                                     search_preferences = CASE WHEN CAST(:pref AS text) != '{}' THEN CAST(:pref AS jsonb) ELSE search_preferences END,
@@ -796,7 +856,7 @@ async def run_sync():
                 pb = cm["person_b"].strip()
                 dt = cm["date_time"] or None
                 venue = cm["venue"] or None
-                city = cm["city"] or "Bogotá"
+                city = cm["city"] or None
                 res_conf = cm["reservation_confirmed"]
                 feedback_ella = cm["feedback_ella"] or None
                 had_date = bool(cm["match_result"])
