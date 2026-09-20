@@ -297,6 +297,7 @@ function Sidebar({ isOpen, onClose }) {
     ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión María', module: 'matching', action: 'view' }] : []),
     ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: '📋 PROFILES', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : '🛡️ Aprobados por María', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
@@ -834,8 +835,8 @@ function AppContent() {
                     <Route path="/matchmaking/entrevista" element={<AreaErrorBoundary areaName="Entrevista Clínica & Hub"><ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/cola-atrasados" element={<AreaErrorBoundary areaName="Cola de Atrasados Clínicos"><ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/matches-atrasados" element={<AreaErrorBoundary areaName="Matches Atrasados"><ProtectedRoute module="matching" action="view"><MatchesAtrasados /></ProtectedRoute></AreaErrorBoundary>} />
-                    <Route path="/matchmaking/aprobaciones-cruzadas" element={<AreaErrorBoundary areaName="Aprobaciones Cruzadas"><ProtectedRoute module="matching" action="view"><AprobacionesCruzadas /></ProtectedRoute></AreaErrorBoundary>} />
-                    <Route path="/matchmaking/intake" element={<AreaErrorBoundary areaName="Intake de Clientes"><ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/profiles" element={<AreaErrorBoundary areaName="PROFILES (Ingreso de Perfiles)"><ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/intake" element={<AreaErrorBoundary areaName="PROFILES (Ingreso de Perfiles)"><ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/prioritarios" element={<AreaErrorBoundary areaName="Casos Prioritarios"><ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/todos-los-matches" element={<AreaErrorBoundary areaName="Matriz Global de Matches"><ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/agenda" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />

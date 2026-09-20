@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
   Users, Plus, Search, Filter, RefreshCw, CheckCircle,
-  Clock, Heart, ShieldCheck, ArrowRight, UserPlus, X, Layers, MapPin, Tag
+  Clock, Heart, ShieldCheck, ArrowRight, UserPlus, X, Layers, MapPin, Tag,
+  ExternalLink, FileSpreadsheet, FileText, Sparkles, Eye, Edit3, FolderOpen, AlertCircle
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const PSYCHOLOGIST_LIST = [
-  'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA'
+  'SILVI', 'JENN', 'ANA', 'ALEJA', 'STEFFY', 'SOFI', 'MAPE D', 'MANU', 'PIA', 'ISA'
 ]
 
 const CITIES = [
@@ -35,27 +36,47 @@ const PLAN_TIERS = [
 export default function IntakeClientes() {
   const { user, token } = useAuth()
   const navigate = useNavigate()
-  
+  const [searchParams] = useSearchParams()
+
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(false)
-  const [selectedPsyc, setSelectedPsyc] = useState('all')
+  const [selectedPsyc, setSelectedPsyc] = useState(searchParams.get('psychologist') || 'all')
   const [selectedCity, setSelectedCity] = useState('all')
   const [selectedPlan, setSelectedPlan] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
-  const [feedback, setFeedback] = useState('')
+  const [quickNoteModalTarget, setQuickNoteModalTarget] = useState(null)
+  const [feedback, setFeedback] = useState(null)
   const [psycList, setPsycList] = useState(PSYCHOLOGIST_LIST)
 
-  const [formData, setFormData] = useState({
+  // Detectar psicóloga logueada
+  const detectedUserPsyc = useMemo(() => {
+    if (!user) return 'SILVI'
+    const nameUpper = (user.name || '').toUpperCase()
+    const found = PSYCHOLOGIST_LIST.find(p => nameUpper.includes(p))
+    return found || 'SILVI'
+  }, [user])
+
+  const initialFormState = {
     person_a: '',
-    phone: '',
-    psychologist_name: 'SILVI',
-    city: 'Bogotá',
+    profile_url: '',
+    psychologist_name: detectedUserPsyc,
+    quick_notes: '',
+    city: '',
+    age: '',
     pref: 'hetero',
-    plan_tier: 'Estándar 65k (2 citas)',
+    plan_tier: '',
+    phone: '',
+    email: '',
+    crm_id: '',
+    is_priority: false,
     observations: ''
-  })
+  }
+
+  const [formData, setFormData] = useState(initialFormState)
   const [submitting, setSubmitting] = useState(false)
+  const [resolving, setResolving] = useState(false)
+  const [resolveHint, setResolveHint] = useState('')
 
   useEffect(() => {
     fetch(`${API}/api/v1/matchmaking/psychologists`)
@@ -101,51 +122,54 @@ export default function IntakeClientes() {
     setCurrentPage(1)
   }, [selectedPsyc, searchTerm])
 
-  const [resolving, setResolving] = useState(false)
-  const [resolveHint, setResolveHint] = useState('')
+  // Autocompletado inteligente al escribir nombre o pegar URL
+  const handleResolveQuery = async (queryVal, source = 'name') => {
+    if (!queryVal || queryVal.trim().length < 3) return
+    const cleanVal = queryVal.trim()
+    setResolving(true)
+    setResolveHint('🔍 Buscando datos clínicos y perfil previo...')
 
-  const handleResolveInput = async (val) => {
-    setFormData(prev => ({ ...prev, person_a: val }))
-    const isUrlOrId = val.includes('http') || val.includes('smartmatchapp') || val.includes('client/') || val.includes('profile/') || /^\d{3,}$/.test(val.trim())
-    if (isUrlOrId) {
-      setResolving(true)
-      setResolveHint('🔍 Detectado enlace/ID del CRM SmartMatchApp — consultando datos...')
-      try {
-        const res = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ url_or_query: val })
-        })
-        const data = await res.json()
-        if (res.ok && data.name) {
-          setFormData(prev => ({
-            ...prev,
-            person_a: data.name,
-            crm_url: val,
-            psychologist_name: data.psychologist || prev.psychologist_name || 'SILVI',
-            city: data.city || prev.city || 'Bogotá',
-            pref: data.pref || prev.pref || 'hetero',
-            plan_tier: data.plan_tier || prev.plan_tier || '',
-            person_a_crm_id: data.crm_id || null
-          }))
-          setResolveHint(`✅ Perfil extraído con éxito: ${data.name}`)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ url_or_query: cleanVal })
+      })
+      const data = await res.json()
+      if (res.ok && data.found) {
+        setFormData(prev => ({
+          ...prev,
+          person_a: data.name || prev.person_a || cleanVal,
+          profile_url: prev.profile_url || data.profile_url || data.crm_url || '',
+          psychologist_name: data.psychologist || prev.psychologist_name || detectedUserPsyc,
+          city: data.city || prev.city || '',
+          age: data.age || prev.age || '',
+          pref: data.pref || prev.pref || 'hetero',
+          plan_tier: data.plan_tier || prev.plan_tier || '',
+          crm_id: data.crm_id || prev.crm_id || '',
+          phone: data.phone || prev.phone || '',
+          email: data.email || prev.email || '',
+          quick_notes: prev.quick_notes || data.quick_notes || ''
+        }))
+        setResolveHint(`✅ Datos extraídos de ${data.name}${data.quick_notes ? ' (incluye notas clínicas)' : ''}`)
+      } else {
+        if (cleanVal.startsWith('http')) {
+          setResolveHint('ℹ️ URL externa registrada. Por favor ingresa el nombre de la persona.')
         } else {
-          setResolveHint('⚠️ No se encontraron datos en CRM para este enlace. Por favor verifica el link.')
+          setResolveHint('')
         }
-      } catch (err) {
-        setResolveHint('')
-      } finally {
-        setResolving(false)
       }
-    } else {
+    } catch (err) {
       setResolveHint('')
+    } finally {
+      setResolving(false)
     }
   }
 
   const handleCreateClient = async (e) => {
     e.preventDefault()
     if (!formData.person_a.trim()) {
-      alert('Por favor ingresa el nombre de Persona A')
+      alert('Por favor ingresa el nombre de la persona')
       return
     }
     setSubmitting(true)
@@ -156,26 +180,26 @@ export default function IntakeClientes() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          age: formData.age ? parseInt(formData.age, 10) : null
+        })
       })
       const data = await res.json()
       if (res.ok) {
         setShowModal(false)
         setResolveHint('')
-        setFeedback(`Cliente "${formData.person_a}" registrado con 3 slots asignados a ${formData.psychologist_name}`)
-        setTimeout(() => setFeedback(''), 4000)
-        setFormData({
-          person_a: '',
-          phone: '',
-          psychologist_name: 'SILVI',
-          city: 'Bogotá',
-          pref: 'hetero',
-          plan_tier: 'Estándar 65k (2 citas)',
-          observations: ''
+        const savedName = formData.person_a
+        const savedPsyc = formData.psychologist_name
+        setFeedback({
+          message: data.message || `Perfil de "${savedName}" guardado y asignado a ${savedPsyc}.`,
+          person_a: savedName,
+          psychologist: savedPsyc
         })
+        setFormData({ ...initialFormState, psychologist_name: detectedUserPsyc })
         fetchIntakeList()
       } else {
-        alert(data.detail || 'Error al registrar cliente')
+        alert(data.detail || 'Error al registrar perfil')
       }
     } catch (e) {
       alert('Error de conexión con el servidor')
@@ -192,69 +216,129 @@ export default function IntakeClientes() {
   const paginatedClients = clients.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1600, margin: '0 auto' }}>
+    <div style={{ padding: '24px 32px', maxWidth: 1650, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Users size={26} color="#B8324F" />
-            Intake de Clientes — PROFILES
-          </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-            Registro inicial de clientes, asignación de psicóloga y generación automática de los 3 slots de matchmaking.
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{
+              background: 'rgba(184, 50, 79, 0.15)',
+              color: '#B8324F',
+              padding: '6px 10px',
+              borderRadius: 8,
+              display: 'inline-flex',
+              alignItems: 'center',
+              fontWeight: 800,
+              fontSize: 14
+            }}>
+              <FileSpreadsheet size={18} style={{ marginRight: 6 }} /> PROFILES
+            </span>
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+              Ingreso de Perfiles & Asignación a Psicólogas
+            </h1>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6, maxWidth: 850 }}>
+            Mesa de entrada para registrar a las personas con su URL de carpeta/entrevista externa, extraer sus notas clínicas (Quick Notes) y llevarlas automáticamente a la mesa de trabajo de cada psicóloga en <b>Matches Psicólogas</b>.
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          {feedback && (
-            <span style={{ fontSize: 13, color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(16,185,129,0.1)', padding: '6px 12px', borderRadius: 6 }}>
-              <CheckCircle size={15} /> {feedback}
-            </span>
-          )}
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => {
+              setFormData({ ...initialFormState, psychologist_name: detectedUserPsyc })
+              setResolveHint('')
+              setShowModal(true)
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              background: '#B8324F',
+              background: '#961500',
               color: '#FFFFFF',
               border: 'none',
               borderRadius: 8,
               padding: '10px 18px',
               fontSize: 13,
-              fontWeight: 600,
+              fontWeight: 700,
               cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(184,50,79,0.3)'
+              boxShadow: '0 4px 14px rgba(150,21,0,0.35)',
+              transition: 'all 0.2s'
             }}
           >
-            <UserPlus size={16} /> + Registrar Nuevo Cliente (Crear 3 Slots)
+            <UserPlus size={16} /> + Registrar Perfil (PROFILES)
           </button>
         </div>
       </div>
 
+      {/* Banner de Feedback Interactivo */}
+      {feedback && (
+        <div style={{
+          background: 'rgba(16, 185, 129, 0.12)',
+          border: '1px solid rgba(16, 185, 129, 0.4)',
+          borderRadius: 10,
+          padding: '12px 18px',
+          marginBottom: 20,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#10B981', fontSize: 13, fontWeight: 600 }}>
+            <CheckCircle size={18} />
+            <span>{feedback.message}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              onClick={() => navigate(`/matchmaking/mis-matches?psychologist=${encodeURIComponent(feedback.psychologist)}&search=${encodeURIComponent(feedback.person_a)}`)}
+              style={{
+                background: '#10B981',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <Heart size={14} fill="#fff" /> Ver en Matches de {feedback.psychologist} <ArrowRight size={14} />
+            </button>
+            <button
+              onClick={() => setFeedback(null)}
+              style={{ background: 'transparent', border: 'none', color: '#10B981', cursor: 'pointer' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 20 }}>
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Clientes Registrados</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4 }}>{totalClients}</div>
-          <div style={{ fontSize: 11, color: '#10B981', marginTop: 4 }}>Total en base de datos</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Perfiles en PROFILES</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>{totalClients}</div>
+          <div style={{ fontSize: 11, color: '#10B981', marginTop: 4 }}>Registrados en sistema</div>
         </div>
 
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Total Slots Activos</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#3B82F6', marginTop: 4 }}>{totalSlotsCreated}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>3 cupos por cada cliente</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Slots en Mesa Psicólogas</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#3B82F6', marginTop: 4 }}>{totalSlotsCreated}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Cupos de match operativos</div>
         </div>
 
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Con Candidatos Asignados</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>{totalWithMatches}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Con Candidato Propuesto</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#F59E0B', marginTop: 4 }}>{totalWithMatches}</div>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>En proceso por psicóloga</div>
         </div>
       </div>
 
-      {/* Filter Tabs by Psychologist */}
+      {/* Selector de Psicólogas */}
       <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
         <button
           onClick={() => setSelectedPsyc('all')}
@@ -263,14 +347,14 @@ export default function IntakeClientes() {
             borderRadius: 20,
             border: 'none',
             fontSize: 12,
-            fontWeight: 600,
+            fontWeight: 700,
             cursor: 'pointer',
-            background: selectedPsyc === 'all' ? '#B8324F' : 'var(--bg-card)',
+            background: selectedPsyc === 'all' ? '#961500' : 'var(--bg-card)',
             color: selectedPsyc === 'all' ? '#FFFFFF' : 'var(--text-secondary)',
-            boxShadow: selectedPsyc === 'all' ? '0 2px 6px rgba(184,50,79,0.3)' : 'none'
+            boxShadow: selectedPsyc === 'all' ? '0 2px 6px rgba(150,21,0,0.3)' : 'none'
           }}
         >
-          Todas las Psicólogas ({clients.length})
+          Todas ({clients.length})
         </button>
         {psycList.map(p => (
           <button
@@ -281,10 +365,11 @@ export default function IntakeClientes() {
               borderRadius: 20,
               border: 'none',
               fontSize: 12,
-              fontWeight: 600,
+              fontWeight: 700,
               cursor: 'pointer',
-              background: selectedPsyc === p ? '#B8324F' : 'var(--bg-card)',
-              color: selectedPsyc === p ? '#FFFFFF' : 'var(--text-secondary)'
+              background: selectedPsyc === p ? '#961500' : 'var(--bg-card)',
+              color: selectedPsyc === p ? '#FFFFFF' : 'var(--text-secondary)',
+              boxShadow: selectedPsyc === p ? '0 2px 6px rgba(150,21,0,0.3)' : 'none'
             }}
           >
             {p}
@@ -292,7 +377,7 @@ export default function IntakeClientes() {
         ))}
       </div>
 
-      {/* Search & Filters Bar */}
+      {/* Barra de Búsqueda y Filtros */}
       <div style={{
         display: 'flex',
         gap: 12,
@@ -304,12 +389,12 @@ export default function IntakeClientes() {
         border: '1px solid var(--border-color)',
         marginBottom: 16
       }}>
-        {/* Search */}
+        {/* Búsqueda */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 240px' }}>
           <Search size={16} color="var(--text-secondary)" />
           <input
             type="text"
-            placeholder="Buscar cliente por nombre, psicóloga..."
+            placeholder="Buscar por nombre, psicóloga, notas clínicas..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             style={{
@@ -323,7 +408,7 @@ export default function IntakeClientes() {
           />
         </div>
 
-        {/* Filter Ciudad */}
+        {/* Ciudad */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <MapPin size={14} color="var(--text-secondary)" />
           <select
@@ -347,7 +432,7 @@ export default function IntakeClientes() {
           </select>
         </div>
 
-        {/* Filter Plan */}
+        {/* Plan */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Tag size={14} color="var(--text-secondary)" />
           <select
@@ -378,7 +463,7 @@ export default function IntakeClientes() {
             border: 'none',
             cursor: 'pointer',
             color: 'var(--text-secondary)',
-            padding: 4
+            padding: 6
           }}
           title="Refrescar lista"
         >
@@ -386,7 +471,7 @@ export default function IntakeClientes() {
         </button>
       </div>
 
-      {/* Clients Table */}
+      {/* Tabla de PROFILES */}
       <div style={{
         background: 'var(--bg-card)',
         borderRadius: 10,
@@ -394,31 +479,30 @@ export default function IntakeClientes() {
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch'
       }}>
-        <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', minWidth: 1050, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>PERSONA A (CLIENTE)</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>PSICÓLOGA ASIGNADA</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>CIUDAD</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>PREF</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>PLAN TIER</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'center' }}>SLOTS ASIGNADOS</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>ESTADO SLOTS</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600 }}>FECHA INTAKE</th>
-              <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>ACCIONES</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700 }}>CLIENTE (PROFILES)</th>
+              <th style={{ padding: '12px 14px', fontWeight: 700 }}>URL / CARPETA</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700 }}>PSICÓLOGA ASIGNADA</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700 }}>CIUDAD & EDAD</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700 }}>QUICK NOTE / NOTAS CLÍNICAS</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700 }}>PLAN</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'center' }}>SLOTS MATCHES</th>
+              <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>ACCIONES</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
-                  Cargando clientes de intake...
+                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                  Cargando lista de PROFILES...
                 </td>
               </tr>
             ) : clients.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
-                  No se encontraron clientes para los filtros seleccionados.
+                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                  No se encontraron perfiles para los filtros seleccionados.
                 </td>
               </tr>
             ) : (
@@ -431,13 +515,42 @@ export default function IntakeClientes() {
                   }}
                 >
                   <td style={{ padding: '12px 16px' }}>
-                    <CrmPersonLink name={c.person_a} crmId={c.crm_id} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <CrmPersonLink name={c.person_a} crmId={c.crm_id} />
+                    </div>
+                  </td>
+                  <td style={{ padding: '12px 14px' }}>
+                    {c.profile_url ? (
+                      <a
+                        href={c.profile_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          fontSize: 11,
+                          color: '#ff8a80',
+                          background: 'rgba(150, 21, 0, 0.12)',
+                          border: '1px solid rgba(150, 21, 0, 0.3)',
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          textDecoration: 'none',
+                          fontWeight: 600
+                        }}
+                        title={c.profile_url}
+                      >
+                        <FolderOpen size={13} /> Carpeta / Perfil <ExternalLink size={11} />
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>
+                    )}
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <span style={{
                       fontWeight: 700,
-                      color: '#B8324F',
-                      background: 'rgba(184,50,79,0.1)',
+                      color: '#961500',
+                      background: 'rgba(150, 21, 0, 0.12)',
                       padding: '3px 8px',
                       borderRadius: 4,
                       fontSize: 11
@@ -445,22 +558,41 @@ export default function IntakeClientes() {
                       {c.psychologist_name}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-secondary)' }}>
-                    {c.city}
+                  <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12 }}>
+                    {c.city || '—'}{c.age ? ` (${c.age} años)` : ''}
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      background: c.pref_color || '#CFE2F3',
-                      color: '#073763',
-                      textTransform: 'uppercase'
-                    }}>
-                      {c.pref}
-                    </span>
+                  <td style={{ padding: '12px 16px', maxWidth: 280 }}>
+                    {c.quick_notes ? (
+                      <div
+                        onClick={() => setQuickNoteModalTarget(c)}
+                        style={{
+                          fontSize: 12,
+                          color: 'var(--text-primary)',
+                          background: 'rgba(255,255,255,0.03)',
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 6
+                        }}
+                        title="Clic para ver notas clínicas completas"
+                      >
+                        <span style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          maxWidth: 220
+                        }}>
+                          {c.quick_notes}
+                        </span>
+                        <Eye size={12} color="var(--text-secondary)" />
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sin notas</span>
+                    )}
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <span style={{
@@ -472,58 +604,51 @@ export default function IntakeClientes() {
                       background: c.plan_color || '#B6D7A8',
                       color: '#274E13'
                     }}>
-                      {c.plan_tier}
+                      {c.plan_tier || 'Pendiente Plan'}
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: 'var(--text-primary)'
-                    }}>
-                      <Layers size={13} color="#3B82F6" /> {c.total_slots} slots
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: c.filled_slots > 0 ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
-                        {c.filled_slots}/{c.total_slots} con candidato
+                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: 'var(--text-primary)'
+                      }}>
+                        <Layers size={13} color="#3B82F6" /> {c.total_slots} slots
                       </span>
-                      {c.approved_slots > 0 && (
-                        <span style={{ fontSize: 10, background: '#D1FAE5', color: '#065F46', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>
-                          {c.approved_slots} Aprobado
-                        </span>
-                      )}
+                      <span style={{ fontSize: 10, color: c.filled_slots > 0 ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
+                        {c.filled_slots}/{c.total_slots} asignados
+                      </span>
                     </div>
                   </td>
-                  <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12 }}>
-                    {c.created_at || '—'}
-                  </td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {/* Botón directo a Matches de la Psicóloga */}
                     <button
-                      onClick={() => navigate(`/matchmaking/entrevista?user_id=${encodeURIComponent(c.crm_id || c.person_a)}`)}
+                      onClick={() => navigate(`/matchmaking/mis-matches?psychologist=${encodeURIComponent(c.psychologist_name)}&search=${encodeURIComponent(c.person_a)}`)}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 4,
-                        background: 'rgba(150, 21, 0, 0.12)',
-                        border: '1px solid rgba(150, 21, 0, 0.3)',
+                        background: 'rgba(150, 21, 0, 0.15)',
+                        border: '1px solid rgba(150, 21, 0, 0.4)',
                         borderRadius: 6,
-                        padding: '4px 10px',
+                        padding: '5px 10px',
                         fontSize: 12,
+                        fontWeight: 700,
                         color: '#ff8a80',
                         cursor: 'pointer',
                         marginRight: 6
                       }}
-                      title="Abrir Entrevista Clínica (Datos Objetivos, Percepción y Resultados de Match)"
+                      title={`Ver mesa de matches de ${c.psychologist_name}`}
                     >
-                      🎙️ Entrevista
+                      <Heart size={13} fill="#ff8a80" /> Matches {c.psychologist_name}
                     </button>
+
                     <button
-                      onClick={() => navigate(`/matchmaking/mis-matches?search=${encodeURIComponent(c.person_a)}`)}
+                      onClick={() => navigate(`/matchmaking/entrevista?user_id=${encodeURIComponent(c.crm_id || c.person_a)}`)}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -531,14 +656,14 @@ export default function IntakeClientes() {
                         background: 'transparent',
                         border: '1px solid var(--border-color)',
                         borderRadius: 6,
-                        padding: '4px 10px',
+                        padding: '5px 10px',
                         fontSize: 12,
                         color: 'var(--text-primary)',
                         cursor: 'pointer'
                       }}
-                      title="Ver slots de este cliente en la hoja de trabajo"
+                      title="Abrir Entrevista Clínica 360°"
                     >
-                      Ver Slots <ArrowRight size={13} />
+                      🎙️ Entrevista
                     </button>
                   </td>
                 </tr>
@@ -548,7 +673,7 @@ export default function IntakeClientes() {
         </table>
       </div>
 
-      {/* Pagination Toolbar */}
+      {/* Paginación */}
       {totalPages > 1 && (
         <div style={{
           display: 'flex',
@@ -561,7 +686,7 @@ export default function IntakeClientes() {
           border: '1px solid var(--border-color)'
         }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            Mostrando <b>{(currentPage - 1) * pageSize + 1}</b> - <b>{Math.min(currentPage * pageSize, clients.length)}</b> de <b>{clients.length}</b> clientes
+            Mostrando <b>{(currentPage - 1) * pageSize + 1}</b> - <b>{Math.min(currentPage * pageSize, clients.length)}</b> de <b>{clients.length}</b> perfiles
           </span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
@@ -603,16 +728,17 @@ export default function IntakeClientes() {
         </div>
       )}
 
-      {/* Modal para Crear Cliente Nuevo desde URL del CRM */}
-      {showModal && (
+      {/* Modal para Ver Quick Notes Completas */}
+      {quickNoteModalTarget && (
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0,0,0,0.7)',
+          background: 'rgba(0,0,0,0.75)',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 9999
+          zIndex: 9999,
+          padding: 20
         }}>
           <div style={{
             background: 'var(--bg-card)',
@@ -620,20 +746,122 @@ export default function IntakeClientes() {
             maxWidth: 580,
             borderRadius: 12,
             border: '1px solid var(--border-color)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
             overflow: 'hidden'
           }}>
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              padding: '16px 24px',
+              padding: '16px 20px',
               borderBottom: '1px solid var(--border-color)',
               background: 'var(--bg-base)'
             }}>
-              <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <UserPlus size={18} color="#B8324F" /> Ingestar Cliente desde SmartMatchApp (CRM)
-              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <FileText size={18} color="#961500" />
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Notas Clínicas — {quickNoteModalTarget.person_a}
+                </h3>
+              </div>
+              <button
+                onClick={() => setQuickNoteModalTarget(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+              <div style={{
+                background: 'var(--bg-base)',
+                padding: '16px',
+                borderRadius: 8,
+                border: '1px solid var(--border-color)',
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: 'var(--text-primary)',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {quickNoteModalTarget.quick_notes}
+              </div>
+              {quickNoteModalTarget.profile_url && (
+                <div style={{ marginTop: 14 }}>
+                  <a
+                    href={quickNoteModalTarget.profile_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      color: '#ff8a80',
+                      textDecoration: 'none',
+                      fontWeight: 700
+                    }}
+                  >
+                    <FolderOpen size={14} /> Abrir Carpeta Externa / Google Drive <ExternalLink size={12} />
+                  </a>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', background: 'var(--bg-base)' }}>
+              <button
+                onClick={() => setQuickNoteModalTarget(null)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: 12
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Principal: Registrar Perfil (PROFILES) */}
+      {showModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.75)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            width: '100%',
+            maxWidth: 640,
+            borderRadius: 14,
+            border: '1px solid var(--border-color)',
+            boxShadow: '0 12px 48px rgba(0,0,0,0.5)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '18px 24px',
+              borderBottom: '1px solid var(--border-color)',
+              background: 'var(--bg-base)'
+            }}>
+              <div>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <UserPlus size={20} color="#961500" /> Ingresar Perfil — PROFILES
+                </h2>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Registra al cliente con su URL, extrae sus notas clínicas y envíalo directo a su psicóloga.
+                </div>
+              </div>
               <button
                 onClick={() => setShowModal(false)}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
@@ -642,22 +870,61 @@ export default function IntakeClientes() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateClient} style={{ padding: '20px 24px' }}>
-              <div style={{ marginBottom: 16 }}>
+            <form onSubmit={handleCreateClient} style={{ padding: '20px 24px', maxHeight: '80vh', overflowY: 'auto' }}>
+              {/* Campo 1: Nombre de la Persona */}
+              <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                  🔗 Enlace del Perfil en SmartMatchApp (CRM) *
+                  👤 Nombre Completo de la Persona *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Pega el enlace https://dailylover.smartmatchapp.com/client/3923..."
-                  value={formData.crm_url || formData.person_a}
-                  onChange={e => handleResolveInput(e.target.value)}
+                  placeholder="Ej: Laura Gómez, Camilo Martínez..."
+                  value={formData.person_a}
+                  onChange={e => {
+                    const val = e.target.value
+                    setFormData(prev => ({ ...prev, person_a: val }))
+                  }}
+                  onBlur={e => {
+                    if (!formData.city && !formData.quick_notes) {
+                      handleResolveQuery(e.target.value, 'name')
+                    }
+                  }}
                   style={{
                     width: '100%',
                     padding: '10px 14px',
                     borderRadius: 8,
-                    border: resolveHint.startsWith('✅') ? '1px solid #10B981' : '1px solid var(--border-color)',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-base)',
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              {/* Campo 2: URL de Perfil / Carpeta (Google Drive, Entrevista, CRM) */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  🔗 URL de Perfil / Carpeta (Google Drive, SmartMatchApp, Entrevista)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://drive.google.com/... o https://dailylover.smartmatchapp.com/..."
+                  value={formData.profile_url}
+                  onChange={e => {
+                    const val = e.target.value
+                    setFormData(prev => ({ ...prev, profile_url: val }))
+                    if (val.includes('http') || val.includes('client/')) {
+                      handleResolveQuery(val, 'url')
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-color)',
                     background: 'var(--bg-base)',
                     color: 'var(--text-primary)',
                     fontSize: 13,
@@ -667,14 +934,14 @@ export default function IntakeClientes() {
                 />
                 {resolving && (
                   <div style={{ fontSize: 12, marginTop: 6, color: '#3B82F6', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <RefreshCw size={14} className="animate-spin" /> Consultando webhook / CRM SmartMatchApp...
+                    <RefreshCw size={14} className="animate-spin" /> Buscando coincidencias clínicas en base de datos...
                   </div>
                 )}
                 {resolveHint && !resolving && (
                   <div style={{
                     fontSize: 12,
-                    marginTop: 8,
-                    padding: '8px 12px',
+                    marginTop: 6,
+                    padding: '6px 12px',
                     borderRadius: 6,
                     background: resolveHint.startsWith('✅') ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
                     color: resolveHint.startsWith('✅') ? '#10B981' : '#F59E0B',
@@ -685,57 +952,75 @@ export default function IntakeClientes() {
                 )}
               </div>
 
-              {/* Tarjeta de Datos Extraídos Automáticamente del CRM */}
-              {formData.person_a && formData.person_a !== formData.crm_url && (
-                <div style={{
-                  background: 'rgba(184, 50, 79, 0.06)',
-                  border: '1px solid rgba(184, 50, 79, 0.25)',
-                  borderRadius: 8,
-                  padding: '14px 16px',
-                  marginBottom: 16
-                }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#B8324F', marginBottom: 8 }}>
-                    ✓ Datos Extraídos del CRM en Tiempo Real
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', fontSize: 13 }}>
-                    <div>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Nombre del Cliente:</span>
-                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{formData.person_a}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Psicóloga Responsable:</span>
-                      <div style={{ fontWeight: 700, color: '#A2C4C9' }}>{formData.psychologist_name || 'Sin asignar'}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Ciudad:</span>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>📍 {formData.city || 'Bogotá'}</div>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Preferencia:</span>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>🧭 {formData.pref?.toUpperCase() || 'HETERO'}</div>
-                    </div>
-                    <div style={{ gridColumn: 'span 2' }}>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Plan Oficial:</span>
-                      <div style={{ fontWeight: 700, color: '#B6D7A8' }}>
-                        💎 {formData.plan_tier || 'Pendiente Plan'} 
-                        <span className="badge badge-wine" style={{ marginLeft: 8, fontSize: 11 }}>
-                          {formData.plan_tier?.includes('VIP') ? '4 Slots' : formData.plan_tier?.includes('40k') ? '2 Slots' : '3 Slots'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Campo 3: Psicóloga Responsable */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  💖 Psicóloga Responsable (A cuya mesa de matches irá la persona) *
+                </label>
+                <select
+                  value={formData.psychologist_name}
+                  onChange={e => setFormData({ ...formData, psychologist_name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-base)',
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    outline: 'none'
+                  }}
+                >
+                  {psycList.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
 
-              {/* Opción de confirmación / ajuste de Psicóloga solo si el CRM no la tenía asignada */}
-              {(!formData.psychologist_name || formData.psychologist_name === 'SILVI') && (
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Confirmar Psicóloga Responsable
+              {/* Campo 4: Quick Notes / Resumen Clínico */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    📝 Quick Notes & Resumen Clínico de la Persona
                   </label>
-                  <select
-                    value={formData.psychologist_name}
-                    onChange={e => setFormData({ ...formData, psychologist_name: e.target.value })}
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    Se trasladará a la mesa de Matches
+                  </span>
+                </div>
+                <textarea
+                  rows={4}
+                  placeholder="Anota aquí la bio, observaciones clave de la entrevista, lo que busca, no negociables o resumen rápido..."
+                  value={formData.quick_notes}
+                  onChange={e => setFormData({ ...formData, quick_notes: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-base)',
+                    color: 'var(--text-primary)',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              {/* Fila de Datos Demográficos y Plan */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Ciudad
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Bogotá"
+                    value={formData.city}
+                    onChange={e => setFormData({ ...formData, city: e.target.value })}
                     style={{
                       width: '100%',
                       padding: '8px 10px',
@@ -743,38 +1028,108 @@ export default function IntakeClientes() {
                       border: '1px solid var(--border-color)',
                       background: 'var(--bg-base)',
                       color: 'var(--text-primary)',
-                      fontSize: 13,
-                      outline: 'none'
+                      fontSize: 12,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Edad
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Ej. 34"
+                    value={formData.age}
+                    onChange={e => setFormData({ ...formData, age: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-base)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Preferencia
+                  </label>
+                  <select
+                    value={formData.pref}
+                    onChange={e => setFormData({ ...formData, pref: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-base)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12,
+                      fontWeight: 600
                     }}
                   >
-                    {psycList.map(p => (
+                    <option value="hetero">Hetero</option>
+                    <option value="gay">Gay</option>
+                    <option value="lesb">Lesb</option>
+                    <option value="bi">Bi</option>
+                  </select>
+                </div>
+
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Plan Oficial
+                  </label>
+                  <select
+                    value={formData.plan_tier}
+                    onChange={e => setFormData({ ...formData, plan_tier: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-base)',
+                      color: 'var(--text-primary)',
+                      fontSize: 12,
+                      fontWeight: 600
+                    }}
+                  >
+                    <option value="">Pendiente Plan (1 Slot)</option>
+                    {PLAN_TIERS.map(p => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
                 </div>
-              )}
+              </div>
 
-              <div style={{ marginBottom: 16 }}>
+              {/* Checkbox de Prioritario */}
+              <div style={{ marginBottom: 18 }}>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.is_priority || false}
                     onChange={e => setFormData({ ...formData, is_priority: e.target.checked })}
-                    style={{ accentColor: '#B8324F', width: 16, height: 16 }}
+                    style={{ accentColor: '#961500', width: 16, height: 16 }}
                   />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: formData.is_priority ? '#B8324F' : 'var(--text-primary)' }}>
-                    ⚡ Marcar como PROFILE PRIORITARIO (Personas Difíciles)
+                  <span style={{ fontSize: 13, fontWeight: 700, color: formData.is_priority ? '#ff8a80' : 'var(--text-primary)' }}>
+                    ⚡ Marcar como PROFILE PRIORITARIO (Urgente / Persona Difícil)
                   </span>
                 </label>
               </div>
 
+              {/* Botones de Acción */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
                   style={{
-                    padding: '8px 16px',
-                    borderRadius: 6,
+                    padding: '10px 16px',
+                    borderRadius: 8,
                     border: '1px solid var(--border-color)',
                     background: 'transparent',
                     color: 'var(--text-secondary)',
@@ -788,21 +1143,22 @@ export default function IntakeClientes() {
                   type="submit"
                   disabled={submitting || resolving || !formData.person_a}
                   style={{
-                    padding: '8px 18px',
-                    borderRadius: 6,
+                    padding: '10px 20px',
+                    borderRadius: 8,
                     border: 'none',
-                    background: '#B8324F',
+                    background: '#961500',
                     color: '#fff',
                     fontWeight: 700,
                     cursor: (submitting || resolving || !formData.person_a) ? 'not-allowed' : 'pointer',
                     fontSize: 13,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
+                    gap: 8,
+                    boxShadow: '0 4px 14px rgba(150,21,0,0.35)',
                     opacity: (submitting || resolving || !formData.person_a) ? 0.6 : 1
                   }}
                 >
-                  {submitting ? 'Ingestando...' : '✓ Ingestar & Generar Slots'}
+                  {submitting ? 'Guardando y asignando...' : `✓ Guardar en PROFILES y Llevar a Matches de ${formData.psychologist_name}`}
                 </button>
               </div>
             </form>

@@ -1865,24 +1865,44 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               <CheckCircle size={14} /> {feedbackMsg}
             </span>
           )}
+          <button
+            onClick={() => navigate('/matchmaking/profiles' + (selectedPsyc && selectedPsyc !== 'all' ? `?psychologist=${encodeURIComponent(selectedPsyc)}` : ''))}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(150, 21, 0, 0.15)',
+              color: '#ff8a80',
+              border: '1px solid rgba(150, 21, 0, 0.4)',
+              borderRadius: 8,
+              padding: '8px 14px',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+            title="Ir al módulo de ingreso de perfiles (PROFILES)"
+          >
+            <FileSpreadsheet size={15} /> 📋 PROFILES
+          </button>
           {!isOfficialMatches && (
             <button
-              onClick={() => setShowIntakeModal(true)}
+              onClick={() => navigate('/matchmaking/profiles' + (selectedPsyc && selectedPsyc !== 'all' ? `?psychologist=${encodeURIComponent(selectedPsyc)}` : ''))}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                background: '#B8324F',
+                background: '#961500',
                 color: '#FFFFFF',
                 border: 'none',
                 borderRadius: 8,
                 padding: '8px 16px',
                 fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer'
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(150,21,0,0.3)'
               }}
             >
-              <Plus size={16} /> + Ingresar Cliente (Slots Automáticos)
+              <Plus size={16} /> + Ingresar Perfil (PROFILES)
             </button>
           )}
         </div>
@@ -2605,6 +2625,34 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               ) : (
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sin teléfono en CRM</span>
                               )}
+                              {(() => {
+                                const urlMatchA = (m.observations || '').match(/https?:\/\/[^\s]+/)
+                                if (!urlMatchA) return null
+                                const folderUrlA = urlMatchA[0].replace(/[)\]]+$/, '')
+                                return (
+                                  <a
+                                    href={folderUrlA}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      fontSize: 10,
+                                      color: '#ff8a80',
+                                      textDecoration: 'none',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 3,
+                                      background: 'rgba(150, 21, 0, 0.12)',
+                                      border: '1px solid rgba(150, 21, 0, 0.3)',
+                                      padding: '1px 5px',
+                                      borderRadius: 3,
+                                      fontWeight: 700
+                                    }}
+                                    title={`Abrir Carpeta / Perfil: ${folderUrlA}`}
+                                  >
+                                    <ExternalLink size={9} /> Carpeta
+                                  </a>
+                                )
+                              })()}
                             </div>
                           </div>
 

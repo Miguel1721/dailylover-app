@@ -221,6 +221,11 @@ class IntakeClientRequest(BaseModel):
     crm_id: Optional[str] = None
     observations: Optional[str] = None
     is_priority: Optional[bool] = False
+    profile_url: Optional[str] = None
+    quick_notes: Optional[str] = None
+    age: Optional[int] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 class UpdateMatchRequest(BaseModel):
     person_b: Optional[str] = None
@@ -602,36 +607,199 @@ async def get_my_matches(
 @router.post("/intake-client")
 async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends(get_db)):
     """
-    Crea automáticamente las filas de slots para Persona A asignada a la psicóloga según su plan.
-    Cruza con profiles para autocompletar CITY, PREF y PLAN.
-    Soporta Profile Prioritario y estados no bloqueantes (amarillo PENDIENTE PLAN).
+    Registra/actualiza un perfil en PROFILES y genera o reasigna automáticamente sus slots
+    en la mesa de trabajo de la psicóloga asignada (operational_matches).
+    Extrae o actualiza datos clínicos (quick notes, URL externa de perfil/carpeta, ciudad, edad, plan)
+    y sincroniza todo a la vista de la psicóloga.
     """
     person_a_clean = payload.person_a.strip()
-    psyc_clean = payload.psychologist_name.strip()
+    psyc_clean = normalize_psychologist(payload.psychologist_name) or payload.psychologist_name.strip()
+    profile_url_clean = (payload.profile_url or "").strip()
+    quick_notes_clean = (payload.quick_notes or "").strip()
 
-    # Buscar datos del perfil en CRM si no vienen completos
+    # 1. Buscar o resolver usuario existente en DB
+    user_row = await resolve_client_user(person_a_clean, db)
+    user_id = user_row.id if user_row else None
+    crm_id_val = payload.crm_id or (user_row.crm_id if user_row else None)
+
+    # Si no existe el usuario en users, crearlo
+    if not user_id:
+        phone_val = (payload.phone or "").strip()
+        if not phone_val:
+            import random
+            phone_val = f"+57300{random.randint(1000000, 9999999)}"
+        email_val = (payload.email or "").strip() or None
+        
+        ins_user = await db.execute(text("""
+            INSERT INTO users (name, phone, email, crm_id, created_at)
+            VALUES (:name, :phone, :email, :cid, NOW())
+            RETURNING id
+        """), {
+            "name": person_a_clean,
+            "phone": phone_val,
+            "email": email_val,
+            "cid": crm_id_val
+        })
+        user_id = ins_user.scalar()
+    else:
+        # Actualizar crm_id o email si vienen
+        if payload.email or crm_id_val:
+            await db.execute(text("""
+                UPDATE users SET
+                    crm_id = COALESCE(:cid, crm_id),
+                    email = COALESCE(NULLIF(:email, ''), email)
+                WHERE id = :uid
+            """), {
+                "cid": crm_id_val,
+                "email": payload.email.strip() if payload.email else None,
+                "uid": user_id
+            })
+
+    # 2. Buscar datos previos en profiles
     prof_res = await db.execute(text("""
-        SELECT p.city, p.orientation, p.gender, p.plan_tier, u.id AS user_id, u.crm_id
-        FROM users u
-        JOIN profiles p ON p.user_id = u.id
-        WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+        SELECT p.city, p.orientation, p.gender, p.plan_tier, p.responsable, p.age, p.bio_notes, p.clinical_profile_360
+        FROM profiles p
+        WHERE p.user_id = :uid
         LIMIT 1
-    """), {"n": person_a_clean})
+    """), {"uid": user_id})
     prof_row = prof_res.fetchone()
 
     city_val = payload.city or (prof_row.city if prof_row else "")
     pref_val = payload.pref or (prof_row.orientation if prof_row else "")
     raw_plan = payload.plan_tier or (prof_row.plan_tier if prof_row else "")
     plan_val = normalize_plan(raw_plan)
-    crm_id_val = payload.crm_id or (prof_row.crm_id if prof_row else None)
+    age_val = payload.age or (prof_row.age if prof_row else None)
 
-    # Si falta el plan
+    # 3. Guardar o actualizar en profiles
+    existing_c360 = prof_row.clinical_profile_360 if prof_row and isinstance(prof_row.clinical_profile_360, dict) else {}
+    updated_c360 = dict(existing_c360)
+    if profile_url_clean:
+        updated_c360["profile_url"] = profile_url_clean
+    if quick_notes_clean:
+        updated_c360["quick_notes"] = quick_notes_clean
+
+    final_bio = quick_notes_clean or (prof_row.bio_notes if prof_row else None)
+
+    if prof_row:
+        await db.execute(text("""
+            UPDATE profiles SET
+                full_name_raw = :name,
+                responsable = :resp,
+                city = COALESCE(NULLIF(:city, ''), city),
+                age = COALESCE(:age, age),
+                orientation = COALESCE(NULLIF(:orient, ''), orientation),
+                plan_tier = COALESCE(NULLIF(:plan, ''), plan_tier),
+                bio_notes = COALESCE(NULLIF(:bio, ''), bio_notes),
+                clinical_profile_360 = :c360,
+                updated_at = NOW()
+            WHERE user_id = :uid
+        """), {
+            "name": person_a_clean,
+            "resp": psyc_clean,
+            "city": city_val,
+            "age": age_val,
+            "orient": pref_val,
+            "plan": plan_val or None,
+            "bio": final_bio,
+            "c360": json.dumps(updated_c360),
+            "uid": user_id
+        })
+    else:
+        await db.execute(text("""
+            INSERT INTO profiles (
+                user_id, full_name_raw, responsable, city, age, gender, orientation, plan_tier, bio_notes, clinical_profile_360, updated_at
+            ) VALUES (
+                :uid, :name, :resp, :city, :age, '', :orient, :plan, :bio, :c360, NOW()
+            )
+        """), {
+            "uid": user_id,
+            "name": person_a_clean,
+            "resp": psyc_clean,
+            "city": city_val or None,
+            "age": age_val,
+            "orient": pref_val or None,
+            "plan": plan_val or None,
+            "bio": final_bio,
+            "c360": json.dumps(updated_c360)
+        })
+
+    # 4. Formatear observaciones para operational_matches
+    obs_parts = []
+    if profile_url_clean:
+        obs_parts.append(f"🔗 {profile_url_clean}")
+    if quick_notes_clean:
+        obs_parts.append(quick_notes_clean)
+    elif payload.observations and payload.observations.strip():
+        obs_parts.append(payload.observations.strip())
+    elif prof_row and prof_row.bio_notes and prof_row.bio_notes.strip():
+        obs_parts.append(prof_row.bio_notes.strip())
+
+    obs_final = " | ".join(obs_parts).strip() or None
+
+    # 5. Llevar automáticamente a operational_matches de la psicóloga
+    # Revisar si ya existen slots previos para esta Persona A
+    exist_op_res = await db.execute(text("""
+        SELECT id, slot_number, status, psychologist_name, observations
+        FROM operational_matches
+        WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:n))
+        ORDER BY slot_number ASC, id ASC
+    """), {"n": person_a_clean})
+    existing_slots = exist_op_res.fetchall()
+
+    if existing_slots:
+        # Ya existían filas: Reasignar a la psicóloga y actualizar observaciones y datos
+        for slot in existing_slots:
+            new_obs = obs_final or slot.observations
+            await db.execute(text("""
+                UPDATE operational_matches SET
+                    psychologist_name = :psyc,
+                    city = COALESCE(NULLIF(:city, ''), city),
+                    pref = COALESCE(NULLIF(:pref, ''), pref),
+                    plan_tier = COALESCE(NULLIF(:plan, ''), plan_tier),
+                    observations = :obs,
+                    is_priority = :is_prio,
+                    person_a_crm_id = COALESCE(:cid, person_a_crm_id),
+                    user_id_a = COALESCE(:uid, user_id_a),
+                    updated_at = NOW()
+                WHERE id = :mid
+            """), {
+                "psyc": psyc_clean,
+                "city": normalize_city(city_val),
+                "pref": normalize_pref(pref_val),
+                "plan": plan_val or "",
+                "obs": new_obs,
+                "is_prio": bool(payload.is_priority),
+                "cid": crm_id_val,
+                "uid": user_id,
+                "mid": slot.id
+            })
+
+        slot_ids = [s.id for s in existing_slots]
+        await db.execute(text("""
+            INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+            VALUES (:name, :mid, 'PROFILES_UPDATED', :details, NOW())
+        """), {
+            "name": person_a_clean,
+            "mid": slot_ids[0],
+            "details": f"Perfil actualizado desde PROFILES. Reasignado a {psyc_clean} con {len(slot_ids)} slots sincronizados."
+        })
+        await db.commit()
+
+        return {
+            "status": "success",
+            "message": f"Perfil de {person_a_clean} actualizado y sus {len(slot_ids)} slots sincronizados a la mesa de trabajo de {psyc_clean}.",
+            "slot_ids": slot_ids,
+            "user_id": user_id,
+            "psychologist_name": psyc_clean
+        }
+
+    # Si NO existían filas previas:
     if not plan_val:
-        # Estado NO BLOQUEANTE: Se crea 1 fila pendiente en amarillo
+        # Estado NO BLOQUEANTE: 1 fila PENDIENTE PLAN en amarillo
         ins_res = await db.execute(text("""
             INSERT INTO operational_matches 
-            (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, observations, person_a_crm_id, created_at, updated_at)
-            VALUES (:city, :pref, '', :person_a, :psyc, 1, :is_prio, 'PENDIENTE PLAN', :obs, :cid, NOW(), NOW())
+            (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, observations, person_a_crm_id, user_id_a, created_at, updated_at)
+            VALUES (:city, :pref, '', :person_a, :psyc, 1, :is_prio, 'PENDIENTE PLAN', :obs, :cid, :uid, NOW(), NOW())
             RETURNING id
         """), {
             "city": normalize_city(city_val),
@@ -639,8 +807,9 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             "person_a": person_a_clean,
             "psyc": psyc_clean,
             "is_prio": bool(payload.is_priority),
-            "obs": (payload.observations or "").strip() or "Falta plan — María o Servicio al Cliente lo completa",
-            "cid": crm_id_val
+            "obs": obs_final or "Falta plan — registrado desde PROFILES",
+            "cid": crm_id_val,
+            "uid": user_id
         })
         new_id = ins_res.scalar()
 
@@ -650,26 +819,26 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
         """), {
             "name": person_a_clean,
             "mid": new_id,
-            "details": f"Cliente registrado sin plan. Marcado en amarillo PENDIENTE PLAN ({psyc_clean})."
+            "details": f"Cliente registrado en PROFILES sin plan. Asignado como PENDIENTE PLAN a {psyc_clean}."
         })
-
         await db.commit()
+
         return {
             "status": "warning",
-            "message": f"Cliente {person_a_clean} registrado como PENDIENTE PLAN (marcado en amarillo). Los slots se autogenerarán al completar el plan.",
-            "slot_ids": [new_id]
+            "message": f"Cliente {person_a_clean} registrado en PROFILES como PENDIENTE PLAN para {psyc_clean}.",
+            "slot_ids": [new_id],
+            "user_id": user_id,
+            "psychologist_name": psyc_clean
         }
 
     # Calcular slots según el plan normalizado (Básico: 2, Estándar: 3, VIP: 4)
     num_slots = get_slots_by_plan(plan_val) or 3
-
-    # Insertar los slots en operational_matches
     created_ids = []
     for slot_num in range(1, num_slots + 1):
         ins_res = await db.execute(text("""
             INSERT INTO operational_matches 
-            (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, observations, person_a_crm_id, created_at, updated_at)
-            VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, :is_prio, 'Listo para match', :obs, :cid, NOW(), NOW())
+            (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, status_a, observations, person_a_crm_id, user_id_a, created_at, updated_at)
+            VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, :is_prio, 'Listo para match', 'Listo para match', :obs, :cid, :uid, NOW(), NOW())
             RETURNING id
         """), {
             "city": normalize_city(city_val),
@@ -679,27 +848,42 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             "psyc": psyc_clean,
             "slot": slot_num,
             "is_prio": bool(payload.is_priority),
-            "obs": payload.observations.strip() if payload.observations else None,
-            "cid": crm_id_val
+            "obs": obs_final,
+            "cid": crm_id_val,
+            "uid": user_id
         })
-        new_id = ins_res.scalar()
-        created_ids.append(new_id)
+        created_ids.append(ins_res.scalar())
 
-    # Registrar evento en person_history
     await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
-        VALUES (:name, :mid, 'INTAKE_CREATED', :details, NOW())
+        VALUES (:name, :mid, 'PROFILES_CREATED', :details, NOW())
     """), {
         "name": person_a_clean,
         "mid": created_ids[0],
-        "details": f"Cliente {'PRIORITARIO ' if payload.is_priority else ''}registrado en Intake por {psyc_clean}. {num_slots} slots generados ({plan_val})."
+        "details": f"Perfil registrado en PROFILES con {num_slots} slots asignados a {psyc_clean} ({plan_val})."
     })
-
     await db.commit()
+
+    # Intento opcional en segundo plano de sincronizar con Google Sheets PROFILES
+    try:
+        from app.services.google_sheets import append_profile_to_profiles_tab
+        append_profile_to_profiles_tab({
+            "name": person_a_clean,
+            "crm_id": crm_id_val,
+            "responsable": psyc_clean,
+            "city": city_val,
+            "age": age_val,
+            "profile_url": profile_url_clean
+        })
+    except Exception:
+        pass
+
     return {
         "status": "success",
-        "message": f"Cliente {person_a_clean} registrado con éxito y {num_slots} slots asignados a {psyc_clean}.",
-        "slot_ids": created_ids
+        "message": f"Perfil de {person_a_clean} guardado en PROFILES y {num_slots} slots asignados a la mesa de trabajo de {psyc_clean}.",
+        "slot_ids": created_ids,
+        "user_id": user_id,
+        "psychologist_name": psyc_clean
     }
 
 
@@ -712,8 +896,8 @@ async def get_intake_list(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna la lista agregada de clientes en Intake (PROFILES), agrupados por Persona A
-    con la cantidad de slots asignados, psicóloga asignada, ciudad, preferencia, plan y CRM ID.
+    Retorna la lista agregada de perfiles en PROFILES con soporte para URL externa,
+    Quick Notes clínicas, ciudad, edad, plan, slots activos y estado en la mesa de la psicóloga.
     """
     query = """
         SELECT 
@@ -726,9 +910,15 @@ async def get_intake_list(
             COUNT(m.id) as total_slots,
             COUNT(CASE WHEN m.person_b IS NOT NULL AND m.person_b != '' THEN 1 END) as filled_slots,
             COUNT(CASE WHEN m.approved_by_maria = true THEN 1 END) as approved_slots,
-            MAX(m.created_at) as created_at
+            MAX(m.created_at) as created_at,
+            MAX(COALESCE(p.clinical_profile_360->>'profile_url', '')) as profile_url,
+            MAX(COALESCE(NULLIF(TRIM(p.bio_notes), ''), NULLIF(TRIM(m.observations), ''), '')) as quick_notes,
+            MAX(p.age) as age,
+            MAX(u.phone) as phone,
+            MAX(u.email) as email
         FROM operational_matches m
         LEFT JOIN users u ON LOWER(TRIM(u.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN profiles p ON p.user_id = u.id
         WHERE 1=1
     """
     params = {}
@@ -742,7 +932,7 @@ async def get_intake_list(
         query += " AND m.plan_tier ILIKE :plan"
         params["plan"] = f"%{plan_tier.strip()}%"
     if search:
-        query += " AND (m.person_a ILIKE :s OR m.city ILIKE :s OR m.psychologist_name ILIKE :s)"
+        query += " AND (m.person_a ILIKE :s OR m.city ILIKE :s OR m.psychologist_name ILIKE :s OR p.bio_notes ILIKE :s OR m.observations ILIKE :s)"
         params["s"] = f"%{search.strip()}%"
 
     query += """
@@ -762,8 +952,13 @@ async def get_intake_list(
             "crm_id": r.crm_id or "",
             "psychologist_name": normalize_psychologist(r.psychologist_name) or r.psychologist_name,
             "city": normalize_city(r.city),
+            "age": r.age,
             "pref": normalize_pref(r.pref),
             "plan_tier": normalize_plan(r.plan_tier),
+            "profile_url": r.profile_url or "",
+            "quick_notes": r.quick_notes or "",
+            "phone": r.phone or "",
+            "email": r.email or "",
             "total_slots": r.total_slots,
             "filled_slots": r.filled_slots,
             "approved_slots": r.approved_slots,
@@ -2691,7 +2886,8 @@ async def resolve_profile(
     if extracted_crm_id:
         res = await db.execute(text("""
             SELECT u.id, u.name, u.email, u.phone, u.crm_id,
-                   p.city, p.orientation, p.gender, p.plan_tier, p.responsable
+                   p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                   p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             WHERE u.crm_id = :cid
@@ -2703,7 +2899,8 @@ async def resolve_profile(
         if not row and extracted_crm_id.isdigit():
             res = await db.execute(text("""
                 SELECT u.id, u.name, u.email, u.phone, u.crm_id,
-                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                       p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE u.id = :uid
@@ -2717,7 +2914,8 @@ async def resolve_profile(
         if clean_name:
             res = await db.execute(text("""
                 SELECT u.id, u.name, u.email, u.phone, u.crm_id,
-                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                       p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
@@ -2727,17 +2925,38 @@ async def resolve_profile(
             """), {"n": clean_name, "n_like": f"%{clean_name}%"})
             row = res.fetchone()
 
+    # Si aún no se encontró, intentar resolve_client_user
     if not row:
+        clean_fallback = re.sub(r'https?://\S+', '', raw_input).strip() or raw_input
+        u_fallback = await resolve_client_user(clean_fallback, db)
+        if u_fallback:
+            res = await db.execute(text("""
+                SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                       p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE u.id = :uid
+                LIMIT 1
+            """), {"uid": u_fallback.id})
+            row = res.fetchone()
+
+    if not row:
+        is_url = raw_input.startswith("http://") or raw_input.startswith("https://")
         return {
             "found": False,
             "crm_id": extracted_crm_id or "",
-            "name": "",
+            "crm_url": raw_input if is_url else "",
+            "profile_url": raw_input if is_url else "",
+            "name": "" if is_url else raw_input,
             "city": "",
             "pref": "",
             "plan_tier": "",
             "psychologist": "",
             "phone": "",
-            "email": ""
+            "email": "",
+            "age": None,
+            "quick_notes": ""
         }
 
     orientation_val = (row.orientation or "").strip()
@@ -2757,10 +2976,56 @@ async def resolve_profile(
     final_cid = row.crm_id or extracted_crm_id or str(row.id)
     canonical_crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{final_cid}/" if final_cid else raw_input
 
+    # Obtener URL externa si existe guardada en clinical_profile_360 o si el usuario ingresó una URL directa
+    stored_c360 = row.clinical_profile_360 if isinstance(row.clinical_profile_360, dict) else {}
+    detected_url = ""
+    if raw_input.startswith("http://") or raw_input.startswith("https://"):
+        detected_url = raw_input
+    elif stored_c360 and stored_c360.get("profile_url"):
+        detected_url = stored_c360.get("profile_url")
+    else:
+        detected_url = canonical_crm_url
+
+    # Consolidar Quick Notes clínicas de profiles, client_extended_profile y client_notes
+    notes_parts = []
+    if row.bio_notes and row.bio_notes.strip():
+        notes_parts.append(row.bio_notes.strip())
+
+    try:
+        ext_res = await db.execute(text("""
+            SELECT synthesis_who_really_is, synthesis_best_match_type, attachment_style, love_language_given, flags_notes
+            FROM client_extended_profile WHERE user_id = :uid LIMIT 1
+        """), {"uid": row.id})
+        ext_row = ext_res.fetchone()
+        if ext_row:
+            if ext_row.synthesis_who_really_is and ext_row.synthesis_who_really_is.strip():
+                if ext_row.synthesis_who_really_is.strip() not in (row.bio_notes or ""):
+                    notes_parts.append(f"Síntesis: {ext_row.synthesis_who_really_is.strip()}")
+            if ext_row.attachment_style and ext_row.attachment_style.strip():
+                notes_parts.append(f"Apego: {ext_row.attachment_style.strip()}")
+            if ext_row.flags_notes and ext_row.flags_notes.strip():
+                notes_parts.append(f"Alertas/Flags: {ext_row.flags_notes.strip()}")
+    except Exception:
+        pass
+
+    try:
+        cn_res = await db.execute(text("""
+            SELECT note FROM client_notes WHERE user_id = :uid ORDER BY id DESC LIMIT 1
+        """), {"uid": row.id})
+        cn_row = cn_res.fetchone()
+        if cn_row and cn_row.note and cn_row.note.strip():
+            if cn_row.note.strip() not in "\n".join(notes_parts):
+                notes_parts.append(f"Nota CRM: {cn_row.note.strip()}")
+    except Exception:
+        pass
+
+    consolidated_quick_notes = "\n".join(notes_parts).strip()
+
     return {
         "found": True,
         "crm_id": final_cid,
         "crm_url": canonical_crm_url,
+        "profile_url": detected_url,
         "name": row.name or "",
         "city": normalize_city(row.city),
         "pref": pref_val,
@@ -2768,7 +3033,9 @@ async def resolve_profile(
         "plan_tier": normalize_plan(row.plan_tier),
         "psychologist": normalize_psychologist(row.responsable),
         "phone": row.phone or "",
-        "email": row.email or ""
+        "email": row.email or "",
+        "age": row.age,
+        "quick_notes": consolidated_quick_notes
     }
 
 
