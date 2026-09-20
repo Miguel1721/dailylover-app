@@ -61,4 +61,8 @@ nightpulse/frontend/dist/
 
 # ─── Scratch Scripts ──────────────────────────────────────────────
 scratch/
+.git_commit
+**/.git_commit
+sync_sheet_status.json
+**/sync_sheet_status.json
 

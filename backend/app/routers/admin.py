@@ -96,61 +96,61 @@ async def get_system_diagnostics(
     # 1. Resolver Git Commit
     git_info = {"commit": "unknown", "ref": None, "source": "none"}
     
-    # Intento 1: Directorio .git (montado o local)
-    candidate_gits = [
-        "/app/.git",
-        "/home/ubuntu/dailylover/.git",
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.git")),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.git"))
+    # Intento 1: Archivo estático .git_commit (refleja el commit exacto desplegado)
+    candidate_files = [
+        "/app/.git_commit",
+        "/home/ubuntu/dailylover/.git_commit",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../.git_commit")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.git_commit"))
     ]
-    for c_git in candidate_gits:
-        if os.path.isdir(c_git):
-            head_p = os.path.join(c_git, "HEAD")
-            if os.path.isfile(head_p):
-                try:
-                    with open(head_p, "r", encoding="utf-8") as hf:
-                        head_val = hf.read().strip()
-                    if head_val.startswith("ref:"):
-                        ref_rel = head_val.split(":", 1)[1].strip()
-                        ref_full = os.path.join(c_git, ref_rel)
-                        if os.path.isfile(ref_full):
-                            with open(ref_full, "r", encoding="utf-8") as rf:
-                                git_info = {"commit": rf.read().strip(), "ref": ref_rel, "source": "git_ref"}
-                                break
-                        # Comprobar packed-refs
-                        packed_p = os.path.join(c_git, "packed-refs")
-                        if os.path.isfile(packed_p):
-                            with open(packed_p, "r", encoding="utf-8") as pf:
-                                for line in pf:
-                                    if line.strip().endswith(ref_rel):
-                                        git_info = {"commit": line.split()[0], "ref": ref_rel, "source": "packed-refs"}
-                                        break
-                                if git_info["commit"] != "unknown":
-                                    break
-                    elif len(head_val) == 40:
-                        git_info = {"commit": head_val, "ref": "HEAD", "source": "git_head_direct"}
+    for cf_path in candidate_files:
+        if os.path.isfile(cf_path):
+            try:
+                with open(cf_path, "r", encoding="utf-8") as cf:
+                    val = cf.read().strip()
+                    if val and len(val) >= 7:
+                        git_info = {"commit": val, "ref": "main", "source": "file_git_commit"}
                         break
-                except Exception as e:
-                    git_info["read_error"] = str(e)
+            except Exception:
+                pass
 
-    # Intento 2: Archivo estático .git_commit
+    # Intento 2: Directorio .git (montado o local)
     if git_info["commit"] == "unknown":
-        candidate_files = [
-            "/app/.git_commit",
-            "/home/ubuntu/dailylover/.git_commit",
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../.git_commit")),
-            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.git_commit"))
+        candidate_gits = [
+            "/app/.git",
+            "/home/ubuntu/dailylover/.git",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.git")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.git"))
         ]
-        for cf_path in candidate_files:
-            if os.path.isfile(cf_path):
-                try:
-                    with open(cf_path, "r", encoding="utf-8") as cf:
-                        val = cf.read().strip()
-                        if val:
-                            git_info = {"commit": val, "ref": "main", "source": "file_git_commit"}
+        for c_git in candidate_gits:
+            if os.path.isdir(c_git):
+                head_p = os.path.join(c_git, "HEAD")
+                if os.path.isfile(head_p):
+                    try:
+                        with open(head_p, "r", encoding="utf-8") as hf:
+                            head_val = hf.read().strip()
+                        if head_val.startswith("ref:"):
+                            ref_rel = head_val.split(":", 1)[1].strip()
+                            ref_full = os.path.join(c_git, ref_rel)
+                            if os.path.isfile(ref_full):
+                                with open(ref_full, "r", encoding="utf-8") as rf:
+                                    git_info = {"commit": rf.read().strip(), "ref": ref_rel, "source": "git_ref"}
+                                    break
+                            # Comprobar packed-refs
+                            packed_p = os.path.join(c_git, "packed-refs")
+                            if os.path.isfile(packed_p):
+                                with open(packed_p, "r", encoding="utf-8") as pf:
+                                    for line in pf:
+                                        if line.strip().endswith(ref_rel):
+                                            git_info = {"commit": line.split()[0], "ref": ref_rel, "source": "packed-refs"}
+                                            break
+                                    if git_info["commit"] != "unknown":
+                                        break
+                        elif len(head_val) == 40:
+                            git_info = {"commit": head_val, "ref": "HEAD", "source": "git_head_direct"}
                             break
-                except Exception:
-                    pass
+                    except Exception as e:
+                        git_info["read_error"] = str(e)
 
     # 2. Conteos reales de tablas clave
     tables_to_count = [
@@ -240,6 +240,35 @@ async def get_system_diagnostics(
                     "error": f"Error calculando hash: {str(e)}"
                 }
 
+    # 4. Estado de Sincronización Automática del Google Sheet (Etapa 3)
+    sync_status_info = {
+        "status": "never_run",
+        "last_successful_sync": None,
+        "backup_file": None,
+        "records_summary": None,
+        "duration_seconds": None,
+        "last_error": None
+    }
+    candidate_sync_files = [
+        "/app/sync_sheet_status.json",
+        "/home/ubuntu/dailylover/backend/sync_sheet_status.json",
+        "/home/ubuntu/dailylover/sync_sheet_status.json",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../sync_sheet_status.json")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sync_sheet_status.json"))
+    ]
+    for csf in candidate_sync_files:
+        if os.path.isfile(csf):
+            try:
+                with open(csf, "r", encoding="utf-8") as sf:
+                    data = json.load(sf)
+                    sync_status_info = data
+                    break
+            except Exception as e:
+                sync_status_info["read_error"] = str(e)
+                break
+
+    last_successful_sheet_sync = sync_status_info.get("last_successful_sync")
+
     return {
         "status": "ok",
         "server_time_utc": datetime.utcnow().isoformat() + "Z",
@@ -251,6 +280,8 @@ async def get_system_diagnostics(
             "role": current_user.get("role_name"),
             "is_readonly": ("AUDITOR" in role_name or "CONSULTA" in role_name)
         },
+        "last_successful_sheet_sync": last_successful_sheet_sync,
+        "sheet_sync": sync_status_info,
         "table_row_counts": table_counts,
         "file_check": file_info
     }
