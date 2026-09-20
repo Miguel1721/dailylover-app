@@ -58,3 +58,7 @@ daily-lover-web/node_modules/
 daily-lover-web/.next/
 nightpulse/frontend/node_modules/
 nightpulse/frontend/dist/
+
+# ─── Scratch Scripts ──────────────────────────────────────────────
+scratch/
+

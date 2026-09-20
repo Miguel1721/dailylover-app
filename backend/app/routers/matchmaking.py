@@ -22,7 +22,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
 from app.config import get_settings
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, get_current_user
+from app.services.clinical_profile_extractor import ClinicalProfileExtractor
 
 router = APIRouter(prefix="/api/v1/matchmaking", tags=["Matchmaking Operational"])
 
@@ -4571,10 +4572,35 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     # Si son de distinto sexo y alguno es exclusivamente homosexual/gay/lesbiana
     is_diff_gender = ('hombre' in c_gender and 'mujer' in cand_gender) or ('mujer' in c_gender and 'hombre' in cand_gender)
     if is_diff_gender:
-        if ('lesb' in c_orient) or ('gay' in c_orient and 'hombre' in c_gender) or ('homo' in c_orient and 'hetero' not in c_orient and 'bi' not in c_orient):
-            return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} tiene orientación homosexual/lesbiana declarada y {cand.get('name')} es de distinto sexo."
-        if ('lesb' in cand_orient) or ('gay' in cand_orient and 'hombre' in cand_gender) or ('homo' in cand_orient and 'hetero' not in cand_orient and 'bi' not in cand_orient):
-            return True, f"Incompatibilidad de orientación sexual: {cand.get('name')} tiene orientación homosexual/lesbiana declarada y {cli.get('name')} es de distinto sexo."
+        def _get_notes_text(obj: dict) -> str:
+            parts = [
+                str(obj.get('bio_notes') or ''),
+                str(obj.get('synthesis') or ''),
+                str(obj.get('synthesis_who_really_is') or '')
+            ]
+            return " ".join(parts).lower()
+
+        c_notes_text = _get_notes_text(cli)
+        cand_notes_text = _get_notes_text(cand)
+
+        c_is_lesbian = ('lesb' in c_orient) or bool(re.search(r'\b(lesbiana|lesbica|lesb)\b', c_notes_text))
+        cand_is_lesbian = ('lesb' in cand_orient) or bool(re.search(r'\b(lesbiana|lesbica|lesb)\b', cand_notes_text))
+
+        c_is_gay = ('gay' in c_orient and 'hombre' in c_gender) or bool(re.search(r'\b(gay|homosexual)\b', c_notes_text) and 'hombre' in c_gender)
+        cand_is_gay = ('gay' in cand_orient and 'hombre' in cand_gender) or bool(re.search(r'\b(gay|homosexual)\b', cand_notes_text) and 'hombre' in cand_gender)
+
+        if c_is_lesbian:
+            return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} tiene orientación lesbiana registrada en ficha o notas clínicas y {cand.get('name')} es de distinto sexo."
+        if cand_is_lesbian:
+            return True, f"Incompatibilidad de orientación sexual: {cand.get('name')} tiene orientación lesbiana registrada en ficha o notas clínicas y {cli.get('name')} es de distinto sexo."
+        if c_is_gay:
+            return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} tiene orientación homosexual masculina (gay) registrada en ficha o notas clínicas y {cand.get('name')} es de distinto sexo."
+        if cand_is_gay:
+            return True, f"Incompatibilidad de orientación sexual: {cand.get('name')} tiene orientación homosexual masculina (gay) registrada en ficha o notas clínicas y {cli.get('name')} es de distinto sexo."
+        if ('homo' in c_orient and 'hetero' not in c_orient and 'bi' not in c_orient):
+            return True, f"Incompatibilidad de orientación sexual: {cli.get('name')} tiene orientación homosexual declarada y {cand.get('name')} es de distinto sexo."
+        if ('homo' in cand_orient and 'hetero' not in cand_orient and 'bi' not in cand_orient):
+            return True, f"Incompatibilidad de orientación sexual: {cand.get('name')} tiene orientación homosexual declarada y {cli.get('name')} es de distinto sexo."
 
     # 2. Hijos excluyentes declarados en no negociables
     c_ls = _to_d(cli.get('lifestyle'))
@@ -4768,6 +4794,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 
     models_to_try = [
         "meta/llama-3.2-11b-vision-instruct",
+        "meta/llama-3.1-8b-instruct",
         "meta/llama-3.2-90b-vision-instruct"
     ]
 
@@ -4796,6 +4823,10 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
                     res_json["model_used"] = model
                     _AI_MATCH_CACHE[cache_key] = res_json
                     return res_json
+            elif resp.status_code == 429:
+                # Rate limit de NVIDIA: esperar 1.2s y reintentar con el siguiente modelo
+                await asyncio.sleep(1.2)
+                continue
             elif resp.status_code in (404, 410):
                 continue
             else:
@@ -4815,8 +4846,9 @@ async def find_candidate_matches_engine(
     candidate_usage_tracker: Optional[Dict[int, int]] = None,
     max_candidate_usage: Optional[int] = None,
     nvidia_key: Optional[str] = None,
-    http_client: Optional[httpx.AsyncClient] = None
-) -> List[dict]:
+    http_client: Optional[httpx.AsyncClient] = None,
+    return_discarded: bool = False
+) -> Any:
     """
     Motor unificado de búsqueda, filtrado estructural multidimensional y evaluación
     clínica con IA (NVIDIA) para matchmaking de candidatos.
@@ -4865,7 +4897,7 @@ async def find_candidate_matches_engine(
                 orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%lesb%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%homo%')"
             else:
                 # Hombre buscando mujer
-                orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')"
+                orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%') AND (p.bio_notes IS NULL OR p.bio_notes !~* '\\y(lesbiana|lesbica|lesb|solo mujeres)\\y')"
     elif "homb" in c_pref_gender or "masc" in c_pref_gender:
         # Busca estrictamente Hombre
         gender_filter_sql = "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
@@ -4875,7 +4907,7 @@ async def find_candidate_matches_engine(
             orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%gay%' OR p.orientation ILIKE '%bi%' OR p.orientation ILIKE '%homo%')"
         else:
             # Mujer buscando hombre
-            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')"
+            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%') AND (p.bio_notes IS NULL OR p.bio_notes !~* '\\y(gay|homosexual|solo hombres)\\y')"
     else:
         # Fallback si no tiene preferred_gender explícito en search_preferences: deducir de orientación declarada
         if "lesb" in c_orient or ("homo" in c_orient and not is_client_male):
@@ -4897,7 +4929,10 @@ async def find_candidate_matches_engine(
                 if is_client_male else
                 "AND u.name !~* '^(maria|paula|laura|diana|daniela|valentina|natalia|camila|sofia|alejandra|juliana|catalina|andrea|carolina|angie|sara)'"
             )
-            orient_filter_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%')"
+            orient_filter_sql = (
+                "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%' OR p.orientation ILIKE '%bi%') "
+                + ("AND (p.bio_notes IS NULL OR p.bio_notes !~* '\\y(lesbiana|lesbica|lesb|solo mujeres)\\y')" if is_client_male else "AND (p.bio_notes IS NULL OR p.bio_notes !~* '\\y(gay|homosexual|solo hombres)\\y')")
+            )
 
     city_sql = ""
     if client_city and client_city.lower() != "todas":
@@ -4986,7 +5021,17 @@ async def find_candidate_matches_engine(
         """), {"a": client_name_clean})
         past_partners = {r[0] for r in res_prev_all.fetchall() if r[0]}
 
+    # Extracción del Perfil Clínico 360° Integral de Persona A (Cliente Entrevistado)
+    client_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+        user_id=uid,
+        name=client_summary.get("name") or "Cliente",
+        profile_data=client_summary,
+        bio_notes=client_summary.get("bio_notes", ""),
+        past_matched_names=list(past_partners),
+    )
+
     suggested_matches = []
+    discarded_matches = []
     seen_names = set()
     capped_candidates = []
 
@@ -5004,11 +5049,75 @@ async def find_candidate_matches_engine(
 
         # 1. Historial previo (evitar parejas que ya tuvieron cita juntos)
         if cand_name.lower() in past_partners:
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [f"Ya tuvieron una cita o asignación previa en Daily Lover."],
+                "warnings": []
+            })
             continue
 
-        # 2. Evaluación bidireccional A <-> B (Edad, Estatura y Preferencias)
+        cand_bio_clean = (r.bio_notes or "").strip()
+        cand_eval_age = int(r.age) if r.age else None
+        if not cand_eval_age and cand_bio_clean:
+            m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
+            if m_age:
+                try:
+                    cand_eval_age = int(m_age.group(1))
+                except Exception:
+                    pass
+        cand_age = cand_eval_age
+        cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
+
+        # 2. Extracción Pre-Match del Perfil Clínico 360° de Persona B (Candidata)
+        cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+            user_id=r.id,
+            name=cand_name,
+            profile_data={
+                "city": r.city,
+                "age": cand_age,
+                "gender": r.gender,
+                "estatura": r.estatura,
+                "occupation": cand_occ,
+                "orientation": getattr(r, "orientation", None),
+                "religion": getattr(r, "religion", None),
+                "apego": getattr(r, "apego", None),
+                "love_language": getattr(r, "love_language", None),
+            },
+            bio_notes=cand_bio_clean,
+        )
+
+        # 3. Evaluación Determinística Pre-Match de Dealbreakers 360°
+        # Descarta de raíz incompatibilidades en: Mascotas/Perros, Hijos/Vasectomía, Sustancias/Humo, Orientación
+        dealbreaker_360 = ClinicalProfileExtractor.evaluate_bidirectional_dealbreakers_360(
+            client_profile_360,
+            cand_profile_360
+        )
+
+        if not dealbreaker_360["compatible"]:
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": cand_age,
+                "occupation": cand_occ,
+                "reasons": dealbreaker_360["reasons"],
+                "warnings": dealbreaker_360["warnings"]
+            })
+            continue
+
+        # 4. Evaluación bidireccional A <-> B (Edad, Estatura y Preferencias)
         bidi = evaluate_bidirectional_match(client_summary, r, client_prefs, client_height_cm)
         if not bidi["age_ok"] and (bidi["age_alerts"]):
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": cand_age,
+                "occupation": cand_occ,
+                "reasons": [f"Incompatibilidad de edad: {', '.join(bidi['age_alerts'])}"],
+                "warnings": []
+            })
             continue
 
         # 3. Matriz de apego psicológico
@@ -5177,8 +5286,23 @@ async def find_candidate_matches_engine(
             missing_fields.append("Ocupación")
 
         if max_possible_points >= 15.0:
-            percentage = (earned_points / max_possible_points) * 100.0
-            match_pct = int(min(95, max(45, round(percentage))))
+            raw_percentage = (earned_points / max_possible_points) * 100.0
+            coverage_ratio = min(1.0, max_possible_points / 100.0)
+
+            # Calibración clínica: Si faltan formularios clave (Grupo Social, Deporte, Educación),
+            # el puntaje preliminar se ajusta con una ponderación de certidumbre para no inflar
+            # a 91% lo que en realidad es un perfil con más del 50% de datos clínicos pendientes.
+            if coverage_ratio < 0.60:
+                # Cobertura preliminar (<60 pts evaluados): Rango calibrado de 45% a 74%
+                calibrated = 45.0 + (raw_percentage - 45.0) * (0.45 + 0.45 * coverage_ratio)
+                match_pct = int(min(74, max(45, round(calibrated))))
+            elif coverage_ratio < 0.80:
+                # Cobertura media (60-79 pts evaluados): Rango calibrado hasta 84%
+                calibrated = 50.0 + (raw_percentage - 50.0) * (0.60 + 0.40 * coverage_ratio)
+                match_pct = int(min(84, max(50, round(calibrated))))
+            else:
+                # Cobertura alta (>=80 pts evaluados con F1 y F2 completos): Rango completo hasta 95%
+                match_pct = int(min(95, max(45, round(raw_percentage))))
         else:
             match_pct = None
 
@@ -5304,6 +5428,8 @@ async def find_candidate_matches_engine(
             "strengths": strengths,
             "synthesis": r.synthesis_who_really_is or (cand_bio_clean[:200] + "..." if len(cand_bio_clean) > 200 else cand_bio_clean) or "",
             "bio_notes": cand_bio_clean,
+            "clinical_profile_360": cand_profile_360,
+            "clinical_warnings": dealbreaker_360.get("warnings", []),
             "search_preferences": cand_sp,
             "non_negotiables": cand_nn_list,
             "red_flags": cand_rf_list,
@@ -5384,19 +5510,19 @@ async def find_candidate_matches_engine(
         should_close_client = False
         client_to_use = http_client
         if client_to_use is None:
-            client_to_use = httpx.AsyncClient()
+            client_to_use = httpx.AsyncClient(timeout=35.0)
             should_close_client = True
 
+        sem = asyncio.Semaphore(2)
+
+        async def _eval_with_sem(cand_item):
+            if cand_item.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
+                return None
+            async with sem:
+                return await evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use)
+
         try:
-            eval_tasks = []
-            for cand in candidates_to_evaluate:
-                if cand.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
-                    # Perfil vacío o sin datos: no gastar tokens ni generar falsos puntajes
-                    eval_tasks.append(asyncio.sleep(0, result=None))
-                else:
-                    eval_tasks.append(
-                        evaluate_candidate_quick_notes_ai(client_summary, cand, nvidia_key, client_to_use)
-                    )
+            eval_tasks = [_eval_with_sem(c) for c in candidates_to_evaluate]
             eval_results = await asyncio.gather(*eval_tasks, return_exceptions=True)
 
             for cand, res in zip(candidates_to_evaluate, eval_results):
@@ -5506,6 +5632,8 @@ async def find_candidate_matches_engine(
         c["insufficient_data"] = is_insufficient
         c["match_category"] = "insufficient_data" if is_insufficient else "viable"
 
+    if return_discarded:
+        return suggested_matches, discarded_matches, client_profile_360
     return suggested_matches
 
 
@@ -5513,6 +5641,7 @@ async def find_candidate_matches_engine(
 async def get_interview_results(
     crm_id_or_user_id: str,
     response: Response,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -5682,14 +5811,15 @@ async def get_interview_results(
             if nvidia_key:
                 break
 
-    suggested_matches = await find_candidate_matches_engine(
+    suggested_matches, discarded_matches, client_profile_360 = await find_candidate_matches_engine(
         client_summary=client_summary,
         db=db,
         pool_limit=60,
-        max_ai_evaluations=4,
+        max_ai_evaluations=6,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
-        nvidia_key=nvidia_key
+        nvidia_key=nvidia_key,
+        return_discarded=True
     )
 
     top_matches = suggested_matches[:8]
@@ -5697,26 +5827,30 @@ async def get_interview_results(
     viable_matches = [m for m in top_matches if not m.get("insufficient_data")]
     insufficient_matches = [m for m in top_matches if m.get("insufficient_data")]
 
-    print(f"\n>>> [AUDIT LIVE INTERVIEW-RESULTS] Request identifier='{crm_id_or_user_id}' -> Client='{client_summary.get('name')}' (UID: {client_summary.get('user_id')})", flush=True)
-    print(f"    Prioridad de Datos Cliente: Apego='{client_summary.get('attachment_style')}' ({client_summary.get('attachment_source')}) | Lenguaje='{client_summary.get('love_language')}' ({client_summary.get('love_language_source')}) | No-Negociables={len(clean_client_non_neg)} ({client_summary.get('non_negotiables_source')})", flush=True)
-    print(f"    Viables con datos completos: {len(viable_matches)} | Insuficientes en CRM: {len(insufficient_matches)}", flush=True)
+    print(f"\n>>> [AUDIT LIVE INTERVIEW-RESULTS 360] Request identifier='{crm_id_or_user_id}' -> Client='{client_summary.get('name')}' (UID: {client_summary.get('user_id')})", flush=True)
+    print(f"    Dealbreakers 360 Cliente: Mascotas='{client_profile_360.get('mascotas')}' | Creencias='{client_profile_360.get('creencias', {}).get('etiqueta_principal')}' | Total descartadas por dealbreakers={len(discarded_matches)}", flush=True)
+    print(f"    Viables con datos completos: {len(viable_matches)} | Insuficientes en CRM: {len(insufficient_matches)} | Descartadas 360: {len(discarded_matches)}", flush=True)
     for idx, cand in enumerate(top_matches):
-        print(f"    #{idx+1}: {cand.get('name')} | apego='{cand.get('attachment_style')}' ({cand.get('attachment_source')}) | lang='{cand.get('love_language')}' ({cand.get('love_language_source')}) | category={cand.get('match_category')} | comp={cand.get('compatibility_pct')} | struct={cand.get('structural_score')} | ai={cand.get('ai_score')} | verdict={cand.get('ai_veredicto')}", flush=True)
-    print(f">>> [AUDIT LIVE INTERVIEW-RESULTS] Returning {len(top_matches)} candidates.\n", flush=True)
+        print(f"    #{idx+1}: {cand.get('name')} | comp={cand.get('compatibility_pct')}% | struct={cand.get('structural_score')} | ai={cand.get('ai_score')}% | verdict={cand.get('ai_veredicto')}", flush=True)
+    print(f">>> [AUDIT LIVE INTERVIEW-RESULTS 360] Returning {len(top_matches)} candidates & {len(discarded_matches)} discarded.\n", flush=True)
 
     return {
         "client": client_summary,
+        "client_profile_360": client_profile_360,
         "suggested_matches": top_matches,
         "viable_matches": viable_matches,
         "insufficient_matches": insufficient_matches,
-        "total_evaluated": len(suggested_matches),
-        "total_candidates_pool": len(suggested_matches)
+        "discarded_matches": discarded_matches[:15],
+        "total_evaluated": len(suggested_matches) + len(discarded_matches),
+        "total_candidates_pool": len(suggested_matches),
+        "total_discarded": len(discarded_matches)
     }
 
 
 @router.post("/approve-interview-match")
 async def approve_interview_match(
     payload: ApproveInterviewMatchRequest,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -7266,6 +7400,15 @@ class ClinicalChatPairRequest(BaseModel):
     history: Optional[List[Dict[str, Any]]] = []
 
 
+class ClinicalChatMultiRequest(BaseModel):
+    client_name: str
+    client_info: Optional[Dict[str, Any]] = None
+    candidates: List[Dict[str, Any]]
+    question: str
+    history: Optional[List[Dict[str, Any]]] = []
+
+
+
 def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) -> str:
     if not info:
         return f"- {name}: Sin información cargada en el perfil."
@@ -7493,6 +7636,182 @@ HISTORIAL DE LA CONVERSACIÓN:
         "person_a": name_a,
         "person_b": name_b
     }
+
+
+@router.post("/clinical-chat-multi")
+async def clinical_chat_multi(
+    payload: ClinicalChatMultiRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Copiloto Clínico Multi-Candidata para psicólogas de Daily Lover.
+    Contrasta en paralelo al cliente (Persona A) contra múltiples candidatas seleccionadas
+    (2 a 5 candidatas) respondiendo consultas comparativas con extracción pura de notas y cero alucinación.
+    """
+    client_name = payload.client_name.strip()
+    candidates = payload.candidates or []
+    question = payload.question.strip()
+
+    if not question:
+        raise HTTPException(status_code=400, detail="La pregunta no puede estar vacía.")
+    if not candidates:
+        raise HTTPException(status_code=400, detail="Debe proporcionar al menos 1 candidata para contrastar.")
+
+    # Formatear contexto clínico del cliente
+    formatted_client = _format_clinical_entity_for_chat(client_name, payload.client_info)
+
+    # Formatear contexto clínico de cada candidata seleccionada
+    formatted_candidates_list = []
+    cand_names_list = []
+    for idx, c in enumerate(candidates[:5]):
+        c_name = (c.get("name") or f"Candidata {idx + 1}").strip()
+        cand_names_list.append(c_name)
+        cand_str = _format_clinical_entity_for_chat(c_name, c)
+        formatted_candidates_list.append(f"--- CANDIDATA #{idx+1}: {c_name} ---\n{cand_str}")
+
+    all_candidates_context = "\n\n".join(formatted_candidates_list)
+    candidates_names_str = ", ".join(cand_names_list)
+
+    # Historial reciente
+    history_lines = []
+    if payload.history:
+        for msg in payload.history[-4:]:
+            role = "Psicóloga" if msg.get("sender") == "user" else "Copiloto"
+            txt = msg.get("text", "").strip()
+            if txt:
+                history_lines.append(f"{role}: {txt}")
+    history_context = "\n".join(history_lines) if history_lines else "Sin historial previo."
+
+    system_prompt = f"""Eres el Copiloto Clínico Multi-Candidata de Daily Lover.
+Tu objetivo es contrastar de manera simultánea, objetiva y rigurosa a:
+CLIENTE (PERSONA A): {client_name}
+Frente a las CANDIDATAS SELECCIONADAS: {candidates_names_str}
+
+============================================================
+{formatted_client}
+============================================================
+CANDIDATAS A COMPARAR:
+{all_candidates_context}
+============================================================
+
+HISTORIAL DE LA CONVERSACIÓN:
+{history_context}
+
+--- REGLAS CLÍNICAS (ESTRICTAS - TEMPERATURA 0) ---
+1. LECTURA EXHAUSTIVA DE NOTAS CLÍNICAS:
+   Inspecciona con detenimiento las notas clínicas de entrevista, hábitos, estilo de apego y dealbreakers de cada persona.
+2. CERO ALUCINACIONES:
+   Solo afirma lo sustentado en las notas o ficha. Si para alguna candidata no hay datos sobre ese tema, escribe: "⚠️ Sin información registrada en notas".
+3. FORMATO ESQUEMÁTICO DIRECTO PARA PSICÓLOGAS:
+   Responde con este formato exacto:
+   • {client_name}: [Dato de sus notas respecto a la pregunta]
+"""
+    for c_name in cand_names_list:
+        system_prompt += f"   • {c_name}: [Dato o extracto de sus notas respecto a la pregunta]\n"
+    system_prompt += f"""   • Veredicto & Recomendación Clínica: [1-2 líneas concluyentes indicando cuál candidata muestra mayor afinidad con {client_name} en este aspecto, si alguna tiene fricción/dealbreaker o si amerita validar en llamada previa]"""
+
+    settings = get_settings()
+    gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    nvidia_key = (settings.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or "").strip()
+
+    if not gemini_key or not nvidia_key:
+        for env_path in ["/app/.env", ".env", "../.env", "/home/ubuntu/dailylover/.env"]:
+            if os.path.exists(env_path):
+                try:
+                    with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            l = line.strip()
+                            if l.startswith("GEMINI_API_KEY=") and not gemini_key:
+                                gemini_key = l.split("=", 1)[1].strip().strip("\"'")
+                            elif l.startswith("NVIDIA_API_KEY=") and not nvidia_key:
+                                nvidia_key = l.split("=", 1)[1].strip().strip("\"'")
+                except Exception:
+                    pass
+
+    t_start = datetime.now()
+    ai_answer = None
+    model_used = None
+
+    # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct) con temperatura 0.0
+    if nvidia_key:
+        url_nv = "https://integrate.api.nvidia.com/v1/chat/completions"
+        headers_nv = {
+            "Authorization": f"Bearer {nvidia_key}",
+            "Content-Type": "application/json"
+        }
+        payload_nv = {
+            "model": "meta/llama-3.2-11b-vision-instruct",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ],
+            "temperature": 0.0,
+            "max_tokens": 450
+        }
+        for attempt in (1, 2):
+            try:
+                timeout_val = 12.0 if attempt == 1 else 8.0
+                async with httpx.AsyncClient(timeout=timeout_val) as client_http:
+                    r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
+                    if r.status_code == 200:
+                        res_data = r.json()
+                        ai_answer = res_data["choices"][0]["message"]["content"].strip()
+                        model_used = "meta/llama-3.2-11b-vision-instruct"
+                        break
+                    else:
+                        print(f"[MULTI CHAT] NVIDIA attempt {attempt} status {r.status_code}: {r.text[:100]}")
+            except Exception as e:
+                print(f"[MULTI CHAT] NVIDIA attempt {attempt} exception: {type(e).__name__} - {e}")
+                if attempt == 2:
+                    break
+
+    # TIER 2: Google Gemini 2.5 Flash Fallback
+    if not ai_answer and gemini_key:
+        url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+        payload_ai = {
+            "contents": [{"parts": [{"text": f"{system_prompt}\n\nPregunta de la psicóloga: {question}"}]}],
+            "generationConfig": {
+                "maxOutputTokens": 450,
+                "temperature": 0.0,
+                "thinkingConfig": {"thinkingBudget": 0}
+            }
+        }
+        try:
+            async with httpx.AsyncClient(timeout=7.0) as client_http:
+                r = await client_http.post(url_gem, json=payload_ai)
+                if r.status_code == 200:
+                    res_data = r.json()
+                    cands = res_data.get("candidates", [])
+                    if cands and "content" in cands[0]:
+                        parts = cands[0]["content"].get("parts", [])
+                        if parts and "text" in parts[0]:
+                            ai_answer = parts[0]["text"].strip()
+                            model_used = "gemini-2.5-flash"
+                else:
+                    print(f"[MULTI CHAT] Gemini status {r.status_code}: {r.text[:100]}")
+        except Exception as e:
+            print(f"[MULTI CHAT] Gemini fallback exception: {type(e).__name__} - {e}")
+
+    t_end = datetime.now()
+    duration_ms = int((t_end - t_start).total_seconds() * 1000)
+
+    if not ai_answer:
+        ai_answer = (
+            f"⚠️ En este momento el motor de análisis multi-candidata no pudo responder. "
+            f"Por favor revisa la matriz comparativa de {client_name} vs {candidates_names_str} o reintenta."
+        )
+        model_used = "fallback-offline"
+
+    return {
+        "status": "success",
+        "answer": ai_answer,
+        "model_used": model_used,
+        "response_time_ms": duration_ms,
+        "client_name": client_name,
+        "candidates_count": len(candidates)
+    }
+
 
 
 # ─── GESTIÓN INTEGRAL DE TROUBLE Y CLIENTES DIFÍCILES ────────────────────────

@@ -60,6 +60,7 @@ import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardL
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
 import CsNovedadesNotificationBell from './components/CsNovedadesNotificationBell'
 import WorkTimerWidget from './components/WorkTimerWidget'
+import AreaErrorBoundary from './components/AreaErrorBoundary'
 import { NotificationProvider } from './context/NotificationContext'
 import NotificationToastContainer from './components/NotificationToastContainer'
 
@@ -811,50 +812,67 @@ function AppContent() {
                 <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>
                   <Routes>
                     <Route path="/" element={<HomeRoute />} />
-                    <Route path="/general" element={<ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute>} />
-                    <Route path="/psicologa" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
-                    <Route path="/cs-dashboard" element={<ProtectedRoute module="dashboard" action="view"><CustomerServiceDashboard /></ProtectedRoute>} />
-                    <Route path="/portal-cliente" element={<ProtectedRoute module="dashboard" action="view"><ClientePortalDashboard /></ProtectedRoute>} />
-                    <Route path="/clinico" element={<ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute>} />
-                    <Route path="/auditoria-psicologas" element={<ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute>} />
-                    <Route path="/clientes" element={<ProtectedRoute module="clientes" action="view"><Clientes /></ProtectedRoute>} />
 
-                    <Route path="/agenda" element={<ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute>} />
-                    <Route path="/matchmaking/calendario" element={<ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute>} />
-                    <Route path="/matchmaking/sala/:sessionId" element={<ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute>} />
-                    <Route path="/eventos" element={<ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute>} />
-                    <Route path="/cms/eventos" element={<ProtectedRoute module="eventos" action="view"><CmsEventos /></ProtectedRoute>} />
-                    <Route path="/cms/ciudades" element={<ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute>} />
-                    <Route path="/importar" element={<ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute>} />
-                    
-                    {/* Formularios & Entrevista Clínica */}
+                    {/* MÓDULO: SUPERVISIÓN MARÍA PAULA & DIRECCIÓN */}
+                    <Route path="/general" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/auditoria-psicologas" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/supervision-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/aprobados-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/trouble" element={<AreaErrorBoundary areaName="Supervisión & Trouble Matches"><ProtectedRoute module="matching" action="view"><TroubleMatches /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/refunds" element={<AreaErrorBoundary areaName="Supervisión & Reembolsos"><ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute></AreaErrorBoundary>} />
+
+                    {/* MÓDULO: SERVICIO AL CLIENTE (CS) & CITAS */}
+                    <Route path="/cs-dashboard" element={<AreaErrorBoundary areaName="Servicio al Cliente (CS)"><ProtectedRoute module="dashboard" action="view"><CustomerServiceDashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/citas-agendadas" element={<AreaErrorBoundary areaName="Servicio al Cliente (Citas Agendadas)"><ProtectedRoute module="matching" action="view"><CitasAgendadas /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/matches-aprobados" element={<AreaErrorBoundary areaName="Servicio al Cliente (Mesa MATCHES)"><ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/matches" element={<AreaErrorBoundary areaName="Servicio al Cliente (Mesa MATCHES)"><ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute></AreaErrorBoundary>} />
+
+                    {/* MÓDULO: PSICÓLOGAS & MATCHMAKING CLÍNICO */}
+                    <Route path="/psicologa" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas"><ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/clinico" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas"><ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/mis-matches" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas (Mis Matches)"><ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/entrevista" element={<AreaErrorBoundary areaName="Entrevista Clínica & Hub"><ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/cola-atrasados" element={<AreaErrorBoundary areaName="Cola de Atrasados Clínicos"><ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/matches-atrasados" element={<AreaErrorBoundary areaName="Matches Atrasados"><ProtectedRoute module="matching" action="view"><MatchesAtrasados /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/aprobaciones-cruzadas" element={<AreaErrorBoundary areaName="Aprobaciones Cruzadas"><ProtectedRoute module="matching" action="view"><AprobacionesCruzadas /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/intake" element={<AreaErrorBoundary areaName="Intake de Clientes"><ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/prioritarios" element={<AreaErrorBoundary areaName="Casos Prioritarios"><ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/todos-los-matches" element={<AreaErrorBoundary areaName="Matriz Global de Matches"><ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/agenda" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/calendario" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/sala/:sessionId" element={<AreaErrorBoundary areaName="Sala de Videollamada"><ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/horas-psicologas" element={<AreaErrorBoundary areaName="Control de Horas Clínicas"><ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
+
+                    {/* MÓDULO: PORTAL DEL CLIENTE */}
+                    <Route path="/portal-cliente" element={<AreaErrorBoundary areaName="Portal del Cliente"><ProtectedRoute module="dashboard" action="view"><ClientePortalDashboard /></ProtectedRoute></AreaErrorBoundary>} />
+
+                    {/* MÓDULO: ADMINISTRACIÓN, CLIENTES Y FINANZAS */}
+                    <Route path="/clientes" element={<AreaErrorBoundary areaName="Directorio de Clientes"><ProtectedRoute module="clientes" action="view"><Clientes /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/eventos" element={<AreaErrorBoundary areaName="Gestión de Eventos"><ProtectedRoute module="eventos" action="view"><Eventos /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/cms/eventos" element={<AreaErrorBoundary areaName="CMS Eventos"><ProtectedRoute module="eventos" action="view"><CmsEventos /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/cms/ciudades" element={<AreaErrorBoundary areaName="CMS Ciudades"><ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/importar" element={<AreaErrorBoundary areaName="Importación de Datos"><ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/empleados" element={<AreaErrorBoundary areaName="Gestión de Personal"><ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/nomina" element={<AreaErrorBoundary areaName="Nómina"><ProtectedRoute module="nomina" action="view"><Payroll /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/comisiones" element={<AreaErrorBoundary areaName="Comisiones"><ProtectedRoute module="comisiones" action="view"><Commissions /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/ingresos" element={<AreaErrorBoundary areaName="Ingresos"><ProtectedRoute module="ingresos" action="view"><Income /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/gastos" element={<AreaErrorBoundary areaName="Gastos"><ProtectedRoute module="gastos" action="view"><Expenses /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/flujo-de-caja" element={<AreaErrorBoundary areaName="Flujo de Caja"><ProtectedRoute module="flujo_caja" action="view"><CashFlow /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/proveedores" element={<AreaErrorBoundary areaName="Proveedores"><ProtectedRoute module="proveedores" action="view"><Proveedores /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/roles" element={<AreaErrorBoundary areaName="Roles y Permisos"><ProtectedRoute module="roles" action="view"><Roles /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/usuarios" element={<AreaErrorBoundary areaName="Cuentas de Usuarios"><ProtectedRoute module="usuarios" action="view"><UserAccounts /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/configuracion/formularios" element={<AreaErrorBoundary areaName="Configuración de Formularios"><ProtectedRoute module="roles" action="view"><ConfiguracionFormularios /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/configuracion/alertas" element={<AreaErrorBoundary areaName="Configuración de Alertas"><ProtectedRoute module="roles" action="view"><ConfiguracionAlertas /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/capacitacion" element={<AreaErrorBoundary areaName="Manuales y Capacitación"><ProtectedRoute module="dashboard" action="view"><ManualesCapacitacion /></ProtectedRoute></AreaErrorBoundary>} />
+
+                    {/* Redirecciones de compatibilidad */}
                     <Route path="/matchmaking/datos-objetivos" element={<Navigate to="/matchmaking/entrevista?tab=objetivos" replace />} />
                     <Route path="/matchmaking/percepcion-psicologa" element={<Navigate to="/matchmaking/entrevista?tab=percepcion" replace />} />
-                    <Route path="/matchmaking/entrevista" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute>} />
-                    <Route path="/matchmaking/cola-atrasados" element={<ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute>} />
-                    <Route path="/matchmaking/matches-atrasados" element={<ProtectedRoute module="matching" action="view"><MatchesAtrasados /></ProtectedRoute>} />
                     <Route path="/cola-atrasados" element={<Navigate to="/matchmaking/cola-atrasados" replace />} />
                     <Route path="/matches-atrasados" element={<Navigate to="/matchmaking/matches-atrasados" replace />} />
                     <Route path="/entrevista" element={<Navigate to="/matchmaking/entrevista" replace />} />
                     <Route path="/datos-objetivos" element={<Navigate to="/matchmaking/entrevista?tab=objetivos" replace />} />
                     <Route path="/percepcion-psicologa" element={<Navigate to="/matchmaking/entrevista?tab=percepcion" replace />} />
-
-                    {/* Matchmaking Operativo & MATCHES Oficial */}
-                    <Route path="/matchmaking/mis-matches" element={<ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute>} />
-                    <Route path="/matchmaking/matches-aprobados" element={<ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute>} />
-                    <Route path="/matchmaking/matches" element={<ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute>} />
-                    <Route path="/matchmaking/aprobados-maria" element={<ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute>} />
-                    <Route path="/matchmaking/citas-agendadas" element={<ProtectedRoute module="matching" action="view"><CitasAgendadas /></ProtectedRoute>} />
-                    <Route path="/matchmaking/aprobaciones-cruzadas" element={<ProtectedRoute module="matching" action="view"><AprobacionesCruzadas /></ProtectedRoute>} />
-                    <Route path="/matchmaking/todos-los-matches" element={<ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute>} />
-                    
-                    <Route path="/matchmaking/intake" element={<ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute>} />
-                    <Route path="/matchmaking/prioritarios" element={<ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute>} />
-                    <Route path="/matchmaking/trouble" element={<ProtectedRoute module="matching" action="view"><TroubleMatches /></ProtectedRoute>} />
-                    <Route path="/matchmaking/refunds" element={<ProtectedRoute module="matching" action="view"><RefundsQueue /></ProtectedRoute>} />
-                    <Route path="/matchmaking/supervision-maria" element={<ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute>} />
-
-                    {/* Redirecciones de compatibilidad */}
                     <Route path="/trouble" element={<Navigate to="/matchmaking/trouble" replace />} />
                     <Route path="/prioritarios" element={<Navigate to="/matchmaking/prioritarios" replace />} />
                     <Route path="/corazoncito" element={<Navigate to="/matchmaking/prioritarios" replace />} />
@@ -864,31 +882,10 @@ function AppContent() {
                     <Route path="/matching" element={<Navigate to="/matchmaking/todos-los-matches" replace />} />
                     <Route path="/matchmaking/aprobacion" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
                     <Route path="/matchmaking/pendientes" element={<Navigate to="/matchmaking/aprobados-maria" replace />} />
-                    
-                    {/* Personal */}
-                    <Route path="/empleados" element={<ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute>} />
-                    <Route path="/horas-psicologas" element={<ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute>} />
                     <Route path="/admin/horas-psicologas" element={<Navigate to="/horas-psicologas" replace />} />
                     <Route path="/control-horas" element={<Navigate to="/horas-psicologas" replace />} />
-                    <Route path="/nomina" element={<ProtectedRoute module="nomina" action="view"><Payroll /></ProtectedRoute>} />
-                    <Route path="/comisiones" element={<ProtectedRoute module="comisiones" action="view"><Commissions /></ProtectedRoute>} />
-
-                    {/* Finanzas */}
-                    <Route path="/ingresos" element={<ProtectedRoute module="ingresos" action="view"><Income /></ProtectedRoute>} />
-                    <Route path="/gastos" element={<ProtectedRoute module="gastos" action="view"><Expenses /></ProtectedRoute>} />
-                    <Route path="/flujo-de-caja" element={<ProtectedRoute module="flujo_caja" action="view"><CashFlow /></ProtectedRoute>} />
-
-                    {/* Proveedores */}
-                    <Route path="/proveedores" element={<ProtectedRoute module="proveedores" action="view"><Proveedores /></ProtectedRoute>} />
-
-                    {/* Sistema */}
-                    <Route path="/roles" element={<ProtectedRoute module="roles" action="view"><Roles /></ProtectedRoute>} />
-                    <Route path="/usuarios" element={<ProtectedRoute module="usuarios" action="view"><UserAccounts /></ProtectedRoute>} />
-                    <Route path="/configuracion/formularios" element={<ProtectedRoute module="roles" action="view"><ConfiguracionFormularios /></ProtectedRoute>} />
                     <Route path="/admin/configuracion/formularios" element={<Navigate to="/configuracion/formularios" replace />} />
-                    <Route path="/configuracion/alertas" element={<ProtectedRoute module="roles" action="view"><ConfiguracionAlertas /></ProtectedRoute>} />
                     <Route path="/admin/configuracion/alertas" element={<Navigate to="/configuracion/alertas" replace />} />
-                    <Route path="/capacitacion" element={<ProtectedRoute module="dashboard" action="view"><ManualesCapacitacion /></ProtectedRoute>} />
                     <Route path="/manuales" element={<Navigate to="/capacitacion" replace />} />
                     <Route path="/admin/capacitacion" element={<Navigate to="/capacitacion" replace />} />
 

@@ -20,10 +20,25 @@ app = FastAPI(
     description="Backend orquestador para Daily Lover - CRM, Panel Admin y Matching con IA"
 )
 
-# Configure CORS
+# Configure CORS with strict origins and regex for Daily Lover and future AWS domains
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env:
+    origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    origins = [
+        "https://daily-lover.agentesia.cloud",
+        "https://prueba-daily.agentesia.cloud",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
+    allow_origin_regex=r"https?://(.*\.)?(dailylover\.(com|co)|agentesia\.cloud)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

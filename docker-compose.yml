@@ -84,7 +84,7 @@ services:
     container_name: dl_metabase
     restart: unless-stopped
     ports:
-      - "3030:3000"
+      - "127.0.0.1:3030:3000"
     environment:
       MB_DB_TYPE: postgres
       MB_DB_HOST: postgres
@@ -105,7 +105,7 @@ services:
     container_name: dl_portainer
     restart: unless-stopped
     ports:
-      - "9090:9000"
+      - "127.0.0.1:9090:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data

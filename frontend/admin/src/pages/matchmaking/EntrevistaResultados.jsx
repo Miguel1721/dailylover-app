@@ -1,9 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X, ExternalLink, RefreshCw, FileText, User, Users, ChevronDown, ChevronUp, Bot, Send, Trash2, MessageSquare } from 'lucide-react'
+import {
+  Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X,
+  ExternalLink, RefreshCw, FileText, User, Users, ChevronDown, ChevronUp, Bot, Send, Trash2,
+  MessageSquare, LayoutGrid, List, CheckSquare, Square, Scale, Copy
+} from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 import ClinicalNotesViewer from '../../components/ClinicalNotesViewer'
+import resilientFetch from '../../utils/resilientFetch'
+import useLocalDraft from '../../hooks/useLocalDraft'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
@@ -39,12 +45,65 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
     }
   }, [])
 
+  // Detección de pantalla de escritorio para layout sticky
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
+  useEffect(() => {
+    const handleResize = () => setIsDesktop(window.innerWidth >= 1024)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Modo de visualización: 'detailed' (tarjetas) vs 'compact' (modo resumen 1 pantalla)
+  const [viewDisplayMode, setViewDisplayMode] = useState(() => {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem('dl_resultados_view_mode') || 'detailed'
+    }
+    return 'detailed'
+  })
+
+  const toggleViewDisplayMode = (mode) => {
+    setViewDisplayMode(mode)
+    try {
+      localStorage.setItem('dl_resultados_view_mode', mode)
+    } catch (e) {}
+  }
+
+  // Comparador matricial de candidatas finalistas (A/B/C testing) y Copiloto Multi
+  const [selectedForCompare, setSelectedForCompare] = useState([])
+  const [showCompareModal, setShowCompareModal] = useState(false)
+  const [showMultiChatModal, setShowMultiChatModal] = useState(false)
+
+  const handleToggleCompare = (cand) => {
+    setSelectedForCompare(prev => {
+      const exists = prev.some(c => c.user_id === cand.user_id)
+      if (exists) {
+        return prev.filter(c => c.user_id !== cand.user_id)
+      } else {
+        if (prev.length >= 4) {
+          alert('Puedes comparar un máximo de 4 candidatas simultáneamente.')
+          return prev
+        }
+        return [...prev, cand]
+      }
+    })
+  }
+
+  const handleClearCompare = () => {
+    setSelectedForCompare([])
+    setShowCompareModal(false)
+    setShowMultiChatModal(false)
+  }
+
+
   // Modal de aprobación
   const [selectedCandidate, setSelectedCandidate] = useState(null)
   const [psychologist, setPsychologist] = useState('ANA')
-  const [notes, setNotes] = useState('')
   const [approving, setApproving] = useState(false)
   const [approvedMatch, setApprovedMatch] = useState(null)
+
+  // Auto-guardado de notas del modal con useLocalDraft
+  const draftKey = `approval_notes_${clientId || clientName}_${selectedCandidate?.user_id || 'general'}`
+  const [notes, setNotes, clearNotesDraft, hasDraft] = useLocalDraft(draftKey, '')
 
   // Modal de análisis clínico de match
   const [viewingAnalysis, setViewingAnalysis] = useState(null)
@@ -55,7 +114,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
     setLoading(true)
     setError(null)
     const target = clientId || clientName
-    fetch(`${API}/api/v1/matchmaking/interview-results/${encodeURIComponent(target)}`, {
+    resilientFetch(`${API}/api/v1/matchmaking/interview-results/${encodeURIComponent(target)}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     })
       .then(r => {
@@ -84,7 +143,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
     if (!data?.client || !selectedCandidate) return
     setApproving(true)
     try {
-      const res = await fetch(`${API}/api/v1/matchmaking/approve-interview-match`, {
+      const res = await resilientFetch(`${API}/api/v1/matchmaking/approve-interview-match`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -104,6 +163,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
         ...resData,
         candidateName: selectedCandidate.name
       })
+      clearNotesDraft()
       setSelectedCandidate(null)
     } catch (e) {
       alert('Error: ' + e.message)
@@ -197,20 +257,25 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
         </div>
       )}
 
-      {/* Grid Principal: Lado Izquierdo (Samuel) vs Lado Derecho (Candidatos) */}
+      {/* Grid Principal: Lado Izquierdo (Persona A - Sticky) vs Lado Derecho (Candidatos) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))',
+        gridTemplateColumns: isDesktop ? 'clamp(320px, 31vw, 380px) 1fr' : '1fr',
         gap: 20,
         alignItems: 'start'
       }}>
-        {/* COLUMNA IZQUIERDA: SÍNTESIS DEL ENTREVISTADO */}
+        {/* COLUMNA IZQUIERDA: SÍNTESIS DEL ENTREVISTADO (STICKY EN ESCRITORIO) */}
         <div style={{
           background: isLight ? '#FFFFFF' : 'var(--bg-card)',
           border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
           borderRadius: 14,
           padding: 20,
-          boxShadow: isLight ? '0 2px 12px rgba(0, 0, 0, 0.05)' : '0 4px 20px rgba(0, 0, 0, 0.25)'
+          boxShadow: isLight ? '0 2px 12px rgba(0, 0, 0, 0.05)' : '0 4px 20px rgba(0, 0, 0, 0.25)',
+          position: isDesktop ? 'sticky' : 'static',
+          top: 16,
+          maxHeight: isDesktop ? 'calc(100vh - 32px)' : 'none',
+          overflowY: isDesktop ? 'auto' : 'visible',
+          zIndex: 10
         }}>
           <div style={{
             display: 'flex',
@@ -500,30 +565,85 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                 Top {suggested_matches.length} candidatas con mayor afinidad clínica y filtro bidireccional aprobadas para {client.name}.
               </p>
             </div>
-            <button
-              onClick={fetchResults}
-              title="Recalcular sugerencias"
-              style={{
-                background: isLight ? '#F8FAFC' : 'none',
-                border: isLight ? '1px solid #CBD5E1' : '1px solid var(--border-color)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                color: isLight ? '#334155' : 'var(--text-secondary)',
-                cursor: 'pointer',
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {/* Toggle de Modo de Visualización */}
+              <div style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
-                fontSize: 12
-              }}
-            >
-              <RefreshCw size={13} /> Recalcular
-            </button>
+                gap: 4,
+                background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.06)',
+                padding: 3,
+                borderRadius: 8,
+                border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)'
+              }}>
+                <button
+                  onClick={() => toggleViewDisplayMode('detailed')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: viewDisplayMode === 'detailed' ? (isLight ? '#FFFFFF' : 'var(--color-primary, #961500)') : 'transparent',
+                    color: viewDisplayMode === 'detailed' ? (isLight ? '#961500' : '#FFFFFF') : (isLight ? '#64748B' : 'var(--text-secondary)'),
+                    boxShadow: viewDisplayMode === 'detailed' ? '0 1px 4px rgba(0,0,0,0.15)' : 'none'
+                  }}
+                  title="Ver tarjetas completas con desglose detallado"
+                >
+                  <LayoutGrid size={13} /> Tarjetas
+                </button>
+                <button
+                  onClick={() => toggleViewDisplayMode('compact')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    background: viewDisplayMode === 'compact' ? (isLight ? '#FFFFFF' : 'var(--color-primary, #961500)') : 'transparent',
+                    color: viewDisplayMode === 'compact' ? (isLight ? '#961500' : '#FFFFFF') : (isLight ? '#64748B' : 'var(--text-secondary)'),
+                    boxShadow: viewDisplayMode === 'compact' ? '0 1px 4px rgba(0,0,0,0.15)' : 'none'
+                  }}
+                  title="Ver modo resumen compacto en 1 sola pantalla"
+                >
+                  <List size={13} /> Modo Resumen
+                </button>
+              </div>
+
+              <button
+                onClick={fetchResults}
+                title="Recalcular sugerencias"
+                style={{
+                  background: isLight ? '#F8FAFC' : 'none',
+                  border: isLight ? '1px solid #CBD5E1' : '1px solid var(--border-color)',
+                  borderRadius: 6,
+                  padding: '6px 10px',
+                  color: isLight ? '#334155' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12
+                }}
+              >
+                <RefreshCw size={13} /> Recalcular
+              </button>
+            </div>
           </div>
 
           {(() => {
             const renderCandidateCard = (cand, idx, isInsufficient) => {
               const hasSg = cand.social_group_score != null && client.social_group_score != null
               const sgDiff = hasSg ? Math.abs(client.social_group_score - cand.social_group_score).toFixed(1) : null
+              const isSelected = selectedForCompare.some(c => c.user_id === cand.user_id)
 
               return (
                 <div
@@ -532,14 +652,18 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                     background: isLight
                       ? (isInsufficient ? '#FFFDF5' : '#FFFFFF')
                       : (isInsufficient ? 'rgba(245, 158, 11, 0.03)' : 'var(--bg-card)'),
-                    border: isInsufficient
-                      ? (isLight ? '1.5px dashed #F59E0B' : '1px dashed rgba(245, 158, 11, 0.4)')
-                      : (isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)'),
+                    border: isSelected
+                      ? (isLight ? '2px solid #961500' : '2px solid var(--color-primary-light)')
+                      : (isInsufficient
+                          ? (isLight ? '1.5px dashed #F59E0B' : '1px dashed rgba(245, 158, 11, 0.4)')
+                          : (isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)')),
                     borderRadius: 14,
                     padding: 20,
-                    boxShadow: isLight
-                      ? (isInsufficient ? '0 2px 8px rgba(245, 158, 11, 0.08)' : '0 4px 16px rgba(0, 0, 0, 0.05)')
-                      : (isInsufficient ? 'none' : '0 4px 20px rgba(0, 0, 0, 0.2)'),
+                    boxShadow: isSelected
+                      ? (isLight ? '0 4px 18px rgba(150, 21, 0, 0.15)' : '0 4px 20px rgba(150, 21, 0, 0.35)')
+                      : (isLight
+                          ? (isInsufficient ? '0 2px 8px rgba(245, 158, 11, 0.08)' : '0 4px 16px rgba(0, 0, 0, 0.05)')
+                          : (isInsufficient ? 'none' : '0 4px 20px rgba(0, 0, 0, 0.2)')),
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 14,
@@ -548,17 +672,41 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                     marginBottom: 16
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = isInsufficient ? '#F59E0B' : 'var(--color-primary)'
+                    if (!isSelected) e.currentTarget.style.borderColor = isInsufficient ? '#F59E0B' : 'var(--color-primary)'
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = isInsufficient
-                      ? (isLight ? '#F59E0B' : 'rgba(245, 158, 11, 0.4)')
-                      : (isLight ? '#E2E8F0' : 'var(--border-color)')
+                    if (!isSelected) {
+                      e.currentTarget.style.borderColor = isInsufficient
+                        ? (isLight ? '#F59E0B' : 'rgba(245, 158, 11, 0.4)')
+                        : (isLight ? '#E2E8F0' : 'var(--border-color)')
+                    }
                   }}
                 >
                   {/* Fila Superior: Nombre, Score y Compatibilidad */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      {/* Botón Selección para Comparar */}
+                      <button
+                        onClick={() => handleToggleCompare(cand)}
+                        style={{
+                          background: isSelected ? (isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.25)') : 'transparent',
+                          border: isSelected ? '1px solid var(--color-primary, #961500)' : '1px solid var(--border-color)',
+                          borderRadius: 6,
+                          padding: '5px 9px',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          color: isSelected ? (isLight ? '#961500' : 'var(--color-primary-light)') : (isLight ? '#64748B' : 'var(--text-muted)'),
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5
+                        }}
+                        title={isSelected ? 'Quitar de la matriz de comparación' : 'Seleccionar para comparar en matriz simultánea (máx. 3)'}
+                      >
+                        {isSelected ? <CheckSquare size={14} color="var(--color-primary, #961500)" /> : <Square size={14} />}
+                        <span>{isSelected ? 'Seleccionada' : 'Comparar'}</span>
+                      </button>
+
                       <div style={{
                         width: 42,
                         height: 42,
@@ -1012,6 +1160,267 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
               )
             }
 
+            const renderCandidateRowCompact = (cand, idx, isInsufficient) => {
+              const hasSg = cand.social_group_score != null && client.social_group_score != null
+              const sgDiff = hasSg ? Math.abs(client.social_group_score - cand.social_group_score).toFixed(1) : null
+              const isSelected = selectedForCompare.some(c => c.user_id === cand.user_id)
+
+              return (
+                <div
+                  key={cand.user_id}
+                  style={{
+                    background: isLight
+                      ? (isInsufficient ? '#FFFDF5' : '#FFFFFF')
+                      : (isInsufficient ? 'rgba(245, 158, 11, 0.03)' : 'var(--bg-card)'),
+                    border: isSelected
+                      ? (isLight ? '2px solid #961500' : '2px solid var(--color-primary-light)')
+                      : (isInsufficient
+                          ? (isLight ? '1.5px dashed #F59E0B' : '1px dashed rgba(245, 158, 11, 0.4)')
+                          : (isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)')),
+                    borderRadius: 12,
+                    padding: '12px 16px',
+                    boxShadow: isSelected
+                      ? (isLight ? '0 4px 18px rgba(150, 21, 0, 0.12)' : '0 4px 20px rgba(150, 21, 0, 0.35)')
+                      : (isLight ? '0 2px 8px rgba(0,0,0,0.04)' : '0 2px 10px rgba(0,0,0,0.15)'),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 12,
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {/* 1. Lado Izquierdo: Checkbox + Identidad */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 260 }}>
+                    <button
+                      onClick={() => handleToggleCompare(cand)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        color: isSelected ? 'var(--color-primary, #961500)' : (isLight ? '#94A3B8' : 'var(--text-muted)'),
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                      title={isSelected ? 'Quitar de la matriz de comparación' : 'Seleccionar para comparar en matriz simultánea'}
+                    >
+                      {isSelected ? <CheckSquare size={19} color="var(--color-primary, #961500)" /> : <Square size={19} />}
+                    </button>
+
+                    <div style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      background: isInsufficient
+                        ? 'linear-gradient(135deg, #78716c, #a8a29e)'
+                        : 'linear-gradient(135deg, #1976d2, #0288d1)',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: 14,
+                      flexShrink: 0
+                    }}>
+                      {cand.name.charAt(0)}
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <a
+                          href={cand.crm_url || (cand.crm_id && cand.crm_id !== 'None' ? `https://dailylover.smartmatchapp.com/#!/client/${cand.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(cand.name)}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            fontWeight: 700,
+                            fontSize: 14,
+                            color: isLight ? '#0F172A' : 'var(--text-primary)',
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                        >
+                          {cand.name}
+                          <ExternalLink size={12} style={{ color: '#2196F3', opacity: 0.8 }} />
+                        </a>
+                        <span style={{ fontSize: 11.5, color: isLight ? '#64748B' : 'var(--text-muted)' }}>
+                          ({cand.age || '?'}a • {cand.city})
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: isLight ? '#64748B' : 'var(--text-muted)', marginTop: 2 }}>
+                        💼 {cand.occupation || 'Ocupación no esp.'} • 📋 {cand.plan_tier || 'Estándar'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Centro: Métricas Clave en Chips Horizontales */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                        ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)')
+                        : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
+                      color: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                        ? (isLight ? '#065F46' : '#81C784')
+                        : (isLight ? '#92400E' : '#FFE082'),
+                      border: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                        ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.25)')
+                        : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.25)')
+                    }}>
+                      🎟️ {cand.dates_used || 0}/{cand.plan_total_dates || 2} ({cand.dates_remaining ?? cand.saldo_citas ?? 1} disp.)
+                    </span>
+
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: isLight ? '#F8FAFC' : 'var(--bg-base)',
+                      border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                      color: isLight ? '#15803D' : '#4CAF50'
+                    }}>
+                      GS: {cand.social_group_score != null ? cand.social_group_score.toFixed(1) : '—'}
+                      {hasSg && <span style={{ color: isLight ? '#64748B' : 'var(--text-muted)', fontWeight: 400, marginLeft: 4 }}>Δ{sgDiff}</span>}
+                    </span>
+
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '3px 8px',
+                      borderRadius: 6,
+                      background: cand.attachment_eval?.type === 'trap'
+                        ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)')
+                        : (isLight ? '#F8FAFC' : 'var(--bg-base)'),
+                      border: cand.attachment_eval?.type === 'trap'
+                        ? (isLight ? '1px solid #FECACA' : '1px solid rgba(239, 68, 68, 0.3)')
+                        : (isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)'),
+                      color: cand.attachment_eval?.type === 'trap'
+                        ? (isLight ? '#DC2626' : '#ff8a80')
+                        : (isLight ? '#475569' : 'var(--text-secondary)')
+                    }}>
+                      🧠 {cand.attachment_eval?.label || (cand.attachment_style ? `Apego ${cand.attachment_style}` : 'Apego pend.')}
+                    </span>
+
+                    {cand.physical_activity_level != null && (
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background: isLight ? '#F8FAFC' : 'var(--bg-base)',
+                        border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                        color: isLight ? '#0F172A' : 'var(--text-primary)'
+                      }}>
+                        🏃 {cand.physical_activity_level}/10
+                      </span>
+                    )}
+
+                    {isInsufficient ? (
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '3px 10px',
+                        borderRadius: 14,
+                        background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                        color: isLight ? '#92400E' : '#FBBF24',
+                        border: isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.3)'
+                      }}>
+                        ⚠️ Sin datos
+                      </span>
+                    ) : (
+                      <span style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        padding: '3px 10px',
+                        borderRadius: 14,
+                        background: (cand.compatibility_pct ?? 0) >= 80
+                          ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)')
+                          : (isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)'),
+                        color: (cand.compatibility_pct ?? 0) >= 80
+                          ? (isLight ? '#065F46' : '#81C784')
+                          : (isLight ? '#1E40AF' : '#93C5FD'),
+                        border: (cand.compatibility_pct ?? 0) >= 80
+                          ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)')
+                          : (isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.3)')
+                      }}>
+                        ✨ {cand.compatibility_pct}% {!cand.datos_completos ? '(Parcial)' : ''}
+                      </span>
+
+                    )}
+                  </div>
+
+                  {/* 3. Lado Derecho: Acciones Rápidas */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button
+                      onClick={() => setViewingAnalysis(cand)}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        borderRadius: 7,
+                        border: isLight ? '1px solid #FECDD3' : '1px solid rgba(150, 21, 0, 0.4)',
+                        background: isLight ? '#FFF1F2' : 'rgba(150, 21, 0, 0.12)',
+                        color: isLight ? '#961500' : '#ff8a80',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🧠 Análisis
+                    </button>
+
+                    {isInsufficient ? (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`⚠️ ADVERTENCIA: ${cand.name} tiene información insuficiente en CRM. ¿Deseas enviarlo de todos modos a revisión de María?`)) {
+                            setSelectedCandidate(cand)
+                          }
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.08)',
+                          color: isLight ? '#475569' : '#94A3B8',
+                          border: isLight ? '1px solid #CBD5E1' : '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: 7,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <AlertTriangle size={13} color="#F59E0B" /> Enviar
+                      </button>
+                    ) : (
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => setSelectedCandidate(cand)}
+                        style={{
+                          padding: '6px 14px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: 'linear-gradient(135deg, #961500, #7a1100)',
+                          color: '#FFFFFF'
+                        }}
+                      >
+                        <Heart size={13} fill="#fff" /> ✨ Enviar a María
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            }
+
             return (
               <div>
                 {/* SECCIÓN 1: CANDIDATOS RECOMENDADOS Y VIABLES CON EVALUACIÓN CLÍNICA */}
@@ -1048,7 +1457,13 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                       No se encontraron candidatos con datos suficientes para evaluación clínica en este momento.
                     </div>
                   ) : (
-                    viableMatches.map((cand, idx) => renderCandidateCard(cand, idx, false))
+                    viewDisplayMode === 'compact' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {viableMatches.map((cand, idx) => renderCandidateRowCompact(cand, idx, false))}
+                      </div>
+                    ) : (
+                      viableMatches.map((cand, idx) => renderCandidateCard(cand, idx, false))
+                    )
                   )}
                 </div>
 
@@ -1110,8 +1525,12 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                     </div>
 
                     {showInsufficient && (
-                      <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                        {insufficientMatches.map((cand, idx) => renderCandidateCard(cand, idx, true))}
+                      <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: viewDisplayMode === 'compact' ? 10 : 14 }}>
+                        {insufficientMatches.map((cand, idx) => (
+                          viewDisplayMode === 'compact'
+                            ? renderCandidateRowCompact(cand, idx, true)
+                            : renderCandidateCard(cand, idx, true)
+                        ))}
                       </div>
                     )}
                   </div>
@@ -1222,6 +1641,11 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                   boxSizing: 'border-box'
                 }}
               />
+              {hasDraft && notes && notes.trim().length > 0 && (
+                <div style={{ fontSize: 11, color: '#10B981', marginTop: 5, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Check size={12} /> Borrador guardado localmente (protegido contra recargas o reinicios)
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -1244,6 +1668,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
           </div>
         </div>
       )}
+
       {/* MODAL DE ANÁLISIS CLÍNICO DE MATCH (PROS Y CONTRAS) */}
       {viewingAnalysis && (
         <MatchAnalysisModal
@@ -1256,6 +1681,1129 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
           }}
         />
       )}
+
+      {/* MODAL COMPARADOR MATRICIAL A/B/C */}
+      {showCompareModal && selectedForCompare.length > 0 && (
+        <MultiCandidateCompareModal
+          client={data?.client}
+          candidates={selectedForCompare}
+          onClose={() => setShowCompareModal(false)}
+          onApprove={(cand) => {
+            setShowCompareModal(false)
+            setSelectedCandidate(cand)
+          }}
+          onToggleCandidate={handleToggleCompare}
+          onOpenChat={() => setShowMultiChatModal(true)}
+        />
+      )}
+
+      {/* MODAL COPILOTO CLÍNICO MULTI-CANDIDATA */}
+      {showMultiChatModal && selectedForCompare.length > 0 && (
+        <MultiCandidateChatModal
+          client={data?.client}
+          candidates={selectedForCompare}
+          onClose={() => setShowMultiChatModal(false)}
+          token={token}
+        />
+      )}
+
+      {/* BARRA FLOTANTE INFERIOR: COMPARADOR MULTI-CANDIDATA */}
+      {selectedForCompare.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 999,
+          background: isLight ? '#FFFFFF' : '#1A1214',
+          border: isLight ? '1.5px solid #961500' : '1.5px solid var(--color-primary-light, #c41a00)',
+          boxShadow: isLight ? '0 10px 32px rgba(0,0,0,0.15)' : '0 12px 40px rgba(0,0,0,0.7)',
+          borderRadius: 30,
+          padding: '10px 22px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          flexWrap: 'wrap',
+          maxWidth: '94vw'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              background: isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.25)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: isLight ? '#961500' : 'var(--color-primary-light)'
+            }}>
+              <Scale size={16} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 800, color: isLight ? '#0F172A' : 'var(--text-primary)' }}>
+              {selectedForCompare.length} {selectedForCompare.length === 1 ? 'candidata seleccionada' : 'candidatas seleccionadas'}:
+            </span>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              {selectedForCompare.map(c => (
+                <span key={c.user_id} style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.25)',
+                  border: isLight ? '1px solid #FECACA' : '1px solid rgba(150, 21, 0, 0.4)',
+                  color: isLight ? '#961500' : 'var(--color-primary-light)',
+                  padding: '3px 10px',
+                  borderRadius: 14,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}>
+                  {c.name.split(' ')[0]}
+                  <X
+                    size={13}
+                    style={{ cursor: 'pointer', opacity: 0.8 }}
+                    onClick={() => handleToggleCompare(c)}
+                    title="Quitar de la selección"
+                  />
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <button
+              onClick={() => setShowMultiChatModal(true)}
+              style={{
+                padding: '8px 16px',
+                fontSize: 12.5,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: 20,
+                border: isLight ? '1.5px solid #2563EB' : '1.5px solid #3B82F6',
+                background: isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.22)',
+                color: isLight ? '#1D4ED8' : '#93C5FD',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(59, 130, 246, 0.25)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Abrir Copiloto Clínico para contrastar con IA a las candidatas seleccionadas"
+            >
+              <Bot size={15} /> Copiloto Clínico ({selectedForCompare.length})
+            </button>
+
+            <button
+              onClick={() => setShowCompareModal(true)}
+              className="btn btn-primary"
+              style={{
+                padding: '8px 18px',
+                fontSize: 12.5,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: '0 2px 10px rgba(150, 21, 0, 0.35)'
+              }}
+            >
+              <Scale size={15} /> Comparar en Matriz
+            </button>
+
+            <button
+              onClick={handleClearCompare}
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 12, padding: '7px 12px' }}
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+function MultiCandidateCompareModal({ client, candidates, onClose, onApprove, onToggleCandidate, onOpenChat }) {
+  if (!client || !candidates || candidates.length === 0) return null
+
+  // Detección reactiva de modo claro (Light Mode)
+  const [isLight, setIsLight] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    const updateTheme = () => {
+      setIsLight(document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light')
+    }
+    updateTheme()
+    const observer = new MutationObserver(updateTheme)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    window.addEventListener('storage', updateTheme)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('storage', updateTheme)
+    }
+  }, [])
+
+  const t = isLight ? {
+    overlayBg: 'rgba(0, 0, 0, 0.75)',
+    modalBg: '#FFFFFF',
+    modalBorder: '1px solid #E2E8F0',
+    titleColor: '#0F172A',
+    headerBorder: '1px solid #E2E8F0',
+    headerBadgeBg: '#FEE2E2',
+    headerBadgeBorder: '1px solid #FECACA',
+    headerBadgeColor: '#961500',
+    tableBorder: '1px solid #E2E8F0',
+    thBg: '#F8FAFC',
+    tdBorder: '1px solid #E2E8F0',
+    rowEvenBg: '#F8FAFC',
+    rowOddBg: '#FFFFFF',
+    critColBg: '#F1F5F9',
+    critColor: '#334155',
+    personABg: '#FFF1F2',
+    personABorder: '1.5px solid #FECDD3',
+    personATitle: '#961500',
+    candBg: '#F0FDF4',
+    candBorder: '1.5px solid #BBF7D0',
+    candTitle: '#065F46',
+    subText: '#64748B'
+  } : {
+    overlayBg: 'rgba(0, 0, 0, 0.85)',
+    modalBg: '#120C0E',
+    modalBorder: '1px solid rgba(150, 21, 0, 0.45)',
+    titleColor: '#FFFFFF',
+    headerBorder: '1px solid rgba(255, 255, 255, 0.1)',
+    headerBadgeBg: 'rgba(150, 21, 0, 0.3)',
+    headerBadgeBorder: '1px solid rgba(239, 68, 68, 0.35)',
+    headerBadgeColor: '#F87171',
+    tableBorder: '1px solid rgba(255, 255, 255, 0.08)',
+    thBg: '#180E11',
+    tdBorder: '1px solid rgba(255, 255, 255, 0.06)',
+    rowEvenBg: 'rgba(255, 255, 255, 0.02)',
+    rowOddBg: 'transparent',
+    critColBg: '#181214',
+    critColor: '#CBD5E1',
+    personABg: 'rgba(150, 21, 0, 0.15)',
+    personABorder: '1.5px solid #7F1D1D',
+    personATitle: '#FCA5A5',
+    candBg: 'rgba(5, 150, 105, 0.1)',
+    candBorder: '1.5px solid #059669',
+    candTitle: '#6EE7B7',
+    subText: '#94A3B8'
+  }
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: t.overlayBg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1100,
+      padding: '16px',
+      overflowY: 'auto'
+    }}>
+      <div style={{
+        background: t.modalBg,
+        border: t.modalBorder,
+        borderRadius: 16,
+        width: '100%',
+        maxWidth: 1200,
+        maxHeight: '92vh',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 25px 70px rgba(0,0,0,0.7)',
+        overflow: 'hidden'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '18px 24px',
+          borderBottom: t.headerBorder,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: t.headerBadgeColor,
+              background: t.headerBadgeBg,
+              border: t.headerBadgeBorder,
+              padding: '3px 8px',
+              borderRadius: 6,
+              marginBottom: 6
+            }}>
+              <Scale size={13} /> MATRIZ COMPARATIVA LADO A LADO (A/B/C TESTING)
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: t.titleColor }}>
+              {client.name} <span style={{ color: 'var(--color-primary, #961500)' }}>vs</span> {candidates.length} {candidates.length === 1 ? 'Candidata Finalista' : 'Candidatas Finalistas'}
+            </h2>
+            <div style={{ fontSize: 12, color: t.subText, marginTop: 2 }}>
+              Contraste simultáneo de métricas clínicas, estilos de apego, no negociables y notas de entrevista.
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {onOpenChat && (
+              <button
+                type="button"
+                onClick={onOpenChat}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: isLight ? '1.5px solid #2563EB' : '1.5px solid #3B82F6',
+                  background: isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.22)',
+                  color: isLight ? '#1D4ED8' : '#93C5FD',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  transition: 'all 0.15s ease'
+                }}
+                title="Abrir Copiloto Clínico Multi-Candidata"
+              >
+                <Bot size={15} /> Copiloto Clínico ({candidates.length})
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: '1px solid var(--border-color)',
+                borderRadius: 8,
+                width: 36,
+                height: 36,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: t.titleColor,
+                cursor: 'pointer'
+              }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+
+        {/* Matrix Table */}
+        <div style={{ overflowX: 'auto', overflowY: 'auto', flex: 1, padding: 20 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{
+                  padding: '14px 16px',
+                  background: t.thBg,
+                  borderBottom: t.tableBorder,
+                  borderRight: t.tdBorder,
+                  width: 200,
+                  minWidth: 180,
+                  textAlign: 'left',
+                  fontWeight: 800,
+                  color: t.critColor,
+                  fontSize: 12,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 2
+                }}>
+                  Criterio Clínico
+                </th>
+
+                {/* Columna Persona A */}
+                <th style={{
+                  padding: '14px 16px',
+                  background: t.personABg,
+                  borderBottom: t.tableBorder,
+                  borderRight: t.tdBorder,
+                  minWidth: 260,
+                  textAlign: 'left',
+                  verticalAlign: 'top'
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.personATitle, textTransform: 'uppercase' }}>
+                    PERSONA A (CLIENTE)
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: t.titleColor, marginTop: 2 }}>
+                    {client.name}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: t.subText, marginTop: 2 }}>
+                    📍 {client.city} • {client.age ? `${client.age} años` : ''}
+                  </div>
+                </th>
+
+                {/* Columnas de Candidatas */}
+                {candidates.map((cand, idx) => (
+                  <th key={cand.user_id} style={{
+                    padding: '14px 16px',
+                    background: t.candBg,
+                    borderBottom: t.tableBorder,
+                    borderRight: t.tdBorder,
+                    minWidth: 260,
+                    textAlign: 'left',
+                    verticalAlign: 'top'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: t.candTitle, textTransform: 'uppercase' }}>
+                          CANDIDATA #{idx + 1}
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: t.titleColor, marginTop: 2 }}>
+                          {cand.name}
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: 12,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        borderRadius: 14,
+                        background: isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)',
+                        color: isLight ? '#065F46' : '#81C784',
+                        border: '1px solid #10B981',
+                        flexShrink: 0
+                      }}>
+                        ✨ {cand.compatibility_pct}%
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 8 }}>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => onApprove(cand)}
+                        style={{
+                          width: '100%',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Heart size={13} fill="#fff" /> Aprobar y Enviar a María
+                      </button>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {/* FILA 1: DATOS BÁSICOS & CRM */}
+              <tr style={{ background: t.rowEvenBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Perfil & Profesión
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  <div><b>{client.occupation || 'Profesional'}</b></div>
+                  <div style={{ fontSize: 12, color: t.subText }}>Estatura: {client.estatura || '—'}</div>
+                  <div style={{ marginTop: 4 }}>
+                    <a
+                      href={client.crm_url || (client.crm_id ? `https://dailylover.smartmatchapp.com/#!/client/${client.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(client.name)}`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 11, color: '#2563EB', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                    >
+                      CRM <ExternalLink size={10} />
+                    </a>
+                  </div>
+                </td>
+                {candidates.map(c => (
+                  <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                    <div><b>{c.occupation && c.occupation !== 'No especificado' ? c.occupation : 'Ocupación no esp.'}</b></div>
+                    <div style={{ fontSize: 12, color: t.subText }}>Edad: {c.age || '—'} • Ciudad: {c.city}</div>
+                    <div style={{ marginTop: 4 }}>
+                      <a
+                        href={c.crm_url || (c.crm_id && c.crm_id !== 'None' ? `https://dailylover.smartmatchapp.com/#!/client/${c.crm_id}/` : `https://dailylover.smartmatchapp.com/#!/clients?search=${encodeURIComponent(c.name)}`)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 11, color: '#2563EB', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                      >
+                        CRM <ExternalLink size={10} />
+                      </a>
+                    </div>
+                  </td>
+                ))}
+              </tr>
+
+              {/* FILA 2: PLAN & SALDO DE CITAS */}
+              <tr style={{ background: t.rowOddBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Plan & Citas Disp.
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  <div style={{ fontWeight: 700 }}>{client.plan_tier || 'Plan Estándar (2 citas)'}</div>
+                  <div style={{ fontSize: 12, color: (client.dates_remaining ?? 1) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
+                    🎟️ {client.dates_used || 0} de {client.plan_total_dates || 2} citas ({client.dates_remaining ?? 1} disp.)
+                  </div>
+                </td>
+                {candidates.map(c => (
+                  <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                    <div style={{ fontWeight: 700 }}>{c.plan_tier || 'Estándar'}</div>
+                    <div style={{ fontSize: 12, color: (c.dates_remaining ?? c.saldo_citas ?? 1) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
+                      🎟️ {c.dates_used || 0} de {c.plan_total_dates || 2} citas ({c.dates_remaining ?? c.saldo_citas ?? 1} disp.)
+                    </div>
+                  </td>
+                ))}
+              </tr>
+
+              {/* FILA 3: GRUPO SOCIAL */}
+              <tr style={{ background: t.rowEvenBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Grupo Social (1-10)
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>
+                    {client.social_group_score != null ? client.social_group_score.toFixed(1) : '—'} / 10
+                  </span>
+                </td>
+                {candidates.map(c => {
+                  const diff = (client.social_group_score != null && c.social_group_score != null)
+                    ? Math.abs(client.social_group_score - c.social_group_score).toFixed(1)
+                    : null
+                  return (
+                    <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>
+                        {c.social_group_score != null ? c.social_group_score.toFixed(1) : 'Pendiente'} / 10
+                      </span>
+                      {diff && (
+                        <div style={{ fontSize: 11, color: t.subText, marginTop: 2 }}>
+                          Diferencial: Δ {diff} pts
+                        </div>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+
+              {/* FILA 4: MATRIZ DE APEGO */}
+              <tr style={{ background: t.rowOddBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Matriz de Apego
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  <b>🧠 {client.attachment_style || 'Apego Seguro'}</b>
+                </td>
+                {candidates.map(c => {
+                  const isTrap = c.attachment_eval?.type === 'trap'
+                  return (
+                    <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                      <div style={{
+                        fontWeight: 800,
+                        color: isTrap ? '#EF4444' : '#10B981',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5
+                      }}>
+                        🧠 {c.attachment_eval?.label || (c.attachment_style ? `Apego ${c.attachment_style}` : 'Pendiente')}
+                      </div>
+                      {c.attachment_eval?.clinical_note && (
+                        <div style={{ fontSize: 11, color: t.subText, marginTop: 3 }}>
+                          {c.attachment_eval.clinical_note}
+                        </div>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+
+              {/* FILA 5: ACTIVIDAD FÍSICA & DEPORTE */}
+              <tr style={{ background: t.rowEvenBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Actividad Física
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  🏃 {client.physical_activity_level != null ? `${client.physical_activity_level} / 10` : '—'}
+                </td>
+                {candidates.map(c => (
+                  <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                    🏃 {c.physical_activity_level != null ? `${c.physical_activity_level} / 10` : 'Pendiente'}
+                  </td>
+                ))}
+              </tr>
+
+              {/* FILA 6: LENGUAJE DEL AMOR */}
+              <tr style={{ background: t.rowOddBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Lenguaje Amor
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  ❤️ {client.love_language || '—'}
+                </td>
+                {candidates.map(c => (
+                  <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                    ❤️ {c.love_language || 'Pendiente'}
+                  </td>
+                ))}
+              </tr>
+
+              {/* FILA 7: DEALBREAKERS / NO NEGOCIABLES */}
+              <tr style={{ background: t.rowEvenBg, borderBottom: t.tdBorder }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Dealbreakers
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {(client.non_negotiables || []).map((nn, i) => (
+                      <span key={i} style={{ fontSize: 11, background: 'rgba(239, 68, 68, 0.12)', color: '#EF4444', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                        🚫 {typeof nn === 'string' ? nn : (nn.texto || '')}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                {candidates.map(c => (
+                  <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#10B981', marginBottom: 4 }}>
+                      ✓ {c.dealbreakers_check || 'Filtro verificado'}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {(c.non_negotiables || []).map((nn, i) => (
+                        <span key={i} style={{ fontSize: 11, background: 'rgba(239, 68, 68, 0.12)', color: '#EF4444', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                          🚫 {typeof nn === 'string' ? nn : (nn.texto || '')}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                ))}
+              </tr>
+
+              {/* FILA 8: NOTAS CLÍNICAS */}
+              <tr style={{ background: t.rowOddBg }}>
+                <td style={{ padding: '12px 16px', fontWeight: 700, color: t.critColor, position: 'sticky', left: 0, background: t.critColBg, borderRight: t.tdBorder }}>
+                  Notas Clínicas
+                </td>
+                <td style={{ padding: '12px 16px', borderRight: t.tdBorder, verticalAlign: 'top' }}>
+                  <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 12, color: t.critColor, lineHeight: 1.5 }}>
+                    {client.bio_notes || client.synthesis_who_really_is || 'Sin notas registradas'}
+                  </div>
+                </td>
+                {candidates.map(c => (
+                  <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder, verticalAlign: 'top' }}>
+                    <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 12, color: t.critColor, lineHeight: 1.5 }}>
+                      {c.bio_notes || c.synthesis || 'Sin notas registradas'}
+                    </div>
+                    {c.strengths && c.strengths.length > 0 && (
+                      <div style={{ marginTop: 8, borderTop: t.tdBorder, paddingTop: 6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: '#10B981', textTransform: 'uppercase' }}>Fortalezas del match:</div>
+                        <ul style={{ margin: '3px 0 0', paddingLeft: 14, fontSize: 11, color: t.subText }}>
+                          {c.strengths.slice(0, 3).map((st, si) => <li key={si}>{st}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '14px 24px',
+          borderTop: t.headerBorder,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+          background: t.thBg
+        }}>
+          <div style={{ fontSize: 12, color: t.subText }}>
+            Selecciona la propuesta óptima para enviarla a revisión y aprobación de María Paula.
+          </div>
+          <button className="btn btn-ghost" onClick={onClose}>
+            Cerrar Comparador
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MultiCandidateChatModal({ client, candidates, onClose, token }) {
+  if (!client || !candidates || candidates.length === 0) return null
+
+  const [isLight, setIsLight] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    const updateTheme = () => {
+      setIsLight(document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light')
+    }
+    updateTheme()
+    const observer = new MutationObserver(updateTheme)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    window.addEventListener('storage', updateTheme)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('storage', updateTheme)
+    }
+  }, [])
+
+  const [messages, setMessages] = useState([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [copiedId, setCopiedId] = useState(null)
+  const messagesEndRef = useRef(null)
+
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, loading])
+
+  const QUICK_QUESTIONS_MULTI = [
+    { icon: '🏃', label: 'Deporte & Hábitos', q: `¿Qué hábitos de deporte, gimnasio y actividad física tiene cada una y cuál es más compatible con ${client.name}?` },
+    { icon: '🐶', label: 'Mascotas & Hogar', q: '¿Cuál es la situación de mascotas, convivencia con animales o alergias de cada una?' },
+    { icon: '👶', label: 'Hijos & Familia', q: '¿Cuál es la postura de cada candidata respecto a tener o querer hijos y su dinámica familiar?' },
+    { icon: '🧠', label: 'Estilo de Apego', q: `¿Qué estilo de apego tiene cada una y cuál ofrece la dinámica emocional más sana y segura con ${client.name}?` },
+    { icon: '💼', label: 'Profesión & Nivel', q: `¿A qué se dedica cada una y cómo están en compatibilidad sociocultural y ritmo de vida frente a ${client.name}?` },
+    { icon: '🎟️', label: 'Citas Disponibles', q: '¿Cuántas citas disponibles en su plan tiene cada candidata para agendar?' },
+    { icon: '🏆', label: 'Recomendación 1ra Opción', q: `¿Cuál de estas ${candidates.length} candidatas recomiendas agendar de primera opción para una 1ra cita con ${client.name} y por qué?` }
+  ]
+
+  const handleSend = async (textToSend) => {
+    const q = (textToSend || input || '').trim()
+    if (!q || loading) return
+
+    setInput('')
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      text: q,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }
+
+    const nextMessages = [...messages, userMsg]
+    setMessages(nextMessages)
+    setLoading(true)
+
+    try {
+      const payload = {
+        client_name: client.name,
+        client_info: client,
+        candidates: candidates.map(c => ({
+          ...c,
+          bio_notes: c.bio_notes || c.synthesis || '',
+          non_negotiables: c.non_negotiables || [],
+          red_flags: c.red_flags || []
+        })),
+        question: q,
+        history: nextMessages.slice(-4)
+      }
+
+      const tokenToUse = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('dl_token') : '')
+      const res = await fetch(`${API}/api/v1/matchmaking/clinical-chat-multi`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tokenToUse ? { 'Authorization': `Bearer ${tokenToUse}` } : {})
+        },
+        body: JSON.stringify(payload)
+      })
+
+      const resData = await res.json()
+      if (!res.ok) {
+        throw new Error(resData.detail || 'Error al procesar la consulta')
+      }
+
+      const aiMsg = {
+        id: Date.now() + 1,
+        sender: 'ai',
+        text: resData.answer || 'Sin respuesta generada.',
+        model: resData.model_used,
+        responseTimeMs: resData.response_time_ms,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+
+      setMessages([...nextMessages, aiMsg])
+    } catch (err) {
+      const errorMsg = {
+        id: Date.now() + 1,
+        sender: 'ai',
+        isError: true,
+        text: `⚠️ Error al consultar el copiloto: ${err.message}. Intenta de nuevo.`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+      setMessages([...nextMessages, errorMsg])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCopyText = (id, text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 1800)
+    })
+  }
+
+  const t = isLight ? {
+    overlayBg: 'rgba(15, 23, 42, 0.65)',
+    modalBg: '#FFFFFF',
+    modalBorder: '1px solid #E2E8F0',
+    headerBorder: '1px solid #E2E8F0',
+    badgeBg: '#EFF6FF',
+    badgeBorder: '1px solid #BFDBFE',
+    badgeColor: '#1D4ED8',
+    titleColor: '#0F172A',
+    subText: '#64748B',
+    chatBoxBg: '#F8FAFC',
+    chatBoxBorder: '1px solid #E2E8F0',
+    userBubbleBg: '#FEE2E2',
+    userBubbleBorder: '1px solid #FECACA',
+    userBubbleColor: '#961500',
+    aiBubbleBg: '#FFFFFF',
+    aiBubbleBorder: '1px solid #E2E8F0',
+    aiBubbleColor: '#1E293B',
+    chipBg: '#F1F5F9',
+    chipBorder: '1px solid #E2E8F0',
+    chipColor: '#334155',
+    inputBg: '#FFFFFF',
+    inputBorder: '1px solid #CBD5E1',
+    inputColor: '#0F172A'
+  } : {
+    overlayBg: 'rgba(0, 0, 0, 0.85)',
+    modalBg: '#140D0F',
+    modalBorder: '1px solid rgba(150, 21, 0, 0.45)',
+    headerBorder: '1px solid rgba(255, 255, 255, 0.1)',
+    badgeBg: 'rgba(59, 130, 246, 0.2)',
+    badgeBorder: '1px solid rgba(59, 130, 246, 0.4)',
+    badgeColor: '#93C5FD',
+    titleColor: '#FFFFFF',
+    subText: '#94A3B8',
+    chatBoxBg: '#0D080A',
+    chatBoxBorder: '1px solid rgba(255, 255, 255, 0.08)',
+    userBubbleBg: 'rgba(150, 21, 0, 0.35)',
+    userBubbleBorder: '1px solid rgba(150, 21, 0, 0.6)',
+    userBubbleColor: '#FFFFFF',
+    aiBubbleBg: '#1C1215',
+    aiBubbleBorder: '1px solid rgba(150, 21, 0, 0.25)',
+    aiBubbleColor: '#F1F5F9',
+    chipBg: 'rgba(255, 255, 255, 0.05)',
+    chipBorder: '1px solid rgba(255, 255, 255, 0.1)',
+    chipColor: '#CBD5E1',
+    inputBg: '#1C1215',
+    inputBorder: '1px solid rgba(150, 21, 0, 0.35)',
+    inputColor: '#FFFFFF'
+  }
+
+  const candNames = candidates.map(c => c.name.split(' ')[0]).join(', ')
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: t.overlayBg,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1200,
+      padding: '16px'
+    }} onClick={onClose}>
+      <div style={{
+        background: t.modalBg,
+        border: t.modalBorder,
+        borderRadius: 16,
+        width: '100%',
+        maxWidth: 780,
+        height: '86vh',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: '0 25px 70px rgba(0,0,0,0.7)',
+        overflow: 'hidden'
+      }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 22px',
+          borderBottom: t.headerBorder,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12
+        }}>
+          <div>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: t.badgeColor,
+              background: t.badgeBg,
+              border: t.badgeBorder,
+              padding: '3px 8px',
+              borderRadius: 6,
+              marginBottom: 4
+            }}>
+              <Bot size={13} /> COPILOTO CLÍNICO MULTI-CANDIDATA
+            </div>
+            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: t.titleColor }}>
+              {client.name} <span style={{ color: isLight ? '#961500' : 'var(--color-primary-light, #ff6b6b)' }}>vs</span> {candNames}
+            </h3>
+            <div style={{ fontSize: 11.5, color: t.subText, marginTop: 2 }}>
+              Pregunta cualquier tema específico y la IA contrastará las notas de todas simultáneamente.
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: isLight ? '1px solid #CBD5E1' : '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: 8,
+              width: 34,
+              height: 34,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: t.titleColor,
+              cursor: 'pointer'
+            }}
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        {/* Quick Question Chips */}
+        <div style={{
+          padding: '10px 18px',
+          borderBottom: t.headerBorder,
+          background: isLight ? '#FAFAFA' : 'rgba(255, 255, 255, 0.02)',
+          display: 'flex',
+          gap: 6,
+          overflowX: 'auto',
+          whiteSpace: 'nowrap',
+          WebkitOverflowScrolling: 'touch'
+        }}>
+          {QUICK_QUESTIONS_MULTI.map((qq, idx) => (
+            <button
+              key={idx}
+              type="button"
+              disabled={loading}
+              onClick={() => handleSend(qq.q)}
+              style={{
+                background: t.chipBg,
+                border: t.chipBorder,
+                borderRadius: 14,
+                padding: '4px 10px',
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: t.chipColor,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                opacity: loading ? 0.6 : 1,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>{qq.icon}</span>
+              <span>{qq.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Chat History Box */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px 20px',
+          background: t.chatBoxBg,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}>
+          {messages.length === 0 ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              textAlign: 'center',
+              color: t.subText,
+              gap: 10,
+              padding: 20
+            }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                background: isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: isLight ? '#2563EB' : '#60A5FA'
+              }}>
+                <Bot size={24} />
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: t.titleColor }}>
+                Copiloto Clínico Multi-Candidata Listo
+              </div>
+              <div style={{ fontSize: 12.5, maxWidth: 440, lineHeight: 1.5 }}>
+                Haz una pregunta comparativa sobre <b>{candidates.length} candidatas</b> seleccionadas usando los botones sugeridos arriba o escribiendo tu consulta clínica abajo.
+              </div>
+            </div>
+          ) : (
+            messages.map(msg => (
+              <div
+                key={msg.id}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                  gap: 4
+                }}
+              >
+                <div style={{
+                  maxWidth: '88%',
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  background: msg.sender === 'user' ? t.userBubbleBg : t.aiBubbleBg,
+                  border: msg.sender === 'user' ? t.userBubbleBorder : t.aiBubbleBorder,
+                  color: msg.sender === 'user' ? t.userBubbleColor : t.aiBubbleColor,
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-line',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+                }}>
+                  {msg.sender === 'ai' && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 6,
+                      borderBottom: isLight ? '1px solid #F1F5F9' : '1px solid rgba(255,255,255,0.08)',
+                      paddingBottom: 4
+                    }}>
+                      <span style={{
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        color: isLight ? '#1D4ED8' : '#93C5FD',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}>
+                        <Bot size={12} /> Copiloto Clínico ({msg.model?.split('/')[1] || 'Llama 3.2 11B'})
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(msg.id, msg.text)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: 10,
+                          color: copiedId === msg.id ? '#10B981' : t.subText,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 3
+                        }}
+                      >
+                        {copiedId === msg.id ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                        <span>{copiedId === msg.id ? 'Copiado' : 'Copiar'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {msg.text}
+                </div>
+                <span style={{ fontSize: 10, color: t.subText, padding: '0 4px' }}>
+                  {msg.time} {msg.responseTimeMs ? `• ${(msg.responseTimeMs / 1000).toFixed(1)}s` : ''}
+                </span>
+              </div>
+            ))
+          )}
+
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: t.subText, fontSize: 12 }}>
+              <RefreshCw size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+              <span>Analizando y contrastando notas clínicas con IA...</span>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Bar */}
+        <div style={{
+          padding: '12px 18px',
+          borderTop: t.headerBorder,
+          background: isLight ? '#FFFFFF' : '#140D0F',
+          display: 'flex',
+          gap: 10,
+          alignItems: 'center'
+        }}>
+          <input
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSend() }}
+            placeholder={`Escribe una pregunta para contrastar a ${client.name} con las ${candidates.length} candidatas...`}
+            disabled={loading}
+            style={{
+              flex: 1,
+              padding: '10px 14px',
+              borderRadius: 8,
+              border: t.inputBorder,
+              background: t.inputBg,
+              color: t.inputColor,
+              fontSize: 13,
+              outline: 'none'
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={() => handleSend()}
+            disabled={loading || !input.trim()}
+            style={{
+              padding: '10px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: isLight ? '#961500' : 'var(--color-primary, #961500)',
+              color: '#FFFFFF',
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: (loading || !input.trim()) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              opacity: (loading || !input.trim()) ? 0.5 : 1,
+              boxShadow: '0 2px 8px rgba(150, 21, 0, 0.3)'
+            }}
+          >
+            <Send size={15} />
+            <span>Consultar</span>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

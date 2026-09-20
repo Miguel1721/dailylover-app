@@ -1,241 +1,412 @@
 import React, { useState, useMemo } from 'react'
 import { Copy, Check, Sparkles, FileText } from 'lucide-react'
 
-// Configuration of recognized clinical sections with optimized color badges for Light & Dark
+// Definiciones de categorías para filtrado rápido
+export const SECTION_CATEGORIES = {
+  ALL: { id: 'all', label: 'Todas las notas' },
+  PROFILE: { id: 'profile', label: '👤 Perfil & Trabajo' },
+  LIFESTYLE: { id: 'lifestyle', label: '🏃 Rutina & Ocio' },
+  VALUES: { id: 'values', label: '⛪ Creencias & Familia' },
+  MATCHING: { id: 'matching', label: '❤️ Qué Busca & Límites' }
+}
+
+// Lista de encabezados compuestos para separar palabras pegadas del CRM sin romper texto normal
+const COMPOUND_HEADERS = [
+  'DATOS DUROS',
+  'PERFIL IDEAL DE WHATSAPP',
+  'PERFIL IDEAL WHATSAPP',
+  'Quién es y qué hace',
+  'De dónde es y dónde vive',
+  'De donde es y donde vive',
+  'A qué se dedica',
+  'A que se dedica',
+  'Sua postura sobre el trabajo',
+  'Su postura sobre el trabajo',
+  'Estilo de vida y parche',
+  'Rutina y deporte',
+  'Planes y personalidad',
+  'El host del grupo',
+  'Súper foodie',
+  'Super foodie',
+  'Pensamiento:',
+  'Familia y pasado',
+  'Cercanos:',
+  'Qué busca en el amor',
+  'Que busca en el amor',
+  'Su tipo ideal',
+  'No negociables:',
+  'Dealbreakers:',
+  'NO NEGOCIABLES:',
+  'Vive con quien y donde exacto',
+  'Donde vive:',
+  'Vive con:',
+  'Ubicación:',
+  'L a V:',
+  'Lunes a Viernes:',
+  'FDS:',
+  'Fin de semana:',
+  'Fines de semana:',
+  'HOBBIES:',
+  'Pasatiempos:',
+  'RANGO DE EDAD:',
+  'HIJOS:',
+  'DISTANCIA:',
+  'RELIGI[OÓ]N & ESPIRITUALIDAD:',
+  'RELIGI[OÓ]N:',
+  'POLÍTICA:',
+  'SALARIO:',
+  'HISTORIAL AMOROSO:',
+  'RED FLAGS:',
+  'GREEN FLAGS:',
+  'DISPONIBILIDAD:',
+  'PLAN QUE PAGÓ:',
+  'CONCLUSIÓN:',
+  'ANÁLISIS PSICÓLOGA:',
+  'OBSERVACIONES:',
+  'SÍNTESIS:'
+]
+
+// Catálogo de secciones clínicas estructuradas
 const SECTION_DEFINITIONS = [
+  // DATOS DUROS & RESUMEN WHATSAPP
+  {
+    id: 'datos_duros',
+    category: 'profile',
+    title: 'Ficha de Datos Duros',
+    icon: '📋',
+    badgeBgLight: '#EFF6FF',
+    badgeTextLight: '#1D4ED8',
+    badgeBgDark: 'rgba(59, 130, 246, 0.22)',
+    badgeTextDark: '#93C5FD',
+    regex: /(?:^|[\.\n\r])\s*(?:DATOS DUROS|Datos b[aá]sicos)\s*(?:•|:|\s)/i
+  },
+  {
+    id: 'whatsapp_profile',
+    category: 'profile',
+    title: 'Perfil Resumen WhatsApp',
+    icon: '📱',
+    badgeBgLight: '#DCFCE7',
+    badgeTextLight: '#15803D',
+    badgeBgDark: 'rgba(22, 163, 74, 0.25)',
+    badgeTextDark: '#4ADE80',
+    regex: /(?:^|[\.\n\r])\s*PERFIL (?:IDEAL )?(?:DE )?WHATSAPP\s*:?\s*/i
+  },
   {
     id: 'vivienda',
+    category: 'profile',
     title: 'Vivienda & Ubicación',
     icon: '🏠',
     badgeBgLight: '#E0F2FE',
     badgeTextLight: '#0369A1',
     badgeBgDark: 'rgba(3, 105, 161, 0.25)',
     badgeTextDark: '#38BDF8',
-    regex: /(?:^|[\.\n])\s*(?:Vive con quien y donde exacto|Vivienda|Donde vive|Vive con|Ubicaci[oó]n)\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:Qui[eé]n es y qu[eé] hace\s*[\n\r]+)?(?:De d[oó]nde es y d[oó]nde vive|Vive con quien y donde exacto|Vivienda|Donde vive|Vive con|Ubicaci[oó]n)\s*:?\s*/i
   },
   {
-    id: 'intro',
-    title: 'Perfil & Ocupación',
-    icon: '💼',
+    id: 'quien_es',
+    category: 'profile',
+    title: 'Quién es (Introducción)',
+    icon: '👤',
     badgeBgLight: '#F1F5F9',
     badgeTextLight: '#334155',
     badgeBgDark: 'rgba(148, 163, 184, 0.18)',
     badgeTextDark: '#CBD5E1',
-    regex: /(?:^|[\.\n])\s*(?:INTRO\s*:?\s*Cu[eé]ntame quien eres[^\.]*\.?|INTRO\s*:|Perfil\s*:|Qui[eé]n es\s*:|Trabajo\s*:|Ocupaci[oó]n\s*:)\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:INTRO\s*:?\s*Cu[eé]ntame quien eres[^\.]*\.?|INTRO\s*:|Perfil\s*:|Qui[eé]n es y qu[eé] hace|Qui[eé]n es\s*:)\s*/i
+  },
+  {
+    id: 'dedica',
+    category: 'profile',
+    title: 'Profesión & Ocupación',
+    icon: '💼',
+    badgeBgLight: '#F1F5F9',
+    badgeTextLight: '#1E293B',
+    badgeBgDark: 'rgba(255, 255, 255, 0.1)',
+    badgeTextDark: '#E2E8F0',
+    regex: /(?:^|[\.\n\r])\s*(?:A qu[eé] se dedica\s*:?|(?:Trabajo|Ocupaci[oó]n)\s*:)\s*/i
+  },
+  {
+    id: 'postura_trabajo',
+    category: 'profile',
+    title: 'Postura ante el Trabajo',
+    icon: '⚖️',
+    badgeBgLight: '#EDE9FE',
+    badgeTextLight: '#6D28D9',
+    badgeBgDark: 'rgba(139, 92, 246, 0.2)',
+    badgeTextDark: '#C4B5FD',
+    regex: /(?:^|[\.\n\r])\s*Su[a]? postura sobre el trabajo\s*:?\s*/i
   },
   {
     id: 'rutina',
-    title: 'Rutina (Lunes a Viernes)',
-    icon: '⏰',
+    category: 'lifestyle',
+    title: 'Rutina & Deporte',
+    icon: '🏃',
+    badgeBgLight: '#DCFCE7',
+    badgeTextLight: '#166534',
+    badgeBgDark: 'rgba(34, 197, 94, 0.22)',
+    badgeTextDark: '#86EFAC',
+    regex: /(?:^|[\.\n\r])\s*(?:Estilo de vida y parche\s*[\n\r]+)?(?:Rutina y deporte|L a V|Lunes a Viernes|Rutina entre semana|D[ií]a a d[ií]a|Semana|Actividad f[ií]sica)\s*:?\s*/i
+  },
+
+
+  // RUTINA, ESTILO DE VIDA & OCIO
+  {
+    id: 'estilo_vida',
+    category: 'lifestyle',
+    title: 'Estilo de Vida & Parche',
+    icon: '✨',
     badgeBgLight: '#FEF3C7',
-    badgeTextLight: '#92400E',
-    badgeBgDark: 'rgba(217, 119, 6, 0.22)',
-    badgeTextDark: '#FBBF24',
-    regex: /(?:^|[\.\n])\s*(?:L a V|Lunes a Viernes|Rutina entre semana|D[ií]a a d[ií]a|Semana)\s*:\s*/i,
+    badgeTextLight: '#B45309',
+    badgeBgDark: 'rgba(245, 158, 11, 0.22)',
+    badgeTextDark: '#FCD34D',
+    regex: /(?:^|[\.\n\r])\s*(?:Estilo de vida y parche|Estilo de vida)\s*:?\s*/i
+  },
+  {
+    id: 'rutina',
+    category: 'lifestyle',
+    title: 'Rutina & Deporte',
+    icon: '🏃',
+    badgeBgLight: '#DCFCE7',
+    badgeTextLight: '#166534',
+    badgeBgDark: 'rgba(34, 197, 94, 0.22)',
+    badgeTextDark: '#86EFAC',
+    regex: /(?:^|[\.\n\r])\s*(?:Rutina y deporte|L a V|Lunes a Viernes|Rutina entre semana|D[ií]a a d[ií]a|Semana|Actividad f[ií]sica)\s*:?\s*/i
+  },
+  {
+    id: 'planes_pers',
+    category: 'lifestyle',
+    title: 'Planes & Personalidad',
+    icon: '🧠',
+    badgeBgLight: '#E0E7FF',
+    badgeTextLight: '#3730A3',
+    badgeBgDark: 'rgba(55, 48, 163, 0.25)',
+    badgeTextDark: '#818CF8',
+    regex: /(?:^|[\.\n\r])\s*(?:Planes y personalidad|Personalidad|Car[aá]cter|Din[aá]mica de pareja|Forma de ser)\s*:?\s*/i
+  },
+  {
+    id: 'host',
+    category: 'lifestyle',
+    title: 'Dinámica Social (Host)',
+    icon: '🎉',
+    badgeBgLight: '#FCE7F3',
+    badgeTextLight: '#9D174D',
+    badgeBgDark: 'rgba(236, 72, 153, 0.22)',
+    badgeTextDark: '#F472B6',
+    regex: /(?:^|[\.\n\r])\s*(?:El host del grupo|Anfitri[oó]n|Vida social|Amigos y parche)\s*:?\s*/i
+  },
+  {
+    id: 'foodie',
+    category: 'lifestyle',
+    title: 'Gastronomía & Foodie',
+    icon: '🍕',
+    badgeBgLight: '#FFEDD5',
+    badgeTextLight: '#C2410C',
+    badgeBgDark: 'rgba(249, 115, 22, 0.22)',
+    badgeTextDark: '#FB923C',
+    regex: /(?:^|[\.\n\r])\s*(?:S[uú]per foodie|Foodie|Gastronom[ií]a|Comida y planes)\s*:?\s*/i
   },
   {
     id: 'fds',
+    category: 'lifestyle',
     title: 'Fines de Semana (FDS)',
-    icon: '🎉',
+    icon: '🥂',
     badgeBgLight: '#DCFCE7',
     badgeTextLight: '#166534',
     badgeBgDark: 'rgba(22, 101, 52, 0.25)',
     badgeTextDark: '#4ADE80',
-    regex: /(?:^|[\.\n])\s*(?:FDS|Fin(?:es)? de semana)\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:FDS|Fin(?:es)? de semana|Rumba)\s*:?\s*/i
   },
   {
     id: 'hobbies',
+    category: 'lifestyle',
     title: 'Hobbies & Tiempo Libre',
     icon: '🎨',
     badgeBgLight: '#F3E8FF',
     badgeTextLight: '#6B21A8',
     badgeBgDark: 'rgba(107, 33, 168, 0.25)',
     badgeTextDark: '#C084FC',
-    regex: /(?:^|[\.\n])\s*(?:HOBBIES|Pasatiempos|Intereses|Tiempo libre)\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:HOBBIES|Pasatiempos|Intereses|Tiempo libre)\s*:?\s*/i
+  },
+
+  // CREENCIAS, POLÍTICA & FAMILIA
+  {
+    id: 'pensamiento',
+    category: 'values',
+    title: 'Pensamiento, Religión & Política',
+    icon: '🏛️',
+    badgeBgLight: '#ECFCCB',
+    badgeTextLight: '#3F6212',
+    badgeBgDark: 'rgba(132, 204, 22, 0.22)',
+    badgeTextDark: '#A3E635',
+    regex: /(?:^|[\.\n\r])\s*(?:Pensamiento\s*:|RELIGI[OÓ]N(?:\s*&\s*ESPIRITUALIDAD)?\s*:|POL[ÍI]TICA\s*:|Espiritualidad\s*:|Creencias\s*:)/i
   },
   {
+    id: 'familia',
+    category: 'values',
+    title: 'Familia & Entorno Pasado',
+    icon: '👨‍👩‍👧',
+    badgeBgLight: '#FEF3C7',
+    badgeTextLight: '#92400E',
+    badgeBgDark: 'rgba(217, 119, 6, 0.22)',
+    badgeTextDark: '#FBBF24',
+    regex: /(?:^|[\.\n\r])\s*(?:Familia y pasado\s*:?|Cercanos\s*:|Familia\s*:|Entorno familiar\s*:)/i
+  },
+  {
+    id: 'historial',
+    category: 'values',
+    title: 'Historial Amoroso & Duelo',
+    icon: '💔',
+    badgeBgLight: '#F1F5F9',
+    badgeTextLight: '#475569',
+    badgeBgDark: 'rgba(100, 116, 139, 0.22)',
+    badgeTextDark: '#94A3B8',
+    regex: /(?:^|[\.\n\r])\s*(?:SOLTER[AO]\s*:|HISTORIAL(?: AMOROSO)?\s*:|Ex parejas?\s*:|Pasado amoroso\s*:|Relaciones anteriores\s*:)/i
+  },
+
+  // QUÉ BUSCA EN PAREJA & LÍMITES
+  {
     id: 'busca',
-    title: 'Lo que Busca en Pareja',
+    category: 'matching',
+    title: 'Qué Busca en el Amor',
     icon: '🔍',
     badgeBgLight: '#FFE4E6',
     badgeTextLight: '#9F1239',
     badgeBgDark: 'rgba(159, 18, 57, 0.25)',
     badgeTextDark: '#FDA4AF',
-    regex: /(?:^|[\.\n])\s*(?:BUSCA|Qu[eé] busca|Pareja ideal|Perfil deseado)\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:Qu[eé] busca en el amor|BUSCA\s*:|Qu[eé] busca\s*:|Pareja ideal\s*:|Perfil deseado\s*:)/i
   },
   {
-    id: 'fisico',
-    title: 'Expectativas Físicas',
+    id: 'tipo_ideal',
+    category: 'matching',
+    title: 'Su Tipo Ideal & Físico',
     icon: '👀',
     badgeBgLight: '#FCE7F3',
     badgeTextLight: '#9D174D',
     badgeBgDark: 'rgba(157, 23, 77, 0.25)',
     badgeTextDark: '#F472B6',
-    regex: /(?:^|[\.\n,])\s*(?:F[ií]sicamente|Aspecto f[ií]sico|F[ií]sico)\s*(?:,|\s*:)\s*/i,
-  },
-  {
-    id: 'personalidad',
-    title: 'Personalidad & Dinámica de Pareja',
-    icon: '🧠',
-    badgeBgLight: '#E0E7FF',
-    badgeTextLight: '#3730A3',
-    badgeBgDark: 'rgba(55, 48, 163, 0.25)',
-    badgeTextDark: '#818CF8',
-    regex: /(?:^|[\.\n,])\s*(?:Personalidad|Car[aá]cter|Din[aá]mica de pareja|Forma de ser)\s*(?:,|\s*:)\s*/i,
-  },
-  {
-    id: 'rango_edad',
-    title: 'Rango de Edad Deseado',
-    icon: '🎯',
-    badgeBgLight: '#FEF9C3',
-    badgeTextLight: '#854D0E',
-    badgeBgDark: 'rgba(234, 179, 8, 0.22)',
-    badgeTextDark: '#FDE047',
-    regex: /(?:^|[\.\n,\s])\s*RANGO DE EDAD\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:Su tipo ideal\s*:?|F[ií]sicamente\s*:|Aspecto f[ií]sico\s*:|F[ií]sico\s*:)/i
   },
   {
     id: 'hijos',
+    category: 'matching',
     title: 'Preferencia sobre Hijos',
     icon: '👶',
     badgeBgLight: '#E0F2FE',
     badgeTextLight: '#075985',
     badgeBgDark: 'rgba(14, 165, 233, 0.22)',
     badgeTextDark: '#38BDF8',
-    regex: /(?:^|[\.\n,\s])\s*HIJOS\s*:\s*/i,
-  },
-  {
-    id: 'distancia',
-    title: 'Distancia / Desplazamiento',
-    icon: '📍',
-    badgeBgLight: '#F3F4F6',
-    badgeTextLight: '#374151',
-    badgeBgDark: 'rgba(156, 163, 175, 0.2)',
-    badgeTextDark: '#D1D5DB',
-    regex: /(?:^|[\.\n,\s])\s*DISTANCIA\s*:\s*/i,
-  },
-  {
-    id: 'religion',
-    title: 'Religión & Espiritualidad',
-    icon: '⛪',
-    badgeBgLight: '#ECFCCB',
-    badgeTextLight: '#3F6212',
-    badgeBgDark: 'rgba(132, 204, 22, 0.22)',
-    badgeTextDark: '#A3E635',
-    regex: /(?:^|[\.\n,\s])\s*RELIGI[OÓ]N\s*:\s*/i,
-  },
-  {
-    id: 'politica',
-    title: 'Postura Política',
-    icon: '🏛️',
-    badgeBgLight: '#EDE9FE',
-    badgeTextLight: '#5B21B6',
-    badgeBgDark: 'rgba(139, 92, 246, 0.22)',
-    badgeTextDark: '#C4B5FD',
-    regex: /(?:^|[\.\n,\s])\s*POL[ÍI]TICA\s*:\s*/i,
-  },
-  {
-    id: 'salario',
-    title: 'Nivel Salarial / Ingresos',
-    icon: '💰',
-    badgeBgLight: '#D1FAE5',
-    badgeTextLight: '#065F46',
-    badgeBgDark: 'rgba(16, 185, 129, 0.22)',
-    badgeTextDark: '#6EE7B7',
-    regex: /(?:^|[\.\n,\s])\s*SALARIO\s*:\s*/i,
-  },
-  {
-    id: 'historial',
-    title: 'Estado Civil & Historial Amoroso',
-    icon: '💔',
-    badgeBgLight: '#F1F5F9',
-    badgeTextLight: '#475569',
-    badgeBgDark: 'rgba(100, 116, 139, 0.22)',
-    badgeTextDark: '#94A3B8',
-    regex: /(?:^|[\.\n,\s])\s*(?:SOLTER[AO]|HISTORIAL(?: AMOROSO)?|Ex parejas?|Pasado amoroso|Relaciones anteriores)\s*:\s*/i,
-  },
-  {
-    id: 'redflags',
-    title: 'Red Flags Declaradas',
-    icon: '🚩',
-    badgeBgLight: '#FEE2E2',
-    badgeTextLight: '#991B1B',
-    badgeBgDark: 'rgba(239, 68, 68, 0.25)',
-    badgeTextDark: '#FCA5A5',
-    regex: /(?:^|[\.\n,\s])\s*RED FLAGS?\s*:\s*/i,
-  },
-  {
-    id: 'greenflags',
-    title: 'Green Flags & Lenguaje Afectivo',
-    icon: '🟢',
-    badgeBgLight: '#DCFCE7',
-    badgeTextLight: '#166534',
-    badgeBgDark: 'rgba(34, 197, 94, 0.25)',
-    badgeTextDark: '#86EFAC',
-    regex: /(?:^|[\.\n,\s])\s*GREEN FLAGS?\s*:\s*/i,
-  },
-  {
-    id: 'disponibilidad',
-    title: 'Disponibilidad para Citas',
-    icon: '📅',
-    badgeBgLight: '#EFF6FF',
-    badgeTextLight: '#1E40AF',
-    badgeBgDark: 'rgba(59, 130, 246, 0.22)',
-    badgeTextDark: '#93C5FD',
-    regex: /(?:^|[\.\n,\s])\s*DISPONIBILIDAD\s*:\s*/i,
-  },
-  {
-    id: 'plan_pago',
-    title: 'Plan Contratado',
-    icon: '🎟️',
-    badgeBgLight: '#FEF3C7',
-    badgeTextLight: '#B45309',
-    badgeBgDark: 'rgba(245, 158, 11, 0.22)',
-    badgeTextDark: '#FCD34D',
-    regex: /(?:^|[\.\n,\s])\s*PLAN QUE PAG[OÓ]\s*:\s*/i,
-  },
-  {
-    id: 'whatsapp_profile',
-    title: 'Perfil Resumen de WhatsApp',
-    icon: '📱',
-    badgeBgLight: '#DCFCE7',
-    badgeTextLight: '#15803D',
-    badgeBgDark: 'rgba(22, 163, 74, 0.25)',
-    badgeTextDark: '#4ADE80',
-    regex: /(?:^|[\.\n,\s])\s*PERFIL (?:IDEAL )?DE WHATSAPP\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*HIJOS\s*:?\s*/i
   },
   {
     id: 'noneg',
+    category: 'matching',
     title: 'No Negociables (Dealbreakers)',
     icon: '🚫',
     badgeBgLight: '#FEE2E2',
     badgeTextLight: '#991B1B',
     badgeBgDark: 'rgba(220, 38, 38, 0.25)',
     badgeTextDark: '#F87171',
-    regex: /(?:^|[\.\n])\s*(?:NO NEGOCIABLES|Dealbreakers?|Innegociables?|No tolero)\s*:\s*/i,
+    regex: /(?:^|[\.\n\r])\s*(?:NO NEGOCIABLES|Dealbreakers?|Innegociables?|No tolero)\s*:?\s*/i
+  },
+  {
+    id: 'redflags',
+    category: 'matching',
+    title: 'Red Flags Declaradas',
+    icon: '🚩',
+    badgeBgLight: '#FEE2E2',
+    badgeTextLight: '#991B1B',
+    badgeBgDark: 'rgba(239, 68, 68, 0.25)',
+    badgeTextDark: '#FCA5A5',
+    regex: /(?:^|[\.\n\r])\s*RED FLAGS?\s*:?\s*/i
+  },
+  {
+    id: 'greenflags',
+    category: 'matching',
+    title: 'Green Flags & Lenguaje Afectivo',
+    icon: '🟢',
+    badgeBgLight: '#DCFCE7',
+    badgeTextLight: '#166534',
+    badgeBgDark: 'rgba(34, 197, 94, 0.25)',
+    badgeTextDark: '#86EFAC',
+    regex: /(?:^|[\.\n\r])\s*GREEN FLAGS?\s*:?\s*/i
+  },
+  {
+    id: 'disponibilidad',
+    category: 'matching',
+    title: 'Disponibilidad & Citas',
+    icon: '📅',
+    badgeBgLight: '#EFF6FF',
+    badgeTextLight: '#1E40AF',
+    badgeBgDark: 'rgba(59, 130, 246, 0.22)',
+    badgeTextDark: '#93C5FD',
+    regex: /(?:^|[\.\n\r])\s*DISPONIBILIDAD\s*:?\s*/i
+  },
+  {
+    id: 'plan_pago',
+    category: 'profile',
+    title: 'Plan Contratado / Facturación',
+    icon: '🎟️',
+    badgeBgLight: '#FEF3C7',
+    badgeTextLight: '#B45309',
+    badgeBgDark: 'rgba(245, 158, 11, 0.22)',
+    badgeTextDark: '#FCD34D',
+    regex: /(?:^|[\.\n\r])\s*(?:PLAN QUE PAG[OÓ]|SALDO CITAS)\s*:?\s*/i
   },
   {
     id: 'sintesis',
+    category: 'profile',
     title: 'Síntesis & Observaciones Clínicas',
     icon: '📋',
     badgeBgLight: '#FDF2F8',
     badgeTextLight: '#831843',
     badgeBgDark: 'rgba(219, 39, 119, 0.25)',
     badgeTextDark: '#F472B6',
-    regex: /(?:^|[\.\n])\s*(?:CONCLUSI[OÓ]N|AN[AÁ]LISIS PSIC[OÓ]LOGA|OBSERVACIONES|S[IÍ]NTESIS)\s*:\s*/i,
-  },
+    regex: /(?:^|[\.\n\r])\s*(?:CONCLUSI[OÓ]N|AN[AÁ]LISIS PSIC[OÓ]LOGA|OBSERVACIONES|S[IÍ]NTESIS)\s*:?\s*/i
+  }
 ]
+
+// Helper para parsear items de viñeta tipo "• Nombre: Valor • Ciudad: Valor"
+function parseBulletDataGrid(text) {
+  if (!text || !text.includes('•')) return null
+  const items = []
+  const rawBullets = text.split('•').map(b => b.trim()).filter(Boolean)
+  for (const b of rawBullets) {
+    const colonIdx = b.indexOf(':')
+    if (colonIdx > 0 && colonIdx < 45) {
+      const key = b.slice(0, colonIdx).trim()
+      const val = b.slice(colonIdx + 1).trim()
+      let icon = '📌'
+      const kLower = key.toLowerCase()
+      if (kLower.includes('nombre')) icon = '👤'
+      else if (kLower.includes('ciudad') || kLower.includes('zona')) icon = '📍'
+      else if (kLower.includes('vive') || kLower.includes('reside')) icon = '🏠'
+      else if (kLower.includes('edad')) icon = '🎂'
+      else if (kLower.includes('celular') || kLower.includes('tel')) icon = '📱'
+      else if (kLower.includes('ingreso') || kLower.includes('salario')) icon = '💰'
+      else if (kLower.includes('cc') || kLower.includes('cédula')) icon = '🪪'
+      else if (kLower.includes('profesión') || kLower.includes('cargo') || kLower.includes('trabajo')) icon = '💼'
+      items.push({ key, val, icon })
+    }
+  }
+  return items.length >= 2 ? items : null
+}
 
 function parseNotes(rawText) {
   if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
     return []
   }
 
-  // Pre-normalize concatenated tokens where psicologas write without spaces or punctuation
   let text = rawText.trim()
-  text = text.replace(/([a-záéíóúA-ZÁÉÍÓÚ0-9\.\)])(?=(?:DISTANCIA|RELIGI[OÓ]N|HIJOS|POL[ÍI]TICA|SALARIO|RED FLAGS?|GREEN FLAGS?|DISPONIBILIDAD|PLAN QUE PAG[OÓ]|PERFIL (?:IDEAL )?DE WHATSAPP|RANGO DE EDAD|HOBBIES|BUSCA|F[ií]sicamente|Personalidad|L a V|FDS)\s*:)/gi, '$1. ')
+
+  // 1. Separar encabezados compuestos pegados
+  text = text.replace(/PERFIL IDEAL (?:DE )?WHATSAPP([A-ZÁÉÍÓÚa-záéíóú])/gi, 'PERFIL IDEAL WHATSAPP\n\n$1')
+
+  COMPOUND_HEADERS.forEach(hdr => {
+    const esc = hdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`([^\\n\\r])(${esc})`, 'gi')
+    text = text.replace(re, '$1\n\n$2')
+  })
 
   const matches = []
-
   SECTION_DEFINITIONS.forEach(def => {
     const globalRegex = new RegExp(def.regex.source, 'gi')
     let match
@@ -249,10 +420,10 @@ function parseNotes(rawText) {
     }
   })
 
-  // Sort by starting position
+  // Ordenar por posición de inicio
   matches.sort((a, b) => a.start - b.start)
 
-  // Discard overlapping matches
+  // Descartar superposiciones
   const cleanMatches = []
   let lastEnd = -1
   for (const m of matches) {
@@ -267,42 +438,48 @@ function parseNotes(rawText) {
     if (paragraphs.length > 1) {
       return paragraphs.map((p, idx) => ({
         id: `p_${idx}`,
+        category: 'profile',
         title: `Párrafo ${idx + 1}`,
         icon: '📝',
         badgeBgLight: '#F1F5F9',
         badgeTextLight: '#475569',
         badgeBgDark: 'rgba(255,255,255,0.08)',
         badgeTextDark: '#CBD5E1',
-        content: p
+        content: p,
+        dataGrid: parseBulletDataGrid(p)
       }))
     }
     return [{
       id: 'general',
+      category: 'profile',
       title: 'Nota Clínica General',
       icon: '📝',
       badgeBgLight: '#F1F5F9',
       badgeTextLight: '#475569',
       badgeBgDark: 'rgba(255,255,255,0.08)',
       badgeTextDark: '#CBD5E1',
-      content: text
+      content: text,
+      dataGrid: parseBulletDataGrid(text)
     }]
   }
 
   const sections = []
 
-  // Pre-text before the first section marker
+  // Texto previo al primer encabezado reconocido
   if (cleanMatches[0].start > 0) {
     const preText = text.slice(0, cleanMatches[0].start).trim()
     if (preText) {
       sections.push({
         id: 'preamble',
+        category: 'profile',
         title: 'Contexto Inicial',
         icon: '📌',
         badgeBgLight: '#F1F5F9',
         badgeTextLight: '#475569',
         badgeBgDark: 'rgba(255,255,255,0.08)',
         badgeTextDark: '#CBD5E1',
-        content: preText
+        content: preText,
+        dataGrid: parseBulletDataGrid(preText)
       })
     }
   }
@@ -313,18 +490,22 @@ function parseNotes(rawText) {
     const contentEnd = (i + 1 < cleanMatches.length) ? cleanMatches[i + 1].start : text.length
     let content = text.slice(contentStart, contentEnd).trim()
 
-    content = content.replace(/^[,,\.\-–—\s]+/, '').replace(/[\s]+$/, '')
+    // Limpiar puntuación inicial sobrante
+    content = content.replace(/^[:,\.\-–—\s]+/, '').replace(/[\s]+$/, '')
 
     if (content) {
+      const dataGrid = parseBulletDataGrid(content)
       sections.push({
         id: curr.def.id,
+        category: curr.def.category || 'profile',
         title: curr.def.title,
         icon: curr.def.icon,
         badgeBgLight: curr.def.badgeBgLight,
         badgeTextLight: curr.def.badgeTextLight,
         badgeBgDark: curr.def.badgeBgDark,
         badgeTextDark: curr.def.badgeTextDark,
-        content
+        content,
+        dataGrid
       })
     }
   }
@@ -334,7 +515,10 @@ function parseNotes(rawText) {
 
 export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title = "Notas Clínicas de Entrevista & Bio" }) {
   const [viewMode, setViewMode] = useState('structured') // 'structured' | 'raw'
-  const [copied, setCopied] = useState(false)
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [copiedSectionId, setCopiedSectionId] = useState(null)
+  const [copiedAll, setCopiedAll] = useState(false)
+
   const [isLight, setIsLight] = useState(() => {
     if (typeof isLightProp === 'boolean') return isLightProp
     if (typeof document !== 'undefined') {
@@ -363,36 +547,53 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
 
   const parsedSections = useMemo(() => parseNotes(notes), [notes])
 
-  const handleCopy = () => {
+  // Filtrado por categoría activa
+  const visibleSections = useMemo(() => {
+    if (activeCategory === 'all') return parsedSections
+    return parsedSections.filter(s => s.category === activeCategory)
+  }, [parsedSections, activeCategory])
+
+  const handleCopyAll = () => {
     if (!notes) return
     navigator.clipboard.writeText(notes).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopiedAll(true)
+      setTimeout(() => setCopiedAll(false), 2000)
+    })
+  }
+
+  const handleCopySection = (sec) => {
+    const textToCopy = `${sec.icon} ${sec.title}:\n${sec.content}`
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopiedSectionId(sec.id)
+      setTimeout(() => setCopiedSectionId(null), 1800)
     })
   }
 
   if (!notes || typeof notes !== 'string' || !notes.trim()) {
     return (
       <div style={{
-        fontSize: 12,
+        fontSize: 12.5,
         color: isLight ? '#94A3B8' : 'var(--text-muted)',
         fontStyle: 'italic',
-        padding: '10px 0'
+        padding: '12px 14px',
+        background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.02)',
+        borderRadius: 8,
+        border: isLight ? '1px dashed #CBD5E1' : '1px dashed rgba(255, 255, 255, 0.1)'
       }}>
-        Sin notas clínicas registradas
+        Sin notas clínicas registradas en el perfil
       </div>
     )
   }
 
-  const containerBg = isLight ? '#F8FAFC' : 'rgba(0, 0, 0, 0.25)'
+  const containerBg = isLight ? '#F8FAFC' : 'rgba(10, 6, 8, 0.45)'
   const containerBorder = isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.08)'
-  const cardBg = isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.03)'
-  const cardBorder = isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.06)'
-  const textColor = isLight ? '#1E293B' : 'var(--text-primary)'
-  const subtextColor = isLight ? '#64748B' : 'var(--text-muted)'
+  const cardBg = isLight ? '#FFFFFF' : 'rgba(26, 18, 20, 0.75)'
+  const cardBorder = isLight ? '1px solid #E2E8F0' : '1px solid rgba(150, 21, 0, 0.2)'
+  const textColor = isLight ? '#1E293B' : '#F1F5F9'
+  const subtextColor = isLight ? '#64748B' : '#94A3B8'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Barra superior de control */}
       <div style={{
         display: 'flex',
@@ -400,13 +601,13 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
         justifyContent: 'space-between',
         flexWrap: 'wrap',
         gap: 8,
-        paddingBottom: 4
+        paddingBottom: 2
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
             fontSize: 11,
             fontWeight: 800,
-            color: isLight ? '#961500' : 'var(--color-primary-light)',
+            color: isLight ? '#961500' : 'var(--color-primary-light, #ff6b6b)',
             textTransform: 'uppercase',
             letterSpacing: '0.04em'
           }}>
@@ -414,11 +615,12 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
           </span>
           {parsedSections.length > 1 && (
             <span style={{
-              fontSize: 10,
-              fontWeight: 700,
+              fontSize: 10.5,
+              fontWeight: 800,
               color: isLight ? '#0369A1' : '#38BDF8',
-              background: isLight ? '#E0F2FE' : 'rgba(3, 105, 161, 0.2)',
-              padding: '1px 6px',
+              background: isLight ? '#E0F2FE' : 'rgba(3, 105, 161, 0.25)',
+              border: isLight ? '1px solid #BAE6FD' : '1px solid rgba(56, 189, 248, 0.3)',
+              padding: '1px 7px',
               borderRadius: 10
             }}>
               {parsedSections.length} secciones
@@ -430,24 +632,25 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             type="button"
-            onClick={handleCopy}
-            title="Copiar texto de notas al portapapeles"
+            onClick={handleCopyAll}
+            title="Copiar texto completo al portapapeles"
             style={{
-              background: 'transparent',
+              background: isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.05)',
               border: isLight ? '1px solid #CBD5E1' : '1px solid rgba(255, 255, 255, 0.12)',
               borderRadius: 6,
-              padding: '3px 7px',
+              padding: '4px 9px',
               cursor: 'pointer',
               fontSize: 11,
-              color: copied ? '#10B981' : subtextColor,
+              fontWeight: 600,
+              color: copiedAll ? '#10B981' : subtextColor,
               display: 'flex',
               alignItems: 'center',
               gap: 4,
               transition: 'all 0.15s'
             }}
           >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? 'Copiado' : 'Copiar'}
+            {copiedAll ? <Check size={12} color="#10B981" /> : <Copy size={12} />}
+            {copiedAll ? 'Copiado' : 'Copiar todo'}
           </button>
 
           <div style={{
@@ -462,11 +665,11 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
               onClick={() => setViewMode('structured')}
               style={{
                 border: 'none',
-                background: viewMode === 'structured' ? (isLight ? '#FFFFFF' : 'var(--color-primary)') : 'transparent',
+                background: viewMode === 'structured' ? (isLight ? '#FFFFFF' : 'var(--color-primary, #961500)') : 'transparent',
                 color: viewMode === 'structured' ? (isLight ? '#961500' : '#FFFFFF') : subtextColor,
                 fontWeight: viewMode === 'structured' ? 700 : 500,
-                fontSize: 10.5,
-                padding: '3px 8px',
+                fontSize: 11,
+                padding: '4px 9px',
                 borderRadius: 4,
                 cursor: 'pointer',
                 display: 'flex',
@@ -483,11 +686,11 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
               onClick={() => setViewMode('raw')}
               style={{
                 border: 'none',
-                background: viewMode === 'raw' ? (isLight ? '#FFFFFF' : 'var(--color-primary)') : 'transparent',
+                background: viewMode === 'raw' ? (isLight ? '#FFFFFF' : 'var(--color-primary, #961500)') : 'transparent',
                 color: viewMode === 'raw' ? (isLight ? '#961500' : '#FFFFFF') : subtextColor,
                 fontWeight: viewMode === 'raw' ? 700 : 500,
-                fontSize: 10.5,
-                padding: '3px 8px',
+                fontSize: 11,
+                padding: '4px 9px',
                 borderRadius: 4,
                 cursor: 'pointer',
                 display: 'flex',
@@ -497,78 +700,206 @@ export default function ClinicalNotesViewer({ notes, isLight: isLightProp, title
                 transition: 'all 0.15s'
               }}
             >
-              <FileText size={11} /> Texto Completo
+              <FileText size={11} /> Texto Plano
             </button>
           </div>
         </div>
       </div>
+
+      {/* Píldoras de Filtro Rápido por Categoría */}
+      {viewMode === 'structured' && parsedSections.length > 3 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          overflowX: 'auto',
+          paddingBottom: 2,
+          whiteSpace: 'nowrap',
+          WebkitOverflowScrolling: 'touch'
+        }}>
+          {Object.values(SECTION_CATEGORIES).map(cat => {
+            const count = cat.id === 'all'
+              ? parsedSections.length
+              : parsedSections.filter(s => s.category === cat.id).length
+            if (count === 0 && cat.id !== 'all') return null
+
+            const isSelected = activeCategory === cat.id
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setActiveCategory(cat.id)}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: 14,
+                  fontSize: 11,
+                  fontWeight: isSelected ? 700 : 500,
+                  cursor: 'pointer',
+                  border: isSelected
+                    ? (isLight ? '1.5px solid #961500' : '1.5px solid var(--color-primary-light, #ff6b6b)')
+                    : (isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.1)'),
+                  background: isSelected
+                    ? (isLight ? '#FEE2E2' : 'rgba(150, 21, 0, 0.25)')
+                    : (isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.03)'),
+                  color: isSelected
+                    ? (isLight ? '#961500' : '#ff8a80')
+                    : subtextColor,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span>{cat.label}</span>
+                <span style={{
+                  fontSize: 10,
+                  opacity: 0.75,
+                  padding: '0 4px',
+                  background: isSelected ? 'rgba(0,0,0,0.08)' : 'transparent',
+                  borderRadius: 8
+                }}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Contenedor de Contenido */}
       {viewMode === 'structured' ? (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
+          gap: 10,
           background: containerBg,
           border: containerBorder,
-          borderRadius: 8,
+          borderRadius: 10,
           padding: '10px 12px'
         }}>
-          {parsedSections.map((sec, idx) => (
-            <div
-              key={sec.id || idx}
-              style={{
-                background: cardBg,
-                border: cardBorder,
-                borderRadius: 6,
-                padding: '9px 12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 5
-              }}
-            >
-              {/* Header de la Sección */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  background: isLight ? sec.badgeBgLight : sec.badgeBgDark,
-                  color: isLight ? sec.badgeTextLight : sec.badgeTextDark,
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.03em'
-                }}>
-                  <span>{sec.icon}</span>
-                  <span>{sec.title}</span>
-                </span>
-              </div>
-
-              {/* Cuerpo del Texto de la Sección */}
-              <div style={{
-                fontSize: 12.5,
-                color: textColor,
-                lineHeight: 1.55,
-                wordBreak: 'break-word',
-                paddingLeft: 2
-              }}>
-                {sec.content}
-              </div>
+          {visibleSections.length === 0 ? (
+            <div style={{ fontSize: 12, color: subtextColor, fontStyle: 'italic', padding: 8, textAlign: 'center' }}>
+              No hay notas en esta categoría seleccionada.
             </div>
-          ))}
+          ) : (
+            visibleSections.map((sec, idx) => (
+              <div
+                key={sec.id || idx}
+                style={{
+                  background: cardBg,
+                  border: cardBorder,
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 7,
+                  boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.03)' : '0 1px 4px rgba(0,0,0,0.2)',
+                  transition: 'border-color 0.15s ease'
+                }}
+              >
+                {/* Header de la Tarjeta */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      background: isLight ? sec.badgeBgLight : sec.badgeBgDark,
+                      color: isLight ? sec.badgeTextLight : sec.badgeTextDark,
+                      padding: '3px 9px',
+                      borderRadius: 6,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.03em'
+                    }}>
+                      <span>{sec.icon}</span>
+                      <span>{sec.title}</span>
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopySection(sec)}
+                    title="Copiar esta sección"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '2px 6px',
+                      fontSize: 10.5,
+                      color: copiedSectionId === sec.id ? '#10B981' : subtextColor,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      opacity: 0.8
+                    }}
+                  >
+                    {copiedSectionId === sec.id ? <Check size={11} color="#10B981" /> : <Copy size={11} />}
+                    <span>{copiedSectionId === sec.id ? 'Copiado' : 'Copiar'}</span>
+                  </button>
+                </div>
+
+                {/* Si la sección contiene DATOS DUROS con viñetas, renderizamos una Cuadrícula de Chips */}
+                {sec.dataGrid ? (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))',
+                    gap: 6,
+                    marginTop: 2
+                  }}>
+                    {sec.dataGrid.map((item, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: isLight ? '1px solid #E2E8F0' : '1px solid rgba(255, 255, 255, 0.06)',
+                          borderRadius: 6,
+                          padding: '6px 9px',
+                          fontSize: 12
+                        }}
+                      >
+                        <span style={{ fontSize: 13 }}>{item.icon}</span>
+                        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: subtextColor, textTransform: 'uppercase' }}>
+                            {item.key}
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: textColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {item.val}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Cuerpo del Texto de la Sección con Interlineado y Tipografía Espaciada */
+                  <div style={{
+                    fontSize: 13,
+                    color: textColor,
+                    lineHeight: 1.6,
+                    wordBreak: 'break-word',
+                    paddingLeft: 2,
+                    whiteSpace: 'pre-line'
+                  }}>
+                    {sec.content}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       ) : (
         /* Vista de Texto Original Completo */
         <div style={{
           fontSize: 13,
           color: textColor,
-          lineHeight: 1.6,
+          lineHeight: 1.65,
           whiteSpace: 'pre-wrap',
           background: containerBg,
-          padding: '12px 14px',
+          padding: '14px 16px',
           borderRadius: 8,
           border: containerBorder,
           wordBreak: 'break-word',
