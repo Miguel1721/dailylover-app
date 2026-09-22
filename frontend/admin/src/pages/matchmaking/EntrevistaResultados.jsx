@@ -2845,6 +2845,12 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
   const clientNotes = client.bio_notes || comparison.client_notes || client.synthesis_who_really_is || 'Sin notas clínicas registradas'
   const candidateNotes = candidate.bio_notes || comparison.candidate_notes || candidate.synthesis || 'Sin notas clínicas registradas'
 
+  // Síntesis ejecutiva de 3 viñetas generada por IA
+  const clientSummary = candidate.ai_client_summary || comparison.client_summary || null
+  const candSummary = candidate.ai_candidate_summary || comparison.candidate_summary || null
+  const [showFullNotesA, setShowFullNotesA] = useState(false)
+  const [showFullNotesB, setShowFullNotesB] = useState(false)
+
   const clientNonNeg = comparison.client_non_neg || client.non_negotiables || []
   const candNonNeg = comparison.candidate_non_neg || candidate.non_negotiables || []
 
@@ -3601,11 +3607,130 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   borderRadius: 8,
                   padding: '12px 14px'
                 }}>
-                  <ClinicalNotesViewer
-                    notes={clientNotes}
-                    isLight={isLight}
-                    title="Notas Clínicas de Entrevista & Restricciones"
-                  />
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 10
+                  }}>
+                    <div style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: t.notesATitle,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}>
+                      📝 Ficha Clínica de Entrevista:
+                    </div>
+                    {clientSummary && (clientSummary.quien_es || clientSummary.que_busca || clientSummary.destaca) && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.2)',
+                        color: isLight ? '#1D4ED8' : '#93C5FD',
+                        border: isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.4)'
+                      }}>
+                        ✨ Síntesis IA
+                      </span>
+                    )}
+                  </div>
+
+                  {clientSummary && (clientSummary.quien_es || clientSummary.que_busca || clientSummary.destaca) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {clientSummary.quien_es && (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.07)'}`,
+                          fontSize: 12.5,
+                          lineHeight: 1.45
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#991B1B' : '#F87171', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>👤</span> <span>Quién es y estilo de vida:</span>
+                          </div>
+                          <div style={{ color: t.boldTextColor }}>{clientSummary.quien_es}</div>
+                        </div>
+                      )}
+                      {clientSummary.que_busca && (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.07)'}`,
+                          fontSize: 12.5,
+                          lineHeight: 1.45
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#B45309' : '#FBBF24', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>🎯</span> <span>Qué busca en una pareja:</span>
+                          </div>
+                          <div style={{ color: t.boldTextColor }}>{clientSummary.que_busca}</div>
+                        </div>
+                      )}
+                      {clientSummary.destaca && (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.07)'}`,
+                          fontSize: 12.5,
+                          lineHeight: 1.45
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#1D4ED8' : '#60A5FA', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>⭐</span> <span>Clave clínica de la psicóloga:</span>
+                          </div>
+                          <div style={{ color: t.boldTextColor }}>{clientSummary.destaca}</div>
+                        </div>
+                      )}
+
+                      {/* Botón desplegable para ver notas completas */}
+                      <button
+                        type="button"
+                        onClick={() => setShowFullNotesA(!showFullNotesA)}
+                        style={{
+                          marginTop: 4,
+                          padding: '7px 10px',
+                          borderRadius: 6,
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.1)'}`,
+                          background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)',
+                          color: isLight ? '#475569' : '#94A3B8',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          📄 {showFullNotesA ? 'Ocultar notas completas' : `Ver notas completas de entrevista (${clientNotes.length.toLocaleString()} caracteres)`}
+                        </span>
+                        <span>{showFullNotesA ? '▴' : '▾'}</span>
+                      </button>
+
+                      {showFullNotesA && (
+                        <div style={{ marginTop: 8 }}>
+                          <ClinicalNotesViewer
+                            notes={clientNotes}
+                            isLight={isLight}
+                            title="Notas Clínicas Completas"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <ClinicalNotesViewer
+                      notes={clientNotes}
+                      isLight={isLight}
+                      title="Notas Clínicas de Entrevista & Restricciones"
+                    />
+                  )}
                 </div>
 
                 {/* Dealbreakers / No Negociables de Persona A */}
@@ -3912,11 +4037,130 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   borderRadius: 8,
                   padding: '12px 14px'
                 }}>
-                  <ClinicalNotesViewer
-                    notes={candidateNotes}
-                    isLight={isLight}
-                    title="Notas Clínicas de Entrevista & Bio"
-                  />
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 10
+                  }}>
+                    <div style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: t.notesBTitle,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}>
+                      📝 Ficha Clínica de Entrevista:
+                    </div>
+                    {candSummary && (candSummary.quien_es || candSummary.que_busca || candSummary.destaca) && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: isLight ? '#DCFCE7' : 'rgba(16, 185, 129, 0.2)',
+                        color: isLight ? '#15803D' : '#86EFAC',
+                        border: isLight ? '1px solid #BBF7D0' : '1px solid rgba(16, 185, 129, 0.4)'
+                      }}>
+                        ✨ Síntesis IA
+                      </span>
+                    )}
+                  </div>
+
+                  {candSummary && (candSummary.quien_es || candSummary.que_busca || candSummary.destaca) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {candSummary.quien_es && (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.07)'}`,
+                          fontSize: 12.5,
+                          lineHeight: 1.45
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#059669' : '#34D399', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>👤</span> <span>Quién es y estilo de vida:</span>
+                          </div>
+                          <div style={{ color: t.boldTextColor }}>{candSummary.quien_es}</div>
+                        </div>
+                      )}
+                      {candSummary.que_busca && (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.07)'}`,
+                          fontSize: 12.5,
+                          lineHeight: 1.45
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#0D9488' : '#2DD4BF', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>🎯</span> <span>Qué busca en una pareja:</span>
+                          </div>
+                          <div style={{ color: t.boldTextColor }}>{candSummary.que_busca}</div>
+                        </div>
+                      )}
+                      {candSummary.destaca && (
+                        <div style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          background: isLight ? '#F8FAFC' : 'rgba(255, 255, 255, 0.03)',
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.07)'}`,
+                          fontSize: 12.5,
+                          lineHeight: 1.45
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: isLight ? '#7C3AED' : '#A78BFA', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>⭐</span> <span>Clave clínica de la psicóloga:</span>
+                          </div>
+                          <div style={{ color: t.boldTextColor }}>{candSummary.destaca}</div>
+                        </div>
+                      )}
+
+                      {/* Botón desplegable para ver notas completas */}
+                      <button
+                        type="button"
+                        onClick={() => setShowFullNotesB(!showFullNotesB)}
+                        style={{
+                          marginTop: 4,
+                          padding: '7px 10px',
+                          borderRadius: 6,
+                          border: `1px solid ${isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.1)'}`,
+                          background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.05)',
+                          color: isLight ? '#475569' : '#94A3B8',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          📄 {showFullNotesB ? 'Ocultar notas completas' : `Ver notas completas de entrevista (${candidateNotes.length.toLocaleString()} caracteres)`}
+                        </span>
+                        <span>{showFullNotesB ? '▴' : '▾'}</span>
+                      </button>
+
+                      {showFullNotesB && (
+                        <div style={{ marginTop: 8 }}>
+                          <ClinicalNotesViewer
+                            notes={candidateNotes}
+                            isLight={isLight}
+                            title="Notas Clínicas Completas"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <ClinicalNotesViewer
+                      notes={candidateNotes}
+                      isLight={isLight}
+                      title="Notas Clínicas de Entrevista & Bio"
+                    />
+                  )}
                 </div>
 
                 {/* Dealbreakers / No Negociables de Persona B */}

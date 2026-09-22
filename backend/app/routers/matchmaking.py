@@ -5655,7 +5655,13 @@ PERFIL CANDIDATO: {cand_info.get('name')}
    - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que dificulta la conexión.
    - "NO RECOMENDADO" (ai_score 15 a 35): Dealbreakers explícitos o incompatibilidad directa en estilo de vida o valores fundamentales.
 
-3. FORMATO DE RESPUESTA:
+3. SÍNTESIS INDIVIDUAL DE CADA PERSONA (3 VIÑETAS EJECUTIVAS):
+   Para que la psicóloga no tenga que leer las notas completas en bruto, sintetiza a cada persona en exactamente 3 puntos concisos:
+   - "quien_es": 1-2 líneas con ocupación, estilo de vida, rutina y aficiones principales.
+   - "que_busca": 1-2 líneas con sus criterios reales de pareja, expectativas y no negociables.
+   - "destaca": 1 línea con su rasgo psicológico diferencial, dinámica afectiva o punto de atención detectado en entrevista.
+
+4. FORMATO DE RESPUESTA:
 Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 {{
   "ai_score": <entero coherente con la rúbrica>,
@@ -5663,6 +5669,16 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
   "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas y perfiles reales>",
   "deal_breakers": ["<fricciones o reservas concretas, o vacía si no hay>"],
   "puntos_fuertes": ["<1 a 3 puntos hiper-específicos citando hechos de las notas>"],
+  "client_summary": {{
+    "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
+    "que_busca": "<1-2 líneas con visión de pareja y límites>",
+    "destaca": "<1 línea con rasgo de personalidad o dinámica afectiva>"
+  }},
+  "candidate_summary": {{
+    "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
+    "que_busca": "<1-2 líneas con visión de pareja y límites>",
+    "destaca": "<1 línea con rasgo de personalidad o dinámica afectiva>"
+  }},
   "calidad_notas": "<SUFICIENTE / ESCUETA / NULA>"
 }}"""
 
@@ -5691,7 +5707,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.2,
-            "max_tokens": 650
+            "max_tokens": 950
         }
         try:
             resp = await client_http.post(url, json=payload, headers=headers, timeout=35.0)
@@ -6583,6 +6599,14 @@ async def find_candidate_matches_engine(
                     cand["ai_model"] = res.get("model_used")
                     cand["ai_notes_quality"] = notes_qual
 
+                    client_summ = res.get("client_summary") if isinstance(res.get("client_summary"), dict) else None
+                    cand_summ = res.get("candidate_summary") if isinstance(res.get("candidate_summary"), dict) else None
+                    cand["ai_client_summary"] = client_summ
+                    cand["ai_candidate_summary"] = cand_summ
+                    if "comparison" in cand and isinstance(cand["comparison"], dict):
+                        cand["comparison"]["client_summary"] = client_summ
+                        cand["comparison"]["candidate_summary"] = cand_summ
+
                     if notes_qual == "NULA" and struct_score is None:
                         cand["compatibility_pct"] = None
                         cand["structural_score"] = None
@@ -6620,6 +6644,11 @@ async def find_candidate_matches_engine(
                     cand["ai_analisis"] = None
                     cand["ai_deal_breakers"] = []
                     cand["ai_puntos_fuertes"] = []
+                    cand["ai_client_summary"] = None
+                    cand["ai_candidate_summary"] = None
+                    if "comparison" in cand and isinstance(cand["comparison"], dict):
+                        cand["comparison"]["client_summary"] = None
+                        cand["comparison"]["candidate_summary"] = None
                     cand["compatibility_pct"] = struct_score
         finally:
             if should_close_client:
