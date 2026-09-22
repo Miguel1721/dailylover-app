@@ -1,0 +1,615 @@
+{
+  "total_clients": 15,
+  "total_elapsed_seconds": 2145.09,
+  "timestamp": "2026-09-22 04:32:59 UTC",
+  "results": [
+    {
+      "index": 1,
+      "target_client": "Nelson David Calderón",
+      "target_city": "Bogotá",
+      "target_psyc": "Silvi",
+      "target_type": "Notas muy extensas (>1500 chars)",
+      "client_real_name": "Nelson David Calderón",
+      "client_city": "Bogotá",
+      "client_age": 33,
+      "client_occupation": "Abogado",
+      "client_notes_length": 1594,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 88.83,
+      "top_match": {
+        "name": "Maria Triana",
+        "age": 33,
+        "city": "Cajicá",
+        "occupation": "Logística",
+        "compatibility_pct": 75,
+        "structural_score": 70,
+        "ai_score": 72,
+        "ai_veredicto": "RECOMENDADO",
+        "deal_breakers": [],
+        "puntos_fuertes": [
+          "Ambos buscan una relación seria y estable, con un enfoque en la creación de una familia.",
+          "Nelson y María comparten valores como la lealtad, la honestidad y el crecimiento personal.",
+          "Ambos tienen una edad similar y una ocupación estable, lo que facilita la compatibilidad."
+        ],
+        "analisis": "La compatibilidad entre Nelson y María es alta debido a su estilo de vida equilibrado, valores compartidos y expectativas de pareja similares. Aunque Nelson tiene un historial de trabajo excesivo, ha trabajado en eso y ahora busca una relación más equilibrada. María, por otro lado, busca una persona responsable y trabajadora, lo que coincide con las características de Nelson.",
+        "client_summary": {
+          "quien_es": "Abogado de 33 años, con un estilo de vida equilibrado que incluye ejercicio regular, lectura y tiempo con amigos.",
+          "que_busca": "Una persona responsable, amorosa y trabajadora, con quien compartir una vida equilibrada y crear una familia.",
+          "destaca": "Su capacidad para trabajar en su orgullo y mal genio, lo que indica una voluntad de crecer y mejorar."
+        },
+        "candidate_summary": {
+          "quien_es": "Ingeniera de logística de 33 años, con un estilo de vida ordenado y una pasión por la música y el viaje.",
+          "que_busca": "Una persona tranquila, honesta y con buen humor, con quien compartir una vida llena de amor y aventuras.",
+          "destaca": "Su capacidad para valorar los pequeños momentos compartidos y su apertura emocional, lo que indica una conexión profunda con los demás."
+        }
+      }
+    },
+    {
+      "index": 2,
+      "target_client": "Maria Paula Lamus",
+      "target_city": "Bogotá",
+      "target_psyc": "Silvi",
+      "target_type": "Notas ultra extensas (>3000 chars)",
+      "client_real_name": "Maria Paula Lamus",
+      "client_city": "Bogotá",
+      "client_age": 28,
+      "client_occupation": "Abogada",
+      "client_notes_length": 3378,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 107.93,
+      "top_match": {
+        "name": "Camilo Humberto PRIETO FETIVA",
+        "age": 30,
+        "city": "Bogotá D.C.",
+        "occupation": "ABOGADO / DOCENTE UNIVERSITARIO",
+        "compatibility_pct": 75,
+        "structural_score": 63,
+        "ai_score": 72,
+        "ai_veredicto": "RECOMENDADO",
+        "deal_breakers": [
+          "El historial de violencia física en la última relación de Camilo es un punto de preocupación."
+        ],
+        "puntos_fuertes": [
+          "Maria Paula busca un compañero de vida que la respete y la apoye en su carrera, lo que se alinea con el estilo de apego de Camilo.",
+          "Camilo busca una pareja que sea proactiva y flexible, lo que se refleja en la personalidad de Maria Paula.",
+          "Ambos comparten una visión de futuro que incluye la formación de una familia y la construcción de una relación estable."
+        ],
+        "analisis": "La compatibilidad entre Maria Paula y Camilo es alta debido a su estilo de apego mixto y su lenguaje del amor, que se complementan bien. Ambos buscan una relación estable y comprometida, y comparten valores como la familia y la disciplina.",
+        "client_summary": {
+          "quien_es": "Maria Paula es una abogada de 28 años que busca una relación estable y comprometida. Tiene una rutina diaria que incluye trabajar en una firma de abogados y pasar tiempo con su familia.",
+          "que_busca": "Maria Paula busca un compañero de vida que la respete y la apoye en su carrera, y que sea proactivo y flexible.",
+          "destaca": "Maria Paula es una persona muy cercana a su familia y busca una relación que incluya la formación de una familia."
+        },
+        "candidate_summary": {
+          "quien_es": "Camilo es un abogado y docente universitario de 30 años que busca una relación estable y comprometida. Tiene una rutina diaria que incluye trabajar en una universidad y pasar tiempo con sus amigos.",
+          "que_busca": "Camilo busca una pareja que sea proactiva y flexible, y que sea capaz de apoyarlo en su carrera.",
+          "destaca": "Camilo es una persona muy inteligente y busca una relación que incluya la construcción de una vida juntos."
+        }
+      }
+    },
+    {
+      "index": 3,
+      "target_client": "Katherine Martínez",
+      "target_city": "Bogotá",
+      "target_psyc": "Ana",
+      "target_type": "Notas medianas (~750 chars)",
+      "client_real_name": "Katherine Martínez",
+      "client_city": "Bogotá",
+      "client_age": 29,
+      "client_occupation": "Diseñadora",
+      "client_notes_length": 748,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 114.78,
+      "top_match": {
+        "name": "Camilo Humberto PRIETO FETIVA",
+        "age": 30,
+        "city": "Bogotá D.C.",
+        "occupation": "ABOGADO / DOCENTE UNIVERSITARIO",
+        "compatibility_pct": 66,
+        "structural_score": 63,
+        "ai_score": 68,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Desconfianza de Katherine",
+          "Necesidad de Camilo de una pareja que comprenda su rutina"
+        ],
+        "puntos_fuertes": [
+          "Ambos buscan una relación estable y emocionalmente disponible",
+          "Tienen un estilo de apego similar",
+          "Ambos valoran la comunicación y el respeto"
+        ],
+        "analisis": "La compatibilidad entre Katherine y Camilo es buena, pero requiere una conversación más profunda para abordar las diferencias en su estilo de vida y visión de pareja. Katherine busca una relación estable y emocionalmente disponible, mientras que Camilo busca una compañera con quien compartir metas y experiencias. Aunque hay puntos de conexión, como su estilo de apego y lenguaje del amor, existen reservas clínicas, como la desconfianza de Katherine y la necesidad de Camilo de una pareja que comprenda su rutina.",
+        "client_summary": {
+          "quien_es": "Katherine es una diseñadora de 29 años, calma y familiar, que busca una pareja madura y respetuosa. Le gusta aprender y planear las cosas.",
+          "que_busca": "Katherine busca una pareja que crea en Dios, sea detallista y coherente, y que la haga sentir segura y apoyada.",
+          "destaca": "Katherine es muy desconfiada y se aburre fácilmente, lo que puede ser un desafío en una relación."
+        },
+        "candidate_summary": {
+          "quien_es": "Camilo es un abogado y docente universitario de 30 años, introvertido y charlatán, que busca una compañera con quien compartir metas y experiencias.",
+          "que_busca": "Camilo busca una pareja que respete su rutina, sea proactiva y flexible, y que comprenda su necesidad de una relación estable.",
+          "destaca": "Camilo es muy inteligente y tiene una gran capacidad para la comunicación, pero puede ser un poco demasiado exigente en algunas áreas."
+        }
+      }
+    },
+    {
+      "index": 4,
+      "target_client": "Andres Felipe Gómez Marín",
+      "target_city": "Bogotá / Cajica",
+      "target_psyc": "Steffy",
+      "target_type": "Economista / Perfil VIP",
+      "client_real_name": "Andres Felipe Gómez Marín",
+      "client_city": "Cajica",
+      "client_age": 2,
+      "client_occupation": "Economista",
+      "client_notes_length": 1885,
+      "suggested_matches_count": 6,
+      "discarded_count": 15,
+      "elapsed_seconds": 122.09,
+      "top_match": {
+        "name": "María camila Velasquez",
+        "age": 24,
+        "city": "Bogotá",
+        "occupation": "Analista en mastercard",
+        "compatibility_pct": 65,
+        "structural_score": 58,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Diferencias en el ritmo de rumba, Andres Felipe prefiere salir ocasionalmente mientras que María Camila sale una vez al mes"
+        ],
+        "puntos_fuertes": [
+          "Ambos comparten valores como la lealtad y la honestidad",
+          "Andres Felipe es disciplinado y auténtico, mientras que María Camila es empática y emocionalmente conectada"
+        ],
+        "analisis": "La compatibilidad entre Andres Felipe y María Camila es buena, pero existen algunos puntos a considerar. Andres Felipe busca una relación seria con una mujer hogareña y familiar, mientras que María Camila busca una conexión real y profunda con alguien que priorice la familia. Aunque ambos comparten valores como la lealtad y la honestidad, hay algunas diferencias en sus estilos de vida y hábitos que requieren validación mutua.",
+        "client_summary": {
+          "quien_es": "Andres Felipe es un economista de 22 años que disfruta de planes sencillos y es familiar. Busca una relación seria con una mujer hogareña y familiar.",
+          "que_busca": "Compañía, moral, entendimiento, compartir momentos y el tiempo libre, y un apoyo en momentos de crisis",
+          "destaca": "Es disciplinado y auténtico, con una energía tranquila que se descubre poco a poco"
+        },
+        "candidate_summary": {
+          "quien_es": "María Camila es una analista en Mastercard de 24 años que disfruta de actividades deportivas y es familiar. Busca una conexión real y profunda con alguien que priorice la familia.",
+          "que_busca": "Una conexión real y profunda con alguien que priorice la familia y la lealtad",
+          "destaca": "Es empática y emocionalmente conectada, con una capacidad de escucha y comprensión"
+        }
+      }
+    },
+    {
+      "index": 5,
+      "target_client": "Sharon nicolle Gil ariza",
+      "target_city": "Bogotá",
+      "target_psyc": "Jenn",
+      "target_type": "Diseño / Perfil joven",
+      "client_real_name": "Sharon nicolle Gil ariza",
+      "client_city": "Bogotá",
+      "client_age": 33,
+      "client_occupation": "Analista contable BBVA",
+      "client_notes_length": 2207,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 166.45,
+      "top_match": {
+        "name": "Orlando Pineda",
+        "age": 32,
+        "city": "Bogotá",
+        "occupation": "Regional Manager for a tech company",
+        "compatibility_pct": 67,
+        "structural_score": 71,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Diferencias en el estilo de vida y la personalidad",
+          "Sharon es más introvertida que Orlando"
+        ],
+        "puntos_fuertes": [
+          "Ambos tienen estilos de vida activos y disfrutan de la naturaleza",
+          "Sharon y Orlando comparten valores como la lealtad y la empatía"
+        ],
+        "analisis": "La compatibilidad entre Sharon y Orlando es buena, pero existen algunos puntos a considerar. Sharon busca una persona que sea abierta, comunicativa y que le guste hablar de todo, mientras que Orlando busca alguien que sea tranquila, no tan espontánea y que le guste compartir planes deportivos. Aunque ambos tienen estilos de vida activos, Sharon es más introvertida y Orlando es más extrovertido. Es importante que ambos trabajen en la comunicación y el respeto mutuo para que su relación sea exitosa.",
+        "client_summary": {
+          "quien_es": "Sharon es una analista contable de 33 años que disfruta de la naturaleza y la cocina. Es introvertida y busca una persona que sea abierta y comunicativa.",
+          "que_busca": "Sharon busca una persona que sea abierta, comunicativa y que le guste hablar de todo. Quiere alguien que sea consciente de que la relación implica trabajo y esfuerzo.",
+          "destaca": "Sharon es una persona sensible y noble que valora la empatía y la lealtad."
+        },
+        "candidate_summary": {
+          "quien_es": "Orlando es un gerente regional de 32 años que disfruta de la tecnología y el deporte. Es extrovertido y busca una persona que sea tranquila y no tan espontánea.",
+          "que_busca": "Orlando busca una persona que sea tranquila, no tan espontánea y que le guste compartir planes deportivos. Quiere alguien que sea trabajadora y genuina.",
+          "destaca": "Orlando es una persona equilibrada y tranquila que valora la empatía y la lealtad."
+        }
+      }
+    },
+    {
+      "index": 6,
+      "target_client": "Maria Alejandra Marroquin",
+      "target_city": "Medellín",
+      "target_psyc": "Aleja",
+      "target_type": "Medellín / Fitness",
+      "client_real_name": "Maria Alejandra Marroquin",
+      "client_city": "Bogotá",
+      "client_age": 32,
+      "client_occupation": "Consultora",
+      "client_notes_length": 1773,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 87.8,
+      "top_match": {
+        "name": "Juan David Ordonez",
+        "age": 38,
+        "city": "Bogotá",
+        "occupation": "Ingeniero",
+        "compatibility_pct": 66,
+        "structural_score": 67,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Overthinking de Maria Alejandra",
+          "Precipitación de Juan David"
+        ],
+        "puntos_fuertes": [
+          "Ambos buscan una relación seria y estable",
+          "Tienen valores y objetivos similares",
+          "Ambos son empáticos y comprensivos"
+        ],
+        "analisis": "La compatibilidad entre Maria Alejandra y Juan David es buena, pero existen algunos puntos a considerar. Ambos buscan una relación seria y estable, pero Juan David tiene una tendencia a ser más exigente en términos de compromiso y lealtad, mientras que Maria Alejandra busca alguien que se comprometa con ella sin ser demasiado exigente. Además, Juan David tiene una tendencia a ser más analítico y detallista, lo que podría generar tensiones en la relación.",
+        "client_summary": {
+          "quien_es": "Maria Alejandra es una consultora de 32 años que busca una relación seria y estable. Es una persona equilibrada y creativa que disfruta de la vida y busca alguien que la acompañe en sus aventuras.",
+          "que_busca": "Busca alguien que se comprometa con ella sin ser demasiado exigente. Quiere alguien que la apoye y la haga sentir segura.",
+          "destaca": "Es una persona muy empática y comprensiva que busca una relación basada en la confianza y la comunicación abierta."
+        },
+        "candidate_summary": {
+          "quien_es": "Juan David es un ingeniero de 38 años que busca una relación seria y estable. Es una persona calma y reflexiva que disfruta de la vida y busca alguien que la acompañe en sus aventuras.",
+          "que_busca": "Busca alguien que se comprometa con él sin ser demasiado exigente. Quiere alguien que lo apoye y lo haga sentir seguro.",
+          "destaca": "Es una persona muy analítica y detallista que busca una relación basada en la comunicación abierta y la confianza."
+        }
+      }
+    },
+    {
+      "index": 7,
+      "target_client": "Laura Alza",
+      "target_city": "Medellín",
+      "target_psyc": "Aleja",
+      "target_type": "Medellín / Corporativo",
+      "client_real_name": "Laura Alza",
+      "client_city": "Bogotá",
+      "client_age": 27,
+      "client_occupation": "Médico- residente de ortopedia",
+      "client_notes_length": 1850,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 131.15,
+      "top_match": {
+        "name": "Juan Diego Corrales",
+        "age": 27,
+        "city": "Bogotá",
+        "occupation": "Team Lead Latam",
+        "compatibility_pct": 65,
+        "structural_score": 57,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Diferencias en el estilo de apego",
+          "Diferencias en el ritmo de vida"
+        ],
+        "puntos_fuertes": [
+          "Ambos buscan una relación seria y estable",
+          "Tienen una visión de familia y estabilidad",
+          "Ambos valoran la independencia y la responsabilidad"
+        ],
+        "analisis": "A pesar de que Laura y Juan Diego tienen estilos de apego diferentes, su visión de vida y valores se alinean en muchos aspectos. Laura busca alguien que sea consistente, tenga iniciativa y sea emocionalmente maduro, mientras que Juan Diego busca una mujer que sea independiente, tenga proyectos propios y que disfrute cuidarse. Ambos tienen una visión de familia y estabilidad, lo que podría ser un punto de conexión. Sin embargo, es importante mencionar que Laura tiene un estilo de vida muy activo y Juan Diego puede ser un poco más reservado, lo que podría requerir una conversación más profunda sobre cómo equilibrar sus rutinas y prioridades.",
+        "client_summary": {
+          "quien_es": "Laura es una médico-residente de ortopedia de 27 años, con un estilo de vida muy activo y una visión de familia y estabilidad.",
+          "que_busca": "Laura busca alguien que sea consistente, tenga iniciativa y sea emocionalmente maduro, con una visión de familia y estabilidad.",
+          "destaca": "Laura es una persona muy responsable y dedicada a su carrera, con una visión clara de lo que busca en una relación."
+        },
+        "candidate_summary": {
+          "quien_es": "Juan Diego es un administrador de empresas y psicólogo de 27 años, con un estilo de vida más reservado y una visión de independencia y responsabilidad.",
+          "que_busca": "Juan Diego busca una mujer que sea independiente, tenga proyectos propios y que disfrute cuidarse, con una visión de familia y estabilidad.",
+          "destaca": "Juan Diego es una persona muy centrada y auténtica, con una visión clara de lo que busca en una relación y una disposición a comprometerse."
+        }
+      }
+    },
+    {
+      "index": 8,
+      "target_client": "Manuela Peña Gomez",
+      "target_city": "Medellín",
+      "target_psyc": "Manu",
+      "target_type": "Medellín / Apego",
+      "client_real_name": "Manuela Peña Gomez",
+      "client_city": "Zipaquirá",
+      "client_age": 31,
+      "client_occupation": "Jefe de innovación",
+      "client_notes_length": 1776,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 270.34,
+      "top_match": {
+        "name": "Edgar David Lasso Lopez",
+        "age": 31,
+        "city": "Bogotá",
+        "occupation": "Ing Eléctrico",
+        "compatibility_pct": 65,
+        "structural_score": 63,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Diferencias en el estilo de vida y hábitos",
+          "Manuela busca hijos, mientras que Edgar no lo desea"
+        ],
+        "puntos_fuertes": [
+          "Ambos comparten valores como la familia y la lealtad",
+          "Edgar es un hombre de principios y tiene una fuerte moral",
+          "Manuela es una mujer dinámica y con una gran energía"
+        ],
+        "analisis": "La compatibilidad entre Manuela y Edgar es buena, pero existen algunos puntos a considerar. Manuela busca una relación seria y estable, mientras que Edgar busca un complemento que sume a su vida. Aunque ambos comparten valores como la familia y la lealtad, existen algunas diferencias en sus estilos de vida y hábitos que requieren ser abordadas. Edgar es más introvertido y tiene una rutina más estructurada, mientras que Manuela es más extrovertida y tiene una vida social más activa.",
+        "client_summary": {
+          "quien_es": "Manuela es una mujer de 31 años, jefa de innovación, que busca una relación seria y estable. Tiene una vida social activa y disfruta de actividades como caminar, conocer temas de naturales y salir a comer.",
+          "que_busca": "Manuela busca una pareja que sea leal, honesta y que comparta sus valores. No negociables son la falta de respeto, mala comunicación y vida de fiesta extrema.",
+          "destaca": "Manuela es una mujer con una gran energía y dinamismo, que busca una relación que la haga sentir completa y feliz."
+        },
+        "candidate_summary": {
+          "quien_es": "Edgar es un hombre de 31 años, ingeniero eléctrico, que busca un complemento que sume a su vida. Tiene una rutina estructurada y disfruta de actividades como estudiar, tocar la guitarra y leer.",
+          "que_busca": "Edgar busca una pareja que sea leal, honesta y que comparta sus valores. No negociables son la falta de iniciativa, vida de fiesta extrema y no tener hijos.",
+          "destaca": "Edgar es un hombre de principios y tiene una fuerte moral, que busca una relación que lo haga sentir completo y feliz."
+        }
+      }
+    },
+    {
+      "index": 9,
+      "target_client": "Stephany Martinez Hadechni",
+      "target_city": "Cali",
+      "target_psyc": "Lau",
+      "target_type": "Cali / Familia",
+      "client_real_name": "Stephany Martinez Hadechni",
+      "client_city": "Bogotá",
+      "client_age": 31,
+      "client_occupation": "Médico",
+      "client_notes_length": 2611,
+      "suggested_matches_count": 5,
+      "discarded_count": 15,
+      "elapsed_seconds": 263.37,
+      "top_match": {
+        "name": "Edgar David Lasso Lopez",
+        "age": 31,
+        "city": "Bogotá",
+        "occupation": "Ing Eléctrico",
+        "compatibility_pct": 65,
+        "structural_score": 57,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Inestabilidad emocional fuerte en Stephany",
+          "Prejuicios cristianos en Edgar"
+        ],
+        "puntos_fuertes": [
+          "Ambos comparten valores como la familia y la lealtad",
+          "Edgar es un hombre trabajador y con buen sentido del humor",
+          "Stephany es una mujer auténtica y con una visión clara de lo que busca en una relación"
+        ],
+        "analisis": "La compatibilidad entre Stephany y Edgar es buena, pero existen algunos puntos a considerar. Stephany busca una conexión genuina con alguien emocionalmente maduro y con metas claras, mientras que Edgar busca un complemento que sume a su vida. Aunque ambos comparten valores como la familia y la lealtad, existen algunas diferencias en sus estilos de vida y hábitos que requieren validación mutua.",
+        "client_summary": {
+          "quien_es": "Stephany es una médica de 31 años que vive en Bogotá, con una visión política de derecha y una fuerte fe en Dios. Disfruta aprender inglés, salir con amigos y bailar.",
+          "que_busca": "Busca una conexión genuina con alguien emocionalmente maduro y con metas claras, alguien que sea auténtico y que valora la sencillez y la calidez.",
+          "destaca": "Stephany es una persona muy querida y cercana, con una energía alegre y una visión clara de lo que busca en una relación."
+        },
+        "candidate_summary": {
+          "quien_es": "Edgar es un ingeniero eléctrico de 31 años que vive en Bogotá, con una visión política de centro y una fuerte fe en Dios. Disfruta estudiar, tocar la guitarra y leer.",
+          "que_busca": "Busca un complemento que sume a su vida, alguien que sea cristiano y que valora la estabilidad y la lealtad.",
+          "destaca": "Edgar es un hombre trabajador y con buen sentido del humor, con una visión clara de lo que busca en una relación."
+        }
+      }
+    },
+    {
+      "index": 10,
+      "target_client": "Angie Nohemi Ortiz Rodriguez",
+      "target_city": "Barranquilla / Costa",
+      "target_psyc": "Steffy",
+      "target_type": "Costa / Distancia",
+      "client_real_name": "Angie Nohemi Ortiz Rodriguez",
+      "client_city": "Bogotá",
+      "client_age": 30,
+      "client_occupation": "Empleada",
+      "client_notes_length": 1925,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 199.64,
+      "top_match": {
+        "name": "Felipe Diaz",
+        "age": 33,
+        "city": "Bogotá",
+        "occupation": "Coordinador de programación y adquisición",
+        "compatibility_pct": 71,
+        "structural_score": 71,
+        "ai_score": null,
+        "ai_veredicto": "FALLBACK ESTRUCTURAL",
+        "deal_breakers": [],
+        "puntos_fuertes": [],
+        "analisis": null,
+        "client_summary": null,
+        "candidate_summary": null
+      }
+    },
+    {
+      "index": 11,
+      "target_client": "Andrea Alejandra Linares Herrera",
+      "target_city": "Bogotá",
+      "target_psyc": "Mape D",
+      "target_type": "Bogotá / Administrativo",
+      "client_real_name": "Andrea Alejandra Linares Herrera",
+      "client_city": "Bogotá",
+      "client_age": 32,
+      "client_occupation": "Administradora de empresas y negociante internacional",
+      "client_notes_length": 1660,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 102.3,
+      "top_match": {
+        "name": "Jonathan Alexander Bocanegra Diaz",
+        "age": 32,
+        "city": "Bogotá",
+        "occupation": "Ingeniero de aire acondicionado",
+        "compatibility_pct": 67,
+        "structural_score": 71,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Falta de experiencia en crianza de hijos en Jonathan",
+          "Preferencia de Andrea por una pareja más tradicional"
+        ],
+        "puntos_fuertes": [
+          "Ambos comparten una visión de pareja estable y comprometida",
+          "Andrea busca una pareja con valores sólidos y Jonathan busca una chica profesional con metas claras"
+        ],
+        "analisis": "A pesar de algunas diferencias en estilo de vida y valores, Andrea y Jonathan comparten una visión de pareja estable y comprometida. Sin embargo, existen algunos puntos de reserva, como la falta de experiencia en crianza de hijos en Jonathan y la preferencia de Andrea por una pareja más tradicional.",
+        "client_summary": {
+          "quien_es": "Andrea es una administradora de empresas y negociante internacional, tranquila y amable, que busca una pareja con valores sólidos y una visión de vida estable.",
+          "que_busca": "Andrea busca una pareja que comparta sus valores y visión de vida, con una actitud positiva y una visión de futuro claro.",
+          "destaca": "Andrea es una persona muy independiente y valora la libertad y la autonomía en una relación."
+        },
+        "candidate_summary": {
+          "quien_es": "Jonathan es un ingeniero de aire acondicionado, calmo y tranquilo, que busca una chica profesional con metas claras y una visión de vida estable.",
+          "que_busca": "Jonathan busca una pareja que sea profesional, tranquila y con una actitud positiva, con una visión de futuro claro.",
+          "destaca": "Jonathan es una persona muy responsable y valora la estabilidad y la seguridad en una relación."
+        }
+      }
+    },
+    {
+      "index": 12,
+      "target_client": "Carlos Arturo Vargas Nocua",
+      "target_city": "Bogotá",
+      "target_psyc": "Ana",
+      "target_type": "ID 11480 / Caso histórico",
+      "client_real_name": "Carlos Arturo Vargas Nocua",
+      "client_city": "Kendal",
+      "client_age": 38,
+      "client_occupation": "Contratista",
+      "client_notes_length": 2260,
+      "suggested_matches_count": 0,
+      "discarded_count": 15,
+      "elapsed_seconds": 0.35,
+      "top_match": null
+    },
+    {
+      "index": 13,
+      "target_client": "Nathalia Andrea Serrano Urrea",
+      "target_city": "Bogotá",
+      "target_psyc": "Silvi",
+      "target_type": "Financiero / Proyectos",
+      "client_real_name": "Nathalia Andrea Serrano Urrea",
+      "client_city": "Bogotá",
+      "client_age": 28,
+      "client_occupation": "Empleada",
+      "client_notes_length": 1912,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 121.18,
+      "top_match": {
+        "name": "Julian Cubillos",
+        "age": 29,
+        "city": "Bogotá",
+        "occupation": "Diseñador Gráfico y Comunicador digital",
+        "compatibility_pct": 65,
+        "structural_score": 63,
+        "ai_score": 65,
+        "ai_veredicto": "VIABLE BUENO",
+        "deal_breakers": [
+          "Diferencias en la rutina diaria",
+          "Nathalia busca estabilidad, mientras que Julian busca aventuras"
+        ],
+        "puntos_fuertes": [
+          "Ambos tienen estilos de vida activos",
+          "Nathalia es detallista y comprometida",
+          "Julian es creativo y sociable"
+        ],
+        "analisis": "La compatibilidad entre Nathalia y Julian es buena, pero existen algunos puntos a considerar. Nathalia busca estabilidad y respeto en una relación, mientras que Julian busca una pareja con quien compartir planes activos y momentos de tranquilidad. Aunque ambos tienen estilos de vida activos, Nathalia tiene una rutina más estructurada y Julian es más espontáneo. Es importante que ambos trabajen en la comunicación y el respeto mutuo para hacer que la relación funcione.",
+        "client_summary": {
+          "quien_es": "Nathalia es una mujer de 28 años, empleada, que busca estabilidad y respeto en una relación. Tiene una rutina diaria estructurada y disfruta de actividades como correr y leer.",
+          "que_busca": "Nathalia busca una pareja que la respalde y la comprenda, alguien que sea ambicioso y divertido. No quiere ser madrastra y busca alguien que crezca con ella.",
+          "destaca": "Nathalia es detallista y comprometida, pero también tiene problemas con su autoestima y puede ser demasiado detallista."
+        },
+        "candidate_summary": {
+          "quien_es": "Julian es un hombre de 29 años, diseñador gráfico, que busca una pareja con quien compartir planes activos y momentos de tranquilidad. Es creativo y sociable, y disfruta de actividades como correr y viajar.",
+          "que_busca": "Julian busca una pareja que sea honesta, inteligente y alegre. No quiere ser padre y busca alguien que sea ambicioso y divertido.",
+          "destaca": "Julian es creativo y sociable, pero también puede ser demasiado espontáneo y no siempre prioriza la comunicación."
+        }
+      }
+    },
+    {
+      "index": 14,
+      "target_client": "Katerine Garcia",
+      "target_city": "Bogotá",
+      "target_psyc": "Jenn",
+      "target_type": "Comercial / Independiente",
+      "client_real_name": "Katerine Garcia",
+      "client_city": "Bogotá",
+      "client_age": 32,
+      "client_occupation": "Global process expert finance",
+      "client_notes_length": 1466,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 97.43,
+      "top_match": {
+        "name": "Orlando Pineda",
+        "age": 32,
+        "city": "Bogotá",
+        "occupation": "Regional Manager for a tech company",
+        "compatibility_pct": 75,
+        "structural_score": 66,
+        "ai_score": 72,
+        "ai_veredicto": "RECOMENDADO",
+        "deal_breakers": [
+          "Diferencias en ritmos de rumba",
+          "Preferencias de música disímiles"
+        ],
+        "puntos_fuertes": [
+          "Ambos tienen un estilo de apego seguro",
+          "Comparten valores como la honestidad y la lealtad",
+          "Tienen una visión de pareja similar"
+        ],
+        "analisis": "La compatibilidad entre Katerine y Orlando es alta debido a su estilo de apego seguro, lenguaje del amor similar y valores alineados. Sin embargo, es importante considerar las diferencias en sus ritmos de rumba y preferencias de música.",
+        "client_summary": {
+          "quien_es": "Katerine es una mujer de 32 años, global process expert finance, que se describe como equilibrada y que busca una relación tranquila con alguien que sea atlético y caballeroso.",
+          "que_busca": "Busca alguien con quien construir una relación tranquila, que sea una persona balanceada y tenga voluntad y disposición para querer estar en una relación.",
+          "destaca": "Destaca su estilo de apego seguro y su lenguaje del amor basado en palabras y actos de servicio."
+        },
+        "candidate_summary": {
+          "quien_es": "Orlando es un hombre de 32 años, regional manager para una empresa de tecnología, que se describe como equilibrado y que busca una mujer trabajadora y genuina con valores sólidos.",
+          "que_busca": "Busca alguien que se quiera casar y que tenga una visión de pareja similar a la suya, con quien pueda compartir un proyecto de vida.",
+          "destaca": "Destaca su estilo de apego seguro y su visión de pareja enfocada en la construcción de un matrimonio estable."
+        }
+      }
+    },
+    {
+      "index": 15,
+      "target_client": "Cliente CRM 757",
+      "target_city": "Chía / Sabana",
+      "target_psyc": "Silvi",
+      "target_type": "Ingeniera Química",
+      "client_real_name": "Cliente CRM 757",
+      "client_city": "Chía",
+      "client_age": 21,
+      "client_occupation": "Ingeniera Química",
+      "client_notes_length": 1138,
+      "suggested_matches_count": 8,
+      "discarded_count": 15,
+      "elapsed_seconds": 271.43,
+      "top_match": {
+        "name": "Juan Pablo Melo Bonilla",
+        "age": 21,
+        "city": "Bogotá",
+        "occupation": "Trabajo y estudio",
+        "compatibility_pct": 84,
+        "structural_score": 84,
+        "ai_score": null,
+        "ai_veredicto": "FALLBACK ESTRUCTURAL",
+        "deal_breakers": [],
+        "puntos_fuertes": [],
+        "analisis": null,
+        "client_summary": null,
+        "candidate_summary": null
+      }
+    }
+  ]
+}
