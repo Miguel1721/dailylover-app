@@ -1,7 +1,7 @@
 {
   "total_clients": 15,
-  "total_elapsed_seconds": 2145.09,
-  "timestamp": "2026-09-22 04:32:59 UTC",
+  "total_elapsed_seconds": 1689.97,
+  "timestamp": "2026-09-22 05:16:25 UTC",
   "results": [
     {
       "index": 1,
@@ -16,34 +16,40 @@
       "client_notes_length": 1594,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 88.83,
+      "elapsed_seconds": 150.68,
       "top_match": {
-        "name": "Maria Triana",
-        "age": 33,
-        "city": "Cajicá",
-        "occupation": "Logística",
-        "compatibility_pct": 75,
-        "structural_score": 70,
-        "ai_score": 72,
-        "ai_veredicto": "RECOMENDADO",
-        "deal_breakers": [],
-        "puntos_fuertes": [
-          "Ambos buscan una relación seria y estable, con un enfoque en la creación de una familia.",
-          "Nelson y María comparten valores como la lealtad, la honestidad y el crecimiento personal.",
-          "Ambos tienen una edad similar y una ocupación estable, lo que facilita la compatibilidad."
+        "name": "Katerine Garcia",
+        "age": 32,
+        "city": "Bogotá",
+        "occupation": "Global process expert finance",
+        "compatibility_pct": 72,
+        "structural_score": 76,
+        "ai_score": 70,
+        "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
+        "deal_breakers": [
+          "Nelson a veces no sabe poner límites",
+          "Katerine puede ser impaciente"
         ],
-        "analisis": "La compatibilidad entre Nelson y María es alta debido a su estilo de vida equilibrado, valores compartidos y expectativas de pareja similares. Aunque Nelson tiene un historial de trabajo excesivo, ha trabajado en eso y ahora busca una relación más equilibrada. María, por otro lado, busca una persona responsable y trabajadora, lo que coincide con las características de Nelson.",
+        "puntos_fuertes": [
+          "Ambos comparten valores como la familia, la lealtad y la honestidad",
+          "Nelson es apasionado y trabajador, mientras que Katerine es independiente y ambiciosa",
+          "Ambos buscan una relación tranquila y estable"
+        ],
+        "analisis": "La pareja presenta una buena compatibilidad general, con puntos de conexión en sus valores y estilo de vida. Sin embargo, existen algunas reservas clínicas que requieren validación mutua, como el estilo de apego de Nelson y la necesidad de Katerine de tener más espacio personal.",
         "client_summary": {
-          "quien_es": "Abogado de 33 años, con un estilo de vida equilibrado que incluye ejercicio regular, lectura y tiempo con amigos.",
-          "que_busca": "Una persona responsable, amorosa y trabajadora, con quien compartir una vida equilibrada y crear una familia.",
-          "destaca": "Su capacidad para trabajar en su orgullo y mal genio, lo que indica una voluntad de crecer y mejorar."
+          "quien_es": "Nelson es un abogado de 33 años, apasionado y trabajador, que busca una relación tranquila y estable con alguien que sea leal y honesta.",
+          "que_busca": "Busca alguien que sea una buena persona para construir un equipo ambicioso en lo económico, social y personal, que sea leal, trabajadora, inteligente y amorosa.",
+          "destaca": "Su estilo de apego es seguro, pero a veces puede ser muy orgulloso y tener mal genio."
         },
         "candidate_summary": {
-          "quien_es": "Ingeniera de logística de 33 años, con un estilo de vida ordenado y una pasión por la música y el viaje.",
-          "que_busca": "Una persona tranquila, honesta y con buen humor, con quien compartir una vida llena de amor y aventuras.",
-          "destaca": "Su capacidad para valorar los pequeños momentos compartidos y su apertura emocional, lo que indica una conexión profunda con los demás."
+          "quien_es": "Katerine es una experta en procesos financieros de 32 años, independiente y ambiciosa, que busca una relación tranquila y estable con alguien que sea leal y honesto.",
+          "que_busca": "Busca alguien que sea atlético y caballeroso, que la trate bien y la apoye en su crecimiento personal.",
+          "destaca": "Es introvertida, pero buena conversadora, y busca alguien que sea más extrovertido y que la apoye en su crecimiento personal."
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 2,
@@ -58,36 +64,46 @@
       "client_notes_length": 3378,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 107.93,
+      "elapsed_seconds": 130.42,
       "top_match": {
-        "name": "Camilo Humberto PRIETO FETIVA",
+        "name": "Felipe Pinilla",
         "age": 30,
-        "city": "Bogotá D.C.",
-        "occupation": "ABOGADO / DOCENTE UNIVERSITARIO",
-        "compatibility_pct": 75,
+        "city": "Bogotá",
+        "occupation": "Finanzas",
+        "compatibility_pct": 69,
         "structural_score": 63,
         "ai_score": 72,
-        "ai_veredicto": "RECOMENDADO",
+        "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "El historial de violencia física en la última relación de Camilo es un punto de preocupación."
+          "Diferencias en el ritmo de rumba y estilo de vida"
         ],
         "puntos_fuertes": [
-          "Maria Paula busca un compañero de vida que la respete y la apoye en su carrera, lo que se alinea con el estilo de apego de Camilo.",
-          "Camilo busca una pareja que sea proactiva y flexible, lo que se refleja en la personalidad de Maria Paula.",
-          "Ambos comparten una visión de futuro que incluye la formación de una familia y la construcción de una relación estable."
+          "Ambos comparten valores como la familia y la lealtad",
+          "Felipe es una persona curiosa y ambiciosa que busca alguien con quien compartir valores y metas",
+          "Maria Paula es una abogada estable y responsable que busca un compañero de vida"
         ],
-        "analisis": "La compatibilidad entre Maria Paula y Camilo es alta debido a su estilo de apego mixto y su lenguaje del amor, que se complementan bien. Ambos buscan una relación estable y comprometida, y comparten valores como la familia y la disciplina.",
+        "analisis": "La compatibilidad entre Maria Paula y Felipe es buena, pero existen algunos puntos a considerar. Maria Paula busca un compañero de vida estable y responsable, mientras que Felipe es una persona curiosa y ambiciosa que busca alguien con quien compartir valores y metas. Aunque ambos comparten valores como la familia y la lealtad, hay algunas diferencias en sus estilos de vida y ritmos de rumba que requieren ser discutidas. Felipe es más sociable y disfruta de la naturaleza, mientras que Maria Paula es más introvertida y prefiere actividades más tranquilas.",
         "client_summary": {
-          "quien_es": "Maria Paula es una abogada de 28 años que busca una relación estable y comprometida. Tiene una rutina diaria que incluye trabajar en una firma de abogados y pasar tiempo con su familia.",
-          "que_busca": "Maria Paula busca un compañero de vida que la respete y la apoye en su carrera, y que sea proactivo y flexible.",
-          "destaca": "Maria Paula es una persona muy cercana a su familia y busca una relación que incluya la formación de una familia."
+          "quien_es": "Maria Paula es una abogada de 28 años que vive en Bogotá, es introvertida y prefiere actividades tranquilas. Tiene una perrita y disfruta de leer, hornear y yoga.",
+          "que_busca": "Un compañero de vida estable y responsable con quien compartir valores y metas. Busca alguien que sea leal, honesto y que tenga un buen sentido del humor.",
+          "destaca": "Es una persona muy cercana a su mamá y busca alguien que sea respetuoso y caballeroso."
         },
         "candidate_summary": {
-          "quien_es": "Camilo es un abogado y docente universitario de 30 años que busca una relación estable y comprometida. Tiene una rutina diaria que incluye trabajar en una universidad y pasar tiempo con sus amigos.",
-          "que_busca": "Camilo busca una pareja que sea proactiva y flexible, y que sea capaz de apoyarlo en su carrera.",
-          "destaca": "Camilo es una persona muy inteligente y busca una relación que incluya la construcción de una vida juntos."
+          "quien_es": "Felipe es un financiero de 30 años que vive en Bogotá, es sociable y disfruta de la naturaleza. Tiene una marca personal y disfruta de la lectura, el montañismo y el running.",
+          "que_busca": "Alguien que comparta valores como la lealtad, el respeto y las ganas de salir adelante. Busca alguien con quien pueda construir algo y que esté dispuesta a tener conversaciones difíciles.",
+          "destaca": "Es una persona curiosa y ambiciosa que busca alguien con quien compartir valores y metas."
         }
-      }
+      },
+      "safety_disqualified_count": 1,
+      "safety_disqualified_candidates": [
+        {
+          "name": "Camilo Humberto PRIETO FETIVA",
+          "reasons": [
+            "RED FLAG DE SEGURIDAD: Camilo Humberto PRIETO FETIVA presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+          ]
+        }
+      ]
     },
     {
       "index": 3,
@@ -102,37 +118,47 @@
       "client_notes_length": 748,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 114.78,
+      "elapsed_seconds": 129.4,
       "top_match": {
-        "name": "Camilo Humberto PRIETO FETIVA",
+        "name": "Javier Cuellar",
         "age": 30,
-        "city": "Bogotá D.C.",
-        "occupation": "ABOGADO / DOCENTE UNIVERSITARIO",
-        "compatibility_pct": 66,
+        "city": "Bogotá",
+        "occupation": "Trabaja con AI",
+        "compatibility_pct": 76,
         "structural_score": 63,
-        "ai_score": 68,
-        "ai_veredicto": "VIABLE BUENO",
+        "ai_score": 80,
+        "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Desconfianza de Katherine",
-          "Necesidad de Camilo de una pareja que comprenda su rutina"
+          "Katherine puede aburrirse fácilmente",
+          "Javier puede ser impaciente"
         ],
         "puntos_fuertes": [
-          "Ambos buscan una relación estable y emocionalmente disponible",
-          "Tienen un estilo de apego similar",
-          "Ambos valoran la comunicación y el respeto"
+          "Ambos comparten valores importantes",
+          "Tienen una visión de vida similar",
+          "Ambos son detallistas y se comunican efectivamente"
         ],
-        "analisis": "La compatibilidad entre Katherine y Camilo es buena, pero requiere una conversación más profunda para abordar las diferencias en su estilo de vida y visión de pareja. Katherine busca una relación estable y emocionalmente disponible, mientras que Camilo busca una compañera con quien compartir metas y experiencias. Aunque hay puntos de conexión, como su estilo de apego y lenguaje del amor, existen reservas clínicas, como la desconfianza de Katherine y la necesidad de Camilo de una pareja que comprenda su rutina.",
+        "analisis": "La compatibilidad entre Katherine y Javier es alta debido a su estilo de apego seguro y su lenguaje del amor basado en actos de servicio. Ambos comparten valores como la familia, la creatividad y la honestidad, y tienen una visión de vida similar en cuanto a la importancia de la estabilidad y la comunicación efectiva. Sin embargo, es importante tener en cuenta que Katherine tiene una tendencia a ser despegada y puede aburrirse fácilmente, lo que podría ser un desafío en una relación a largo plazo.",
         "client_summary": {
-          "quien_es": "Katherine es una diseñadora de 29 años, calma y familiar, que busca una pareja madura y respetuosa. Le gusta aprender y planear las cosas.",
-          "que_busca": "Katherine busca una pareja que crea en Dios, sea detallista y coherente, y que la haga sentir segura y apoyada.",
-          "destaca": "Katherine es muy desconfiada y se aburre fácilmente, lo que puede ser un desafío en una relación."
+          "quien_es": "Katherine es una diseñadora de 29 años que se describe a sí misma como calma y familiar. Le gusta planear las cosas y tiene una visión de vida que enfatiza la importancia de la familia y la creatividad.",
+          "que_busca": "Katherine busca una pareja madura, respetuosa y emocionalmente disponible que sepa comunicarse y sea detallista.",
+          "destaca": "Katherine es una persona muy desconfiada y puede aburrirse fácilmente."
         },
         "candidate_summary": {
-          "quien_es": "Camilo es un abogado y docente universitario de 30 años, introvertido y charlatán, que busca una compañera con quien compartir metas y experiencias.",
-          "que_busca": "Camilo busca una pareja que respete su rutina, sea proactiva y flexible, y que comprenda su necesidad de una relación estable.",
-          "destaca": "Camilo es muy inteligente y tiene una gran capacidad para la comunicación, pero puede ser un poco demasiado exigente en algunas áreas."
+          "quien_es": "Javier es un profesional de 30 años que se describe a sí mismo como centrado y calmado. Le gusta aprender cosas nuevas y disfruta de grandes conversaciones.",
+          "que_busca": "Javier busca una persona con una mente abierta, dispuesta a escuchar diferentes puntos de vista y con sus propios intereses y metas fuera de la relación.",
+          "destaca": "Javier es una persona muy independiente y puede ser impaciente."
         }
-      }
+      },
+      "safety_disqualified_count": 1,
+      "safety_disqualified_candidates": [
+        {
+          "name": "Camilo Humberto PRIETO FETIVA",
+          "reasons": [
+            "RED FLAG DE SEGURIDAD: Camilo Humberto PRIETO FETIVA presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+          ]
+        }
+      ]
     },
     {
       "index": 4,
@@ -147,35 +173,40 @@
       "client_notes_length": 1885,
       "suggested_matches_count": 6,
       "discarded_count": 15,
-      "elapsed_seconds": 122.09,
+      "elapsed_seconds": 97.92,
       "top_match": {
-        "name": "María camila Velasquez",
-        "age": 24,
+        "name": "Mariana Quintero",
+        "age": 23,
         "city": "Bogotá",
-        "occupation": "Analista en mastercard",
-        "compatibility_pct": 65,
-        "structural_score": 58,
+        "occupation": "Abogada",
+        "compatibility_pct": 67,
+        "structural_score": 71,
         "ai_score": 65,
         "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Diferencias en el ritmo de rumba, Andres Felipe prefiere salir ocasionalmente mientras que María Camila sale una vez al mes"
+          "Desapego y miedo al abandono en Andrés Felipe",
+          "Overthinking y mensajes inconsistentes en Mariana Quintero"
         ],
         "puntos_fuertes": [
-          "Ambos comparten valores como la lealtad y la honestidad",
-          "Andres Felipe es disciplinado y auténtico, mientras que María Camila es empática y emocionalmente conectada"
+          "Ambos valoran la importancia de la familia y la lealtad",
+          "Andrés Felipe es disciplinado y auténtico, mientras que Mariana Quintero es fuerte y motivada",
+          "Ambos buscan una relación seria y comprometida"
         ],
-        "analisis": "La compatibilidad entre Andres Felipe y María Camila es buena, pero existen algunos puntos a considerar. Andres Felipe busca una relación seria con una mujer hogareña y familiar, mientras que María Camila busca una conexión real y profunda con alguien que priorice la familia. Aunque ambos comparten valores como la lealtad y la honestidad, hay algunas diferencias en sus estilos de vida y hábitos que requieren validación mutua.",
+        "analisis": "La relación entre Andrés Felipe y Mariana Quintero podría ser viable, pero requiere una conversación más profunda sobre sus expectativas y límites. Andrés Felipe busca una relación formal con alguien que le guste bailar y compartir momentos tranquilos, mientras que Mariana Quintero busca estabilidad y compañía. Aunque tienen algunos puntos en común, como la importancia de la familia y la lealtad, también hay algunas diferencias significativas en sus estilos de vida y preferencias.",
         "client_summary": {
-          "quien_es": "Andres Felipe es un economista de 22 años que disfruta de planes sencillos y es familiar. Busca una relación seria con una mujer hogareña y familiar.",
-          "que_busca": "Compañía, moral, entendimiento, compartir momentos y el tiempo libre, y un apoyo en momentos de crisis",
-          "destaca": "Es disciplinado y auténtico, con una energía tranquila que se descubre poco a poco"
+          "quien_es": "Andrés Felipe es un economista de 22 años que disfruta de planes sencillos y valora la importancia de la familia y la lealtad. Es disciplinado y auténtico, y busca una relación formal con alguien que le guste bailar y compartir momentos tranquilos.",
+          "que_busca": "Andrés Felipe busca una relación seria y comprometida con alguien que le guste bailar y compartir momentos tranquilos. Valora la importancia de la familia y la lealtad, y busca alguien que sea disciplinada y motivada.",
+          "destaca": "Andrés Felipe es un hombre disciplinado y auténtico que busca una relación formal y comprometida."
         },
         "candidate_summary": {
-          "quien_es": "María Camila es una analista en Mastercard de 24 años que disfruta de actividades deportivas y es familiar. Busca una conexión real y profunda con alguien que priorice la familia.",
-          "que_busca": "Una conexión real y profunda con alguien que priorice la familia y la lealtad",
-          "destaca": "Es empática y emocionalmente conectada, con una capacidad de escucha y comprensión"
+          "quien_es": "Mariana Quintero es una abogada de 23 años que busca estabilidad y compañía. Es fuerte y motivada, y valora la importancia de la familia y la lealtad. Busca una relación seria y comprometida con alguien que sea disciplinado y auténtico.",
+          "que_busca": "Mariana Quintero busca una relación seria y comprometida con alguien que sea disciplinado y auténtico. Valora la importancia de la familia y la lealtad, y busca alguien que sea fuerte y motivada.",
+          "destaca": "Mariana Quintero es una mujer fuerte y motivada que busca una relación seria y comprometida."
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 5,
@@ -190,36 +221,40 @@
       "client_notes_length": 2207,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 166.45,
+      "elapsed_seconds": 97.31,
       "top_match": {
-        "name": "Orlando Pineda",
-        "age": 32,
+        "name": "Daniel Vasquez",
+        "age": 34,
         "city": "Bogotá",
-        "occupation": "Regional Manager for a tech company",
-        "compatibility_pct": 67,
-        "structural_score": 71,
-        "ai_score": 65,
-        "ai_veredicto": "VIABLE BUENO",
+        "occupation": "Account executive",
+        "compatibility_pct": 75,
+        "structural_score": 66,
+        "ai_score": 75,
+        "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Diferencias en el estilo de vida y la personalidad",
-          "Sharon es más introvertida que Orlando"
+          "Diferencia en el ritmo de rumba",
+          "Sharon es más introvertida que Daniel"
         ],
         "puntos_fuertes": [
-          "Ambos tienen estilos de vida activos y disfrutan de la naturaleza",
-          "Sharon y Orlando comparten valores como la lealtad y la empatía"
+          "Ambos tienen un estilo de apego seguro y una buena comunicación",
+          "Comparten valores como la honestidad, la disciplina y la familia",
+          "Tienen una visión de vida similar y buscan una relación estable"
         ],
-        "analisis": "La compatibilidad entre Sharon y Orlando es buena, pero existen algunos puntos a considerar. Sharon busca una persona que sea abierta, comunicativa y que le guste hablar de todo, mientras que Orlando busca alguien que sea tranquila, no tan espontánea y que le guste compartir planes deportivos. Aunque ambos tienen estilos de vida activos, Sharon es más introvertida y Orlando es más extrovertido. Es importante que ambos trabajen en la comunicación y el respeto mutuo para que su relación sea exitosa.",
+        "analisis": "La compatibilidad entre Sharon y Daniel es alta debido a su estilo de apego seguro, valores compartidos y visión de vida similar. Ambos buscan una relación estable y comprometida, y tienen una buena comunicación y empatía. Sin embargo, es importante mencionar que Sharon tiene una tendencia a ser más introvertida y reservada, mientras que Daniel es más abierto y sociable. Esto podría requerir un ajuste en la comunicación y la dinámica de la relación.",
         "client_summary": {
-          "quien_es": "Sharon es una analista contable de 33 años que disfruta de la naturaleza y la cocina. Es introvertida y busca una persona que sea abierta y comunicativa.",
-          "que_busca": "Sharon busca una persona que sea abierta, comunicativa y que le guste hablar de todo. Quiere alguien que sea consciente de que la relación implica trabajo y esfuerzo.",
-          "destaca": "Sharon es una persona sensible y noble que valora la empatía y la lealtad."
+          "quien_es": "Sharon es una analista contable de 33 años, introvertida y reservada, que busca una relación estable y comprometida",
+          "que_busca": "Busca alguien que sea abierto, comunicativo y que quiera construir una relación a largo plazo",
+          "destaca": "Es sensible y noble, y tiene una tendencia a ser más introvertida y reservada"
         },
         "candidate_summary": {
-          "quien_es": "Orlando es un gerente regional de 32 años que disfruta de la tecnología y el deporte. Es extrovertido y busca una persona que sea tranquila y no tan espontánea.",
-          "que_busca": "Orlando busca una persona que sea tranquila, no tan espontánea y que le guste compartir planes deportivos. Quiere alguien que sea trabajadora y genuina.",
-          "destaca": "Orlando es una persona equilibrada y tranquila que valora la empatía y la lealtad."
+          "quien_es": "Daniel es un account executive de 34 años, abierto y sociable, que busca una relación estable y comprometida",
+          "que_busca": "Busca alguien que sea atenta, de casa y que tenga metas claras",
+          "destaca": "Es tranquilo, bajo perfil y tiene una tendencia a ser más abierto y sociable"
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 6,
@@ -234,37 +269,39 @@
       "client_notes_length": 1773,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 87.8,
+      "elapsed_seconds": 157.64,
       "top_match": {
-        "name": "Juan David Ordonez",
-        "age": 38,
+        "name": "Felipe Diaz",
+        "age": 33,
         "city": "Bogotá",
-        "occupation": "Ingeniero",
-        "compatibility_pct": 66,
-        "structural_score": 67,
-        "ai_score": 65,
-        "ai_veredicto": "VIABLE BUENO",
+        "occupation": "Coordinador de programación y adquisición",
+        "compatibility_pct": 75,
+        "structural_score": 63,
+        "ai_score": 75,
+        "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Overthinking de Maria Alejandra",
-          "Precipitación de Juan David"
+          "Deseo de tener hijos vs no deseo de tener hijos"
         ],
         "puntos_fuertes": [
-          "Ambos buscan una relación seria y estable",
-          "Tienen valores y objetivos similares",
-          "Ambos son empáticos y comprensivos"
+          "Ambos comparten valores y estilo de vida",
+          "Ambos son honestos y leales",
+          "Ambos disfrutan del deporte y la cultura"
         ],
-        "analisis": "La compatibilidad entre Maria Alejandra y Juan David es buena, pero existen algunos puntos a considerar. Ambos buscan una relación seria y estable, pero Juan David tiene una tendencia a ser más exigente en términos de compromiso y lealtad, mientras que Maria Alejandra busca alguien que se comprometa con ella sin ser demasiado exigente. Además, Juan David tiene una tendencia a ser más analítico y detallista, lo que podría generar tensiones en la relación.",
+        "analisis": "La pareja presenta una afinidad evidente en sus notas clínicas y perfiles. Ambos comparten valores como la lealtad, la honestidad y la creatividad. Su estilo de vida es compatible, con una rutina laboral estable y una afición por el deporte y la cultura. Sin embargo, es importante mencionar que Maria Alejandra tiene un deseo de tener hijos, mientras que Felipe no lo desea. Esto podría ser un punto de discusión en la relación.",
         "client_summary": {
-          "quien_es": "Maria Alejandra es una consultora de 32 años que busca una relación seria y estable. Es una persona equilibrada y creativa que disfruta de la vida y busca alguien que la acompañe en sus aventuras.",
-          "que_busca": "Busca alguien que se comprometa con ella sin ser demasiado exigente. Quiere alguien que la apoye y la haga sentir segura.",
-          "destaca": "Es una persona muy empática y comprensiva que busca una relación basada en la confianza y la comunicación abierta."
+          "quien_es": "Maria Alejandra es una consultora de 32 años que se dedica a trabajar en los Andes. Es una persona equilibrada y creativa que disfruta del deporte y la cultura.",
+          "que_busca": "Busca una persona que sea honesta, leal y que comparta sus valores. No busca alguien perfecto, pero alguien que sea real y que se comprometa con la relación.",
+          "destaca": "Es una persona empática y detallista que se preocupa por los demás."
         },
         "candidate_summary": {
-          "quien_es": "Juan David es un ingeniero de 38 años que busca una relación seria y estable. Es una persona calma y reflexiva que disfruta de la vida y busca alguien que la acompañe en sus aventuras.",
-          "que_busca": "Busca alguien que se comprometa con él sin ser demasiado exigente. Quiere alguien que lo apoye y lo haga sentir seguro.",
-          "destaca": "Es una persona muy analítica y detallista que busca una relación basada en la comunicación abierta y la confianza."
+          "quien_es": "Felipe es un coordinador de programación y adquisición de 33 años que se dedica a trabajar en la industria del deporte. Es una persona sociable y conversadora que disfruta del deporte y la cultura.",
+          "que_busca": "Busca una persona que sea inteligente, curiosa y que comparta sus intereses. No busca alguien que sea conflictiva o que disfrute del drama.",
+          "destaca": "Es una persona leal y honesta que se preocupa por sus relaciones."
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 7,
@@ -279,37 +316,39 @@
       "client_notes_length": 1850,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 131.15,
+      "elapsed_seconds": 101.71,
       "top_match": {
-        "name": "Juan Diego Corrales",
-        "age": 27,
+        "name": "Fitzgerald Leonard Gerardo Toro Quitian",
+        "age": 29,
         "city": "Bogotá",
-        "occupation": "Team Lead Latam",
-        "compatibility_pct": 65,
-        "structural_score": 57,
-        "ai_score": 65,
-        "ai_veredicto": "VIABLE BUENO",
+        "occupation": "ML Engineer",
+        "compatibility_pct": 75,
+        "structural_score": 63,
+        "ai_score": 78,
+        "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Diferencias en el estilo de apego",
-          "Diferencias en el ritmo de vida"
+          "Laura tiene un estilo de apego mixto, lo que puede requerir un enfoque más cuidadoso en la comunicación y la empatía en la relación"
         ],
         "puntos_fuertes": [
           "Ambos buscan una relación seria y estable",
-          "Tienen una visión de familia y estabilidad",
-          "Ambos valoran la independencia y la responsabilidad"
+          "Tienen una buena compatibilidad en términos de valores y estilo de vida",
+          "Laura valora la familia y la honestidad, mientras que Fitzgerald valora la lealtad y la ambición"
         ],
-        "analisis": "A pesar de que Laura y Juan Diego tienen estilos de apego diferentes, su visión de vida y valores se alinean en muchos aspectos. Laura busca alguien que sea consistente, tenga iniciativa y sea emocionalmente maduro, mientras que Juan Diego busca una mujer que sea independiente, tenga proyectos propios y que disfrute cuidarse. Ambos tienen una visión de familia y estabilidad, lo que podría ser un punto de conexión. Sin embargo, es importante mencionar que Laura tiene un estilo de vida muy activo y Juan Diego puede ser un poco más reservado, lo que podría requerir una conversación más profunda sobre cómo equilibrar sus rutinas y prioridades.",
+        "analisis": "La conexión entre Laura y Fitzgerald parece ser evidente en sus perfiles y notas clínicas. Ambos buscan una relación seria y estable, con una buena compatibilidad en términos de valores y estilo de vida. Sin embargo, es importante tener en cuenta que Laura tiene un estilo de apego mixto, lo que puede requerir un enfoque más cuidadoso en la comunicación y la empatía en la relación.",
         "client_summary": {
-          "quien_es": "Laura es una médico-residente de ortopedia de 27 años, con un estilo de vida muy activo y una visión de familia y estabilidad.",
-          "que_busca": "Laura busca alguien que sea consistente, tenga iniciativa y sea emocionalmente maduro, con una visión de familia y estabilidad.",
-          "destaca": "Laura es una persona muy responsable y dedicada a su carrera, con una visión clara de lo que busca en una relación."
+          "quien_es": "Laura es una médico-residente de ortopedia de 27 años, con un estilo de vida activo y una pasión por la familia y la honestidad",
+          "que_busca": "Una relación seria y estable con alguien que sea consistente, tenga iniciativa y admire su profesión",
+          "destaca": "Su estilo de apego mixto puede requerir un enfoque más cuidadoso en la comunicación y la empatía en la relación"
         },
         "candidate_summary": {
-          "quien_es": "Juan Diego es un administrador de empresas y psicólogo de 27 años, con un estilo de vida más reservado y una visión de independencia y responsabilidad.",
-          "que_busca": "Juan Diego busca una mujer que sea independiente, tenga proyectos propios y que disfrute cuidarse, con una visión de familia y estabilidad.",
-          "destaca": "Juan Diego es una persona muy centrada y auténtica, con una visión clara de lo que busca en una relación y una disposición a comprometerse."
+          "quien_es": "Fitzgerald es un ingeniero de machine learning de 29 años, con un estilo de vida tranquilo y una pasión por la lealtad y la ambición",
+          "que_busca": "Una relación seria y estable con alguien que sea emocionalmente madura y tenga una buena compatibilidad en términos de valores y estilo de vida",
+          "destaca": "Su capacidad para priorizar su espacio de pareja y su compromiso con la relación"
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 8,
@@ -324,37 +363,39 @@
       "client_notes_length": 1776,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 270.34,
+      "elapsed_seconds": 134.46,
       "top_match": {
-        "name": "Edgar David Lasso Lopez",
-        "age": 31,
+        "name": "Felipe Diaz",
+        "age": 33,
         "city": "Bogotá",
-        "occupation": "Ing Eléctrico",
+        "occupation": "Coordinador de programación y adquisición",
         "compatibility_pct": 65,
         "structural_score": 63,
         "ai_score": 65,
         "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Diferencias en el estilo de vida y hábitos",
-          "Manuela busca hijos, mientras que Edgar no lo desea"
+          "Manuela no quiere tener hijos, mientras que Felipe no lo busca"
         ],
         "puntos_fuertes": [
-          "Ambos comparten valores como la familia y la lealtad",
-          "Edgar es un hombre de principios y tiene una fuerte moral",
-          "Manuela es una mujer dinámica y con una gran energía"
+          "Ambos valoran la lealtad y la honestidad en una relación",
+          "Manuela busca alguien que se vista bien y tenga un buen aspecto",
+          "Felipe busca alguien que sea inteligente y conversadora"
         ],
-        "analisis": "La compatibilidad entre Manuela y Edgar es buena, pero existen algunos puntos a considerar. Manuela busca una relación seria y estable, mientras que Edgar busca un complemento que sume a su vida. Aunque ambos comparten valores como la familia y la lealtad, existen algunas diferencias en sus estilos de vida y hábitos que requieren ser abordadas. Edgar es más introvertido y tiene una rutina más estructurada, mientras que Manuela es más extrovertida y tiene una vida social más activa.",
+        "analisis": "La pareja presenta una buena compatibilidad general, pero existen algunos puntos a considerar. Manuela busca una relación seria y estable, mientras que Felipe busca alguien con quien pueda compartir intereses y descubrir nuevas experiencias. Aunque ambos tienen valores y estilos de vida similares, existen algunas diferencias en sus expectativas y no negociables. Es importante que ambos se comuniquen y trabajen en la resolución de estos puntos para fortalecer su relación.",
         "client_summary": {
-          "quien_es": "Manuela es una mujer de 31 años, jefa de innovación, que busca una relación seria y estable. Tiene una vida social activa y disfruta de actividades como caminar, conocer temas de naturales y salir a comer.",
-          "que_busca": "Manuela busca una pareja que sea leal, honesta y que comparta sus valores. No negociables son la falta de respeto, mala comunicación y vida de fiesta extrema.",
-          "destaca": "Manuela es una mujer con una gran energía y dinamismo, que busca una relación que la haga sentir completa y feliz."
+          "quien_es": "Manuela es una mujer de 31 años, jefa de innovación, que busca una relación seria y estable. Tiene un estilo de vida activo y disfruta de actividades como caminar y conocer temas de naturaleza.",
+          "que_busca": "Manuela busca alguien que sea leal, honesto y que se vista bien. No quiere tener hijos, pero busca alguien que sea familiar y que sepa qué quiere.",
+          "destaca": "Manuela es una persona exigente y determinada, pero también tierna y curiosa."
         },
         "candidate_summary": {
-          "quien_es": "Edgar es un hombre de 31 años, ingeniero eléctrico, que busca un complemento que sume a su vida. Tiene una rutina estructurada y disfruta de actividades como estudiar, tocar la guitarra y leer.",
-          "que_busca": "Edgar busca una pareja que sea leal, honesta y que comparta sus valores. No negociables son la falta de iniciativa, vida de fiesta extrema y no tener hijos.",
-          "destaca": "Edgar es un hombre de principios y tiene una fuerte moral, que busca una relación que lo haga sentir completo y feliz."
+          "quien_es": "Felipe es un hombre de 33 años, coordinador de programación y adquisición, que busca alguien con quien pueda compartir intereses y descubrir nuevas experiencias. Tiene un estilo de vida activo y disfruta de actividades como viajar y conocer pueblos.",
+          "que_busca": "Felipe busca alguien que sea inteligente, conversadora y que disfrute de actividades como viajar y conocer pueblos. No busca tener hijos, pero busca alguien que sea familiar y que sepa qué quiere.",
+          "destaca": "Felipe es una persona sociable y conversadora, que valora la lealtad y la honestidad en una relación."
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 9,
@@ -369,37 +410,39 @@
       "client_notes_length": 2611,
       "suggested_matches_count": 5,
       "discarded_count": 15,
-      "elapsed_seconds": 263.37,
+      "elapsed_seconds": 129.81,
       "top_match": {
         "name": "Edgar David Lasso Lopez",
         "age": 31,
         "city": "Bogotá",
         "occupation": "Ing Eléctrico",
-        "compatibility_pct": 65,
+        "compatibility_pct": 68,
         "structural_score": 57,
-        "ai_score": 65,
+        "ai_score": 72,
         "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Inestabilidad emocional fuerte en Stephany",
-          "Prejuicios cristianos en Edgar"
+          "Estilo de apego ansioso de Stephany",
+          "Necesidad de Edgar de tener una pareja tradicional y cristiana"
         ],
         "puntos_fuertes": [
-          "Ambos comparten valores como la familia y la lealtad",
-          "Edgar es un hombre trabajador y con buen sentido del humor",
-          "Stephany es una mujer auténtica y con una visión clara de lo que busca en una relación"
+          "Compatibilidad en términos de valores y estilo de vida",
+          "Buena comunicación y empatía"
         ],
-        "analisis": "La compatibilidad entre Stephany y Edgar es buena, pero existen algunos puntos a considerar. Stephany busca una conexión genuina con alguien emocionalmente maduro y con metas claras, mientras que Edgar busca un complemento que sume a su vida. Aunque ambos comparten valores como la familia y la lealtad, existen algunas diferencias en sus estilos de vida y hábitos que requieren validación mutua.",
+        "analisis": "La conexión entre Stephany y Edgar parece ser positiva, con una buena compatibilidad en términos de valores y estilo de vida. Sin embargo, existen algunas reservas clínicas, como el estilo de apego ansioso de Stephany y la necesidad de Edgar de tener una pareja tradicional y cristiana. Es importante que ambos trabajen en la comunicación y la empatía para superar estas diferencias.",
         "client_summary": {
-          "quien_es": "Stephany es una médica de 31 años que vive en Bogotá, con una visión política de derecha y una fuerte fe en Dios. Disfruta aprender inglés, salir con amigos y bailar.",
-          "que_busca": "Busca una conexión genuina con alguien emocionalmente maduro y con metas claras, alguien que sea auténtico y que valora la sencillez y la calidez.",
-          "destaca": "Stephany es una persona muy querida y cercana, con una energía alegre y una visión clara de lo que busca en una relación."
+          "quien_es": "Stephany es una médica de 31 años que vive en Bogotá, con un estilo de vida ocupado y una pasión por la música y el baile.",
+          "que_busca": "Busca una conexión genuina con alguien que sea auténtico, emocionalmente maduro y que tenga metas claras en su vida.",
+          "destaca": "Su estilo de apego ansioso puede ser un desafío en la relación, pero también puede ser una oportunidad para crecer y mejorar la comunicación."
         },
         "candidate_summary": {
-          "quien_es": "Edgar es un ingeniero eléctrico de 31 años que vive en Bogotá, con una visión política de centro y una fuerte fe en Dios. Disfruta estudiar, tocar la guitarra y leer.",
-          "que_busca": "Busca un complemento que sume a su vida, alguien que sea cristiano y que valora la estabilidad y la lealtad.",
-          "destaca": "Edgar es un hombre trabajador y con buen sentido del humor, con una visión clara de lo que busca en una relación."
+          "quien_es": "Edgar es un ingeniero eléctrico de 31 años que vive en Bogotá, con un estilo de vida tranquilo y una pasión por la música cristiana y el ajedrez.",
+          "que_busca": "Busca una pareja tradicional y cristiana con quien pueda compartir experiencias y construir una relación estable.",
+          "destaca": "Su necesidad de tener una pareja tradicional y cristiana puede ser un desafío en la relación, pero también puede ser una oportunidad para crecer y mejorar la comunicación."
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 10,
@@ -414,22 +457,46 @@
       "client_notes_length": 1925,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 199.64,
+      "elapsed_seconds": 170.97,
       "top_match": {
-        "name": "Felipe Diaz",
-        "age": 33,
+        "name": "Sergio Batista",
+        "age": 31,
         "city": "Bogotá",
-        "occupation": "Coordinador de programación y adquisición",
-        "compatibility_pct": 71,
+        "occupation": "Financiero",
+        "compatibility_pct": 79,
         "structural_score": 71,
-        "ai_score": null,
-        "ai_veredicto": "FALLBACK ESTRUCTURAL",
-        "deal_breakers": [],
-        "puntos_fuertes": [],
-        "analisis": null,
-        "client_summary": null,
-        "candidate_summary": null
-      }
+        "ai_score": 82,
+        "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
+        "deal_breakers": [
+          "Diferencias en la intensidad emocional y la forma de expresar las emociones"
+        ],
+        "puntos_fuertes": [
+          "Ambos tienen un estilo de apego seguro",
+          "Ambos buscan una relación estable y seria",
+          "Ambos tienen un lenguaje del amor basado en actos de servicio"
+        ],
+        "analisis": "La pareja presenta una buena compatibilidad en términos de valores, estilo de vida y expectativas. Angie busca una relación estable y seria, mientras que Sergio busca la misma cosa. Ambos tienen un estilo de apego seguro y un lenguaje del amor basado en actos de servicio. Sin embargo, es importante mencionar que Angie tiene una tendencia a ser más tradicional y conservadora, mientras que Sergio es más abierto y aventurero. Esto podría requerir una comunicación clara y abierta para evitar conflictos.",
+        "client_summary": {
+          "quien_es": "Angie es una mujer de 30 años, empleada, que busca una relación estable y seria. Tiene un estilo de vida tranquilo y prefiere actividades relajantes.",
+          "que_busca": "Angie busca alguien que sea inteligente, tenga pasión por algo, sea gracioso y relajado, pero también que sea líder y tenga las cosas claras.",
+          "destaca": "Angie es una persona muy tradicional y conservadora, pero también es muy abierta y honesta en cuanto a sus expectativas y límites."
+        },
+        "candidate_summary": {
+          "quien_es": "Sergio es un hombre de 31 años, financiero, que busca una relación estable y seria. Tiene un estilo de vida activo y prefiere actividades aventureras.",
+          "que_busca": "Sergio busca alguien que sea espontánea, aventurera y que le guste el deporte y salir a aventurar.",
+          "destaca": "Sergio es una persona muy abierta y aventurera, pero también es muy relajada y no le gusta la intensidad emocional."
+        }
+      },
+      "safety_disqualified_count": 1,
+      "safety_disqualified_candidates": [
+        {
+          "name": "Camilo Humberto PRIETO FETIVA",
+          "reasons": [
+            "RED FLAG DE SEGURIDAD: Camilo Humberto PRIETO FETIVA presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+          ]
+        }
+      ]
     },
     {
       "index": 11,
@@ -444,7 +511,7 @@
       "client_notes_length": 1660,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 102.3,
+      "elapsed_seconds": 92.05,
       "top_match": {
         "name": "Jonathan Alexander Bocanegra Diaz",
         "age": 32,
@@ -454,26 +521,30 @@
         "structural_score": 71,
         "ai_score": 65,
         "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Falta de experiencia en crianza de hijos en Jonathan",
-          "Preferencia de Andrea por una pareja más tradicional"
+          "Diferencia en el ritmo de rumba",
+          "Diferencia en la importancia de la familia"
         ],
         "puntos_fuertes": [
-          "Ambos comparten una visión de pareja estable y comprometida",
-          "Andrea busca una pareja con valores sólidos y Jonathan busca una chica profesional con metas claras"
+          "Ambos comparten valores como la lealtad y la empatía",
+          "Ambos tienen estilos de vida activos y disfrutan de actividades al aire libre",
+          "Ambos buscan una relación emocionalmente segura"
         ],
-        "analisis": "A pesar de algunas diferencias en estilo de vida y valores, Andrea y Jonathan comparten una visión de pareja estable y comprometida. Sin embargo, existen algunos puntos de reserva, como la falta de experiencia en crianza de hijos en Jonathan y la preferencia de Andrea por una pareja más tradicional.",
+        "analisis": "La compatibilidad entre Andrea y Jonathan es buena, pero existen algunos puntos a considerar. Andrea busca una relación estable y emocionalmente segura, mientras que Jonathan parece estar buscando una pareja que comparta sus intereses y valores. Aunque ambos tienen estilos de vida activos, Jonathan parece ser más introvertido que Andrea, lo que podría ser un desafío en la relación. Sin embargo, ambos comparten valores como la lealtad y la empatía, lo que podría ser una base sólida para la relación.",
         "client_summary": {
-          "quien_es": "Andrea es una administradora de empresas y negociante internacional, tranquila y amable, que busca una pareja con valores sólidos y una visión de vida estable.",
-          "que_busca": "Andrea busca una pareja que comparta sus valores y visión de vida, con una actitud positiva y una visión de futuro claro.",
-          "destaca": "Andrea es una persona muy independiente y valora la libertad y la autonomía en una relación."
+          "quien_es": "Andrea es una administradora de empresas y negociante internacional, que busca una relación estable y emocionalmente segura. Tiene un estilo de vida activo y disfruta de actividades como leer, pintar y viajar.",
+          "que_busca": "Andrea busca una pareja que comparta sus valores y intereses, y que sea emocionalmente segura. Busca alguien que sea leal, empático y que valora la familia.",
+          "destaca": "Andrea es una persona muy independiente y autónoma, pero también busca alguien que la apoye y la comprenda."
         },
         "candidate_summary": {
-          "quien_es": "Jonathan es un ingeniero de aire acondicionado, calmo y tranquilo, que busca una chica profesional con metas claras y una visión de vida estable.",
-          "que_busca": "Jonathan busca una pareja que sea profesional, tranquila y con una actitud positiva, con una visión de futuro claro.",
-          "destaca": "Jonathan es una persona muy responsable y valora la estabilidad y la seguridad en una relación."
+          "quien_es": "Jonathan es un ingeniero de aire acondicionado, que busca una pareja que comparta sus intereses y valores. Tiene un estilo de vida activo y disfruta de actividades como el ciclismo y la música.",
+          "que_busca": "Jonathan busca una pareja que sea profesional, tranquila y que tenga una buena comunicación. Busca alguien que sea abierto y que le guste probar cosas nuevas.",
+          "destaca": "Jonathan es una persona muy tranquila y reflexiva, pero también busca alguien que lo motive y lo apoye en sus objetivos."
         }
-      }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 12,
@@ -488,8 +559,10 @@
       "client_notes_length": 2260,
       "suggested_matches_count": 0,
       "discarded_count": 15,
-      "elapsed_seconds": 0.35,
-      "top_match": null
+      "elapsed_seconds": 0.36,
+      "top_match": null,
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     },
     {
       "index": 13,
@@ -504,37 +577,44 @@
       "client_notes_length": 1912,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 121.18,
+      "elapsed_seconds": 97.51,
       "top_match": {
-        "name": "Julian Cubillos",
-        "age": 29,
+        "name": "Felipe Pinilla",
+        "age": 30,
         "city": "Bogotá",
-        "occupation": "Diseñador Gráfico y Comunicador digital",
-        "compatibility_pct": 65,
+        "occupation": "Finanzas",
+        "compatibility_pct": 77,
         "structural_score": 63,
-        "ai_score": 65,
-        "ai_veredicto": "VIABLE BUENO",
+        "ai_score": 82,
+        "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Diferencias en la rutina diaria",
-          "Nathalia busca estabilidad, mientras que Julian busca aventuras"
+          "Diferencias en el ritmo de vida, como la preferencia de Nathalia por salir con amigos y Felipe por pasar tiempo en casa"
         ],
         "puntos_fuertes": [
-          "Ambos tienen estilos de vida activos",
-          "Nathalia es detallista y comprometida",
-          "Julian es creativo y sociable"
+          "Ambición y empatía de Nathalia, así como la lealtad y el crecimiento personal de Felipe"
         ],
-        "analisis": "La compatibilidad entre Nathalia y Julian es buena, pero existen algunos puntos a considerar. Nathalia busca estabilidad y respeto en una relación, mientras que Julian busca una pareja con quien compartir planes activos y momentos de tranquilidad. Aunque ambos tienen estilos de vida activos, Nathalia tiene una rutina más estructurada y Julian es más espontáneo. Es importante que ambos trabajen en la comunicación y el respeto mutuo para hacer que la relación funcione.",
+        "analisis": "La pareja presenta una afinidad evidente en sus valores, estilo de vida y visión de pareja. Nathalia busca un compañero que la respalde y la comprenda, mientras que Felipe busca alguien con quien compartir valores y objetivos. Aunque hay algunas diferencias en sus ritmos de vida, no parecen ser un obstáculo significativo para la relación.",
         "client_summary": {
-          "quien_es": "Nathalia es una mujer de 28 años, empleada, que busca estabilidad y respeto en una relación. Tiene una rutina diaria estructurada y disfruta de actividades como correr y leer.",
-          "que_busca": "Nathalia busca una pareja que la respalde y la comprenda, alguien que sea ambicioso y divertido. No quiere ser madrastra y busca alguien que crezca con ella.",
-          "destaca": "Nathalia es detallista y comprometida, pero también tiene problemas con su autoestima y puede ser demasiado detallista."
+          "quien_es": "Nathalia es una mujer de 28 años que trabaja en finanzas y estudia Aleman. Es una persona calma y detallista que busca un compañero que la respalde y la comprenda.",
+          "que_busca": "Nathalia busca alguien que la respalde y la comprenda, alguien que sea ambicioso y le guste hacer deporte.",
+          "destaca": "Nathalia es una persona muy detallista y le cuesta poner límites, pero también es muy empatética y busca un compañero que la comprenda."
         },
         "candidate_summary": {
-          "quien_es": "Julian es un hombre de 29 años, diseñador gráfico, que busca una pareja con quien compartir planes activos y momentos de tranquilidad. Es creativo y sociable, y disfruta de actividades como correr y viajar.",
-          "que_busca": "Julian busca una pareja que sea honesta, inteligente y alegre. No quiere ser padre y busca alguien que sea ambicioso y divertido.",
-          "destaca": "Julian es creativo y sociable, pero también puede ser demasiado espontáneo y no siempre prioriza la comunicación."
+          "quien_es": "Felipe es un hombre de 30 años que trabaja en finanzas y es un inversionista. Es una persona curiosa y le gusta la espiritualidad y el crecimiento personal.",
+          "que_busca": "Felipe busca alguien con quien compartir valores y objetivos, alguien que sea leal y le guste hacer deporte.",
+          "destaca": "Felipe es una persona muy leal y busca un compañero que sea ambicioso y le guste hacer deporte."
         }
-      }
+      },
+      "safety_disqualified_count": 1,
+      "safety_disqualified_candidates": [
+        {
+          "name": "Camilo Humberto PRIETO FETIVA",
+          "reasons": [
+            "RED FLAG DE SEGURIDAD: Camilo Humberto PRIETO FETIVA presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+          ]
+        }
+      ]
     },
     {
       "index": 14,
@@ -549,37 +629,46 @@
       "client_notes_length": 1466,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 97.43,
+      "elapsed_seconds": 99.33,
       "top_match": {
-        "name": "Orlando Pineda",
-        "age": 32,
+        "name": "Felipe Diaz",
+        "age": 33,
         "city": "Bogotá",
-        "occupation": "Regional Manager for a tech company",
+        "occupation": "Coordinador de programación y adquisición",
         "compatibility_pct": 75,
         "structural_score": 66,
-        "ai_score": 72,
+        "ai_score": 75,
         "ai_veredicto": "RECOMENDADO",
+        "red_flags_seguridad": [],
         "deal_breakers": [
-          "Diferencias en ritmos de rumba",
-          "Preferencias de música disímiles"
+          "Katerine no quiere hijos, mientras que Felipe no lo desea tampoco"
         ],
         "puntos_fuertes": [
-          "Ambos tienen un estilo de apego seguro",
-          "Comparten valores como la honestidad y la lealtad",
-          "Tienen una visión de pareja similar"
+          "Ambos tienen un estilo de apego seguro y valores similares",
+          "Katerine busca una relación tranquila y balanceada, mientras que Felipe busca una compañera con quien pueda conversar y compartir intereses",
+          "Ambos tienen una edad similar y una ocupación estable"
         ],
-        "analisis": "La compatibilidad entre Katerine y Orlando es alta debido a su estilo de apego seguro, lenguaje del amor similar y valores alineados. Sin embargo, es importante considerar las diferencias en sus ritmos de rumba y preferencias de música.",
+        "analisis": "La pareja presenta una afinidad evidente en sus notas y perfiles. Katerine busca una relación tranquila y balanceada, mientras que Felipe busca una compañera con quien pueda conversar y compartir intereses. Ambos tienen un estilo de apego seguro y valores similares. Sin embargo, es importante mencionar que Katerine tiene una preferencia por personas más extrovertidas, mientras que Felipe prefiere una pareja más introvertida. A pesar de esto, la compatibilidad general es alta y los puntos de conexión son evidentes.",
         "client_summary": {
-          "quien_es": "Katerine es una mujer de 32 años, global process expert finance, que se describe como equilibrada y que busca una relación tranquila con alguien que sea atlético y caballeroso.",
-          "que_busca": "Busca alguien con quien construir una relación tranquila, que sea una persona balanceada y tenga voluntad y disposición para querer estar en una relación.",
-          "destaca": "Destaca su estilo de apego seguro y su lenguaje del amor basado en palabras y actos de servicio."
+          "quien_es": "Katerine es una mujer de 32 años, global process expert finance, que busca una relación tranquila y balanceada",
+          "que_busca": "Busca una persona que sea atlética, caballerosa y tenga voluntad y disposición para querer estar en una relación",
+          "destaca": "Es una persona introvertida pero buena conversadora"
         },
         "candidate_summary": {
-          "quien_es": "Orlando es un hombre de 32 años, regional manager para una empresa de tecnología, que se describe como equilibrado y que busca una mujer trabajadora y genuina con valores sólidos.",
-          "que_busca": "Busca alguien que se quiera casar y que tenga una visión de pareja similar a la suya, con quien pueda compartir un proyecto de vida.",
-          "destaca": "Destaca su estilo de apego seguro y su visión de pareja enfocada en la construcción de un matrimonio estable."
+          "quien_es": "Felipe es un hombre de 33 años, coordinador de programación y adquisición, que busca una compañera con quien pueda conversar y compartir intereses",
+          "que_busca": "Busca una persona que sea inteligente, conversadora y curiosa",
+          "destaca": "Es una persona sociable y conversadora"
         }
-      }
+      },
+      "safety_disqualified_count": 1,
+      "safety_disqualified_candidates": [
+        {
+          "name": "Camilo Humberto PRIETO FETIVA",
+          "reasons": [
+            "RED FLAG DE SEGURIDAD: Camilo Humberto PRIETO FETIVA presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+          ]
+        }
+      ]
     },
     {
       "index": 15,
@@ -594,22 +683,40 @@
       "client_notes_length": 1138,
       "suggested_matches_count": 8,
       "discarded_count": 15,
-      "elapsed_seconds": 271.43,
+      "elapsed_seconds": 100.4,
       "top_match": {
-        "name": "Juan Pablo Melo Bonilla",
-        "age": 21,
+        "name": "Johann Mauricio Perez Perez",
+        "age": 20,
         "city": "Bogotá",
-        "occupation": "Trabajo y estudio",
-        "compatibility_pct": 84,
-        "structural_score": 84,
-        "ai_score": null,
-        "ai_veredicto": "FALLBACK ESTRUCTURAL",
-        "deal_breakers": [],
-        "puntos_fuertes": [],
-        "analisis": null,
-        "client_summary": null,
-        "candidate_summary": null
-      }
+        "occupation": "Programador",
+        "compatibility_pct": 74,
+        "structural_score": 78,
+        "ai_score": 72,
+        "ai_veredicto": "VIABLE BUENO",
+        "red_flags_seguridad": [],
+        "deal_breakers": [
+          "Ritmo de rumba muy dispar",
+          "Dinámica afectiva diferente"
+        ],
+        "puntos_fuertes": [
+          "Ambas personas tienen un estilo de apego seguro, lo que sugiere una buena capacidad para la comunicación y la resolución de conflictos.",
+          "La pareja comparte valores como la lealtad, la estabilidad y la honestidad, lo que puede ser un buen fundamento para una relación sólida.",
+          "Ambos tienen una visión de futuro y están dispuestos a trabajar juntos para lograr sus metas."
+        ],
+        "analisis": "La pareja presenta una buena compatibilidad general, con puntos de conexión en la visión de vida y valores. Sin embargo, existen algunas reservas clínicas que requieren validación mutua, como el ritmo de rumba y la dinámica afectiva. Es importante que la pareja discuta y resuelva estos puntos para fortalecer su relación.",
+        "client_summary": {
+          "quien_es": "La cliente es una ingeniera química de 21 años, soltera y sin hijos, que busca una relación seria y estable con alguien que comparta sus valores y metas. Tiene un estilo de vida equilibrado y disfruta de actividades como caminar, cocinar y ver películas.",
+          "que_busca": "La cliente busca alguien con quien compartir el tiempo, que tenga algo de independencia y que sepa lo que quiere para su futuro personal y profesionalmente. No negociables son la falta de respeto, la mala comunicación y la vida de fiesta extrema.",
+          "destaca": "La cliente es una persona aplicada y dedicada al estudio, pero también valora la compañía y la conversación."
+        },
+        "candidate_summary": {
+          "quien_es": "El candidato es un programador de 20 años, soltero y sin hijos, que busca una relación seria y estable con alguien que comparta sus valores y metas. Tiene un estilo de vida familiar y disfruta de actividades como baloncesto, cine y gym.",
+          "que_busca": "El candidato busca una mujer con quien construir una relación seria, estable y duradera, basada en la confianza, el respeto, la comunicación y el apoyo mutuo. No negociables son la falta de comunicación clara, el respeto mutuo y la falta de iniciativa.",
+          "destaca": "El candidato es una persona apasionada por el futuro y dispuesta a trabajar juntos para lograr sus metas."
+        }
+      },
+      "safety_disqualified_count": 0,
+      "safety_disqualified_candidates": []
     }
   ]
 }
