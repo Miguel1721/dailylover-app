@@ -5415,18 +5415,28 @@ def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
         r'\bbrote\s+psic[oó]tico\s+(activo|no\s+compensado|descompensado)\b'
     ]
 
-    victim_guard = [
-        "no tolera", "no volver a", "no quiere volver", "no permite", "evitar", "evita",
-        "alejarse de", "victima de", "víctima de", "sufrió de", "sufrio de", "cero tolerancia",
-        "no acepta", "no soporta", "estuvo casada con", "estuvo casado con", "su expareja era",
-        "su ex era", "su ex", "su expareja", "su padre", "su madre", "su hermano", "familiar con",
-        "no maltratador", "no violento", "no grosero", "evento traumático", "evento traumatico",
-        "estrés postraumático", "estres postraumatico", "abuso sexual normalizado",
-        "normalizado dentro de", "somatizando", "no consume", "no drogas", "cero drogas",
-        "no adicciones", "tragos sociales", "ocasional", "recuperad", "sobrio",
-        "abogado", "penalista", "víctima de estafa", "le estafaron", "fue estafad",
-        "psiquiatra", "psicólog", "psicolog"
-    ]
+    category_guards = {
+        "VIOLENCIA/AGRESIÓN": [
+            "no tolera", "no volver a", "no quiere volver", "no permite", "evitar", "evita",
+            "alejarse de", "victima de", "víctima de", "sufrió de", "sufrio de", "cero tolerancia",
+            "no acepta", "no soporta", "estuvo casada con", "estuvo casado con", "su expareja era",
+            "su ex era", "su ex", "su expareja", "su padre", "su madre", "su hermano", "familiar con",
+            "no maltratador", "no violento", "no grosero", "evento traumático", "evento traumatico",
+            "estrés postraumático", "estres postraumatico", "abuso sexual normalizado",
+            "normalizado dentro de", "somatizando"
+        ],
+        "ADICCIÓN SEVERA ACTIVA": [
+            "no consume", "no drogas", "cero drogas", "no adicciones", "no tolera", "no acepta",
+            "tragos sociales", "ocasional", "recuperad", "sobrio", "su ex", "su expareja", "familiar con"
+        ],
+        "DELITO/PENAL GRAVE": [
+            "abogado penalista", "derecho penal", "defensor penal", "víctima de estafa",
+            "le estafaron", "fue estafad", "no tolera estafas"
+        ],
+        "RIESGO PSIQUIÁTRICO AGUDO": [
+            "psiquiatra", "psicólog", "psicolog", "su ex", "su expareja", "hace años", "hace más de"
+        ]
+    }
 
     all_patterns = (
         [(p, "VIOLENCIA/AGRESIÓN") for p in perpetrator_patterns] +
@@ -5441,8 +5451,8 @@ def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
             start = max(0, match.start() - 100)
             end = min(len(notes), match.end() + 100)
             context = notes[start:end].lower()
-            
-            if any(vg in context for vg in victim_guard):
+            guards = category_guards.get(category, [])
+            if any(g in context for g in guards):
                 continue
             
             p_name = person.get("name") or "Persona"

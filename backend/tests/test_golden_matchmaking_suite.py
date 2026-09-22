@@ -7,7 +7,6 @@ o reintroduzca riesgos de seguridad.
 
 import os
 import json
-import pytest
 import unittest
 from typing import Tuple, Optional
 
