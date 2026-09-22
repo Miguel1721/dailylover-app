@@ -4,9 +4,16 @@ Sintetizador Clínico Multidimensional de Perfiles en 8 Ejes Vinculares.
 Transforma notas no estructuradas y datos del CRM en un Vector Clínico Estructurado.
 """
 
+import os
+import json
+import logging
 import re
 import unicodedata
 from typing import Dict, Any, List, Optional
+import httpx
+from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 def normalize_text(text: Optional[str]) -> str:
     if not text:
@@ -233,6 +240,293 @@ class OctagonalPersonaSynthesizer:
                 "8_estetica": eje8_estetica
             }
         }
+
+    @classmethod
+    def _merge_llm_extraction(cls, base: Dict[str, Any], extracted: Dict[str, Any], model_name: str, gender: str) -> None:
+        base["metadata"]["version_sintesis"] = "2.0-octagonal-llm"
+        base["metadata"]["extraction_engine"] = model_name
+
+        # Soporte para esquema anidado o plano
+        e1 = extracted.get("1_logistica", extracted)
+        e2 = extracted.get("2_timing", extracted)
+        e3 = extracted.get("3_axiologia", extracted)
+        e4 = extracted.get("4_conflicto", extracted)
+        e5 = extracted.get("5_autonomia", extracted)
+        e6 = extracted.get("6_ritmo_vital", extracted)
+        e7 = extracted.get("7_polaridad", extracted)
+        e8 = extracted.get("8_estetica", extracted)
+
+        # Eje 1: Logística
+        if "turnos_rotativos" in e1:
+            base["ejes"]["1_logistica"]["turnos_rotativos"] = bool(e1["turnos_rotativos"])
+        if "turno_nocturno" in e1:
+            base["ejes"]["1_logistica"]["turno_nocturno"] = bool(e1["turno_nocturno"])
+        if "profesion_alta_movilidad" in e1:
+            base["ejes"]["1_logistica"]["profesion_alta_movilidad"] = bool(e1["profesion_alta_movilidad"])
+        if "disposicion_viajar" in e1:
+            base["ejes"]["1_logistica"]["disposicion_viajar"] = bool(e1["disposicion_viajar"])
+        if "custodia_compartida_semanal" in e1:
+            base["ejes"]["1_logistica"]["custodia_compartida_semanal"] = bool(e1["custodia_compartida_semanal"])
+        if base["ejes"]["1_logistica"]["turnos_rotativos"] or base["ejes"]["1_logistica"]["turno_nocturno"] or base["ejes"]["1_logistica"]["profesion_alta_movilidad"]:
+            base["ejes"]["1_logistica"]["disponibilidad_resumen"] = "Régimen de turnos rotativos / alta movilidad"
+
+        # Eje 2: Timing
+        if "duelo_activo_reciente" in e2:
+            base["ejes"]["2_timing"]["duelo_activo_reciente"] = bool(e2["duelo_activo_reciente"])
+            if e2["duelo_activo_reciente"]:
+                base["ejes"]["2_timing"]["alerta_disponibilidad_emocional"] = "Ruptura sentimental hace menos de 60-90 días"
+        if "planes_mudanza_internacional" in e2:
+            base["ejes"]["2_timing"]["planes_mudanza_internacional"] = bool(e2["planes_mudanza_internacional"])
+        if "intencion_primaria" in e2 and e2["intencion_primaria"]:
+            base["ejes"]["2_timing"]["intencion_primaria"] = e2["intencion_primaria"]
+
+        # Eje 3: Axiología
+        if "vasectomia" in e3:
+            base["ejes"]["3_axiologia"]["vasectomia"] = bool(e3["vasectomia"])
+        if "deseo_hijos" in e3:
+            base["ejes"]["3_axiologia"]["deseo_hijos"] = bool(e3["deseo_hijos"])
+        if "modelo_financiero" in e3 and e3["modelo_financiero"]:
+            base["ejes"]["3_axiologia"]["modelo_financiero"] = e3["modelo_financiero"]
+        if "fe_espiritual" in e3 and e3["fe_espiritual"]:
+            base["ejes"]["3_axiologia"]["fe_espiritual"] = e3["fe_espiritual"]
+        if "postura_politica" in e3 and e3["postura_politica"]:
+            base["ejes"]["3_axiologia"]["postura_politica"] = e3["postura_politica"]
+        if "rechaza_izquierda" in e3:
+            base["ejes"]["3_axiologia"]["vetos_politicos"]["rechaza_izquierda"] = bool(e3["rechaza_izquierda"])
+        if "rechaza_derecha" in e3:
+            base["ejes"]["3_axiologia"]["vetos_politicos"]["rechaza_derecha"] = bool(e3["rechaza_derecha"])
+
+        # Eje 4: Conflicto
+        if "estilo_procesamiento" in e4 and e4["estilo_procesamiento"]:
+            base["ejes"]["4_conflicto"]["estilo_procesamiento"] = e4["estilo_procesamiento"]
+        if "alerta_reactividad" in e4:
+            base["ejes"]["4_conflicto"]["alerta_reactividad"] = bool(e4["alerta_reactividad"])
+        if "rasgo_evitativo" in e4:
+            base["ejes"]["4_conflicto"]["rasgo_evitativo"] = bool(e4["rasgo_evitativo"])
+
+        # Eje 5: Autonomía
+        if "necesidad_espacio_personal" in e5 and e5["necesidad_espacio_personal"]:
+            base["ejes"]["5_autonomia"]["necesidad_espacio_personal"] = e5["necesidad_espacio_personal"]
+
+        # Eje 6: Ritmo Vital
+        if "vitalidad_fisica" in e6 and e6["vitalidad_fisica"]:
+            base["ejes"]["6_ritmo_vital"]["vitalidad_fisica"] = e6["vitalidad_fisica"]
+        if "cronotipo" in e6 and e6["cronotipo"]:
+            base["ejes"]["6_ritmo_vital"]["cronotipo"] = e6["cronotipo"]
+
+        # Eje 7: Polaridad
+        if "dinamica_preferida" in e7 and e7["dinamica_preferida"]:
+            base["ejes"]["7_polaridad"]["dinamica_preferida"] = e7["dinamica_preferida"]
+
+        # Eje 8: Estética
+        if "aseo_y_presentacion_estricta" in e8:
+            base["ejes"]["8_estetica"]["aseo_y_presentacion_estricta"] = bool(e8["aseo_y_presentacion_estricta"])
+        if "rechaza_tatuajes" in e8:
+            base["ejes"]["8_estetica"]["rechaza_tatuajes"] = bool(e8["rechaza_tatuajes"])
+        if "rechaza_cirugias_esteticas" in e8:
+            base["ejes"]["8_estetica"]["rechaza_cirugias_esteticas"] = bool(e8["rechaza_cirugias_esteticas"])
+        if "exige_cuerpo_saludable" in e8:
+            base["ejes"]["8_estetica"]["exige_cuerpo_saludable"] = bool(e8["exige_cuerpo_saludable"])
+
+        if "es_trans" in extracted:
+            base["metadata"]["es_trans"] = bool(extracted["es_trans"])
+
+        # Regla de consistencia clínica para vasectomía masculina
+        if gender and "hombre" in gender.lower() and base["ejes"]["3_axiologia"].get("vasectomia"):
+            base["ejes"]["3_axiologia"]["deseo_hijos"] = False
+
+    @classmethod
+    async def synthesize_profile_llm(
+        cls,
+        user_id: int,
+        name: str,
+        city: str,
+        gender: str,
+        age: Optional[int],
+        bio_notes: str = "",
+        lifestyle: Optional[Dict[str, Any]] = None,
+        search_preferences: Optional[Dict[str, Any]] = None,
+        use_llm: bool = True,
+        http_client: Optional[httpx.AsyncClient] = None,
+    ) -> Dict[str, Any]:
+        """
+        Síntesis híbrida en 8 Ejes Clínicos:
+        1. Genera la estructura base determinística con regex (baseline instantáneo).
+        2. Si use_llm es True y hay texto clínico suficiente (> 20 caracteres),
+           ejecuta extracción semántica profunda con LLM (Tier 1: NVIDIA NIM Llama 3.2 11B, Tier 2: Gemini 2.5 Flash).
+        3. Si la extracción LLM tiene éxito, fusiona y sobreescribe los ejes con mayor precisión semántica.
+        4. Si falla o hay timeout de red, recurre automáticamente al baseline sin lanzar excepciones (graceful degradation).
+        """
+        base = cls.synthesize_profile(
+            user_id=user_id,
+            name=name,
+            city=city,
+            gender=gender,
+            age=age,
+            bio_notes=bio_notes,
+            lifestyle=lifestyle,
+            search_preferences=search_preferences
+        )
+
+        clean_notes = (bio_notes or "").strip()
+        if not use_llm or len(clean_notes) < 20:
+            base["metadata"]["extraction_engine"] = "regex"
+            return base
+
+        settings = get_settings()
+        nvidia_key = (settings.nvidia_api_key or os.getenv("NVIDIA_API_KEY") or "").strip()
+        gemini_key = (settings.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+
+        if not nvidia_key and os.path.exists("/app/.env"):
+            try:
+                with open("/app/.env") as f:
+                    for l in f:
+                        if l.startswith("NVIDIA_API_KEY="):
+                            nvidia_key = l.split("=", 1)[1].strip().strip('"').strip("'")
+            except Exception:
+                pass
+
+        if not nvidia_key and not gemini_key:
+            base["metadata"]["extraction_engine"] = "regex"
+            return base
+
+        lifestyle_text = json_to_text(lifestyle or {})
+        sp_text = json_to_text(search_preferences or {})
+
+        prompt = f"""Eres un psicólogo clínico extractor para DailyLover Colombia.
+Analiza la ficha y responde ÚNICAMENTE un JSON compacto con los atributos clínicos detectados:
+{{
+  "vasectomia": bool,
+  "deseo_hijos": bool,
+  "turnos_rotativos": bool,
+  "turno_nocturno": bool,
+  "profesion_alta_movilidad": bool,
+  "disposicion_viajar": bool,
+  "custodia_compartida_semanal": bool,
+  "duelo_activo_reciente": bool,
+  "planes_mudanza_internacional": bool,
+  "modelo_financiero": "Proveedor tradicional" | "Igualitario 50/50" | "Flexible / Equilibrado",
+  "fe_espiritual": "Creyente devoto/practicante" | "Ateo / Agnóstico" | "Espiritual / No practicante",
+  "postura_politica": "Izquierda" | "Derecha" | "Centro / Apolitico",
+  "rechaza_izquierda": bool,
+  "rechaza_derecha": bool,
+  "estilo_procesamiento": "Tiempo fuera / Reflexivo" | "Inmediato / Reactivo" | "Equilibrado",
+  "alerta_reactividad": bool,
+  "rasgo_evitativo": bool,
+  "necesidad_espacio_personal": "Alta (Hiper-independiente)" | "Baja (Fusión / Mucha cercanía)" | "Equilibrada",
+  "vitalidad_fisica": "Muy Alta (Atleta / Alto Desgaste)" | "Baja (Hogareño / Sedentario)" | "Moderada",
+  "cronotipo": "Alondra (Madrugador extremo)" | "Búho (Nocturno)" | "Estándar",
+  "dinamica_preferida": "Polaridad Tradicional (Liderazgo masculino / Receptividad femenina)" | "Dinámica Igualitaria / Colaborativa",
+  "aseo_y_presentacion_estricta": bool,
+  "rechaza_tatuajes": bool,
+  "rechaza_cirugias_esteticas": bool,
+  "exige_cuerpo_saludable": bool,
+  "es_trans": bool
+}}
+
+Reglas clínicas colombianas:
+- Si es hombre y 'cerró la fábrica' / 'se operó definitivamente' / 'ligado', vasectomia=true y deseo_hijos=false.
+- Horarios rotativos, turnos 12h, guardias clínicas, rotación semanal/mensual: turnos_rotativos=true.
+- 'tusa', 'se dejaron hace mes y medio', ruptura < 90 días: duelo_activo_reciente=true.
+- Nómada digital, teletrabajo total, viaja entre ciudades: disposicion_viajar=true.
+
+Ficha:
+Nombre: {name}, Género: {gender}, Edad: {age}, Ciudad: {city}
+Notas clínicas:
+{clean_notes}
+Estilo de vida: {lifestyle_text}
+Preferencias: {sp_text}"""
+
+        extracted_data = None
+        model_name = None
+
+        async def _call_llm(client: httpx.AsyncClient):
+            nonlocal extracted_data, model_name
+            # TIER 1: NVIDIA NIM (Llama 3.2 11B Vision Instruct)
+            if nvidia_key:
+                url_nv = "https://integrate.api.nvidia.com/v1/chat/completions"
+                headers_nv = {"Authorization": f"Bearer {nvidia_key}", "Content-Type": "application/json"}
+                payload_nv = {
+                    "model": "meta/llama-3.2-11b-vision-instruct",
+                    "messages": [
+                        {"role": "system", "content": "Devuelve SOLO un objeto JSON válido sin bloques markdown ni texto adicional."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 350
+                }
+                try:
+                    r = await client.post(url_nv, json=payload_nv, headers=headers_nv, timeout=25.0)
+                    if r.status_code == 200:
+                        content = r.json()["choices"][0]["message"]["content"]
+                        parsed = _clean_and_parse_llm_json(content)
+                        if parsed and ("turnos_rotativos" in parsed or "vasectomia" in parsed or "1_logistica" in parsed):
+                            extracted_data = parsed
+                            model_name = "meta/llama-3.2-11b-vision-instruct"
+                            return
+                except Exception as e:
+                    logger.debug(f"NVIDIA extraction failed for user {user_id}: {e}")
+
+            # TIER 2: Gemini 2.5 Flash
+            if gemini_key:
+                url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
+                payload_gem = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "maxOutputTokens": 350,
+                        "temperature": 0.0,
+                        "responseMimeType": "application/json"
+                    }
+                }
+                try:
+                    r = await client.post(url_gem, json=payload_gem, timeout=25.0)
+                    if r.status_code == 200:
+                        content = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                        parsed = _clean_and_parse_llm_json(content)
+                        if parsed and ("turnos_rotativos" in parsed or "vasectomia" in parsed or "1_logistica" in parsed):
+                            extracted_data = parsed
+                            model_name = "gemini-2.5-flash"
+                            return
+                except Exception as e:
+                    logger.debug(f"Gemini extraction failed for user {user_id}: {e}")
+
+        try:
+            if http_client:
+                await _call_llm(http_client)
+            else:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    await _call_llm(client)
+        except Exception as e:
+            logger.warning(f"Error general en extracción semántica LLM para user {user_id}: {e}")
+
+        if extracted_data and model_name:
+            cls._merge_llm_extraction(base, extracted_data, model_name, gender)
+        else:
+            base["metadata"]["extraction_engine"] = "regex-fallback"
+
+        return base
+
+def _clean_and_parse_llm_json(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    s = text.strip()
+    if s.startswith("```json"):
+        s = s[7:]
+    elif s.startswith("```"):
+        s = s[3:]
+    if s.endswith("```"):
+        s = s[:-3]
+    s = s.strip()
+    try:
+        return json.loads(s)
+    except Exception:
+        match = re.search(r'\{.*\}', s, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except Exception:
+                pass
+    return None
 
 def json_to_text(d: Any) -> str:
     if not d:
