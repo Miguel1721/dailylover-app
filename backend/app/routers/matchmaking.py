@@ -6970,7 +6970,7 @@ async def get_interview_results(
             client_prefs = {}
     client_height_cm = parse_cm_height(prof_row.estatura) if prof_row and prof_row.estatura else None
     client_age = int(prof_row.age) if prof_row and prof_row.age else None
-    if not client_age and prof_row and prof_row.bio_notes:
+    if (not client_age or client_age < 18) and prof_row and prof_row.bio_notes:
         m_c_age = re.search(r'(\d{2})\s*a[ñn]os', prof_row.bio_notes, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', prof_row.bio_notes, re.IGNORECASE)
         if m_c_age:
             try:
