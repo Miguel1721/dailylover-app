@@ -1,0 +1,211 @@
+{
+  "description": "Golden Test Suite - 25 Casos de Control Fijos para Validación y Detección de Regresiones en Matchmaking",
+  "version": "1.0",
+  "test_cases": [
+    {
+      "id": "GT-01",
+      "category": "SEGURIDAD_AGRESOR",
+      "name": "Maria Paula Lamus vs Camilo Prieto",
+      "description": "Camilo Prieto tiene antecedentes de violencia física en pareja documentados en notas clínicas.",
+      "expected_safety_risk": true,
+      "expected_category": "VIOLENCIA/AGRESIÓN",
+      "expected_verdict": "DESCALIFICADO_SEGURIDAD"
+    },
+    {
+      "id": "GT-02",
+      "category": "SEGURIDAD_AGRESOR",
+      "name": "Katherine Martínez vs Camilo Prieto",
+      "description": "Camilo Prieto evaluado frente a cliente con notas medianas.",
+      "expected_safety_risk": true,
+      "expected_category": "VIOLENCIA/AGRESIÓN",
+      "expected_verdict": "DESCALIFICADO_SEGURIDAD"
+    },
+    {
+      "id": "GT-03",
+      "category": "SEGURIDAD_AGRESOR",
+      "name": "Katerine Garcia vs Camilo Prieto",
+      "description": "Camilo Prieto evaluado frente a cliente financiera de 32 años.",
+      "expected_safety_risk": true,
+      "expected_category": "VIOLENCIA/AGRESIÓN",
+      "expected_verdict": "DESCALIFICADO_SEGURIDAD"
+    },
+    {
+      "id": "GT-04",
+      "category": "BLINDAJE_VICTIMA",
+      "name": "Julian Cubillos (Límite personal contra violencia)",
+      "description": "Notas clínicas dicen: 'No quiere volver a vivir relaciones marcadas por: Celos, Toxicidad, Violencia física o verbal'.",
+      "expected_safety_risk": false,
+      "expected_verdict": "ELEGIBLE"
+    },
+    {
+      "id": "GT-05",
+      "category": "BLINDAJE_VICTIMA",
+      "name": "Valentina Rodríguez Pérez (Evento traumático pasado)",
+      "description": "Notas clínicas dicen: 'A nivel de salud, tuvo un evento traumático (abuso sexual) a los 19 años...'. Víctima, no agresora.",
+      "expected_safety_risk": false,
+      "expected_verdict": "ELEGIBLE"
+    },
+    {
+      "id": "GT-06",
+      "category": "BLINDAJE_VICTIMA",
+      "name": "Andrea Durán Yepes (Abuso en matrimonio previo)",
+      "description": "Notas clínicas dicen: '...identificó después abuso sexual normalizado dentro de esa relación con su expareja narcisista'. Víctima, no agresora.",
+      "expected_safety_risk": false,
+      "expected_verdict": "ELEGIBLE"
+    },
+    {
+      "id": "GT-07",
+      "category": "BLINDAJE_EXPAREJA_SUICIDIO",
+      "name": "Jorge Camacho (Salud mental en expareja)",
+      "description": "Notas clínicas dicen: '...sabía que ella venía con temas de salud mental, TLP e intentos de suicidio... y él huyó de eso'. La expareja era la afectada.",
+      "expected_safety_risk": false,
+      "expected_verdict": "ELEGIBLE"
+    },
+    {
+      "id": "GT-08",
+      "category": "BLINDAJE_NO_NEGOCIABLE_DROGAS",
+      "name": "Lucía Rodríguez (No negociable de drogas)",
+      "description": "Notas clínicas dicen: 'NO adiccion a las drogas. NO fume'. Exigencia para la pareja, no hábito propio.",
+      "expected_safety_risk": false,
+      "expected_verdict": "ELEGIBLE"
+    },
+    {
+      "id": "GT-09",
+      "category": "BLINDAJE_NO_NEGOCIABLE_DROGAS",
+      "name": "Marco Ruiz (Límites contra adicciones)",
+      "description": "Notas clínicas dicen: 'No adicciones. No drogas. No alcohol... Personas con consumo problemático de alcohol...'. Rechazo de pareja.",
+      "expected_safety_risk": false,
+      "expected_verdict": "ELEGIBLE"
+    },
+    {
+      "id": "GT-10",
+      "category": "ADICCION_ACTIVA_SIMULADA",
+      "name": "Perfil con consumo activo problemático propio",
+      "description": "Notas clínicas dicen: 'Registra consumo problemático de cocaína a diario y adicción activa severa'.",
+      "expected_safety_risk": true,
+      "expected_category": "ADICCIÓN SEVERA ACTIVA",
+      "expected_verdict": "DESCALIFICADO_SEGURIDAD"
+    },
+    {
+      "id": "GT-11",
+      "category": "DELITO_GRAVE_SIMULADO",
+      "name": "Perfil con condena penal por estafa",
+      "description": "Notas clínicas dicen: 'Estuvo en la cárcel por estafa y condena penal'.",
+      "expected_safety_risk": true,
+      "expected_category": "DELITO/PENAL GRAVE",
+      "expected_verdict": "DESCALIFICADO_SEGURIDAD"
+    },
+    {
+      "id": "GT-12",
+      "category": "RIESGO_PSIQUIATRICO_SIMULADO",
+      "name": "Perfil con ideación suicida activa propia",
+      "description": "Notas clínicas dicen: 'Presenta ideación suicida activa y brote psicótico no compensado'.",
+      "expected_safety_risk": true,
+      "expected_category": "RIESGO PSIQUIÁTRICO AGUDO",
+      "expected_verdict": "DESCALIFICADO_SEGURIDAD"
+    },
+    {
+      "id": "GT-13",
+      "category": "TIER1_EDAD_LEGAL",
+      "name": "Menor de 18 años (<18)",
+      "description": "Candidato con edad declarada de 16 años.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "Incompatibilidad etaria legal"
+    },
+    {
+      "id": "GT-14",
+      "category": "TIER1_EDAD_CORRUPTA",
+      "name": "Edad corrupta en CRM (edad -1 o 0)",
+      "description": "Candidato con edad registrada de -1 años.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "Incompatibilidad etaria legal"
+    },
+    {
+      "id": "GT-15",
+      "category": "TIER1_GENERO_MISMO_SEXO_HETERO",
+      "name": "Mismo sexo con orientación heterosexual",
+      "description": "Cliente hombre heterosexual busca mujer vs candidato hombre heterosexual.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "Incompatibilidad"
+    },
+    {
+      "id": "GT-16",
+      "category": "TIER1_ORIENTACION_CRUZADA_GAY",
+      "name": "Distinto sexo con orientación homosexual",
+      "description": "Cliente hombre gay vs candidata mujer heterosexual.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "orientación homosexual"
+    },
+    {
+      "id": "GT-17",
+      "category": "TIER1_CIUDAD_INCOMPATIBLE",
+      "name": "Distancia territorial insalvable (Bogotá vs Medellín)",
+      "description": "Cliente reside en Bogotá vs candidata reside en Medellín.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "Incompatibilidad territorial"
+    },
+    {
+      "id": "GT-18",
+      "category": "TIER1_HIJOS_NO_NEGOCIABLE",
+      "name": "Cliente exige sin hijos vs Candidato con hijos",
+      "description": "Cliente tiene 'no personas con hijos' en non-negotiables y candidato tiene hijos.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "Dealbreaker de hijos"
+    },
+    {
+      "id": "GT-19",
+      "category": "TIER1_EDAD_FUERA_DE_RANGO",
+      "name": "Candidato fuera del rango de edad exigido",
+      "description": "Cliente exige máximo 35 años y candidato tiene 44 años.",
+      "expected_tier1_reject": true,
+      "expected_reason_contains": "Incompatibilidad etaria"
+    },
+    {
+      "id": "GT-20",
+      "category": "DATOS_INSUFICIENTES",
+      "name": "Perfil con ficha clínica vacía",
+      "description": "Candidato sin notas clínicas y sin datos evaluables en CRM.",
+      "expected_verdict": "SIN DATOS SUFICIENTES",
+      "expected_score": null
+    },
+    {
+      "id": "GT-21",
+      "category": "CLIENTE_BENCHMARK_PRODUCCION",
+      "name": "Nelson David Calderón (Bogotá)",
+      "description": "Abogado de 33 años con notas clínicas extensas.",
+      "expected_min_matches": 1,
+      "expected_top_verdict_in": ["RECOMENDADO", "VIABLE BUENO"]
+    },
+    {
+      "id": "GT-22",
+      "category": "CLIENTE_BENCHMARK_PRODUCCION",
+      "name": "Sharon Nicolle Gil (Bogotá)",
+      "description": "Perfil contable con apego seguro y estilo introvertido.",
+      "expected_min_matches": 1,
+      "expected_top_verdict_in": ["RECOMENDADO", "VIABLE BUENO"]
+    },
+    {
+      "id": "GT-23",
+      "category": "CLIENTE_BENCHMARK_PRODUCCION",
+      "name": "Maria Alejandra Marroquin (Medellín)",
+      "description": "Consultora fitness en Medellín con rutina deportiva activa.",
+      "expected_min_matches": 1,
+      "expected_top_verdict_in": ["RECOMENDADO", "VIABLE BUENO"]
+    },
+    {
+      "id": "GT-24",
+      "category": "CLIENTE_BENCHMARK_PRODUCCION",
+      "name": "Laura Alza (Bogotá / Residente Médica)",
+      "description": "Residente de ortopedia con 69 candidatos descartados en Tier 1.",
+      "expected_min_matches": 1,
+      "expected_top_verdict_in": ["RECOMENDADO", "VIABLE BUENO"]
+    },
+    {
+      "id": "GT-25",
+      "category": "CASO_ESTRICTO_SIN_MATCHES",
+      "name": "Carlos Arturo Vargas Nocua (ID 11480)",
+      "description": "Caso histórico con 120 candidatos incompatibles; debe proteger los criterios sin alucinar matches.",
+      "expected_matches_count": 0
+    }
+  ]
+}

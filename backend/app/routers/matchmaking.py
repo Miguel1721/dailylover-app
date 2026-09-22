@@ -5360,8 +5360,8 @@ _AI_MATCH_CACHE: Dict[str, dict] = {
 def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
     """
     Escanea notas clínicas y perfiles para detectar banderas rojas de seguridad (violencia física,
-    abuso de pareja, antecedentes penales por violencia o agresión).
-    Distingue rigurosamente entre ser autor/tener antecedentes vs ser víctima/expresar rechazo a la violencia.
+    abuso de pareja, antecedentes penales graves, adicciones severas activas o riesgo psiquiátrico agudo).
+    Distingue rigurosamente entre ser autor/presentar riesgo vs ser víctima o expresar límites/rechazo.
     Retorna (es_riesgo_seguridad, motivo_detallado)
     """
     notes = " ".join([
@@ -5374,6 +5374,7 @@ def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
     if not notes:
         return False, None
 
+    # 1. Violencia física, sexual o intrafamiliar (Perpetrador / Antecedentes)
     perpetrator_patterns = [
         r'\b(tiene|presenta|cuenta con|registra)\s+antecedentes?\s+de\s+violencia\b',
         r'\bantecedentes?\s+de\s+violencia\s+f[ií]sica\b',
@@ -5390,24 +5391,62 @@ def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
         r'\bagresi[oó]n\s+sexual\b'
     ]
 
-    for pat in perpetrator_patterns:
+    # 2. Adicciones severas activas (consumo destructivo no rehabilitado)
+    substance_patterns = [
+        r'\bconsumo\s+(problem[aá]tico|descontrolado|compulsivo)\s+de\s+(drogas?|coca[ií]na|bazuco|hero[ií]na|sustancias?)\b',
+        r'\b(adicto|adicta)\s+activo\s+a\s+(las?\s+)?(drogas?|coca[ií]na|bazuco|hero[ií]na)\b',
+        r'\bconsume\s+(coca[ií]na|perico|bazuco|tusi)\s+(a\s+diario|habitualmente)\b',
+        r'\balcoholismo\s+(cr[oó]nico|descontrolado|activo\s+severo)\b',
+        r'\bludopat[ií]a\s+(severa|descontrolada)\b'
+    ]
+
+    # 3. Delitos penales graves y fraudes
+    crime_patterns = [
+        r'\b(estafador|estafadora)\s+(profesional|reincidente)\b',
+        r'\bcondenad[oa]\s+por\s+(estafa|fraude|delitos?|narcotr[aá]fico)\b',
+        r'\b(estuvo|está)\s+(en\s+la\s+c[aá]rcel|en\s+prisi[oó]n|pres[oa])\s+por\b',
+        r'\borden\s+de\s+captura\s+(vigente|activa)\b'
+    ]
+
+    # 4. Riesgo psiquiátrico agudo descompensado
+    psych_patterns = [
+        r'\bideaci[oó]n\s+suicida\s+activa\b',
+        r'\bintento\s+de\s+suicidio\s+reciente\b',
+        r'\bbrote\s+psic[oó]tico\s+(activo|no\s+compensado|descompensado)\b'
+    ]
+
+    victim_guard = [
+        "no tolera", "no volver a", "no quiere volver", "no permite", "evitar", "evita",
+        "alejarse de", "victima de", "víctima de", "sufrió de", "sufrio de", "cero tolerancia",
+        "no acepta", "no soporta", "estuvo casada con", "estuvo casado con", "su expareja era",
+        "su ex era", "su ex", "su expareja", "su padre", "su madre", "su hermano", "familiar con",
+        "no maltratador", "no violento", "no grosero", "evento traumático", "evento traumatico",
+        "estrés postraumático", "estres postraumatico", "abuso sexual normalizado",
+        "normalizado dentro de", "somatizando", "no consume", "no drogas", "cero drogas",
+        "no adicciones", "tragos sociales", "ocasional", "recuperad", "sobrio",
+        "abogado", "penalista", "víctima de estafa", "le estafaron", "fue estafad",
+        "psiquiatra", "psicólog", "psicolog"
+    ]
+
+    all_patterns = (
+        [(p, "VIOLENCIA/AGRESIÓN") for p in perpetrator_patterns] +
+        [(p, "ADICCIÓN SEVERA ACTIVA") for p in substance_patterns] +
+        [(p, "DELITO/PENAL GRAVE") for p in crime_patterns] +
+        [(p, "RIESGO PSIQUIÁTRICO AGUDO") for p in psych_patterns]
+    )
+
+    for pat, category in all_patterns:
         match = re.search(pat, notes, re.IGNORECASE)
         if match:
-            start = max(0, match.start() - 80)
-            end = min(len(notes), match.end() + 80)
+            start = max(0, match.start() - 100)
+            end = min(len(notes), match.end() + 100)
             context = notes[start:end].lower()
             
-            victim_guard = [
-                "no tolera", "no volver a", "no quiere volver", "no permite", "evitar", "evita",
-                "alejarse de", "victima de", "víctima de", "sufrió de", "sufrio de", "cero tolerancia",
-                "no acepta", "no soporta", "estuvo casada con", "estuvo casado con", "su expareja era",
-                "su ex era", "no maltratador", "no violento", "no grosero"
-            ]
             if any(vg in context for vg in victim_guard):
                 continue
             
             p_name = person.get("name") or "Persona"
-            return True, f"RED FLAG DE SEGURIDAD: {p_name} presenta registros o antecedentes de violencia/agresión en notas clínicas ('{match.group(0)}'). Descalificación automática inmediata."
+            return True, f"RED FLAG DE SEGURIDAD ({category}): {p_name} presenta registros clínicos no negociables ('{match.group(0)}'). Descalificación automática inmediata."
 
     return False, None
 
@@ -5552,6 +5591,12 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     c_max_age = _parse_age_val(c_sp.get('max_age'))
     cand_min_age = _parse_age_val(cand_sp.get('min_age'))
     cand_max_age = _parse_age_val(cand_sp.get('max_age'))
+
+    # Regla Dura Legal: Mayoría de edad estricta y descarte de edades corruptas en CRM (<18)
+    if cand_age is not None and (cand_age < 18 or cand_age <= 0):
+        return True, f"Incompatibilidad etaria legal: {cand.get('name')} tiene edad no permitida en matchmaking ({cand_age} años). Exclusivo mayores de 18 años."
+    if c_age is not None and (c_age < 18 or c_age <= 0):
+        return True, f"Incompatibilidad etaria legal: {cli.get('name')} tiene edad no permitida en matchmaking ({c_age} años). Exclusivo mayores de 18 años."
 
     # Si candidato tiene edad registrada y cliente exige rango
     if cand_age is not None:
