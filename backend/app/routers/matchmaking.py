@@ -4367,18 +4367,34 @@ async def get_client_extended_profile(
 ):
     """
     Retorna el perfil extendido de un cliente (Formulario 1 y Formulario 2).
-    Si no existe aún, retorna la estructura inicial lista para llenar.
+    Aplica regla de prioridad unificada:
+    1. Si la psicóloga ya completó o guardó datos en client_extended_profile, su información manda.
+    2. Si client_extended_profile no existe o tiene campos clave vacíos/default, hace fallback
+       automático a leer de profiles (apego, love_language, bio_notes, search_preferences, lifestyle)
+       provenientes de la importación del CRM SmartMatchApp.
     """
     user_row = await resolve_client_user(crm_id_or_user_id, db)
     if not user_row:
         raise HTTPException(status_code=404, detail=f"Cliente '{crm_id_or_user_id}' no encontrado.")
 
     uid = user_row.id
+
+    # 1. Consultar client_extended_profile (datos directos de psicóloga)
     res = await db.execute(
         text("SELECT * FROM client_extended_profile WHERE user_id = :uid"),
         {"uid": uid}
     )
     prof = res.fetchone()
+
+    # 2. Consultar profiles (datos del CRM / onboarding)
+    prof_db_res = await db.execute(text("""
+        SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.orientation, p.responsable,
+               p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes, p.lifestyle
+        FROM profiles p
+        WHERE p.user_id = :uid
+        LIMIT 1
+    """), {"uid": uid})
+    prof_row = prof_db_res.fetchone()
 
     client_info = {
         "user_id": user_row.id,
@@ -4388,68 +4404,281 @@ async def get_client_extended_profile(
         "crm_id": user_row.crm_id or ""
     }
 
-    if not prof:
-        return {
-            "exists": False,
-            "client": client_info,
-            "profile": {
-                "social_group_score": None,
-                "education_level": 5,
-                "mobility_travel": 5,
-                "physical_activity_level": 5,
-                "social_energy_level": 5,
-                "life_structure_level": 5,
-                "weekend_style": [],
-                "religion_importance": 1,
-                "political_self_placement": "apolítico",
-                "kids_importance": 5,
-                "traditionalism_level": 5,
-                "punctuality": "A tiempo",
-                "presentation_camera": True,
-                "presentation_style": "Casual",
-                "presentation_background": "Ordenado",
-                "speaking_confidence": 5,
-                "conversation_lead": 5,
-                "emotional_processing": 5,
-                "months_single": 0,
-                "self_awareness": 5,
-                "love_language_given": "Tiempo de calidad",
-                "love_language_received": "Tiempo de calidad",
-                "love_language_flexibility": 5,
-                "non_negotiables": [],
-                "physical_complexion": [],
-                "physical_importance": 5,
-                "physical_traits_notes": "",
-                "behavioral_risk_level": 1,
-                "flags_notes": "",
-                "synthesis_who_really_is": "",
-                "synthesis_first_date_behavior": "",
-                "synthesis_best_match_type": "",
-                "attachment_style": "Seguro",
-                "dynamic_answers": {},
-                "updated_at": None,
-                "updated_by": None
-            }
+    # Desempaquetar search_preferences y lifestyle de profiles
+    sp: Dict[str, Any] = {}
+    lifestyle: Dict[str, Any] = {}
+    if prof_row:
+        if prof_row.search_preferences:
+            if isinstance(prof_row.search_preferences, dict):
+                sp = prof_row.search_preferences
+            elif isinstance(prof_row.search_preferences, str):
+                try:
+                    sp = json.loads(prof_row.search_preferences)
+                except Exception:
+                    sp = {}
+        if prof_row.lifestyle:
+            if isinstance(prof_row.lifestyle, dict):
+                lifestyle = prof_row.lifestyle
+            elif isinstance(prof_row.lifestyle, str):
+                try:
+                    lifestyle = json.loads(prof_row.lifestyle)
+                except Exception:
+                    lifestyle = {}
+        if not lifestyle and isinstance(sp.get("lifestyle"), dict):
+            lifestyle = sp.get("lifestyle")
+
+    # Inicializar perfil base
+    is_persisted_in_cep = prof is not None
+    if is_persisted_in_cep:
+        d = dict(prof._mapping)
+    else:
+        d = {
+            "social_group_score": None,
+            "education_level": 5,
+            "mobility_travel": 5,
+            "physical_activity_level": 5,
+            "social_energy_level": 5,
+            "life_structure_level": 5,
+            "weekend_style": [],
+            "religion_importance": 1,
+            "political_self_placement": "apolítico",
+            "kids_importance": 5,
+            "traditionalism_level": 5,
+            "punctuality": "A tiempo",
+            "presentation_camera": True,
+            "presentation_style": "Casual",
+            "presentation_background": "Ordenado",
+            "speaking_confidence": 5,
+            "conversation_lead": 5,
+            "emotional_processing": 5,
+            "months_single": 0,
+            "self_awareness": 5,
+            "love_language_given": None,
+            "love_language_received": None,
+            "love_language_flexibility": 5,
+            "non_negotiables": [],
+            "physical_complexion": [],
+            "physical_importance": 5,
+            "physical_traits_notes": "",
+            "behavioral_risk_level": 1,
+            "flags_notes": "",
+            "synthesis_who_really_is": "",
+            "synthesis_first_date_behavior": "",
+            "synthesis_best_match_type": "",
+            "attachment_style": None,
+            "dynamic_answers": {},
+            "updated_at": None,
+            "updated_by": None
         }
 
-    d = dict(prof._mapping)
+    # ─── FALLBACK CAMPO POR CAMPO (Prioridad: Psicóloga > CRM) ───────────────
+
+    # 1. Estilo de Apego
+    psyc_attach = str(d.get("attachment_style") or "").strip()
+    if not psyc_attach or psyc_attach.lower() in ("no especificado", "none", ""):
+        raw_apego = prof_row.apego if prof_row else None
+        crm_attach = None
+        if isinstance(raw_apego, dict):
+            crm_attach = raw_apego.get("style") or raw_apego.get("estilo")
+        elif raw_apego:
+            crm_attach = str(raw_apego)
+        if not crm_attach and sp:
+            crm_attach = (sp.get("lifestyle") or {}).get("estilo_apego") or sp.get("estilo_apego") or sp.get("attachment_style")
+
+        if crm_attach:
+            s_att = str(crm_attach).lower().strip()
+            if "segur" in s_att:
+                d["attachment_style"] = "Seguro"
+            elif "ansios" in s_att:
+                d["attachment_style"] = "Ansioso"
+            elif "evitat" in s_att:
+                d["attachment_style"] = "Evitativo"
+            elif "desorg" in s_att or "mixt" in s_att or "temer" in s_att or "ambival" in s_att:
+                d["attachment_style"] = "Desorganizado"
+            else:
+                d["attachment_style"] = str(crm_attach).strip().capitalize()
+        else:
+            d["attachment_style"] = "Seguro"
+
+    # 2. Lenguajes del Amor (Recibido y Dado)
+    psyc_rec = str(d.get("love_language_received") or "").strip()
+    psyc_giv = str(d.get("love_language_given") or "").strip()
+
+    crm_love = str(prof_row.love_language or "").strip() if prof_row and prof_row.love_language else None
+    if not crm_love and sp:
+        crm_love = (sp.get("lifestyle") or {}).get("lenguaje_amor") or sp.get("love_language")
+
+    norm_crm_love = None
+    if crm_love:
+        s_lv = str(crm_love).lower().strip()
+        if "calidad" in s_lv:
+            norm_crm_love = "Tiempo de calidad"
+        elif "servicio" in s_lv:
+            norm_crm_love = "Actos de servicio"
+        elif "afirma" in s_lv or "palabra" in s_lv:
+            norm_crm_love = "Palabras de afirmación"
+        elif "regalo" in s_lv:
+            norm_crm_love = "Regalos"
+        elif "físico" in s_lv or "fisico" in s_lv or "contacto" in s_lv:
+            norm_crm_love = "Contacto físico"
+        else:
+            norm_crm_love = str(crm_love).strip()
+
+    if not psyc_rec or psyc_rec.lower() in ("no especificado", "none", ""):
+        d["love_language_received"] = norm_crm_love or "Tiempo de calidad"
+
+    if not psyc_giv or psyc_giv.lower() in ("no especificado", "none", ""):
+        d["love_language_given"] = norm_crm_love or "Tiempo de calidad"
+
+    # 3. Límites No Negociables (Dealbreakers)
+    existing_nn = d.get("non_negotiables") or []
+    has_psyc_nn = False
+    clean_psyc_nn = []
+    if isinstance(existing_nn, list) and len(existing_nn) > 0:
+        for item in existing_nn:
+            if isinstance(item, dict) and (item.get("texto") or "").strip():
+                clean_psyc_nn.append({"texto": item.get("texto").strip(), "tipo": item.get("tipo") or "DB"})
+                has_psyc_nn = True
+            elif isinstance(item, str) and item.strip():
+                clean_psyc_nn.append({"texto": item.strip(), "tipo": "DB"})
+                has_psyc_nn = True
+
+    if has_psyc_nn:
+        d["non_negotiables"] = clean_psyc_nn
+    else:
+        # Fallback a CRM: search_preferences / lifestyle
+        crm_nn_list = []
+        seen_nn = set()
+        raw_candidates = []
+        if sp.get("non_negotiables"):
+            raw_candidates.extend(sp.get("non_negotiables") if isinstance(sp.get("non_negotiables"), list) else [sp.get("non_negotiables")])
+        if sp.get("dealbreakers"):
+            raw_candidates.extend(sp.get("dealbreakers") if isinstance(sp.get("dealbreakers"), list) else [sp.get("dealbreakers")])
+        if (sp.get("lifestyle") or {}).get("non_negotiables"):
+            ls_nn = (sp.get("lifestyle") or {}).get("non_negotiables")
+            raw_candidates.extend(ls_nn if isinstance(ls_nn, list) else [ls_nn])
+        if (lifestyle or {}).get("non_negotiables"):
+            ls_nn = (lifestyle or {}).get("non_negotiables")
+            raw_candidates.extend(ls_nn if isinstance(ls_nn, list) else [ls_nn])
+
+        for item in raw_candidates:
+            if isinstance(item, dict):
+                txt = (item.get("texto") or item.get("text") or "").strip()
+                if txt and txt.lower() not in seen_nn:
+                    seen_nn.add(txt.lower())
+                    crm_nn_list.append({"texto": txt, "tipo": item.get("tipo") or "DB"})
+            elif isinstance(item, str) and item.strip():
+                cleaned_str = re.sub(r'^Detalle:\s*', '', item.strip())
+                for part in cleaned_str.split(';'):
+                    p_txt = part.strip()
+                    if p_txt and p_txt.lower() not in seen_nn:
+                        seen_nn.add(p_txt.lower())
+                        crm_nn_list.append({"texto": p_txt, "tipo": "DB"})
+
+        d["non_negotiables"] = crm_nn_list[:5]
+
+    # 4. Síntesis y Quick Notes
+    psyc_synth = str(d.get("synthesis_who_really_is") or "").strip()
+    if not psyc_synth or psyc_synth.lower() in ("none", ""):
+        bio = (prof_row.bio_notes or "").strip() if prof_row and prof_row.bio_notes else ""
+        if bio:
+            d["synthesis_who_really_is"] = bio[:200]
+        elif sp and sp.get("what_searches_in_partner"):
+            d["synthesis_who_really_is"] = str(sp.get("what_searches_in_partner")).strip()[:200]
+
+    # 5. Red Flags / Alertas
+    psyc_flags = str(d.get("flags_notes") or "").strip()
+    if not psyc_flags:
+        rf_list = []
+        if sp.get("partner_red_flags"):
+            p_rf = sp.get("partner_red_flags")
+            if isinstance(p_rf, list):
+                rf_list.extend([str(x).strip() for x in p_rf if str(x).strip()])
+            elif isinstance(p_rf, str) and p_rf.strip():
+                rf_list.append(p_rf.strip())
+        if sp.get("personal_red_flags"):
+            p_rf = sp.get("personal_red_flags")
+            if isinstance(p_rf, list):
+                rf_list.extend([f"Personal: {str(x).strip()}" for x in p_rf if str(x).strip()])
+            elif isinstance(p_rf, str) and p_rf.strip():
+                rf_list.append(f"Personal: {p_rf.strip()}")
+        if rf_list:
+            d["flags_notes"] = ", ".join(rf_list)
+
+    # 6. Estilo de Fin de Semana (weekend_style)
+    psyc_ws = d.get("weekend_style")
+    if not psyc_ws or not isinstance(psyc_ws, list) or len(psyc_ws) == 0:
+        ws_text = f"{lifestyle.get('ideal_weekend') or ''} {lifestyle.get('free_time') or ''} {lifestyle.get('preferred_plans') or ''} {sp.get('ideal_weekend') or ''} {sp.get('free_time') or ''}".lower()
+        inferred_ws = []
+        if any(w in ws_text for w in ["casa", "tranqui", "chill", "película", "series", "lectura", "leer"]):
+            inferred_ws.append("Casero")
+        if any(w in ws_text for w in ["cultur", "museo", "restauran", "comer", "cine", "café", "cafe"]):
+            inferred_ws.append("Activo urbano")
+        if any(w in ws_text for w in ["naturalez", "outdoor", "aventur", "viajar", "viajes"]):
+            inferred_ws.append("Naturaleza-aventura")
+        if any(w in ws_text for w in ["fiesta", "social", "rumba", "coctel", "bar", "amigos"]):
+            inferred_ws.append("Social")
+        if "balanceado" in ws_text or "mixto" in ws_text:
+            inferred_ws.append("Mixto")
+        d["weekend_style"] = inferred_ws
+
+    # 7. Nivel de Actividad Física
+    if not is_persisted_in_cep or d.get("physical_activity_level") is None or d.get("physical_activity_level") == 5:
+        fit_str = str(lifestyle.get("fitness_level") or (sp.get("lifestyle") or {}).get("actividad_fisica") or "").lower()
+        if "4–6" in fit_str or "4-6" in fit_str or "lover" in fit_str:
+            d["physical_activity_level"] = 8
+        elif "2–3" in fit_str or "2-3" in fit_str or "constante" in fit_str:
+            d["physical_activity_level"] = 6
+        elif "principiante" in fit_str or "1" in fit_str:
+            d["physical_activity_level"] = 4
+        elif "sedentario" in fit_str or "nada" in fit_str:
+            d["physical_activity_level"] = 2
+
+    # 8. Importancia de Hijos (kids_importance)
+    if not is_persisted_in_cep or d.get("kids_importance") is None or d.get("kids_importance") == 5:
+        wants = str(lifestyle.get("wants_children") or sp.get("wants_children") or "").lower()
+        if "sí" in wants or "si" in wants or "yes" in wants:
+            d["kids_importance"] = 8
+        elif "no" in wants:
+            d["kids_importance"] = 2
+
+    # Normalización de tipos
     if d.get("social_group_score") is not None:
         d["social_group_score"] = float(d["social_group_score"])
-    if d.get("updated_at") is not None:
+    if d.get("updated_at") is not None and hasattr(d["updated_at"], "isoformat"):
         d["updated_at"] = d["updated_at"].isoformat()
-    if d.get("weekend_style") is None:
-        d["weekend_style"] = []
     if d.get("physical_complexion") is None:
         d["physical_complexion"] = []
-    if d.get("non_negotiables") is None:
-        d["non_negotiables"] = []
-    if d.get("attachment_style") is None:
-        d["attachment_style"] = "Seguro"
     if d.get("dynamic_answers") is None:
         d["dynamic_answers"] = {}
 
+    # Determinación de existencia y autor
+    has_meaningful_crm_data = bool(
+        prof_row and (
+            prof_row.apego or
+            prof_row.love_language or
+            (prof_row.bio_notes and prof_row.bio_notes.strip()) or
+            (sp and (sp.get("non_negotiables") or sp.get("partner_red_flags") or sp.get("personal_red_flags")))
+        )
+    )
+
+    if is_persisted_in_cep:
+        exists = True
+        d["updated_by"] = d.get("updated_by") or "Psicóloga"
+        d["source"] = "Psicóloga (client_extended_profile)"
+    elif has_meaningful_crm_data:
+        exists = True
+        d["updated_by"] = "CRM SmartMatchApp (Prellenado)"
+        d["updated_at"] = None
+        d["source"] = "CRM SmartMatchApp"
+    else:
+        exists = False
+        d["updated_by"] = None
+        d["updated_at"] = None
+        d["source"] = None
+
     return {
-        "exists": True,
+        "exists": exists,
         "client": client_info,
         "profile": d
     }
