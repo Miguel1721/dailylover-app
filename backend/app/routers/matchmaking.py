@@ -5791,34 +5791,39 @@ PERFIL CANDIDATO: {cand_info.get('name')}
      4) En "analisis", iniciar la primera línea con: "🚨 DESCALIFICADO POR SEGURIDAD: [motivo concreto]".
    - ESTÁ TOTALMENTE PROHIBIDO otorgar veredicto favorable (RECOMENDADO / VIABLE) si existe una Red Flag de Seguridad.
 
-2. ESPECIFICIDAD OBLIGATORIA:
+2. ESPECIFICIDAD OBLIGATORIA Y PUNTOS FUERTES ANCLADOS:
    - Si la fuente de un dato es "Psicóloga", dale PRIORIDAD absoluta sobre cualquier dato auto-declarado en CRM, ya que representa el criterio clínico profesional validado en entrevista.
-   - PROHIBIDO usar frases genéricas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica").
-   - Cita hechos textuales concretos: apego, hábitos, ritmo de rumba, mascotas, proyectos de vida o extractos de las notas.
+   - PROHIBIDO TERMINANTEMENTE usar frases genéricas, diplomáticas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica", "ambos son leales/honestos").
+   - Cada elemento de "puntos_fuertes" DEBE contrastar un hecho empírico concreto extraído de las notas: el deporte o afición específica que comparten (ej. 'ambos practican pilates y running'), su complementariedad de apego o lenguaje de amor verificado (ej. 'ella recibe actos de servicio y él los ofrece'), un proyecto de vida común tangible (ej. 'ambos desean vivir fuera del país en 2 años'), o valores concretos idénticos citados en sus perfiles.
    - Si las notas clínicas de alguna persona son muy escuetas, decláralo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
 
-3. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 0 a 92):
+3. REGLA DE CONCORDANCIAS NEGATIVAS (ALINEACIÓN VS DEALBREAKER):
+   - Si ambas personas coinciden en una postura de 'NO' (por ejemplo: AMBOS no quieren tener hijos, AMBOS no son fiesteros/rumberos, AMBOS no fuman, o AMBOS son caseros), esto es un PUNTO FUERTE DE ALINEACIÓN FUNDAMENTAL. Está ESTRICTAMENTE PROHIBIDO clasificarlo como deal_breaker.
+   - Solo clasifica como "deal_breakers" cuando exista una DISCREPANCIA DIRECTA o fricción real entre lo que una persona busca/ofrece y lo que la otra es/busca (ejemplo: uno quiere hijos y el otro no; o uno sale de rumba cada fin de semana y el otro no tolera la fiesta).
+   - Si no existen discrepancias o fricciones reales en los perfiles, el campo "deal_breakers" DEBE ser una lista vacía [].
+
+4. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 0 a 92):
    - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers ni red flags de seguridad. Diferencias normales complementarias o agendas laborales habituales se consideran compatibles, NO causales de castigo.
    - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar o verificar (rutinas, logística o preferencias secundarias).
    - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos de conexión, PERO existen reservas clínicas o de estilo de vida reales que requieren validación mutua (apego ansioso/evitativo sin trabajar, ritmo de rumba muy dispar, o duelo afectivo menor a 1 año).
    - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que dificulta la conexión.
    - "NO RECOMENDADO" (ai_score 0 a 35): Red flags de seguridad (score 0), dealbreakers explícitos o incompatibilidad directa en estilo de vida o valores fundamentales.
 
-4. SÍNTESIS INDIVIDUAL DE CADA PERSONA (3 VIÑETAS EJECUTIVAS):
+5. SÍNTESIS INDIVIDUAL DE CADA PERSONA (3 VIÑETAS EJECUTIVAS):
    Para que la psicóloga no tenga que leer las notas completas en bruto, sintetiza a cada persona en exactamente 3 puntos concisos:
    - "quien_es": 1-2 líneas con ocupación, estilo de vida, rutina y aficiones principales.
    - "que_busca": 1-2 líneas con sus criterios reales de pareja, expectativas y no negociables.
    - "destaca": 1 línea con su rasgo psicológico diferencial, dinámica afectiva o punto de atención detectado en entrevista.
 
-5. FORMATO DE RESPUESTA:
+6. FORMATO DE RESPUESTA:
 Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 {{
   "ai_score": <entero coherente con la rúbrica, 0 si hay red flag de seguridad>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
   "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas y perfiles reales>",
   "red_flags_seguridad": ["<alertas críticas de seguridad o vacía si no hay>"],
-  "deal_breakers": ["<fricciones de estilo de vida o preferencias, o vacía si no hay>"],
-  "puntos_fuertes": ["<1 a 3 puntos hiper-específicos citando hechos de las notas>"],
+  "deal_breakers": ["<solo discrepancias y fricciones reales, vacía si coinciden o no hay>"],
+  "puntos_fuertes": ["<1 a 3 hechos concretos empíricos citando las notas, CERO generalidades>"],
   "client_summary": {{
     "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
     "que_busca": "<1-2 líneas con visión de pareja y límites>",
@@ -6700,7 +6705,10 @@ async def find_candidate_matches_engine(
             cand["ai_puntos_fuertes"] = []
 
     # 8. Evaluación con IA clínica (NVIDIA)
-    if nvidia_key and len(nvidia_key) > 10 and suggested_matches:
+    client_notes_clean = (client_summary.get("bio_notes") or client_summary.get("synthesis_who_really_is") or "").strip()
+    client_has_notes = len(client_notes_clean) >= 20
+
+    if nvidia_key and len(nvidia_key) > 10 and suggested_matches and client_has_notes:
         candidates_to_evaluate = suggested_matches[:max_ai_evaluations]
         remaining_candidates = suggested_matches[max_ai_evaluations:]
 
@@ -6877,6 +6885,12 @@ async def find_candidate_matches_engine(
             reverse=True
         )
         suggested_matches = all_candidates
+
+    elif suggested_matches and not client_has_notes:
+        for c in suggested_matches:
+            if c.get("ai_veredicto") != "SIN DATOS SUFICIENTES":
+                c["ai_veredicto"] = "SCORE ESTRUCTURAL (CLIENTE SIN NOTAS)"
+                c["ai_analisis"] = "Ficha del cliente sin notas clínicas de entrevista en CRM. Score basado en afinidad demográfica y estructural."
 
     for c in suggested_matches:
         is_insufficient = (
