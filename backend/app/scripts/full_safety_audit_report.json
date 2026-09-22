@@ -1,0 +1,3396 @@
+{
+  "total_scanned": 8126,
+  "violence_count": 9,
+  "violence_records": [
+    {
+      "user_id": 6038,
+      "crm_id": "None",
+      "name": "Camilo Humberto Prieto Fetiva",
+      "age": 30,
+      "city": "Bogotá",
+      "reason": "RED FLAG DE SEGURIDAD: Camilo Humberto Prieto Fetiva presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 6130,
+      "crm_id": "None",
+      "name": "Valentina Rodriguez Perez",
+      "age": 24,
+      "city": "Med 49 años",
+      "reason": "RED FLAG DE SEGURIDAD: Valentina Rodriguez Perez presenta registros o antecedentes de violencia/agresión en notas clínicas ('abuso sexual'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 6747,
+      "crm_id": "None",
+      "name": "ANDREA DURAN YEPES",
+      "age": null,
+      "city": "Pereira",
+      "reason": "RED FLAG DE SEGURIDAD: ANDREA DURAN YEPES presenta registros o antecedentes de violencia/agresión en notas clínicas ('abuso sexual'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 7678,
+      "crm_id": "None",
+      "name": "Andrea Duran Yepes",
+      "age": null,
+      "city": "Pereira",
+      "reason": "RED FLAG DE SEGURIDAD: Andrea Duran Yepes presenta registros o antecedentes de violencia/agresión en notas clínicas ('abuso sexual'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 7726,
+      "crm_id": "None",
+      "name": "Camilo Humberto Prieto Fetiva",
+      "age": 30,
+      "city": "Bgta",
+      "reason": "RED FLAG DE SEGURIDAD: Camilo Humberto Prieto Fetiva presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 12822,
+      "crm_id": "1755",
+      "name": "Valentina Rodriguez Perez",
+      "age": 24,
+      "city": "Bogotá",
+      "reason": "RED FLAG DE SEGURIDAD: Valentina Rodriguez Perez presenta registros o antecedentes de violencia/agresión en notas clínicas ('abuso sexual'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 13496,
+      "crm_id": "3360",
+      "name": "ANDREA DURAN YEPES",
+      "age": 34,
+      "city": "Pereira",
+      "reason": "RED FLAG DE SEGURIDAD: ANDREA DURAN YEPES presenta registros o antecedentes de violencia/agresión en notas clínicas ('abuso sexual'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 13525,
+      "crm_id": "3528",
+      "name": "Camilo Humberto PRIETO FETIVA",
+      "age": 30,
+      "city": "Bogotá D.C.",
+      "reason": "RED FLAG DE SEGURIDAD: Camilo Humberto PRIETO FETIVA presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+    },
+    {
+      "user_id": 14224,
+      "crm_id": "3514",
+      "name": "Cliente CRM 3514",
+      "age": 30,
+      "city": "Bogotá",
+      "reason": "RED FLAG DE SEGURIDAD: Cliente CRM 3514 presenta registros o antecedentes de violencia/agresión en notas clínicas ('Tiene antecedentes de violencia'). Descalificación automática inmediata."
+    }
+  ],
+  "minors_count": 410,
+  "minors_records": [
+    {
+      "user_id": 5309,
+      "crm_id": "None",
+      "name": "Nicolas Suarez",
+      "age": 32,
+      "city": "New york, viene constantemente a Bogota SG4, 32 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 5343,
+      "crm_id": "None",
+      "name": "Miguel Montañez",
+      "age": 30,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 5345,
+      "crm_id": "None",
+      "name": "Rafael Zapata",
+      "age": 36,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 5424,
+      "crm_id": "None",
+      "name": "Karen Lorena Castaño Henao",
+      "age": 50,
+      "city": "Panamá VIP",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 5525,
+      "crm_id": "None",
+      "name": "Raquel Cespedes",
+      "age": 57,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 5526,
+      "crm_id": "None",
+      "name": "Raquel Cespedes",
+      "age": 57,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 5559,
+      "crm_id": "None",
+      "name": "Felipe Ospina Naranjo",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 5560,
+      "crm_id": "None",
+      "name": "Felipe Ospina Naranjo",
+      "age": 29,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 5561,
+      "crm_id": "None",
+      "name": "Felipe Ospina Naranjo",
+      "age": 29,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 5604,
+      "crm_id": "None",
+      "name": "Sara Prieto",
+      "age": 31,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 5635,
+      "crm_id": "None",
+      "name": "Jazlin Perez Sumoza",
+      "age": 48,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 5653,
+      "crm_id": "None",
+      "name": "Diego Fernando Sanchez Montana",
+      "age": 34,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 5654,
+      "crm_id": "None",
+      "name": "Diego Fernando Sanchez Montana",
+      "age": 34,
+      "city": "Bogotá, Normandía",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 5655,
+      "crm_id": "None",
+      "name": "Diego Fernando Sanchez Montana",
+      "age": 34,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 5802,
+      "crm_id": "None",
+      "name": "Diane Bernal",
+      "age": 44,
+      "city": "Medellin",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 5803,
+      "crm_id": "None",
+      "name": "Diane Bernal",
+      "age": 44,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 5804,
+      "crm_id": "None",
+      "name": "Gali Tobar",
+      "age": 46,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 5805,
+      "crm_id": "None",
+      "name": "Gali Tobar",
+      "age": 46,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 5835,
+      "crm_id": "None",
+      "name": "Paola Gonzalez",
+      "age": 34,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 5843,
+      "crm_id": "1045",
+      "name": "Stefanny Sepulveda",
+      "age": 41,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 5855,
+      "crm_id": "None",
+      "name": "Astrid Diaz",
+      "age": 20,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '13 AÑOS'"
+    },
+    {
+      "user_id": 5881,
+      "crm_id": "None",
+      "name": "Daniel Castro",
+      "age": 44,
+      "city": "miami",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 5882,
+      "crm_id": "None",
+      "name": "Daniel Castro",
+      "age": 44,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 5883,
+      "crm_id": "None",
+      "name": "Daniel Castro",
+      "age": 44,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 5898,
+      "crm_id": "None",
+      "name": "Paola Gonzalez",
+      "age": 34,
+      "city": "medellin, 34 años sg 4",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 5950,
+      "crm_id": "None",
+      "name": "Sandra Reyes",
+      "age": 58,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '11 AÑOS'"
+    },
+    {
+      "user_id": 5960,
+      "crm_id": "None",
+      "name": "Federico Arango",
+      "age": 36,
+      "city": "Bogota",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 6010,
+      "crm_id": "None",
+      "name": "Sebastian ortiz",
+      "age": 27,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6013,
+      "crm_id": "None",
+      "name": "Maria Cristina Mendoza Estrada",
+      "age": 32,
+      "city": "32, Med",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 6014,
+      "crm_id": "None",
+      "name": "Karen Duque",
+      "age": 40,
+      "city": "40 años bisexual Canada",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6042,
+      "crm_id": "None",
+      "name": "Mariana Montoya",
+      "age": 34,
+      "city": "Bgta, 34 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6044,
+      "crm_id": "None",
+      "name": "Juliana Villarreal",
+      "age": 39,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 6067,
+      "crm_id": "None",
+      "name": "Valeria Linero",
+      "age": 25,
+      "city": "Bquilla, 25",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6069,
+      "crm_id": "None",
+      "name": "Andres Fernando Cardenas Ramirez",
+      "age": 42,
+      "city": "pereira",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6076,
+      "crm_id": "None",
+      "name": "Ximena Plazas",
+      "age": null,
+      "city": "Cartagena",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6087,
+      "crm_id": "None",
+      "name": "Rosana Serrano",
+      "age": null,
+      "city": "bgta",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6110,
+      "crm_id": "None",
+      "name": "Diana Ascencio",
+      "age": 37,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6124,
+      "crm_id": "None",
+      "name": "Mateo Peña Saffon",
+      "age": 32,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 6132,
+      "crm_id": "None",
+      "name": "Gustavo Adolfo Robledo Zapata",
+      "age": 42,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6139,
+      "crm_id": "None",
+      "name": "Paola Riveros Gil",
+      "age": 34,
+      "city": "descalificada por cancelaciones sobre el tiempo",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 6181,
+      "crm_id": "None",
+      "name": "Gustavo Ortega",
+      "age": 43,
+      "city": "Medellin",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6196,
+      "crm_id": "None",
+      "name": "Oscar Rincon R",
+      "age": 48,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6197,
+      "crm_id": "None",
+      "name": "Oscar Rincon R",
+      "age": 48,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6203,
+      "crm_id": "None",
+      "name": "Gustavo Ortega",
+      "age": 43,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6223,
+      "crm_id": "None",
+      "name": "Carolina Avila Castro",
+      "age": 47,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 6255,
+      "crm_id": "None",
+      "name": "Lina Maria Olaya",
+      "age": 31,
+      "city": "GAY",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 6298,
+      "crm_id": "None",
+      "name": "Hernan antolinez",
+      "age": 46,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6308,
+      "crm_id": "None",
+      "name": "Alejandro guevara",
+      "age": 34,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6311,
+      "crm_id": "None",
+      "name": "Daniela Morales",
+      "age": 29,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6346,
+      "crm_id": "None",
+      "name": "Claudia Aceros",
+      "age": 44,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6351,
+      "crm_id": "None",
+      "name": "Manuel Felipe Zuñiga",
+      "age": 28,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 6352,
+      "crm_id": "None",
+      "name": "Manuel Felipe Zuñiga",
+      "age": 28,
+      "city": "Cali  VIP",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 6363,
+      "crm_id": "None",
+      "name": "Mario Morales",
+      "age": 36,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 6364,
+      "crm_id": "None",
+      "name": "Mario Morales",
+      "age": 36,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 6388,
+      "crm_id": "None",
+      "name": "Sebastian Ortiz",
+      "age": 27,
+      "city": "Bgta",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6389,
+      "crm_id": "None",
+      "name": "norma carvajal",
+      "age": 44,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 6409,
+      "crm_id": "None",
+      "name": "Clara Gisande",
+      "age": 37,
+      "city": "refund",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6454,
+      "crm_id": "None",
+      "name": "Hernan Antolinez",
+      "age": 46,
+      "city": "46 años sg4 bogota",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6458,
+      "crm_id": "None",
+      "name": "Natalia Rangel",
+      "age": 40,
+      "city": "Villavicencio",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6462,
+      "crm_id": "None",
+      "name": "Mauricio Fernandez cardona",
+      "age": 39,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6490,
+      "crm_id": "None",
+      "name": "CESAR MORALES",
+      "age": 45,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6496,
+      "crm_id": "None",
+      "name": "LINA GONZALEZ",
+      "age": 31,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6497,
+      "crm_id": "None",
+      "name": "STEPHANIE TORRES",
+      "age": 40,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6558,
+      "crm_id": "None",
+      "name": "KATIANA PAVAS",
+      "age": 37,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6575,
+      "crm_id": "None",
+      "name": "Martha Delgadillo",
+      "age": null,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 6588,
+      "crm_id": "None",
+      "name": "YENNY BUILES",
+      "age": 47,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6615,
+      "crm_id": "None",
+      "name": "LINA MARIA OLAYA",
+      "age": 31,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 6625,
+      "crm_id": "None",
+      "name": "ANDREA ESPINAL",
+      "age": 45,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6643,
+      "crm_id": "None",
+      "name": "ANDRES BUSTOS",
+      "age": 33,
+      "city": "bog",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6644,
+      "crm_id": "None",
+      "name": "ANDRES BUSTOS",
+      "age": 33,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6652,
+      "crm_id": "None",
+      "name": "SERGIO BATISTA",
+      "age": 31,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6654,
+      "crm_id": "None",
+      "name": "NATALIA CASTRO",
+      "age": 28,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6666,
+      "crm_id": "None",
+      "name": "MATEO CANO",
+      "age": 44,
+      "city": "VIP - MANIZALES",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 6678,
+      "crm_id": "None",
+      "name": "JUAN BALLESTEROS",
+      "age": 57,
+      "city": "VIP - HOLLYWOOD",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6684,
+      "crm_id": "None",
+      "name": "MARGARITA GARCIA",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6721,
+      "crm_id": "None",
+      "name": "CATALINA BUITRAGO",
+      "age": 40,
+      "city": "VIP -bog",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 6729,
+      "crm_id": "None",
+      "name": "MARIA SOLEDAD SOLORZANO",
+      "age": 59,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6748,
+      "crm_id": "None",
+      "name": "KATHY AGUDELO",
+      "age": 27,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6749,
+      "crm_id": "None",
+      "name": "JORGE ANDRES SANCHEZ",
+      "age": 47,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 6757,
+      "crm_id": "None",
+      "name": "SARA PRIETO",
+      "age": 31,
+      "city": "bog",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 6773,
+      "crm_id": "None",
+      "name": "JOHANN GALEANO",
+      "age": 29,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6796,
+      "crm_id": "None",
+      "name": "ALEJANDRA SABOGAL",
+      "age": 28,
+      "city": "Bog",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 6808,
+      "crm_id": "None",
+      "name": "GIANCARLO GUTIERREZ",
+      "age": 37,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7162,
+      "crm_id": "None",
+      "name": "Jennifer Lopez",
+      "age": 33,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7163,
+      "crm_id": "None",
+      "name": "Jennifer Lopez",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7174,
+      "crm_id": "None",
+      "name": "Alejandro Guevara",
+      "age": 34,
+      "city": "VIP - Chia",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7175,
+      "crm_id": "None",
+      "name": "Alejandro Guevara",
+      "age": 34,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7207,
+      "crm_id": "None",
+      "name": "Martha Ruiz",
+      "age": null,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7208,
+      "crm_id": "None",
+      "name": "Martha Ruiz",
+      "age": null,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7249,
+      "crm_id": "None",
+      "name": "Sebastian Sevillano",
+      "age": 41,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 7250,
+      "crm_id": "None",
+      "name": "Sebastian Sevillano",
+      "age": 41,
+      "city": "Cali VIP",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 7258,
+      "crm_id": "None",
+      "name": "Manuel Felipe Zuñiga",
+      "age": 28,
+      "city": "Cali  VIP",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 7273,
+      "crm_id": "None",
+      "name": "Oscar Moreno",
+      "age": 37,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 7274,
+      "crm_id": "None",
+      "name": "Oscar Moreno",
+      "age": 37,
+      "city": "Medellin",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 7332,
+      "crm_id": "None",
+      "name": "Diego Vega",
+      "age": 45,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7366,
+      "crm_id": "None",
+      "name": "Luisa Gaviria",
+      "age": 38,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7378,
+      "crm_id": "None",
+      "name": "Natalia Moreno",
+      "age": 26,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7379,
+      "crm_id": "None",
+      "name": "Natalia Moreno",
+      "age": 26,
+      "city": "Medellin",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7382,
+      "crm_id": "3028",
+      "name": "Marinela Quintero Perez",
+      "age": 50,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7401,
+      "crm_id": "None",
+      "name": "Clara Gisande",
+      "age": 37,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7402,
+      "crm_id": "None",
+      "name": "Clara Gisande",
+      "age": 37,
+      "city": "Medellin",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7411,
+      "crm_id": "None",
+      "name": "Sofia Herrera",
+      "age": 46,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 7412,
+      "crm_id": "None",
+      "name": "Sofia Herrera",
+      "age": 46,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 7476,
+      "crm_id": "None",
+      "name": "Camilo Atuesta",
+      "age": 43,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7486,
+      "crm_id": "None",
+      "name": "Natalia Rangel",
+      "age": 40,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7487,
+      "crm_id": "None",
+      "name": "Natalia Rangel",
+      "age": 40,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7498,
+      "crm_id": "None",
+      "name": "Sandra Infante",
+      "age": 38,
+      "city": "Caqu",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 7499,
+      "crm_id": "None",
+      "name": "Sandra Infante",
+      "age": 38,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 7531,
+      "crm_id": "None",
+      "name": "Federico Arango",
+      "age": 36,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 7532,
+      "crm_id": "None",
+      "name": "Santiago Bermudez",
+      "age": 29,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7533,
+      "crm_id": "None",
+      "name": "Santiago Bermudez",
+      "age": 29,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7552,
+      "crm_id": "None",
+      "name": "Camilo Andres Carrillo Rojas",
+      "age": 18,
+      "city": "Bog",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 7553,
+      "crm_id": "None",
+      "name": "Camilo Andres Carrillo Rojas",
+      "age": 18,
+      "city": "Bog",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 7554,
+      "crm_id": "None",
+      "name": "Camilo Andres Carrillo Rojas",
+      "age": 18,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 7562,
+      "crm_id": "None",
+      "name": "Laura Valencia",
+      "age": 29,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7563,
+      "crm_id": "None",
+      "name": "Laura Valencia",
+      "age": 55,
+      "city": "Bogotá, 41 años, SG 3",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7565,
+      "crm_id": "None",
+      "name": "Daniela Sepulveda Vargas",
+      "age": 25,
+      "city": "Bog",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7566,
+      "crm_id": "None",
+      "name": "Daniela Sepulveda Vargas",
+      "age": 25,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7568,
+      "crm_id": "None",
+      "name": "Catalina Buitrago",
+      "age": 40,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 7587,
+      "crm_id": "None",
+      "name": "Lady Gonzalez Ajiaco",
+      "age": 42,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7598,
+      "crm_id": "None",
+      "name": "Maria Soledad Solorzano",
+      "age": 59,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7604,
+      "crm_id": "None",
+      "name": "Astrid Diaz",
+      "age": 20,
+      "city": "Bogota D.c",
+      "reason": "Texto en notas indica edad menor: '13 AÑOS'"
+    },
+    {
+      "user_id": 7630,
+      "crm_id": "None",
+      "name": "Clemencia molano",
+      "age": 57,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7660,
+      "crm_id": "None",
+      "name": "Johanna Hernandez Gutierrez",
+      "age": 44,
+      "city": "Pereira",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 7679,
+      "crm_id": "None",
+      "name": "Kathy Agudelo",
+      "age": 27,
+      "city": "barranquilla",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 7685,
+      "crm_id": "None",
+      "name": "Marcy Macias",
+      "age": 52,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 7689,
+      "crm_id": "None",
+      "name": "Camilo Andres Gutierrez",
+      "age": 38,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7690,
+      "crm_id": "None",
+      "name": "Paulina Arboleda Carmona",
+      "age": null,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 7691,
+      "crm_id": "None",
+      "name": "Alexander Mejia",
+      "age": 50,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 7694,
+      "crm_id": "None",
+      "name": "Jazlin Perez Sumoza",
+      "age": 48,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7711,
+      "crm_id": "None",
+      "name": "Daniel Castro",
+      "age": 44,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 7738,
+      "crm_id": "None",
+      "name": "Mariana Montoya",
+      "age": 34,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7741,
+      "crm_id": "None",
+      "name": "Juliana Villarreal",
+      "age": 39,
+      "city": "VIP, 39 Bgta",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 7744,
+      "crm_id": "None",
+      "name": "Irina del Pilar Bernal Castro",
+      "age": 43,
+      "city": "Villavicencio, 43 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7786,
+      "crm_id": "None",
+      "name": "Paola Gonzalez",
+      "age": 34,
+      "city": "medellin, 34 años sg 4",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 7824,
+      "crm_id": "711",
+      "name": "Luz Angélica Pérez Rojas",
+      "age": 44,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 7839,
+      "crm_id": "1670",
+      "name": "Andres Ortiz",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 7841,
+      "crm_id": "1873",
+      "name": "Roman Briceño",
+      "age": 59,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7860,
+      "crm_id": "70",
+      "name": "Miguel Rojas Gonzale",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 7876,
+      "crm_id": "248",
+      "name": "Edward Daniel Porras Martin",
+      "age": 26,
+      "city": "Funza",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7877,
+      "crm_id": "256",
+      "name": "Andres Laguna",
+      "age": 35,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 7943,
+      "crm_id": "394",
+      "name": "Lina Castro",
+      "age": 32,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 7996,
+      "crm_id": "589",
+      "name": "Elkin leonardo Anzola Muñoz",
+      "age": 35,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8096,
+      "crm_id": "840",
+      "name": "Victor Hernandez",
+      "age": 49,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 8102,
+      "crm_id": "850",
+      "name": "Anderson Castellanos",
+      "age": 36,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8106,
+      "crm_id": "862",
+      "name": "Alejandro Naranjo Monsalve",
+      "age": 44,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 8134,
+      "crm_id": "959",
+      "name": "Yolanda Patricia Tobon Garay",
+      "age": 54,
+      "city": "Zipaquirá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 8158,
+      "crm_id": "1020",
+      "name": "Daniel Rodriguez acevedo",
+      "age": 40,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8175,
+      "crm_id": "1104",
+      "name": "David Esteban Moreno Alarcón",
+      "age": 35,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8201,
+      "crm_id": "1218",
+      "name": "Oscar Rincón Riveros",
+      "age": 48,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8204,
+      "crm_id": "1228",
+      "name": "Sofia Perez",
+      "age": 26,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8242,
+      "crm_id": "1429",
+      "name": "Liliana Andrea Giraldo Gómez",
+      "age": 46,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8267,
+      "crm_id": "1532",
+      "name": "Maria Antonia Santos Molina",
+      "age": 24,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 8270,
+      "crm_id": "1547",
+      "name": "Anthony Herney Molina Gamboa",
+      "age": 41,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 8271,
+      "crm_id": "1552",
+      "name": "VIctor Alejandro Cano Jaramillo",
+      "age": 25,
+      "city": "Pereira",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 8280,
+      "crm_id": "1590",
+      "name": "Fernando Zapata Delgado",
+      "age": 49,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 8287,
+      "crm_id": "1614",
+      "name": "Mariana Morales",
+      "age": 38,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 8312,
+      "crm_id": "1695",
+      "name": "Maria Fernanda Gomez Vasquez",
+      "age": 24,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8315,
+      "crm_id": "1704",
+      "name": "Angela María Velásquez Espinosa",
+      "age": 47,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 8328,
+      "crm_id": "1735",
+      "name": "Maria Jimena Daza MartInez",
+      "age": 35,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 8339,
+      "crm_id": "1753",
+      "name": "Yury Mashiel Ramos",
+      "age": 41,
+      "city": "Funza",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 8342,
+      "crm_id": "1758",
+      "name": "Sara Eva Acosta Giandomenico",
+      "age": 35,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8346,
+      "crm_id": "1768",
+      "name": "Nadya Castro",
+      "age": 36,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8389,
+      "crm_id": "1940",
+      "name": "Estefania Rengifo",
+      "age": 40,
+      "city": "Dania Beach",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 8392,
+      "crm_id": "1950",
+      "name": "Juan Sebastian Torres Cordoba",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 8411,
+      "crm_id": "2037",
+      "name": "Fernando Ruiz gaitan",
+      "age": 55,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8415,
+      "crm_id": "2045",
+      "name": "Diego Cerquera Pinzon",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8486,
+      "crm_id": "2319",
+      "name": "Paula Andrea Suarez Ruiz",
+      "age": 40,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 8490,
+      "crm_id": "2334",
+      "name": "Daicy Adriana Rojas Ruiz",
+      "age": 41,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 8494,
+      "crm_id": "2353",
+      "name": "Magda Carolina Pedrozo Sanchez",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 8507,
+      "crm_id": "2408",
+      "name": "Camilo Jose Vargas Patiño",
+      "age": 28,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 8530,
+      "crm_id": "2476",
+      "name": "Francy Yamile Tatar Garnica",
+      "age": 60,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 8534,
+      "crm_id": "2481",
+      "name": "Mauricio Fernandez Cardona",
+      "age": 39,
+      "city": "39 años pereira SG3",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8540,
+      "crm_id": "2493",
+      "name": "Andres Fernando Cardenas Ramirez",
+      "age": 42,
+      "city": "Pereira",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 8549,
+      "crm_id": "2510",
+      "name": "Victor Hugo Gutierrez",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 8628,
+      "crm_id": "2649",
+      "name": "Paola Ramirez Aristizabal",
+      "age": 42,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8709,
+      "crm_id": "2829",
+      "name": "Juan Pablo Salazar Gomez",
+      "age": 39,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8713,
+      "crm_id": "2843",
+      "name": "Soledad Guevara",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8725,
+      "crm_id": "2880",
+      "name": "David Eduardo Moreno Arias",
+      "age": 31,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8748,
+      "crm_id": "2982",
+      "name": "Mateo Vargas Osorio",
+      "age": 28,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 8762,
+      "crm_id": "3039",
+      "name": "Ana Perez Forero",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 8765,
+      "crm_id": "3044",
+      "name": "Angie Lorena Perez Martinez",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 8775,
+      "crm_id": "3077",
+      "name": "Beatriz Eugenia Uribe Pacheco",
+      "age": 74,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8786,
+      "crm_id": "3124",
+      "name": "NATALIA ANDREA ESPITIA PERILLA",
+      "age": 38,
+      "city": "Co11001",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8791,
+      "crm_id": "3153",
+      "name": "Juan Pablo Trujillo L",
+      "age": 56,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 8811,
+      "crm_id": "3218",
+      "name": "Sandra Liliana Barajas Orduz",
+      "age": 41,
+      "city": "Pereira",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 8814,
+      "crm_id": "3237",
+      "name": "Katherine Rosero Arcila",
+      "age": 49,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 8833,
+      "crm_id": "3286",
+      "name": "Kenny J Cassiani",
+      "age": 31,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 8913,
+      "crm_id": "3444",
+      "name": "Laura Valencia",
+      "age": 41,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8936,
+      "crm_id": "3492",
+      "name": "Milagro Munive Juvinao",
+      "age": 43,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 8939,
+      "crm_id": "3504",
+      "name": "Francisco Ruiz",
+      "age": 30,
+      "city": "Cuidad De Mexico",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8963,
+      "crm_id": "3575",
+      "name": "HOLLMAN RENE MONROY ZAPATA",
+      "age": 44,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 8968,
+      "crm_id": "3582",
+      "name": "Rene Alejandro Muñeton",
+      "age": 50,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8971,
+      "crm_id": "3585",
+      "name": "Maria Angelica Velasquez Rodriguez",
+      "age": 38,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 8984,
+      "crm_id": "3607",
+      "name": "Pablo Dueñas",
+      "age": 42,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 8994,
+      "crm_id": "3611",
+      "name": "Alejandro Bustos",
+      "age": 36,
+      "city": "Chía",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9006,
+      "crm_id": "3634",
+      "name": "Diego Fernando Sanchez Montana",
+      "age": 34,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9118,
+      "crm_id": "3772",
+      "name": "Adriana Sanchez",
+      "age": 43,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9125,
+      "crm_id": "3780",
+      "name": "Camilo Saavedra Gonzalez",
+      "age": 50,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 AÑOS'"
+    },
+    {
+      "user_id": 9130,
+      "crm_id": "3785",
+      "name": "Johana Patricia Castañeda bautista",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 9131,
+      "crm_id": "3786",
+      "name": "Sandra Reyes",
+      "age": 59,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '11 AÑOS'"
+    },
+    {
+      "user_id": 9132,
+      "crm_id": "3787",
+      "name": "Johann Galeano",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9152,
+      "crm_id": "3807",
+      "name": "Federico Arango",
+      "age": 36,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 9167,
+      "crm_id": "3822",
+      "name": "MarIa Magnolia Jurado Gutiérrez",
+      "age": 66,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9185,
+      "crm_id": "3841",
+      "name": "Juan Pablo Perdomo Rodriguez",
+      "age": 41,
+      "city": "Gainesville",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9187,
+      "crm_id": "3843",
+      "name": "giancarlo gutierrez",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9206,
+      "crm_id": "3862",
+      "name": "Alexandra Moreno Contreras",
+      "age": 35,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9209,
+      "crm_id": "3865",
+      "name": "Daniel Samper",
+      "age": 45,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 9234,
+      "crm_id": "3891",
+      "name": "Leidy Alarcon",
+      "age": 41,
+      "city": "Itagüí",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 9242,
+      "crm_id": "",
+      "name": "Rene alejandro muñeton",
+      "age": null,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9286,
+      "crm_id": "",
+      "name": "Alejandro Bustos",
+      "age": 36,
+      "city": "Chia, SG3 36 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9288,
+      "crm_id": "None",
+      "name": "PABLO DUEÑAS",
+      "age": 42,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 9320,
+      "crm_id": "None",
+      "name": "Maria Magnolia Jurado Gutiérrez",
+      "age": 66,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9324,
+      "crm_id": "None",
+      "name": "Andrea Rincon",
+      "age": 34,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 9331,
+      "crm_id": "None",
+      "name": "Valeria Linero",
+      "age": 25,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9337,
+      "crm_id": "None",
+      "name": "Ximena Plazas",
+      "age": null,
+      "city": "Ctagena",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9340,
+      "crm_id": "None",
+      "name": "Moises Barron",
+      "age": 42,
+      "city": "Med 49 años",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9341,
+      "crm_id": "None",
+      "name": "Paola Mosquera",
+      "age": 43,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9357,
+      "crm_id": "347",
+      "name": "Natalia Méndez",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 9365,
+      "crm_id": "457",
+      "name": "Nicolás Quintero",
+      "age": 26,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 9403,
+      "crm_id": "833",
+      "name": "Nelson David Calderón",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 9419,
+      "crm_id": "1015",
+      "name": "Sebastian Restrepo",
+      "age": 38,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 9438,
+      "crm_id": "1186",
+      "name": "Ana Maria Ortiz",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9504,
+      "crm_id": "2415",
+      "name": "Sandra Patricia Mosquera Valencia",
+      "age": 43,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9520,
+      "crm_id": "2115",
+      "name": "Ana Maria Plazas",
+      "age": 30,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9531,
+      "crm_id": "2343",
+      "name": "Alejandra Rada",
+      "age": 37,
+      "city": "Bogota (C/Marca)",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 9544,
+      "crm_id": "2713",
+      "name": "Patricia Moreno 43",
+      "age": 43,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9546,
+      "crm_id": "2758",
+      "name": "Mauricio Arias",
+      "age": 51,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 9548,
+      "crm_id": "2832",
+      "name": "Laura Mendez",
+      "age": 35,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9554,
+      "crm_id": "3224",
+      "name": "Jorge andres Sanchez",
+      "age": 47,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9559,
+      "crm_id": "3385",
+      "name": "David Esteban García Agudelo",
+      "age": 31,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 9567,
+      "crm_id": "3897",
+      "name": "Andres Felipe Gómez Marín",
+      "age": 2,
+      "city": "Cajica",
+      "reason": "Edad declarada en perfil: 2 años (< 18)"
+    },
+    {
+      "user_id": 9585,
+      "crm_id": "3925",
+      "name": "Alejandra Sabogal",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9595,
+      "crm_id": "3937",
+      "name": "Rosana Serrano",
+      "age": null,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9599,
+      "crm_id": "3943",
+      "name": "Juan David Ordonez",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 9602,
+      "crm_id": "3946",
+      "name": "Katerine Ramirez",
+      "age": 39,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 9605,
+      "crm_id": "3949",
+      "name": "Ginna Margareth Niño Suárez",
+      "age": 46,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 9614,
+      "crm_id": "3961",
+      "name": "Jaime Andres Alvarez Ospina",
+      "age": null,
+      "city": "Retiro",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9621,
+      "crm_id": "3968",
+      "name": "Maria del Rosario Arias",
+      "age": 38,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9667,
+      "crm_id": "4019",
+      "name": "Juan Diego Villa Mesa",
+      "age": 32,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 9687,
+      "crm_id": "4043",
+      "name": "Camilo Andres Carrillo Rojas",
+      "age": 45,
+      "city": "Bogotá.",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 9694,
+      "crm_id": "4050",
+      "name": "Santiago Bermudez",
+      "age": 29,
+      "city": "Aventura",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 9695,
+      "crm_id": "4051",
+      "name": "Stiven Botache",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 9708,
+      "crm_id": "4066",
+      "name": "Margarita Carrasco",
+      "age": 51,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 9721,
+      "crm_id": "4080",
+      "name": "Paola Andrea Rodríguez Fernández",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 9940,
+      "crm_id": "153",
+      "name": "Jaime Freya",
+      "age": 40,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 9973,
+      "crm_id": "189",
+      "name": "Natalia Coronado",
+      "age": 33,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 10120,
+      "crm_id": "516",
+      "name": "Daniel Prada",
+      "age": 30,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 10130,
+      "crm_id": "530",
+      "name": "Melisa Velez",
+      "age": 36,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 10151,
+      "crm_id": "573",
+      "name": "Ricardo Roa",
+      "age": 41,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 10230,
+      "crm_id": "758",
+      "name": "Cesar Morales",
+      "age": 45,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 10290,
+      "crm_id": "871",
+      "name": "Maria Catalina Prieto",
+      "age": 43,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 10310,
+      "crm_id": "912",
+      "name": "Lina Gonzalez",
+      "age": 31,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 10350,
+      "crm_id": "977",
+      "name": "Andrea Ramirez",
+      "age": 38,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 10521,
+      "crm_id": "1241",
+      "name": "Ana Mercedes Potes",
+      "age": 41,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 10711,
+      "crm_id": "1530",
+      "name": "Paula Quintero",
+      "age": 33,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 10800,
+      "crm_id": "1680",
+      "name": "Claudia Restrepo",
+      "age": 49,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 10831,
+      "crm_id": "1746",
+      "name": "Nydia milena Montañez mendoza",
+      "age": 44,
+      "city": "Cucuta",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 10880,
+      "crm_id": "1824",
+      "name": "Gustavo Ortega",
+      "age": 43,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 11010,
+      "crm_id": "2044",
+      "name": "Maria Camila Villa Orjuela",
+      "age": 31,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 11120,
+      "crm_id": "2220",
+      "name": "Carlos Andres Muñoz Gomez",
+      "age": 47,
+      "city": "Manizales",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 11260,
+      "crm_id": "2464",
+      "name": "Briyith Agreda",
+      "age": 33,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 11370,
+      "crm_id": "3119",
+      "name": "Maria Cristina Mendoza Estrada",
+      "age": 32,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 11391,
+      "crm_id": "3384",
+      "name": "Orlando Suarez",
+      "age": 34,
+      "city": "Tocancipá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 11401,
+      "crm_id": "2766",
+      "name": "Raquel Cespedes",
+      "age": 57,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 11460,
+      "crm_id": "2850",
+      "name": "Mario Morales",
+      "age": 36,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 11560,
+      "crm_id": "2993",
+      "name": "Omar Camilo Vanegas Mendez",
+      "age": 40,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 11631,
+      "crm_id": "3085",
+      "name": "Natalia Triana Mendez",
+      "age": 47,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 11770,
+      "crm_id": "3273",
+      "name": "Maria Soledad Solorzano",
+      "age": 59,
+      "city": "San Vicente",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 11830,
+      "crm_id": "3361",
+      "name": "Paulina Arboleda Carmona",
+      "age": 37,
+      "city": "Medellín- La Ceja",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 11843,
+      "crm_id": "3380",
+      "name": "Alexander Mejia",
+      "age": 50,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 11862,
+      "crm_id": "3435",
+      "name": "Paola Gonzalez",
+      "age": 34,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 11870,
+      "crm_id": "3448",
+      "name": "Irina del Pilar Bernal Castro",
+      "age": 43,
+      "city": "Villavicencio",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 11882,
+      "crm_id": "3469",
+      "name": "Sebastian Gomez",
+      "age": 42,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 11890,
+      "crm_id": "3484",
+      "name": "Daniel Castro",
+      "age": 44,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 11900,
+      "crm_id": "3496",
+      "name": "Juliana Villarreal",
+      "age": 39,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 12105,
+      "crm_id": "3892",
+      "name": "Andrea Rincon",
+      "age": 34,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12250,
+      "crm_id": "4138",
+      "name": "Jaime Garrido García",
+      "age": 36,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12281,
+      "crm_id": "315",
+      "name": "Juan Felipe Rodriguez",
+      "age": 28,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12282,
+      "crm_id": "316",
+      "name": "Daniel Vanegas",
+      "age": 30,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 12294,
+      "crm_id": "355",
+      "name": "Natalia Coronado",
+      "age": 33,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 12320,
+      "crm_id": "471",
+      "name": "Sisi Salamanca",
+      "age": 56,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 12322,
+      "crm_id": "473",
+      "name": "Sisi Salamanca",
+      "age": 56,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 12323,
+      "crm_id": "475",
+      "name": "Andres Martinez",
+      "age": 34,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12362,
+      "crm_id": "581",
+      "name": "Sara Prieto",
+      "age": 31,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12365,
+      "crm_id": "588",
+      "name": "Laura Contreras",
+      "age": 36,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12371,
+      "crm_id": "670",
+      "name": "Alejandro Guevara",
+      "age": 34,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12373,
+      "crm_id": "678",
+      "name": "Jennifer Lopez",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12375,
+      "crm_id": "684",
+      "name": "Samuel Moreno",
+      "age": 20,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12385,
+      "crm_id": "710",
+      "name": "Sergio Sánchez",
+      "age": 35,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12408,
+      "crm_id": "778",
+      "name": "Susana Garavito",
+      "age": 32,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 12449,
+      "crm_id": "878",
+      "name": "Camila De Vivero",
+      "age": 25,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12475,
+      "crm_id": "944",
+      "name": "Stephanie Torres",
+      "age": 40,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12477,
+      "crm_id": "948",
+      "name": "Juliana Parada",
+      "age": 38,
+      "city": "Chía",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12490,
+      "crm_id": "990",
+      "name": "Juan Esteban Guerra",
+      "age": 39,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12492,
+      "crm_id": "993",
+      "name": "Natalia Moreno",
+      "age": 26,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12494,
+      "crm_id": "1007",
+      "name": "Fernando Munera Calle",
+      "age": 34,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12502,
+      "crm_id": "1027",
+      "name": "Cristian Loaiza",
+      "age": 40,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12525,
+      "crm_id": "1071",
+      "name": "Margarita Barragan Moreno",
+      "age": 31,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12529,
+      "crm_id": "1076",
+      "name": "Martha Ruiz",
+      "age": 46,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12545,
+      "crm_id": "1107",
+      "name": "Norma Carvajal",
+      "age": 44,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 12554,
+      "crm_id": "1125",
+      "name": "ANGELICA MARIA LOPEZ CANO",
+      "age": 54,
+      "city": "Tenjo",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12591,
+      "crm_id": "1212",
+      "name": "Sindy Saldarriaga",
+      "age": 34,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12593,
+      "crm_id": "1215",
+      "name": "Matthew Suarez",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12608,
+      "crm_id": "1247",
+      "name": "Estefany Machillanda",
+      "age": 35,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12609,
+      "crm_id": "1248",
+      "name": "Gustavo Adolfo Robledo Zapata",
+      "age": 42,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12610,
+      "crm_id": "1250",
+      "name": "Maribel Gonzalez",
+      "age": 36,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12613,
+      "crm_id": "1259",
+      "name": "Ana Santos",
+      "age": 42,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12618,
+      "crm_id": "1270",
+      "name": "Sebastian Sevillano",
+      "age": 41,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12623,
+      "crm_id": "1278",
+      "name": "Alba Reyes",
+      "age": 60,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12627,
+      "crm_id": "1284",
+      "name": "Fernando Rojas",
+      "age": 44,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 12630,
+      "crm_id": "1287",
+      "name": "LEIDY GIOBANA CALDERON RIAÑO",
+      "age": 40,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12655,
+      "crm_id": "1340",
+      "name": "Juan Pablo Florez",
+      "age": 38,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12664,
+      "crm_id": "1366",
+      "name": "Catalina Restrepo",
+      "age": 48,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12674,
+      "crm_id": "1392",
+      "name": "Jackeline Murzi",
+      "age": 64,
+      "city": "Villavicencio (Meta)",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12679,
+      "crm_id": "1403",
+      "name": "Manuel Felipe Zuñiga",
+      "age": 28,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 12680,
+      "crm_id": "1405",
+      "name": "Sara Barrios",
+      "age": 34,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12688,
+      "crm_id": "1420",
+      "name": "Diana Ascencio",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12692,
+      "crm_id": "1426",
+      "name": "Sergio Mercado",
+      "age": 36,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12693,
+      "crm_id": "1428",
+      "name": "Oscar Moreno",
+      "age": 37,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12706,
+      "crm_id": "1458",
+      "name": "Katiana Pavas",
+      "age": 37,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12719,
+      "crm_id": "1492",
+      "name": "Andrea Upegui",
+      "age": 42,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12736,
+      "crm_id": "1522",
+      "name": "Carolina Avila castro",
+      "age": 47,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 12740,
+      "crm_id": "1534",
+      "name": "Antonio Morales parra",
+      "age": 44,
+      "city": "Madrid",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12753,
+      "crm_id": "1558",
+      "name": "Santiago Patiño Gongora",
+      "age": 45,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 12764,
+      "crm_id": "1582",
+      "name": "Mateo Peña Saffon",
+      "age": 32,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 12768,
+      "crm_id": "1586",
+      "name": "Pilar Monroy",
+      "age": 39,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12776,
+      "crm_id": "1610",
+      "name": "Pablo Posada",
+      "age": 31,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12780,
+      "crm_id": "1635",
+      "name": "Paola Riveros Gil",
+      "age": 34,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 12792,
+      "crm_id": "1677",
+      "name": "Luisa Gaviria",
+      "age": 38,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12804,
+      "crm_id": "1710",
+      "name": "Nathalia Sandoval Amaya",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12805,
+      "crm_id": "1711",
+      "name": "Yenny Builes",
+      "age": 47,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12809,
+      "crm_id": "1716",
+      "name": "Diego Vega",
+      "age": 45,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12819,
+      "crm_id": "1739",
+      "name": "Miguel Montañez",
+      "age": 30,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12827,
+      "crm_id": "1767",
+      "name": "Camilo Andres Gutierrez",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12846,
+      "crm_id": "1809",
+      "name": "Estefania Tovar Pachon",
+      "age": 39,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12879,
+      "crm_id": "1892",
+      "name": "Claudia Aceros",
+      "age": 44,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12898,
+      "crm_id": "1939",
+      "name": "Lina Maria Olaya",
+      "age": 31,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12900,
+      "crm_id": "1943",
+      "name": "Andres Gomez",
+      "age": 35,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 12914,
+      "crm_id": "1976",
+      "name": "Alejandro Marin",
+      "age": 34,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 12915,
+      "crm_id": "1977",
+      "name": "Karen Lorena Castaño Henao",
+      "age": 50,
+      "city": "Panama",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 12917,
+      "crm_id": "1980",
+      "name": "Eloisa Zerpa",
+      "age": 39,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 12921,
+      "crm_id": "1992",
+      "name": "Sol Angela Maria Foronda Herrera",
+      "age": 47,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '16 años'"
+    },
+    {
+      "user_id": 12967,
+      "crm_id": "2114",
+      "name": "carolina Baron",
+      "age": 44,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 12977,
+      "crm_id": "2146",
+      "name": "Martha Delgadillo",
+      "age": 61,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 AÑOS'"
+    },
+    {
+      "user_id": 12981,
+      "crm_id": "2156",
+      "name": "Andrea Espinal",
+      "age": 45,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13017,
+      "crm_id": "2226",
+      "name": "ADRIANA NAVAS",
+      "age": 40,
+      "city": "Bucaramanga",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13020,
+      "crm_id": "2229",
+      "name": "Angela Patricia Pantoja Moreno",
+      "age": 36,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 13060,
+      "crm_id": "2346",
+      "name": "Natalia Moreno",
+      "age": 26,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13061,
+      "crm_id": "2349",
+      "name": "Jessica Marchan",
+      "age": 30,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 13065,
+      "crm_id": "2357",
+      "name": "Jorge David Prieto Correa",
+      "age": 35,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13074,
+      "crm_id": "2377",
+      "name": "Clara Gisande",
+      "age": 37,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13079,
+      "crm_id": "2389",
+      "name": "Maria helena Peña fernandez",
+      "age": 53,
+      "city": "Viterbo",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13101,
+      "crm_id": "2431",
+      "name": "Sergio Batista",
+      "age": 31,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 13106,
+      "crm_id": "2444",
+      "name": "Andres Bustos",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13111,
+      "crm_id": "3029",
+      "name": "Camilo Atuesta",
+      "age": 43,
+      "city": "Cajica",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13118,
+      "crm_id": "2497",
+      "name": "Aida Cantillo",
+      "age": 38,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13119,
+      "crm_id": "2501",
+      "name": "Sofia Herrera",
+      "age": 46,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13125,
+      "crm_id": "2545",
+      "name": "Monica Oyaga",
+      "age": 51,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 13131,
+      "crm_id": "2571",
+      "name": "Carolina Poveda",
+      "age": 28,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13135,
+      "crm_id": "2605",
+      "name": "Erika Sanchez Aredondo",
+      "age": 36,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13148,
+      "crm_id": "2711",
+      "name": "Diane Bernal",
+      "age": 44,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 AÑOS'"
+    },
+    {
+      "user_id": 13150,
+      "crm_id": "2714",
+      "name": "Susana Posada",
+      "age": 52,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13159,
+      "crm_id": "2735",
+      "name": "Ana Cristina Ioni",
+      "age": 50,
+      "city": "Miami",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13162,
+      "crm_id": "2743",
+      "name": "Gali Tobar",
+      "age": 46,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 AÑOS'"
+    },
+    {
+      "user_id": 13174,
+      "crm_id": "2764",
+      "name": "Adriana Ramirez",
+      "age": 52,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 13176,
+      "crm_id": "2769",
+      "name": "Mateo Cano",
+      "age": 44,
+      "city": "Manizales",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 13179,
+      "crm_id": "2772",
+      "name": "Natalia Castro",
+      "age": 28,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13184,
+      "crm_id": "2784",
+      "name": "Paola Urquijo Perez",
+      "age": 33,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13187,
+      "crm_id": "2791",
+      "name": "Ana Victoria Vargas Pimiento",
+      "age": 42,
+      "city": "Bucaramanga",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13216,
+      "crm_id": "2844",
+      "name": "Eduardo Gallegos",
+      "age": 38,
+      "city": "Medell?n",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 13224,
+      "crm_id": "2860",
+      "name": "Jorge Obando",
+      "age": 55,
+      "city": "Jersey City",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13266,
+      "crm_id": "2934",
+      "name": "Juan Ballesteros",
+      "age": 57,
+      "city": "Hollywood Beach",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13276,
+      "crm_id": "2947",
+      "name": "margarita garcia",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13291,
+      "crm_id": "2969",
+      "name": "Monica Bastidas",
+      "age": 39,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13293,
+      "crm_id": "2974",
+      "name": "Felipe Ospina Naranjo",
+      "age": 29,
+      "city": "Pereira",
+      "reason": "Texto en notas indica edad menor: '11 años'"
+    },
+    {
+      "user_id": 13316,
+      "crm_id": "3015",
+      "name": "Natalia Rangel",
+      "age": 40,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13341,
+      "crm_id": "3062",
+      "name": "Luis Arturo Diaz",
+      "age": 55,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13351,
+      "crm_id": "3083",
+      "name": "Daniela Morales",
+      "age": 29,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13353,
+      "crm_id": "3088",
+      "name": "Sandra Infante",
+      "age": 38,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13355,
+      "crm_id": "3091",
+      "name": "Hernan Antolinez",
+      "age": 46,
+      "city": "Bogotá, D.C., Bogotá",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 13357,
+      "crm_id": "3096",
+      "name": "Catalina Cardona",
+      "age": 47,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13361,
+      "crm_id": "3105",
+      "name": "Karen Duque",
+      "age": 40,
+      "city": "Montréal",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13366,
+      "crm_id": "3113",
+      "name": "Sandra Infante",
+      "age": 38,
+      "city": "Florencia",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13371,
+      "crm_id": "3123",
+      "name": "Sebastian Ortiz",
+      "age": 27,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13375,
+      "crm_id": "3129",
+      "name": "Nohra Ortiz Rico",
+      "age": 52,
+      "city": "Bogot?",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13376,
+      "crm_id": "3130",
+      "name": "Catalina Buitrago",
+      "age": 40,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 13410,
+      "crm_id": "3188",
+      "name": "Kathy Agudelo",
+      "age": 27,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '15 años'"
+    },
+    {
+      "user_id": 13431,
+      "crm_id": "3223",
+      "name": "Jazlin Perez Sumoza",
+      "age": 48,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13432,
+      "crm_id": "3225",
+      "name": "Lady Gonzalez Ajiaco",
+      "age": 42,
+      "city": "Mosquera",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13452,
+      "crm_id": "3258",
+      "name": "Clemencia Molano",
+      "age": 57,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13465,
+      "crm_id": "3284",
+      "name": "Johanna Hernandez Gutierrez",
+      "age": 44,
+      "city": "Pereira",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 13466,
+      "crm_id": "3285",
+      "name": "Astrid Diaz",
+      "age": 44,
+      "city": "Bogota D.C",
+      "reason": "Texto en notas indica edad menor: '13 AÑOS'"
+    },
+    {
+      "user_id": 13468,
+      "crm_id": "3294",
+      "name": "Marcy Macias",
+      "age": 52,
+      "city": "Bogotá, D.C.",
+      "reason": "Texto en notas indica edad menor: '13 años'"
+    },
+    {
+      "user_id": 13516,
+      "crm_id": "3500",
+      "name": "Mariana Montoya",
+      "age": 34,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13560,
+      "crm_id": "3894",
+      "name": "Paola Mosquera",
+      "age": 43,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13563,
+      "crm_id": "3900",
+      "name": "Ximena Plazas",
+      "age": null,
+      "city": "Cartagena",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13566,
+      "crm_id": "3904",
+      "name": "Valeria Linero",
+      "age": 25,
+      "city": "Barranquilla",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13569,
+      "crm_id": "3910",
+      "name": "Moises Barron",
+      "age": 42,
+      "city": "Rionegro",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13582,
+      "crm_id": "4102",
+      "name": "Nicole Victoria Perez Montezuma",
+      "age": 39,
+      "city": "Cali",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13589,
+      "crm_id": "4110",
+      "name": "Carlos Roberto Solorzano Rojas",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13609,
+      "crm_id": "4134",
+      "name": "María José Quiroga Gómez",
+      "age": 32,
+      "city": "Bucaramanga",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 13642,
+      "crm_id": "4161",
+      "name": "María Soledad Bastidas",
+      "age": 46,
+      "city": "Medellín",
+      "reason": "Texto en notas indica edad menor: '14 años'"
+    },
+    {
+      "user_id": 13644,
+      "crm_id": "4163",
+      "name": "Jorge David Peñafiel Ojeda",
+      "age": 33,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '17 años'"
+    },
+    {
+      "user_id": 13647,
+      "crm_id": "4166",
+      "name": "Luisa Fernanda Avendaño",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    },
+    {
+      "user_id": 13658,
+      "crm_id": "4177",
+      "name": "David Rodriguez",
+      "age": 37,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13694,
+      "crm_id": "4215",
+      "name": "Eleonora Castillo Peña",
+      "age": 27,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13697,
+      "crm_id": "4218",
+      "name": "Carlos alberto Bermudez garcia",
+      "age": null,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '12 años'"
+    },
+    {
+      "user_id": 13728,
+      "crm_id": "4250",
+      "name": "Diana Ortiz",
+      "age": 34,
+      "city": "Tocancipá",
+      "reason": "Texto en notas indica edad menor: '11 AÑOS'"
+    },
+    {
+      "user_id": 13739,
+      "crm_id": "4262",
+      "name": "Adriana Estrada",
+      "age": null,
+      "city": "Bogotá",
+      "reason": "Texto en notas indica edad menor: '10 años'"
+    }
+  ],
+  "substances_count": 2,
+  "substances_records": [
+    {
+      "user_id": 9458,
+      "crm_id": "1462",
+      "name": "Lucia Rodríguez",
+      "age": 43,
+      "city": "Bogotá",
+      "match": "adiccion a las drogas",
+      "snippet": "ligencia, culta, inteligencia emocional. qué es lo más difícil de ser hombre?no adiccion a las drogas. no fume.familiar:plus: que venga de un hogar sano, familia funcional. lider. c"
+    },
+    {
+      "user_id": 13797,
+      "crm_id": "4323",
+      "name": "Marco Ruiz",
+      "age": 57,
+      "city": "Bogotá",
+      "match": "consumo problemático de alcohol",
+      "snippet": "mal genio o dificultad para comunicarse.mujeres con hijos pequeños.personas con consumo problemático de alcohol, drogas o cualquier adicción.alguien que no valore la cercanía, los hechos y lo"
+    }
+  ],
+  "legal_crimes_count": 0,
+  "legal_crimes_records": [],
+  "psychiatric_risk_count": 1,
+  "psychiatric_risk_records": [
+    {
+      "user_id": 9501,
+      "crm_id": "1982",
+      "name": "Jorge Camacho",
+      "age": 37,
+      "city": "Bucaramanga",
+      "match": "intentos de suicidio",
+      "snippet": ". se casó muyy enamorado, sabía que ella venía con temas de salud mental, tlp e intentos de suicidio, la relación se volvió muyy tensa, ella se volvió problemática y el cero de con"
+    }
+  ]
+}
