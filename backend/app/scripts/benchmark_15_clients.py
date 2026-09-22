@@ -100,17 +100,25 @@ async def run_benchmark():
                         "structural_score": struct_score,
                         "ai_score": ai_score,
                         "ai_veredicto": ai_verdict,
+                        "red_flags_seguridad": top.get("ai_red_flags_seguridad") or (top.get("comparison", {}).get("red_flags_seguridad") if isinstance(top.get("comparison"), dict) else []) or [],
                         "deal_breakers": dbs,
                         "puntos_fuertes": pts,
                         "analisis": analisis,
                         "client_summary": client_summ,
                         "candidate_summary": cand_summ
-                    } if top else None
+                    } if top else None,
+                    "safety_disqualified_count": sum(1 for d in discarded if any("RED FLAG DE SEGURIDAD" in str(r) for r in d.get("reasons", []))),
+                    "safety_disqualified_candidates": [
+                        {"name": d.get("candidate_name"), "reasons": d.get("reasons")}
+                        for d in discarded if any("RED FLAG DE SEGURIDAD" in str(r) for r in d.get("reasons", []))
+                    ]
                 }
 
                 results.append(entry)
 
                 print(f"  ✓ Completado en {elapsed}s | Matches: {len(matches)} | Descartadas: {len(discarded)}")
+                if entry.get("safety_disqualified_count", 0) > 0:
+                    print(f"    🚨 Descalificados por Seguridad: {entry['safety_disqualified_count']} candidatos ({[c['name'] for c in entry['safety_disqualified_candidates']]})")
                 if top:
                     print(f"    Top Match: {top.get('name')} | Comp: {comp_pct}% | AI: {ai_score} ({ai_verdict})")
                     if client_summ:

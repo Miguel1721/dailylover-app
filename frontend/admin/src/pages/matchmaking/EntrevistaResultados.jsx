@@ -3859,6 +3859,40 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   </div>
                 </div>
 
+                {/* BANNER DE ALERTA: RED FLAG DE SEGURIDAD (CERO TOLERANCIA) */}
+                {((candidate.ai_red_flags_seguridad && candidate.ai_red_flags_seguridad.length > 0) ||
+                  (candidate.comparison?.red_flags_seguridad && candidate.comparison.red_flags_seguridad.length > 0) ||
+                  (candidate.dealbreakers_check && candidate.dealbreakers_check.includes('RED FLAG DE SEGURIDAD'))) && (
+                  <div style={{
+                    background: isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.15)',
+                    border: '2px solid #EF4444',
+                    borderRadius: 10,
+                    padding: '12px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    boxShadow: '0 2px 12px rgba(239, 68, 68, 0.2)'
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      color: isLight ? '#B91C1C' : '#FCA5A5',
+                      fontWeight: 800,
+                      fontSize: 12.5,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.03em'
+                    }}>
+                      <span style={{ fontSize: 18 }}>🚨</span> RED FLAG DE SEGURIDAD — MATCH DESCALIFICADO AUTOMÁTICAMENTE
+                    </div>
+                    <div style={{ color: isLight ? '#7F1D1D' : '#FEE2E2', fontSize: 12, lineHeight: 1.5 }}>
+                      {(candidate.ai_red_flags_seguridad || candidate.comparison?.red_flags_seguridad || [candidate.dealbreakers_check]).map((rf, rIdx) => (
+                        <div key={rIdx} style={{ fontWeight: 600 }}>• {rf}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* ANÁLISIS DE LA IA: CRUCE CLÍNICO DE COMPATIBILIDAD */}
                 <div style={{
                   background: isLight ? 'linear-gradient(135deg, #FFF7F7 0%, #FFFFFF 100%)' : 'rgba(150, 21, 0, 0.08)',

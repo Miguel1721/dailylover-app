@@ -5357,6 +5357,61 @@ _AI_MATCH_CACHE: Dict[str, dict] = {
 }
 
 
+def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
+    """
+    Escanea notas clínicas y perfiles para detectar banderas rojas de seguridad (violencia física,
+    abuso de pareja, antecedentes penales por violencia o agresión).
+    Distingue rigurosamente entre ser autor/tener antecedentes vs ser víctima/expresar rechazo a la violencia.
+    Retorna (es_riesgo_seguridad, motivo_detallado)
+    """
+    notes = " ".join([
+        str(person.get("bio_notes") or ""),
+        str(person.get("synthesis") or ""),
+        str(person.get("synthesis_who_really_is") or ""),
+        str(person.get("difficult_notes") or "")
+    ]).strip()
+    
+    if not notes:
+        return False, None
+
+    perpetrator_patterns = [
+        r'\b(tiene|presenta|cuenta con|registra)\s+antecedentes?\s+de\s+violencia\b',
+        r'\bantecedentes?\s+de\s+violencia\s+f[ií]sica\b',
+        r'\bviolencia\s+f[ií]sica\s+en\s+pareja\b',
+        r'\bantecedentes?\s+de\s+violencia\s+intrafamiliar\b',
+        r'\b(denuncia|denunciado|denunciada)\s+por\s+(violencia|agresi[oó]n|abuso|maltrato)\b',
+        r'\bmedida\s+de\s+protecci[oó]n\s+(en\s+su\s+contra|vigente)\b',
+        r'\borden\s+de\s+alejamiento\s+(en\s+su\s+contra|vigente)\b',
+        r'\bantecedentes?\s+penales?\s+por\s+(violencia|agresi[oó]n|abuso)\b',
+        r'\bconductas?\s+violentas?\s+hacia\s+(parejas?|mujeres|hombres)\b',
+        r'\bgolpe[oó]\s+a\s+su\s+pareja\b',
+        r'\bagresor\s+(f[ií]sico|sexual)\b',
+        r'\babuso\s+sexual\b',
+        r'\bagresi[oó]n\s+sexual\b'
+    ]
+
+    for pat in perpetrator_patterns:
+        match = re.search(pat, notes, re.IGNORECASE)
+        if match:
+            start = max(0, match.start() - 80)
+            end = min(len(notes), match.end() + 80)
+            context = notes[start:end].lower()
+            
+            victim_guard = [
+                "no tolera", "no volver a", "no quiere volver", "no permite", "evitar", "evita",
+                "alejarse de", "victima de", "víctima de", "sufrió de", "sufrio de", "cero tolerancia",
+                "no acepta", "no soporta", "estuvo casada con", "estuvo casado con", "su expareja era",
+                "su ex era", "no maltratador", "no violento", "no grosero"
+            ]
+            if any(vg in context for vg in victim_guard):
+                continue
+            
+            p_name = person.get("name") or "Persona"
+            return True, f"RED FLAG DE SEGURIDAD: {p_name} presenta registros o antecedentes de violencia/agresión en notas clínicas ('{match.group(0)}'). Descalificación automática inmediata."
+
+    return False, None
+
+
 def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     """
     Evalúa incompatibilidades estructurales insalvables con 0% alucinación y 0 costo de IA.
@@ -5371,6 +5426,15 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
             except Exception:
                 return {}
         return {}
+
+    # 0. Protocolo de Seguridad Estricto (Violencia / Abuso / Medidas Judiciales)
+    is_cand_safety, cand_safety_reason = check_safety_red_flags(cand)
+    if is_cand_safety:
+        return True, cand_safety_reason
+
+    is_cli_safety, cli_safety_reason = check_safety_red_flags(cli)
+    if is_cli_safety:
+        return True, cli_safety_reason
 
     # 1. Género y Orientación Sexual
     c_gender = (cli.get('gender') or '').strip().lower()
@@ -5511,14 +5575,20 @@ def parse_clinical_ai_response(raw: str) -> dict:
     m = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', raw)
     if m:
         try:
-            return json.loads(m.group(1), strict=False)
+            parsed = json.loads(m.group(1), strict=False)
+            if isinstance(parsed, dict) and "red_flags_seguridad" not in parsed:
+                parsed["red_flags_seguridad"] = []
+            return parsed
         except Exception:
             pass
     f_idx = raw.find("{")
     l_idx = raw.rfind("}")
     if f_idx != -1 and l_idx > f_idx:
         try:
-            return json.loads(raw[f_idx:l_idx + 1], strict=False)
+            parsed = json.loads(raw[f_idx:l_idx + 1], strict=False)
+            if isinstance(parsed, dict) and "red_flags_seguridad" not in parsed:
+                parsed["red_flags_seguridad"] = []
+            return parsed
         except Exception:
             pass
 
@@ -5531,6 +5601,15 @@ def parse_clinical_ai_response(raw: str) -> dict:
 
     analisis_m = re.search(r'an[aá]lisis[\*\:\s]+(.*?)(?=\n\s*\*\*|\Z)', raw, re.IGNORECASE | re.DOTALL)
     res['analisis'] = analisis_m.group(1).strip() if analisis_m else raw[:300]
+
+    red_flags_seguridad = []
+    rf_m = re.search(r'(?:red[\s\-_]*flags[\s\-_]*seguridad|alertas?[\s\-_]*seguridad|seguridad)[\*\:\s]+(.*?)(?=\n\s*\*\*(?:deal|puntos|an[aá]lisis)|\Z)', raw, re.IGNORECASE | re.DOTALL)
+    if rf_m:
+        for line in rf_m.group(1).strip().split('\n'):
+            line = re.sub(r'^[\*\-\d\.\s]+', '', line).strip()
+            if line:
+                red_flags_seguridad.append(line)
+    res['red_flags_seguridad'] = red_flags_seguridad
 
     deal_breakers = []
     db_m = re.search(r'(?:deal[\s\-_]*breakers|puntos\s+a\s+considerar|reservas)[\*\:\s]+(.*?)(?=\n\s*\*\*(?:puntos|an[aá]lisis)|\Z)', raw, re.IGNORECASE | re.DOTALL)
@@ -5569,10 +5648,12 @@ async def evaluate_candidate_quick_notes_ai(
     # BARRERA 1: Filtro Determinístico (0% AI, 0 tokens)
     is_hard_dealbreaker, hard_reason = check_deterministic_hard_dealbreakers(client_info, cand_info)
     if is_hard_dealbreaker:
+        is_safety = "SEGURIDAD" in str(hard_reason)
         rejection_res = {
-            "ai_score": 15,
+            "ai_score": 0 if is_safety else 15,
             "veredicto": "NO RECOMENDADO",
             "analisis": hard_reason,
+            "red_flags_seguridad": [hard_reason] if is_safety else [],
             "deal_breakers": [hard_reason],
             "puntos_fuertes": [],
             "calidad_notas": "N/A - FILTRO DETERMINISTICO",
@@ -5642,32 +5723,46 @@ PERFIL CANDIDATO: {cand_info.get('name')}
 {cand_notes if cand_notes else 'Sin notas clínicas registradas en ficha.'}
 
 --- REGLAS CLÍNICAS DE EVALUACIÓN ---
-1. ESPECIFICIDAD OBLIGATORIA:
+1. PROTOCOLO CRÍTICO DE SEGURIDAD (CERO TOLERANCIA):
+   - Si en las notas clínicas o perfil de CUALQUIERA de las dos personas se detecta antecedentes, patrones o menciones de:
+     * Violencia física, intrafamiliar, sexual o de pareja (ej. agresiones físicas a exparejas, golpes, antecedentes de violencia).
+     * Abuso psicológico severo, amenazas, intimidación o conductas delictivas.
+     * Denuncias penales, medidas de protección u órdenes de alejamiento vigentes o pasadas en su contra.
+     * Adicciones severas activas (drogadicción destructiva, alcoholismo severo descontrolado).
+   - DEBES OBLIGATORIAMENTE:
+     1) Declararlo en el campo "red_flags_seguridad": ["<descripción exacta del antecedente o riesgo de seguridad>"].
+     2) Asignar "veredicto": "NO RECOMENDADO".
+     3) Asignar "ai_score": 0.
+     4) En "analisis", iniciar la primera línea con: "🚨 DESCALIFICADO POR SEGURIDAD: [motivo concreto]".
+   - ESTÁ TOTALMENTE PROHIBIDO otorgar veredicto favorable (RECOMENDADO / VIABLE) si existe una Red Flag de Seguridad.
+
+2. ESPECIFICIDAD OBLIGATORIA:
    - Si la fuente de un dato es "Psicóloga", dale PRIORIDAD absoluta sobre cualquier dato auto-declarado en CRM, ya que representa el criterio clínico profesional validado en entrevista.
    - PROHIBIDO usar frases genéricas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica").
    - Cita hechos textuales concretos: apego, hábitos, ritmo de rumba, mascotas, proyectos de vida o extractos de las notas.
    - Si las notas clínicas de alguna persona son muy escuetas, decláralo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
 
-2. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 15 a 92):
-   - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers. Diferencias normales complementarias o agendas laborales habituales se consideran compatibles, NO causales de castigo.
+3. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 0 a 92):
+   - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers ni red flags de seguridad. Diferencias normales complementarias o agendas laborales habituales se consideran compatibles, NO causales de castigo.
    - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar o verificar (rutinas, logística o preferencias secundarias).
    - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos de conexión, PERO existen reservas clínicas o de estilo de vida reales que requieren validación mutua (apego ansioso/evitativo sin trabajar, ritmo de rumba muy dispar, o duelo afectivo menor a 1 año).
    - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que dificulta la conexión.
-   - "NO RECOMENDADO" (ai_score 15 a 35): Dealbreakers explícitos o incompatibilidad directa en estilo de vida o valores fundamentales.
+   - "NO RECOMENDADO" (ai_score 0 a 35): Red flags de seguridad (score 0), dealbreakers explícitos o incompatibilidad directa en estilo de vida o valores fundamentales.
 
-3. SÍNTESIS INDIVIDUAL DE CADA PERSONA (3 VIÑETAS EJECUTIVAS):
+4. SÍNTESIS INDIVIDUAL DE CADA PERSONA (3 VIÑETAS EJECUTIVAS):
    Para que la psicóloga no tenga que leer las notas completas en bruto, sintetiza a cada persona en exactamente 3 puntos concisos:
    - "quien_es": 1-2 líneas con ocupación, estilo de vida, rutina y aficiones principales.
    - "que_busca": 1-2 líneas con sus criterios reales de pareja, expectativas y no negociables.
    - "destaca": 1 línea con su rasgo psicológico diferencial, dinámica afectiva o punto de atención detectado en entrevista.
 
-4. FORMATO DE RESPUESTA:
+5. FORMATO DE RESPUESTA:
 Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 {{
-  "ai_score": <entero coherente con la rúbrica>,
+  "ai_score": <entero coherente con la rúbrica, 0 si hay red flag de seguridad>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
   "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas y perfiles reales>",
-  "deal_breakers": ["<fricciones o reservas concretas, o vacía si no hay>"],
+  "red_flags_seguridad": ["<alertas críticas de seguridad o vacía si no hay>"],
+  "deal_breakers": ["<fricciones de estilo de vida o preferencias, o vacía si no hay>"],
   "puntos_fuertes": ["<1 a 3 puntos hiper-específicos citando hechos de las notas>"],
   "client_summary": {{
     "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
@@ -6587,16 +6682,38 @@ async def find_candidate_matches_engine(
                 if isinstance(res, dict) and res.get("ai_score") is not None:
                     ai_score = res.get("ai_score")
                     verdict = res.get("veredicto", "VIABLE")
+                    safety_flags = res.get("red_flags_seguridad") or []
+                    if not isinstance(safety_flags, list):
+                        safety_flags = [str(safety_flags)]
                     dbs = res.get("deal_breakers") or []
                     pts = res.get("puntos_fuertes") or []
                     analisis = res.get("analisis") or ""
                     notes_qual = res.get("calidad_notas", "SUFICIENTE")
 
+                    # CAPA 3: SALVAGUARDA DE SEGURIDAD ESTRICTA (CERO TOLERANCIA)
+                    # Si la IA pobló red_flags_seguridad o si se detectan indicios en deal_breakers/análisis/notas
+                    text_audit = " ".join([
+                        analisis,
+                        " ".join(str(x) for x in dbs),
+                        str(cand.get("bio_notes") or ""),
+                        str(cand.get("synthesis") or "")
+                    ])
+                    is_risk, risk_reason = check_safety_red_flags({"name": cand.get("name"), "bio_notes": text_audit})
+                    if safety_flags or is_risk:
+                        if risk_reason and risk_reason not in safety_flags:
+                            safety_flags.append(risk_reason)
+                        verdict = "NO RECOMENDADO"
+                        ai_score = 0
+                        struct_score = 0
+                        if not analisis.startswith("🚨 DESCALIFICADO"):
+                            analisis = f"🚨 DESCALIFICADO POR SEGURIDAD: {'; '.join(safety_flags[:2])}. {analisis}"
+
                     cand["ai_score"] = ai_score
                     cand["ai_veredicto"] = verdict
                     cand["ai_analisis"] = analisis
                     cand["ai_deal_breakers"] = dbs
-                    cand["ai_puntos_fuertes"] = pts
+                    cand["ai_red_flags_seguridad"] = safety_flags
+                    cand["ai_puntos_fuertes"] = pts if verdict != "NO RECOMENDADO" else []
                     cand["ai_model"] = res.get("model_used")
                     cand["ai_notes_quality"] = notes_qual
 
@@ -6607,8 +6724,14 @@ async def find_candidate_matches_engine(
                     if "comparison" in cand and isinstance(cand["comparison"], dict):
                         cand["comparison"]["client_summary"] = client_summ
                         cand["comparison"]["candidate_summary"] = cand_summ
+                        cand["comparison"]["red_flags_seguridad"] = safety_flags
 
-                    if notes_qual == "NULA" and struct_score is None:
+                    if safety_flags:
+                        cand["compatibility_pct"] = 0
+                        cand["structural_score"] = 0
+                        cand["dealbreakers_clean"] = False
+                        cand["dealbreakers_check"] = f"🚨 RED FLAG DE SEGURIDAD: {'; '.join(safety_flags[:2])}"
+                    elif notes_qual == "NULA" and struct_score is None:
                         cand["compatibility_pct"] = None
                         cand["structural_score"] = None
                         cand["ai_score"] = None
@@ -6630,14 +6753,14 @@ async def find_candidate_matches_engine(
                             raw_blend = int(round(0.25 * struct_score + 0.75 * ai_score)) if struct_score is not None else ai_score
                             cand["compatibility_pct"] = max(75, min(raw_blend, 95)) if raw_blend is not None else None
 
-                    if dbs:
+                    if dbs and not safety_flags:
                         if verdict == "NO RECOMENDADO":
                             cand["dealbreakers_check"] = f"⚠️ Deal-breakers IA: {', '.join(dbs[:2])}"
                             cand["dealbreakers_clean"] = False
                         else:
                             cand["dealbreakers_check"] = f"⚠️ Puntos a verificar: {', '.join(dbs[:2])}"
                             cand["dealbreakers_clean"] = True
-                    if pts:
+                    if pts and not safety_flags:
                         cand["strengths"] = [f"IA: {p}" for p in pts] + cand.get("strengths", [])
                 else:
                     cand["ai_score"] = None
@@ -6655,8 +6778,23 @@ async def find_candidate_matches_engine(
             if should_close_client:
                 await client_to_use.aclose()
 
+        # Descarte de seguridad estricto: ningún perfil con red flags de seguridad puede ser sugerido
+        safe_evaluated = []
+        for cand in candidates_to_evaluate:
+            if cand.get("ai_red_flags_seguridad"):
+                discarded_matches.append({
+                    "candidate_user_id": cand.get("user_id"),
+                    "candidate_name": cand.get("name"),
+                    "age": cand.get("age"),
+                    "occupation": cand.get("occupation"),
+                    "reasons": cand.get("ai_red_flags_seguridad"),
+                    "warnings": ["DESCALIFICACIÓN POR RIESGO DE SEGURIDAD"]
+                })
+            else:
+                safe_evaluated.append(cand)
+
         evaluated_sorted = sorted(
-            candidates_to_evaluate,
+            safe_evaluated,
             key=lambda x: (
                 x["compatibility_pct"] is not None,
                 x["compatibility_pct"] or 0,
