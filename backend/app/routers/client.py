@@ -5,6 +5,12 @@ from sqlalchemy import text
 from app.database import get_db
 from app.core.permissions import get_current_user
 import json
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/client", tags=["Client PWA"])
 
@@ -464,5 +470,155 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
         "ok": True,
         "message": "¡Muchas gracias! Tu evaluación ha sido registrada. Tu perfil ha sido desbloqueado para continuar en nuevos procesos de matchmaking."
     }
+
+
+# ─── AGENDAMIENTO VIP 650K: TERCERO ORGANIZADOR (GOOGLE CALENDAR & MEET) ───────
+
+class VipBookingConfirmRequest(BaseModel):
+    client_name: str
+    client_email: str
+    slot_iso: str
+    client_phone: Optional[str] = None
+    notes: Optional[str] = ""
+
+
+@router.get("/vip-booking/slots")
+async def get_vip_available_slots(
+    days_ahead: int = 7,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Calcula los espacios libres de 45 min para entrevistas VIP con María Salinas.
+    Consulta los bloques ocupados mediante Google Calendar freebusy y citas previas en DB.
+    """
+    from app.services.google_calendar_service import calculate_available_vip_slots
+
+    # Obtener citas previas agendadas con MPS
+    prev_res = await db.execute(text("""
+        SELECT appointment_date, time_slot FROM interview_appointments
+        WHERE psychologist_name = 'MPS' AND status != 'CANCELADA'
+    """))
+    booked_slots = [
+        f"{r.appointment_date.strftime('%Y-%m-%d')} {r.time_slot}" for r in prev_res.fetchall() if r.appointment_date
+    ]
+
+    slots = calculate_available_vip_slots(
+        days_ahead=days_ahead,
+        slot_minutes=45,
+        min_notice_hours=48,
+        existing_booked_slots=booked_slots
+    )
+    return {"status": "success", "slots": slots}
+
+
+@router.post("/vip-booking/confirm")
+async def confirm_vip_booking(
+    req: VipBookingConfirmRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Confirma el espacio seleccionado por el cliente VIP.
+    El Tercero Organizador crea el evento en Google Calendar con Google Meet
+    e invita a María Salinas y al cliente, registrando la cita en interview_appointments.
+    """
+    from app.services.google_calendar_service import create_third_party_vip_event
+    from app.services.email_service import send_vip_confirmation_emails
+
+    try:
+        start_dt = datetime.fromisoformat(req.slot_iso)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (slot_iso).")
+
+    end_dt = start_dt + timedelta(minutes=45)
+    time_str = start_dt.strftime("%H:%M")
+    date_str = start_dt.strftime("%Y-%m-%d")
+
+    # 1. Crear evento mediante el Tercero Organizador en Google Calendar
+    cal_res = create_third_party_vip_event(
+        client_name=req.client_name,
+        client_email=req.client_email,
+        start_dt=start_dt,
+        end_dt=end_dt,
+        client_phone=req.client_phone
+    )
+    meet_link = cal_res.get("meet_link") or "https://meet.google.com"
+
+    # 2. Buscar user_id si ya existe en la DB
+    user_res = await db.execute(text("""
+        SELECT id FROM users WHERE lower(email) = lower(:e) LIMIT 1
+    """), {"e": req.client_email})
+    u_row = user_res.fetchone()
+    user_id = u_row[0] if u_row else None
+
+    # 3. Guardar en interview_appointments
+    ins_res = await db.execute(text("""
+        INSERT INTO interview_appointments (
+            user_id, client_name, client_email, client_phone,
+            psychologist_name, appointment_date, time_slot,
+            meet_link, status, notes, duration_seconds, created_at
+        ) VALUES (
+            :uid, :cname, :cemail, :cphone,
+            'MPS', :adate, :tslot,
+            :mlink, 'PROGRAMADA', :notes, 2700, NOW()
+        )
+        RETURNING id;
+    """), {
+        "uid": user_id,
+        "cname": req.client_name,
+        "cemail": req.client_email,
+        "cphone": req.client_phone or "",
+        "adate": start_dt,
+        "tslot": time_str,
+        "mlink": meet_link,
+        "notes": req.notes or "Entrevista VIP 650k agendada por Tercero Organizador"
+    })
+    appt_id = ins_res.scalar()
+
+    # Si hay user_id, asegurar responsable = 'MPS' y plan_tier = 'Plan VIP 650k'
+    if user_id:
+        await db.execute(text("""
+            UPDATE profiles SET responsable = 'MPS', plan_tier = 'Plan VIP 650k', updated_at = NOW()
+            WHERE user_id = :uid
+        """), {"uid": user_id})
+
+    await db.commit()
+
+    # 4. Formatear nombres de fecha para el correo
+    meses_es = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    dias_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    dow = dias_es[start_dt.weekday()]
+    mes = meses_es[start_dt.month - 1]
+    display_date = f"{dow} {start_dt.day} de {mes}"
+    hour = start_dt.hour
+    minute = start_dt.minute
+    display_time = f"{hour if hour <= 12 else hour - 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
+
+    # 5. Despachar correos de confirmación en background
+    try:
+        asyncio.create_task(
+            asyncio.to_thread(
+                send_vip_confirmation_emails,
+                customer_name=req.client_name,
+                customer_email=req.client_email,
+                display_date=display_date,
+                display_time=display_time,
+                meet_link=meet_link
+            )
+        )
+        logger.info(f"💌 Correos de confirmación VIP agendada enviados a {req.client_email} y María Salinas")
+    except Exception as e_conf:
+        logger.warning(f"No se pudo programar el envío de correos de confirmación VIP: {e_conf}")
+
+    return {
+        "status": "success",
+        "message": "Entrevista VIP confirmada exitosamente.",
+        "appointment_id": appt_id,
+        "appointment_date": date_str,
+        "time_slot": time_str,
+        "display_date": display_date,
+        "display_time": display_time,
+        "meet_link": meet_link
+    }
+
 
 

@@ -26,6 +26,7 @@ import asyncio
 
 # Mapeo de IDs de productos / montos de Stripe a planes de Daily Lover
 STRIPE_PLAN_MAP = {
+    "650": "Plan VIP 650k",
     "195": "VIP 195k",
     "150": "Premium",
     "98": "Estándar Plus 98k",
@@ -112,8 +113,18 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         meta_plan = meta.get("plan_tier") or meta.get("plan") or meta.get("producto") or ""
         desc = str(data_object.get("description") or "").strip()
 
+        # Detección específica del Plan VIP 650k (Link directo https://buy.stripe.com/4gMcN4aqI87p4no2O48EM1g o monto 650k)
+        is_vip_650k = bool(
+            "4gMcN4aqI87p4no2O48EM1g" in str(data_object)
+            or (640000 <= amount_cop <= 660000)
+            or ("650" in str(meta_plan).lower())
+            or ("650" in desc.lower())
+        )
+
         plan_name = ""
-        if "experience" in str(meta_plan).lower() or "experience" in desc.lower():
+        if is_vip_650k:
+            plan_name = "Plan VIP 650k"
+        elif "experience" in str(meta_plan).lower() or "experience" in desc.lower():
             plan_name = "Matchmaking Experience"
         elif meta_plan:
             plan_name = meta_plan
@@ -209,7 +220,11 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     """), {"uid": user_id, "pi": pi_id})
 
                 # Notificación para la psicóloga asignada
-                responsable_name = (responsable or "").replace("MATCHES ", "").strip() or "REVISIÓN MANUAL"
+                if is_vip_650k:
+                    responsable_name = "MPS"
+                    await db.execute(text("UPDATE profiles SET responsable = 'MPS' WHERE user_id = :uid"), {"uid": user_id})
+                else:
+                    responsable_name = (responsable or "").replace("MATCHES ", "").strip() or "REVISIÓN MANUAL"
                 obs_note = f"🔔 [PAGO STRIPE] {user_name} adquirió {plan_name} (${amount_cop:,.0f} {currency}). Plan anterior: {old_plan or 'Sin plan'}."
 
                 await db.execute(text("""
@@ -226,7 +241,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
             # Disparador en tiempo real hacia Google Sheets (apuntando al Sheet configurado en GOOGLE_SHEETS_SPREADSHEET_ID)
             target_name = (user_row.name if user_row else None) or customer_name or ""
-            target_resp = user_row.responsable if user_row else None
+            target_resp = ("MPS" if is_vip_650k else (user_row.responsable if user_row else None))
             if target_name and plan_name:
                 try:
                     from app.services.google_sheets import update_client_plan_in_sheet
@@ -241,6 +256,46 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     logger.info(f"🚀 Disparador Stripe -> Google Sheets programado en background para: '{target_name}' con plan '{plan_name}'")
                 except Exception as e_sheet:
                     logger.warning(f"No se pudo programar actualización de Google Sheets en tiempo real: {e_sheet}")
+
+            # Disparador de Alerta Inmediata por Correo a María Salinas y Selección de Slots al Cliente VIP
+            if is_vip_650k:
+                try:
+                    from app.services.email_service import send_vip_650k_alert_to_owner, send_vip_slot_selection_email
+                    from app.services.google_calendar_service import calculate_available_vip_slots
+
+                    c_final_name = target_name or customer_name or "Cliente VIP"
+                    c_final_email = customer_email or ""
+
+                    # 1. Alerta a la dueña (María Salinas)
+                    asyncio.create_task(
+                        asyncio.to_thread(
+                            send_vip_650k_alert_to_owner,
+                            customer_name=c_final_name,
+                            customer_email=c_final_email or "Sin correo registrado",
+                            customer_phone=customer_phone or "",
+                            amount_cop=amount_cop,
+                            currency=currency,
+                            user_id=user_row.id if user_row else None
+                        )
+                    )
+                    logger.info(f"💌 Notificación VIP 650k disparada por correo a contact.mariasalinas@gmail.com para '{c_final_name}'")
+
+                    # 2. Correo de bienvenida al cliente con huecos disponibles para selección
+                    if c_final_email and "@" in c_final_email:
+                        slots = calculate_available_vip_slots(days_ahead=7, slot_minutes=45, min_notice_hours=48)
+                        token_book = f"vip_{pi_id or 'pay'}_{int(datetime.now().timestamp())}"
+                        asyncio.create_task(
+                            asyncio.to_thread(
+                                send_vip_slot_selection_email,
+                                customer_name=c_final_name,
+                                customer_email=c_final_email,
+                                slots=slots,
+                                booking_token=token_book
+                            )
+                        )
+                        logger.info(f"💌 Correo con {len(slots)} opciones de agendamiento VIP enviado al cliente '{c_final_name}' ({c_final_email})")
+                except Exception as e_vip_mail:
+                    logger.error(f"Error disparando correos VIP 650k: {e_vip_mail}")
 
             if user_row:
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}

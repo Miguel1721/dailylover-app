@@ -125,20 +125,20 @@ def get_metro_cluster(city: Optional[str]) -> Optional[str]:
     """
     if not city:
         return None
-    c = normalize_text_unaccent(city)
-    if any(k in c for k in ["medellin", "itagui", "itaguei", "envigado", "sabaneta", "bello", "estrella", "rionegro", "poblado", "laureles"]):
+    c = normalize_text_unaccent(city).replace('?', 'a')
+    if any(k in c for k in ["medell", "itagui", "itaguei", "envigado", "sabaneta", "bello", "estrella", "rionegro", "poblado", "laureles"]):
         return "medellin_metro"
-    if any(k in c for k in ["bogota", "chia", "cajica", "cota", "soacha", "zipaquira", "engativa", "suba", "cedritos", "chapinero", "colina", "usaquen"]):
+    if any(k in c for k in ["bogot", "chia", "cajica", "cota", "soacha", "zipaquira", "engativa", "suba", "cedritos", "chapinero", "colina", "usaquen"]):
         return "bogota_metro"
     if any(k in c for k in ["cali", "jamundi", "yumbo"]):
         return "cali_metro"
-    if any(k in c for k in ["barranquilla", "soledad", "puerto colombia"]):
+    if any(k in c for k in ["barranq", "soledad", "puerto colombia"]):
         return "barranquilla_metro"
-    if any(k in c for k in ["cartagena"]):
+    if any(k in c for k in ["cartagen"]):
         return "cartagena_metro"
-    if any(k in c for k in ["bucaramanga", "floridablanca", "piedecuesta", "giron"]):
+    if any(k in c for k in ["bucaram", "floridablanca", "piedecuesta", "giron"]):
         return "bucaramanga_metro"
-    if any(k in c for k in ["pereira", "manizales", "armenia", "dosquebradas"]):
+    if any(k in c for k in ["pereir", "manizal", "armenia", "dosquebradas"]):
         return "eje_cafetero"
     return c
 

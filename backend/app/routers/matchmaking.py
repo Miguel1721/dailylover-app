@@ -5574,7 +5574,22 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     c_cluster = get_metro_cluster(c_city)
     cand_cluster = get_metro_cluster(cand_city)
     if c_cluster and cand_cluster and c_cluster != cand_cluster:
-        return True, f"Incompatibilidad territorial de ciudad: {cli.get('name')} reside en {c_city} y {cand.get('name')} reside en {cand_city}. Matches interciudades no permitidos."
+        def _check_travel(obj: dict) -> bool:
+            txt = " ".join([
+                str(obj.get('bio_notes') or ''),
+                str(obj.get('synthesis') or ''),
+                str(obj.get('synthesis_who_really_is') or '')
+            ]).lower()
+            if re.search(r'(dispuest[oa] a viajar|puede viajar|abiert[oa] a viajar|viaja con frecuencia|viaja frecuentemente|viaja constantemente|disponibilidad (para|de) viajar|viaja por trabajo|dispuest[oa] a trasladarse|dispuest[oa] a mudarse|abiert[oa] a otras ciudades|no importa la ciudad|relacion a distancia|piloto|turquia|regimen 30x21)', txt):
+                return True
+            sp_obj = _to_d(obj.get('search_preferences'))
+            if sp_obj.get('city') and any(k in str(sp_obj.get('city')).lower() for k in ["todas", "cualquiera"]):
+                return True
+            return False
+
+        has_travel = _check_travel(cli) or _check_travel(cand)
+        if not has_travel:
+            return True, f"Incompatibilidad territorial de ciudad: {cli.get('name')} reside en {c_city} y {cand.get('name')} reside en {cand_city} sin disposición expresa de viaje en notas."
 
     # 5. Dealbreaker etario bidireccional estricto
     def _parse_age_val(val):
@@ -5621,6 +5636,31 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
             return True, f"Incompatibilidad etaria bidireccional: {cand.get('name')} exige pareja de mínimo {cand_min_age} años, y {cli.get('name')} tiene {c_age} años."
         if cand_max_age is not None and c_age > cand_max_age:
             return True, f"Incompatibilidad etaria bidireccional: {cand.get('name')} exige pareja de máximo {cand_max_age} años, y {cli.get('name')} tiene {c_age} años."
+
+    # Regla de Brecha Máxima de 8 años por defecto (Descarte directo si > 8 años sin especificación en notas)
+    if c_age is not None and cand_age is not None:
+        age_diff = abs(c_age - cand_age)
+        if age_diff > 10:
+            return True, f"Incompatibilidad etaria: Brecha de {age_diff} años excede el límite absoluto del negocio (máximo 10 años permitido bajo cualquier circunstancia) ({c_age}a vs {cand_age}a)."
+        elif age_diff > 8:
+            def _check_wide_age_allowed(obj: dict, other_age: int) -> bool:
+                sp_obj = _to_d(obj.get('search_preferences'))
+                min_a = _parse_age_val(sp_obj.get('min_age'))
+                max_a = _parse_age_val(sp_obj.get('max_age'))
+                if min_a is not None and max_a is not None and min_a <= other_age <= max_a:
+                    return True
+                txt = " ".join([
+                    str(obj.get('bio_notes') or ''),
+                    str(obj.get('synthesis') or ''),
+                    str(obj.get('synthesis_who_really_is') or '')
+                ]).lower()
+                if re.search(r'(acepta mayores|acepta menores|no le importa la edad|sin limite de edad|edad no es problema|abiert[oa] a mayor edad|rango de edad amplio|le gustan mayores|le gustan menores|hasta \d+ a[ñn]os mayor|hasta \d+ a[ñn]os menor|\bentre \d{2} y \d{2} a[ñn]os\b)', txt):
+                    return True
+                return False
+
+            allowed = _check_wide_age_allowed(cli, cand_age) or _check_wide_age_allowed(cand, c_age)
+            if not allowed:
+                return True, f"Incompatibilidad etaria: Brecha de {age_diff} años excede el máximo permitido por defecto (8 años) sin especificación en notas ({c_age}a vs {cand_age}a)."
 
     return False, None
 
@@ -6054,8 +6094,8 @@ async def find_candidate_matches_engine(
                cep.social_group_score, cep.physical_activity_level, cep.education_level,
                cep.love_language_given, cep.love_language_received, cep.attachment_style,
                cep.non_negotiables, cep.synthesis_who_really_is
-        FROM users u
-        LEFT JOIN profiles p ON p.user_id = u.id
+        FROM profiles p
+        JOIN users u ON u.id = p.user_id
         LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
         WHERE u.id != :uid
           AND u.merged_into_id IS NULL
@@ -6067,7 +6107,10 @@ async def find_candidate_matches_engine(
           {anti_opposite_name_sql}
           {city_sql}
           {orient_filter_sql}
-          AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
+          AND p.bio_notes IS NOT NULL
+          AND LENGTH(TRIM(p.bio_notes)) > 40
+          AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
+          AND p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)'
         ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25) DESC,
                  {age_order_sql}
                  (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
@@ -6090,8 +6133,8 @@ async def find_candidate_matches_engine(
                    cep.social_group_score, cep.physical_activity_level, cep.education_level,
                    cep.love_language_given, cep.love_language_received, cep.attachment_style,
                    cep.non_negotiables, cep.synthesis_who_really_is
-            FROM users u
-            LEFT JOIN profiles p ON p.user_id = u.id
+            FROM profiles p
+            JOIN users u ON u.id = p.user_id
             LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
             WHERE u.id != :uid
               AND u.merged_into_id IS NULL
@@ -6103,7 +6146,10 @@ async def find_candidate_matches_engine(
               {anti_opposite_name_sql}
               {city_sql}
               {orient_filter_sql}
-              AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
+              AND p.bio_notes IS NOT NULL
+              AND LENGTH(TRIM(p.bio_notes)) > 40
+              AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
+              AND p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)'
             ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25) DESC,
                      {age_order_sql}
                      (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
@@ -8082,6 +8128,8 @@ async def get_priority_candidates(
         JOIN profiles p ON p.user_id = u.id
         WHERE u.name NOT ILIKE 'Cliente CRM%' AND u.name NOT ILIKE 'Sin nombre%'
           AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble)'
+          AND p.bio_notes IS NOT NULL AND LENGTH(TRIM(p.bio_notes)) > 40
+          AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
           AND (p.gender ILIKE :tgen OR p.gender IS NULL)
           AND (unaccent(p.city) ILIKE unaccent(:city) OR p.city IS NULL OR p.city = '')
         ORDER BY (p.occupation IS NOT NULL AND p.occupation != '') DESC, p.age DESC, u.id DESC
