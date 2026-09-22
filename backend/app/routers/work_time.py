@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.database import get_db
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -849,3 +849,338 @@ async def update_psychologist_rate(
         "idle_timeout_minutes": updated.idle_timeout_minutes,
         "message": f"Tarifa actualizada a ${float(updated.hourly_rate):,.0f} COP/hora"
     }
+
+
+# ─── MÓDULO 5: EFICIENCIA DE TURNOS Y PUNTAJE DE COMPROMISO MATCHMAKERS ───────
+
+class CommitmentScoreUpsertRequest(BaseModel):
+    year: int
+    month: int
+    matchmaker_name: str
+    cumplimiento: int = Field(3, ge=1, le=5)
+    puntualidad: int = Field(3, ge=1, le=5)
+    gestion_perfiles: int = Field(3, ge=1, le=5)
+    calidad_entrevistas: int = Field(3, ge=1, le=5)
+    seguimiento: int = Field(3, ge=1, le=5)
+    compromiso: int = Field(3, ge=1, le=5)
+    missed_miguel_meetings: int = Field(0, ge=0)
+    observations: Optional[str] = ""
+
+
+async def ensure_commitment_table(db: AsyncSession):
+    await db.execute(text("""
+        CREATE TABLE IF NOT EXISTS matchmaker_commitment_evaluations (
+            id SERIAL PRIMARY KEY,
+            period_year INT NOT NULL,
+            period_month INT NOT NULL,
+            matchmaker_name VARCHAR(100) NOT NULL,
+            cumplimiento INT NOT NULL DEFAULT 3,
+            puntualidad INT NOT NULL DEFAULT 3,
+            gestion_perfiles INT NOT NULL DEFAULT 3,
+            calidad_entrevistas INT NOT NULL DEFAULT 3,
+            seguimiento INT NOT NULL DEFAULT 3,
+            compromiso INT NOT NULL DEFAULT 3,
+            missed_miguel_meetings INT NOT NULL DEFAULT 0,
+            final_score_100 NUMERIC(5,2) NOT NULL DEFAULT 60.0,
+            average_5 NUMERIC(3,2) NOT NULL DEFAULT 3.0,
+            observations TEXT DEFAULT '',
+            evaluated_by VARCHAR(100),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(period_year, period_month, matchmaker_name)
+        );
+    """))
+
+
+@router.get("/matchmaker-shift-efficiency")
+async def get_matchmaker_shift_efficiency(
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: Optional[dict] = Depends(get_current_user)
+):
+    """
+    Cruza los turnos de trabajo registrados (horas en línea) con los matches producidos
+    en operational_matches para determinar la velocidad real (minutos por match),
+    tasa de aprobación de María y cuellos de botella del equipo de matchmakers.
+    """
+    if hasattr(year, 'default'):
+        year = year.default
+    if hasattr(month, 'default'):
+        month = month.default
+    await ensure_work_time_tables(db)
+    now = datetime.now()
+    t_year = year or now.year
+    t_month = month or now.month
+
+    # 1. Matches creados y aprobados por cada psicóloga en el mes
+    matches_q = """
+        SELECT 
+            UPPER(TRIM(psychologist_name)) as psyc_name,
+            count(*) as total_matches,
+            count(*) FILTER (WHERE approved_by_maria = true) as approved_matches,
+            count(*) FILTER (WHERE status = 'DESCARTADO' OR status ILIKE '%RECHAZ%') as rejected_matches
+        FROM operational_matches
+        WHERE EXTRACT(YEAR FROM created_at) = :year
+          AND EXTRACT(MONTH FROM created_at) = :month
+        GROUP BY psyc_name
+    """
+    m_rows = (await db.execute(text(matches_q), {"year": t_year, "month": t_month})).mappings().all()
+    m_map = {r["psyc_name"]: r for r in m_rows}
+
+    # 2. Horas trabajadas (active_seconds) en el mes
+    sessions_q = """
+        SELECT 
+            UPPER(TRIM(user_name)) as u_name,
+            COALESCE(SUM(active_seconds), 0) as total_active_sec,
+            count(*) as sessions_count
+        FROM work_sessions
+        WHERE EXTRACT(YEAR FROM started_at) = :year
+          AND EXTRACT(MONTH FROM started_at) = :month
+        GROUP BY u_name
+    """
+    s_rows = (await db.execute(text(sessions_q), {"year": t_year, "month": t_month})).mappings().all()
+    s_map = {r["u_name"]: r for r in s_rows}
+
+    # 3. Consolidar por lista oficial de psicólogas + cualquier otra en BD
+    results = []
+    seen_names = set()
+
+    for dr in DEFAULT_RATES:
+        k = dr["key"]
+        if k == "GLOBAL":
+            continue
+        name_clean = dr["name"]
+        key_upper = k.upper()
+        seen_names.add(key_upper)
+
+        # Buscar en matches (por key o por substring)
+        m_stat = None
+        for mk, mv in m_map.items():
+            if key_upper in mk or mk in key_upper:
+                m_stat = mv
+                break
+
+        # Buscar en sessions
+        s_stat = None
+        for sk, sv in s_map.items():
+            if key_upper in sk or sk in key_upper:
+                s_stat = sv
+                break
+
+        matches_count = m_stat["total_matches"] if m_stat else 0
+        approved_count = m_stat["approved_matches"] if m_stat else 0
+        rejected_count = m_stat["rejected_matches"] if m_stat else 0
+        active_sec = s_stat["total_active_sec"] if s_stat else 0
+        sessions_cnt = s_stat["sessions_count"] if s_stat else 0
+
+        active_hours = round(active_sec / 3600.0, 2)
+        total_active_min = active_sec / 60.0
+
+        if matches_count > 0:
+            avg_min_per_match = round(total_active_min / matches_count, 1) if active_sec > 0 else 25.0
+            approval_rate = round(approved_count / matches_count * 100.0, 1)
+        else:
+            avg_min_per_match = 0.0
+            approval_rate = 0.0
+
+        # Diagnóstico de eficiencia basado en datos
+        if matches_count == 0 and active_hours == 0:
+            speed_diag = "Sin actividad registrada"
+            badge_color = "gray"
+        elif avg_min_per_match <= 20.0 and matches_count >= 5:
+            speed_diag = "Alta eficiencia (< 20 min/match)"
+            badge_color = "emerald"
+        elif avg_min_per_match <= 35.0:
+            speed_diag = "Velocidad estándar (20-35 min/match)"
+            badge_color = "blue"
+        else:
+            speed_diag = "Alerta cuello de botella (> 35 min/match)"
+            badge_color = "rose"
+
+        results.append({
+            "key": k,
+            "name": name_clean,
+            "role": dr["role"],
+            "sessions_count": sessions_cnt,
+            "active_hours": active_hours,
+            "matches_count": matches_count,
+            "approved_count": approved_count,
+            "rejected_count": rejected_count,
+            "approval_rate": approval_rate,
+            "avg_minutes_per_match": avg_min_per_match,
+            "speed_diagnosis": speed_diag,
+            "badge_color": badge_color
+        })
+
+    # Ordenar por matches_count DESC
+    results.sort(key=lambda x: (x["matches_count"], x["active_hours"]), reverse=True)
+
+    # Totales globales del equipo
+    tot_matches = sum(r["matches_count"] for r in results)
+    tot_approved = sum(r["approved_count"] for r in results)
+    tot_hours = round(sum(r["active_hours"] for r in results), 2)
+    overall_approval_pct = round(tot_approved / tot_matches * 100.0, 1) if tot_matches > 0 else 0.0
+    overall_avg_speed = round((tot_hours * 60) / tot_matches, 1) if tot_matches > 0 and tot_hours > 0 else 0.0
+
+    return {
+        "year": t_year,
+        "month": t_month,
+        "team_summary": {
+            "total_team_hours": tot_hours,
+            "total_matches_produced": tot_matches,
+            "total_matches_approved": tot_approved,
+            "overall_approval_rate": overall_approval_pct,
+            "overall_avg_minutes_per_match": overall_avg_speed
+        },
+        "matchmakers": results
+    }
+
+
+@router.get("/commitment-scores")
+async def get_commitment_scores(
+    year: Optional[int] = Query(None),
+    month: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Retorna la matriz de puntaje de compromiso mensual de las matchmakers (Puntaje sobre 100).
+    Fórmula de Lina: Asistencia/Puntualidad, Gestión de perfiles, Calidad entrevistas,
+    Seguimiento, Compromiso, y penalización directa de -5 pts por reunión con Miguel perdida.
+    """
+    await ensure_commitment_table(db)
+    now = datetime.now()
+    t_year = year or now.year
+    t_month = month or now.month
+
+    res = await db.execute(text("""
+        SELECT 
+            id, period_year, period_month, matchmaker_name,
+            cumplimiento, puntualidad, gestion_perfiles, calidad_entrevistas,
+            seguimiento, compromiso, missed_miguel_meetings,
+            final_score_100, average_5, observations, evaluated_by, updated_at
+        FROM matchmaker_commitment_evaluations
+        WHERE period_year = :year AND period_month = :month
+        ORDER BY final_score_100 DESC, matchmaker_name ASC
+    """), {"year": t_year, "month": t_month})
+
+    rows = res.mappings().all()
+    evals = []
+    for r in rows:
+        evals.append({
+            "id": r["id"],
+            "year": r["period_year"],
+            "month": r["period_month"],
+            "matchmaker_name": r["matchmaker_name"],
+            "cumplimiento": r["cumplimiento"],
+            "puntualidad": r["puntualidad"],
+            "gestion_perfiles": r["gestion_perfiles"],
+            "calidad_entrevistas": r["calidad_entrevistas"],
+            "seguimiento": r["seguimiento"],
+            "compromiso": r["compromiso"],
+            "missed_miguel_meetings": r["missed_miguel_meetings"],
+            "final_score_100": float(r["final_score_100"]),
+            "average_5": float(r["average_5"]),
+            "observations": r["observations"] or "",
+            "evaluated_by": r["evaluated_by"],
+            "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None
+        })
+
+    return {
+        "year": t_year,
+        "month": t_month,
+        "evaluations": evals,
+        "total": len(evals)
+    }
+
+
+@router.post("/commitment-scores")
+async def upsert_commitment_score(
+    req: CommitmentScoreUpsertRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Registra o actualiza la evaluación de compromiso de una matchmaker para un mes específico.
+    Calcula automáticamente el promedio (1-5) y el puntaje sobre 100 con penalizaciones de Miguel.
+    """
+    await ensure_commitment_table(db)
+
+    # 1. Promedio escala 1 a 5
+    avg_5 = (
+        req.cumplimiento +
+        req.puntualidad +
+        req.gestion_perfiles +
+        req.calidad_entrevistas +
+        req.seguimiento +
+        req.compromiso
+    ) / 6.0
+
+    # 2. Puntaje base sobre 100 = (avg_5 / 5.0) * 100
+    base_100 = (avg_5 / 5.0) * 100.0
+
+    # 3. Penalización de Miguel: -5 puntos por reunión no asistida
+    penalty = req.missed_miguel_meetings * 5.0
+    final_score = max(0.0, min(100.0, base_100 - penalty))
+
+    evaluator = user.get("employee_name") or user.get("email") or "Dirección"
+
+    query = """
+        INSERT INTO matchmaker_commitment_evaluations (
+            period_year, period_month, matchmaker_name,
+            cumplimiento, puntualidad, gestion_perfiles, calidad_entrevistas,
+            seguimiento, compromiso, missed_miguel_meetings,
+            final_score_100, average_5, observations, evaluated_by, updated_at
+        ) VALUES (
+            :year, :month, :name,
+            :cump, :punt, :gest, :cal,
+            :seg, :comp, :missed,
+            :fscore, :avg5, :obs, :eval_by, NOW()
+        )
+        ON CONFLICT (period_year, period_month, matchmaker_name)
+        DO UPDATE SET
+            cumplimiento = EXCLUDED.cumplimiento,
+            puntualidad = EXCLUDED.puntualidad,
+            gestion_perfiles = EXCLUDED.gestion_perfiles,
+            calidad_entrevistas = EXCLUDED.calidad_entrevistas,
+            seguimiento = EXCLUDED.seguimiento,
+            compromiso = EXCLUDED.compromiso,
+            missed_miguel_meetings = EXCLUDED.missed_miguel_meetings,
+            final_score_100 = EXCLUDED.final_score_100,
+            average_5 = EXCLUDED.average_5,
+            observations = EXCLUDED.observations,
+            evaluated_by = EXCLUDED.evaluated_by,
+            updated_at = NOW()
+        RETURNING id, final_score_100, average_5;
+    """
+    res = await db.execute(text(query), {
+        "year": req.year,
+        "month": req.month,
+        "name": req.matchmaker_name.strip(),
+        "cump": req.cumplimiento,
+        "punt": req.puntualidad,
+        "gest": req.gestion_perfiles,
+        "cal": req.calidad_entrevistas,
+        "seg": req.seguimiento,
+        "comp": req.compromiso,
+        "missed": req.missed_miguel_meetings,
+        "fscore": round(final_score, 2),
+        "avg5": round(avg_5, 2),
+        "obs": req.observations or "",
+        "eval_by": evaluator
+    })
+    await db.commit()
+    r = res.fetchone()
+
+    return {
+        "status": "success",
+        "id": r.id,
+        "matchmaker_name": req.matchmaker_name,
+        "period": f"{req.month:02d}/{req.year}",
+        "average_5": float(r.average_5),
+        "final_score_100": float(r.final_score_100),
+        "missed_miguel_penalty_pts": penalty,
+        "message": f"Evaluación guardada: {float(r.final_score_100):.1f} / 100 pts ({float(r.average_5):.2f}/5)"
+    }
+

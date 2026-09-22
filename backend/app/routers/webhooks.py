@@ -607,7 +607,7 @@ async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int
                         if "experience" in r_low:
                             plan_val = "Matchmaking Experience"
                         elif "195" in r_low or "vip" in r_low:
-                            plan_val = "VIP 195k (5 citas)"
+                            plan_val = "VIP 195k"
                         elif "150" in r_low or "premium" in r_low:
                             plan_val = "Premium"
                         elif "98" in r_low:

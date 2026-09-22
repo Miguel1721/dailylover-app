@@ -2,11 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
-from app.core.permissions import require_permission
+from app.core.permissions import require_permission, get_current_user
 from app.schemas.finance import IncomeCreate, IncomeOut, ExpenseCreate, ExpenseOut, CashflowOut
 from typing import List, Optional
 from datetime import date, datetime, timedelta
 from uuid import UUID
+from pydantic import BaseModel
+import uuid
+import json
+import re
+from urllib.parse import quote
 
 router = APIRouter(prefix="/api/v1/admin/finance", tags=["Finance"])
 
@@ -384,3 +389,200 @@ async def export_cashflow_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="flujo_caja_{period_label}.pdf"'}
     )
+
+
+# ─── MÓDULO PAGO NEQUI (REGISTRO RÁPIDO PARA INSTAGRAM / NINA) ────────────────
+
+class NequiPaymentRequest(BaseModel):
+    name: str
+    phone: str
+    city: Optional[str] = "Bogotá"
+    gender: Optional[str] = "Mujer"
+    plan_tier: Optional[str] = "Estándar 65k (2 citas)"
+    amount_cop: float
+    payment_reference: Optional[str] = None
+    notes: Optional[str] = None
+    responsable: Optional[str] = "SILVI"
+
+
+@router.post("/nequi-payment", status_code=status.HTTP_201_CREATED)
+async def register_nequi_payment(
+    req: NequiPaymentRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Optional[dict] = Depends(get_current_user)
+):
+    """
+    Registro rápido en 30 segundos de pagos recibidos vía Nequi/Daviplata por Instagram.
+    1. Crea o asocia el usuario en users (con código DL-XXXX).
+    2. Registra el ingreso en stripe_payments y income_records.
+    3. Asegura el registro en leads_pendientes_entrevista para agendar entrevista si aún no tiene perfil clínico.
+    4. Retorna el enlace de Calendly y mensaje listo para enviar al cliente por WhatsApp / Instagram.
+    """
+    if user is None or not isinstance(user, dict):
+        user = {"employee_name": "Comercial / Admin", "email": "admin@dailylover.co"}
+
+    name_clean = req.name.strip().title()
+    raw_p = req.phone.strip()
+    digits_p = re.sub(r'\D', '', raw_p)
+    city_clean = (req.city or "Bogotá").strip().title()
+    plan_clean = (req.plan_tier or "Estándar 65k (2 citas)").strip()
+    amount = float(req.amount_cop)
+    reference = (req.payment_reference or "").strip()
+    notes = (req.notes or "").strip()
+    resp_clean = (req.responsable or "SILVI").strip().upper()
+    gender_clean = (req.gender or "Mujer").strip()
+
+    if not name_clean:
+        raise HTTPException(status_code=400, detail="El nombre del cliente es obligatorio.")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto pagado debe ser mayor a 0.")
+
+    # 1. Buscar si ya existe el usuario por teléfono (últimos 10 dígitos) o nombre
+    phone_search = digits_p[-10:] if len(digits_p) >= 10 else digits_p
+    user_row = None
+    if phone_search:
+        u_res = await db.execute(text("""
+            SELECT id, client_code, name, phone FROM users
+            WHERE phone LIKE :p_search
+            ORDER BY id DESC LIMIT 1
+        """), {"p_search": f"%{phone_search}%"})
+        user_row = u_res.mappings().first()
+
+    if not user_row:
+        u_res = await db.execute(text("""
+            SELECT id, client_code, name, phone FROM users
+            WHERE LOWER(TRIM(name)) = LOWER(:n_search)
+            ORDER BY id DESC LIMIT 1
+        """), {"n_search": name_clean})
+        user_row = u_res.mappings().first()
+
+    if user_row:
+        user_id = user_row["id"]
+        client_code = user_row["client_code"] or f"DL-{user_id:04d}"
+        if not user_row["client_code"]:
+            await db.execute(text("UPDATE users SET client_code = :cc WHERE id = :id"), {"cc": client_code, "id": user_id})
+    else:
+        ins_res = await db.execute(text("""
+            INSERT INTO users (name, phone, created_at)
+            VALUES (:n, :p, NOW())
+            RETURNING id
+        """), {"n": name_clean, "p": digits_p or raw_p})
+        user_id = ins_res.scalar()
+        client_code = f"DL-{user_id:04d}"
+        await db.execute(text("UPDATE users SET client_code = :cc WHERE id = :id"), {"cc": client_code, "id": user_id})
+
+    # 2. Si no tiene perfil activo en profiles, asegurar registro en leads_pendientes_entrevista
+    prof_row = (await db.execute(text("SELECT id FROM profiles WHERE user_id = :uid"), {"uid": user_id})).first()
+    if not prof_row:
+        lead_row = (await db.execute(text("SELECT user_id FROM leads_pendientes_entrevista WHERE user_id = :uid"), {"uid": user_id})).first()
+        if not lead_row:
+            await db.execute(text("""
+                INSERT INTO leads_pendientes_entrevista (
+                    user_id, full_name_raw, city, gender, plan_tier, responsable,
+                    last_payment_amount, last_payment_date, contact_status, contact_notes
+                ) VALUES (
+                    :uid, :name, :city, :gender, :plan, :resp,
+                    :amount, NOW(), 'CONTACTADO', :notes
+                )
+            """), {
+                "uid": user_id,
+                "name": name_clean,
+                "city": city_clean,
+                "gender": gender_clean,
+                "plan": plan_clean,
+                "resp": resp_clean,
+                "amount": amount,
+                "notes": f"Pago Nequi registrado. Ref: {reference or 'Sin ref'}. {notes}".strip()
+            })
+        else:
+            await db.execute(text("""
+                UPDATE leads_pendientes_entrevista
+                SET last_payment_amount = :amount,
+                    last_payment_date = NOW(),
+                    contact_status = 'CONTACTADO',
+                    contact_notes = CONCAT(COALESCE(contact_notes, ''), E'\\n', :note_line)
+                WHERE user_id = :uid
+            """), {
+                "uid": user_id,
+                "amount": amount,
+                "note_line": f"Nuevo pago Nequi: ${amount:,.0f} COP (Ref: {reference or 'N/A'})"
+            })
+
+    # 3. Registrar en stripe_payments para control consolidado
+    nequi_intent_id = f"nequi_{uuid.uuid4().hex[:18]}"
+    meta_json = json.dumps({
+        "payment_method": "nequi",
+        "reference": reference,
+        "city": city_clean,
+        "notes": notes,
+        "recorded_by": user.get("employee_name") or user.get("email") or "Comercial"
+    })
+
+    await db.execute(text("""
+        INSERT INTO stripe_payments (
+            stripe_payment_intent_id, user_id, customer_name, customer_phone,
+            amount, currency, description, plan_tier, payment_status,
+            payment_date, metadata
+        ) VALUES (
+            :pi, :uid, :cname, :cphone,
+            :amt, 'cop', :desc, :plan, 'succeeded',
+            NOW(), CAST(:meta AS jsonb)
+        )
+    """), {
+        "pi": nequi_intent_id,
+        "uid": user_id,
+        "cname": name_clean,
+        "cphone": digits_p or raw_p,
+        "amt": amount,
+        "desc": f"Pago Nequi - {plan_clean} - Ref: {reference or 'Sin Ref'}",
+        "plan": plan_clean,
+        "meta": meta_json
+    })
+
+    # 4. Registrar en income_records
+    await db.execute(text("""
+        INSERT INTO income_records (category, description, amount, payment_method, received_at)
+        VALUES ('Membresía', :desc, :amt, 'Nequi', CURRENT_DATE)
+    """), {
+        "desc": f"Pago Nequi - {name_clean} ({plan_clean})",
+        "amt": amount
+    })
+
+    await db.commit()
+
+    # Formatear WhatsApp / Mensaje de Instagram
+    clean_p_wa = digits_p
+    if len(clean_p_wa) == 10 and clean_p_wa.startswith('3'):
+        clean_p_wa = f"57{clean_p_wa}"
+    elif len(clean_p_wa) == 7:
+        clean_p_wa = f"571{clean_p_wa}"
+
+    calendly_url = "https://calendly.com/dailylover-entrevistas"
+    form_url = f"https://dailylover.co/formulario?uid={user_id}"
+
+    wa_msg = (
+        f"¡Hola {name_clean.split()[0]}! 🎉 Confirmamos tu pago de {plan_clean} por Nequi en Daily Lover.\\n\\n"
+        f"Para continuar con tu proceso y activar tus citas:\\n"
+        f"1️⃣ Agenda tu entrevista clínica de compatibilidad aquí:\\n{calendly_url}\\n\\n"
+        f"2️⃣ Completa tu ficha de perfil aquí:\\n{form_url}\\n\\n"
+        f"¡Estamos muy felices de acompañarte a encontrar a tu persona ideal! ✨"
+    )
+
+    wa_url = f"https://wa.me/{clean_p_wa}?text={quote(wa_msg)}" if clean_p_wa else ""
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "client_code": client_code,
+        "name": name_clean,
+        "phone": digits_p or raw_p,
+        "city": city_clean,
+        "amount_cop": amount,
+        "payment_reference": reference,
+        "calendly_url": calendly_url,
+        "form_url": form_url,
+        "whatsapp_url": wa_url,
+        "whatsapp_message": wa_msg,
+        "message": f"Pago Nequi registrado con éxito para {name_clean} ({client_code})."
+    }
+

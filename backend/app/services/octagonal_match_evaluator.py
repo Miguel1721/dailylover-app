@@ -79,13 +79,12 @@ class OctagonalMatchEvaluator:
                 )
 
         # ─── CAPA 1: CIMIENTOS DUROS ─────────────────────────────────────────────
-        # Eje 1: Logística y Geografía
+        # Eje 1: Logística y Distancia Real
         score_logistica, fricciones_log, kill_switches_log, sinergias_log = cls._eval_logistica(
             c_ejes["1_logistica"], k_ejes["1_logistica"], c_meta, k_meta
         )
         dealbreakers_activos.extend(kill_switches_log)
         puntos_friccion.extend(fricciones_log)
-        sinergias_fuertes.extend(sinergias_log)
 
         # Eje 2: Timing, Fase de Vida y Brecha Generacional
         score_timing, fricciones_tim, kill_switches_tim, sinergias_tim = cls._eval_timing(
@@ -93,7 +92,6 @@ class OctagonalMatchEvaluator:
         )
         dealbreakers_activos.extend(kill_switches_tim)
         puntos_friccion.extend(fricciones_tim)
-        sinergias_fuertes.extend(sinergias_tim)
 
         # Eje 3: Axiología (Hijos, Dinero, Fe, Política)
         score_axiologia, fricciones_ax, kill_switches_ax, sinergias_ax = cls._eval_axiologia(
@@ -101,7 +99,6 @@ class OctagonalMatchEvaluator:
         )
         dealbreakers_activos.extend(kill_switches_ax)
         puntos_friccion.extend(fricciones_ax)
-        sinergias_fuertes.extend(sinergias_ax)
 
         # ─── CAPA 2: CONVIVENCIA Y REGULACIÓN ────────────────────────────────────
         # Eje 4: Estilo de Conflicto
@@ -117,16 +114,21 @@ class OctagonalMatchEvaluator:
             c_ejes["6_ritmo_vital"], k_ejes["6_ritmo_vital"]
         )
         puntos_friccion.extend(fricciones_rit)
-        sinergias_fuertes.extend(sinergias_rit)
 
         # ─── CAPA 3: DESEO Y QUÍMICA SOMÁTICA ────────────────────────────────────
         # Eje 7: Polaridad de Roles
         score_polaridad, sinergias_pol = cls._eval_polaridad(c_ejes["7_polaridad"], k_ejes["7_polaridad"])
-        sinergias_fuertes.extend(sinergias_pol)
 
         # Eje 8: Estética y Hábitos
         score_estetica, fricciones_est = cls._eval_estetica(c_ejes["8_estetica"], k_ejes["8_estetica"])
         puntos_friccion.extend(fricciones_est)
+
+        # ─── REBALANCEO CLÍNICO DE SINERGIAS (SUSTANCIA ARRIBA, LOGÍSTICA AL FONDO) ─
+        sinergias_fuertes.extend(sinergias_ax)   # Axiología / Hijos / Visión de vida
+        sinergias_fuertes.extend(sinergias_pol)  # Polaridad y roles
+        sinergias_fuertes.extend(sinergias_rit)  # Ritmo vital y estilo de vida
+        sinergias_fuertes.extend(sinergias_tim)  # Timing generacional
+        sinergias_fuertes.extend(sinergias_log)  # Viabilidad logística secundaria
 
         # ─── PRINCIPIO DEL ESLABÓN DÉBIL & SCORING JERÁRQUICO ────────────────────
         score_capa1_cimientos = (score_logistica * 0.35 + score_timing * 0.30 + score_axiologia * 0.35)

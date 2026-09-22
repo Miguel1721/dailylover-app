@@ -291,11 +291,21 @@ class ResolveProfileRequest(BaseModel):
 class RejectMatchRequest(BaseModel):
     reason: Optional[str] = "Rechazado"
 
+OFFICIAL_REFUND_CATEGORIES = [
+    "Descalificación Clínica / Protocolo de Seguridad",
+    "Pool Insuficiente por Edad (>50 años)",
+    "Sin Cobertura Geográfica",
+    "Cambio de Estado Sentimental (en pareja)",
+    "Insatisfacción con Citas / Troublemakers",
+    "Desistimiento Voluntario / Arrepentimiento Inmediato"
+]
+
 class ManualRefundRequest(BaseModel):
     person_name: str
     psychologist_name: Optional[str] = "General"
     plan_tier: Optional[str] = ""
     reason: Optional[str] = "Solicitud de refund vía Servicio al Cliente / WhatsApp"
+    category: Optional[str] = "Descalificación Clínica / Protocolo de Seguridad"
 
 class NoShowRequest(BaseModel):
     person_failed: str  # "person_a", "person_b", "both"
@@ -1593,23 +1603,31 @@ async def create_manual_refund(
     psyc = payload.psychologist_name.strip() if payload.psychologist_name else "General"
     plan = payload.plan_tier.strip() if payload.plan_tier else ""
     reason = payload.reason.strip() if payload.reason else "Solicitud de refund vía Servicio al Cliente / WhatsApp"
+    category = payload.category.strip() if payload.category else "Descalificación Clínica / Protocolo de Seguridad"
+    full_obs = f"[{category}] [SERVICIO AL CLIENTE] {reason}"
 
     # Insertar en operational_matches con status REFUND
     insert_res = await db.execute(text("""
         INSERT INTO operational_matches (person_a, psychologist_name, plan_tier, status, observations, created_at, updated_at)
         VALUES (:pa, :psyc, :plan, 'REFUND', :obs, NOW(), NOW())
         RETURNING id
-    """), {"pa": clean_name, "psyc": psyc, "plan": plan, "obs": f"[SERVICIO AL CLIENTE] {reason}"})
+    """), {"pa": clean_name, "psyc": psyc, "plan": plan, "obs": full_obs})
     new_id = insert_res.scalar()
 
     # Registrar en person_history
     await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
         VALUES (:n, :mid, 'REFUND_REQUESTED', :d, NOW())
-    """), {"n": clean_name, "mid": new_id, "d": f"Solicitud de refund ingresada por Servicio al Cliente. Motivo: {reason}"})
+    """), {"n": clean_name, "mid": new_id, "d": f"Solicitud de refund ingresada por Servicio al Cliente. Categoría: {category}. Motivo: {reason}"})
 
     await db.commit()
-    return {"status": "success", "match_id": new_id, "message": f"Solicitud de refund para {clean_name} registrada en la cola de Lina."}
+    return {"status": "success", "match_id": new_id, "category": category, "message": f"Solicitud de refund para {clean_name} registrada en la cola de Lina."}
+
+
+@router.get("/refunds-categories")
+async def get_refund_categories():
+    """Retorna las 6 categorías oficiales estandarizadas de reembolsos de DailyLover."""
+    return {"categories": OFFICIAL_REFUND_CATEGORIES}
 
 
 # ─── 2B. COLA DE REFUNDS (LINA - SERVICIO AL CLIENTE) ───────────────────────
@@ -5665,14 +5683,58 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     return False, None
 
 
+def sort_synergies_by_clinical_priority(puntos_fuertes: list) -> list:
+    """
+    Rebalanceo Clínico: Ordena determinísticamente los puntos fuertes para que
+    los factores relacionales, psicológicos y de apego aparezcan primero,
+    y los datos logísticos/demográficos (ciudad, edad, barrio) aparezcan al final como contexto.
+    """
+    if not puntos_fuertes or not isinstance(puntos_fuertes, list) or len(puntos_fuertes) <= 1:
+        return puntos_fuertes or []
+
+    logistical_keywords = (
+        "ciudad", "bogot", "medell", "cali", "barranq", "cartagen", "bucaram",
+        "pereir", "manizal", "edad", "años", "a単os", "reside", "viven en", "vive en",
+        "ubicaci", "localidad", "barrio", "distancia", "cercan", "geogr", "estatura", "altura"
+    )
+
+    psychological_keywords = (
+        "apego", "seguro", "ansioso", "evitat", "desorganizad", "emocion", "afectiv", "conflicto",
+        "comunicaci", "vulnerab", "valores", "amor", "afirmaci", "tiempo de calidad",
+        "servicio", "contacto", "regalos", "autonom", "intimidad", "vida compartida",
+        "proyecci", "terapia", "introspecc", "familia", "proyecto de vida", "metas", "acuerdo",
+        "resoluci", "madurez", "empat"
+    )
+
+    def _priority_tier(item: str) -> int:
+        if not isinstance(item, str):
+            return 2
+        lower = item.lower()
+        is_log = any(kw in lower for kw in logistical_keywords)
+        is_psy = any(kw in lower for kw in psychological_keywords)
+
+        if is_psy and not is_log:
+            return 0  # Nivel 1: Psicológico / Relacional puro
+        if is_psy and is_log:
+            return 1  # Mixto (ej. proyecto de vida en X ciudad)
+        if not is_log:
+            return 2  # Nivel 2: Afinidades de estilo de vida / hobbies
+        return 3      # Nivel 3: Logística / Demografía pura (al final)
+
+    return sorted(puntos_fuertes, key=_priority_tier)
+
+
 def parse_clinical_ai_response(raw: str) -> dict:
     """Parsea respuestas en formato JSON o con formateo Markdown con fallbacks robustos."""
     m = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', raw)
     if m:
         try:
             parsed = json.loads(m.group(1), strict=False)
-            if isinstance(parsed, dict) and "red_flags_seguridad" not in parsed:
-                parsed["red_flags_seguridad"] = []
+            if isinstance(parsed, dict):
+                if "red_flags_seguridad" not in parsed:
+                    parsed["red_flags_seguridad"] = []
+                if "puntos_fuertes" in parsed and isinstance(parsed["puntos_fuertes"], list):
+                    parsed["puntos_fuertes"] = sort_synergies_by_clinical_priority(parsed["puntos_fuertes"])
             return parsed
         except Exception:
             pass
@@ -5681,8 +5743,11 @@ def parse_clinical_ai_response(raw: str) -> dict:
     if f_idx != -1 and l_idx > f_idx:
         try:
             parsed = json.loads(raw[f_idx:l_idx + 1], strict=False)
-            if isinstance(parsed, dict) and "red_flags_seguridad" not in parsed:
-                parsed["red_flags_seguridad"] = []
+            if isinstance(parsed, dict):
+                if "red_flags_seguridad" not in parsed:
+                    parsed["red_flags_seguridad"] = []
+                if "puntos_fuertes" in parsed and isinstance(parsed["puntos_fuertes"], list):
+                    parsed["puntos_fuertes"] = sort_synergies_by_clinical_priority(parsed["puntos_fuertes"])
             return parsed
         except Exception:
             pass
@@ -5722,7 +5787,7 @@ def parse_clinical_ai_response(raw: str) -> dict:
             line = re.sub(r'^[\*\-\d\.\s]+', '', line).strip()
             if line:
                 puntos_fuertes.append(line)
-    res['puntos_fuertes'] = puntos_fuertes
+    res['puntos_fuertes'] = sort_synergies_by_clinical_priority(puntos_fuertes)
     return res
 
 
@@ -5831,10 +5896,20 @@ PERFIL CANDIDATO: {cand_info.get('name')}
      4) En "analisis", iniciar la primera línea con: "🚨 DESCALIFICADO POR SEGURIDAD: [motivo concreto]".
    - ESTÁ TOTALMENTE PROHIBIDO otorgar veredicto favorable (RECOMENDADO / VIABLE) si existe una Red Flag de Seguridad.
 
-2. ESPECIFICIDAD OBLIGATORIA Y PUNTOS FUERTES ANCLADOS:
+2. ESPECIFICIDAD OBLIGATORIA Y JERARQUÍA CLÍNICA DE PUNTOS FUERTES:
    - Si la fuente de un dato es "Psicóloga", dale PRIORIDAD absoluta sobre cualquier dato auto-declarado en CRM, ya que representa el criterio clínico profesional validado en entrevista.
    - PROHIBIDO TERMINANTEMENTE usar frases genéricas, diplomáticas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica", "ambos son leales/honestos").
-   - Cada elemento de "puntos_fuertes" DEBE contrastar un hecho empírico concreto extraído de las notas: el deporte o afición específica que comparten (ej. 'ambos practican pilates y running'), su complementariedad de apego o lenguaje de amor verificado (ej. 'ella recibe actos de servicio y él los ofrece'), un proyecto de vida común tangible (ej. 'ambos desean vivir fuera del país en 2 años'), o valores concretos idénticos citados en sus perfiles.
+   - JERARQUÍA ESTRICTA PARA "puntos_fuertes" (ORDEN OBLIGATORIO DE ARRIBA HACIA ABAJO):
+     1) SUSTANCIA RELACIONAL Y PSICOLÓGICA (OBLIGATORIA EN PRIMERAS VIÑETAS):
+        * Complementariedad o compatibilidad de estilos de apego demostrada en notas clínicas (ej. apego seguro conteniendo a ansioso reflexivo; gestión sana de espacios de autonomía vs cercanía).
+        * Mecanismos de comunicación y resolución de conflictos (cómo afrontan desacuerdos, asertividad, contención emocional y capacidad reflexiva).
+        * Valores nucleares profundos y no negociables extraídos textualmente de las notas de la psicóloga (ej. visión de vida, lealtad activa, equilibrio familia-carrera, proyectos trascendentes).
+        * Reciprocidad en lenguajes del amor (complementariedad entre lo que uno ofrece y el otro necesita recibir).
+     2) AFINIDADES CONCRETAS DE ESTILO DE VIDA (SECUNDARIO):
+        * Hobbies específicos, deportes estructurados o intereses intelectuales/culturales compartidos (ej. 'ambos practican ciclismo y running', 'ambos disfrutan de lectura y gastronomía').
+     3) CONTEXTO LOGÍSTICO Y DEMOGRÁFICO (SOLO AL FINAL O COMO DATO DE CONTEXTO, MÁXIMO 1 VIÑETA):
+        * Coincidencia de ciudad o edades afines (ej. 'Ambos residen en Bogotá y tienen edades afines').
+        * ESTÁ ESTRICTAMENTE PROHIBIDO colocar datos logísticos o demográficos como la primera fortaleza o viñeta. Lo logístico es un requisito básico de viabilidad, NO la causa de conexión humana ni lo que enamora a dos personas.
    - Si las notas clínicas de alguna persona son muy escuetas, decláralo explícitamente: "Notas clínicas insuficientes en [Nombre] para profundizar en X".
 
 3. REGLA DE CONCORDANCIAS NEGATIVAS (ALINEACIÓN VS DEALBREAKER):
@@ -5843,8 +5918,9 @@ PERFIL CANDIDATO: {cand_info.get('name')}
    - Si no existen discrepancias o fricciones reales en los perfiles, el campo "deal_breakers" DEBE ser una lista vacía [].
 
 4. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 0 a 92):
-   - "RECOMENDADO" (ai_score 75 a 92): Afinidad evidente y comprobada en notas, visión de vida y valores alineados, sin dealbreakers ni red flags de seguridad. Diferencias normales complementarias o agendas laborales habituales se consideran compatibles, NO causales de castigo.
-   - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar o verificar (rutinas, logística o preferencias secundarias).
+   - PONDERACIÓN CLÍNICA: La coincidencia geográfica y etaria es únicamente un requisito higiénico de viabilidad básica. Si una pareja solo tiene compatibilidad demográfica/logística pero carece de sustancia vincular o psicológica profunda en sus notas, el puntaje NO puede superar el rango "VIABLE BUENO" (máximo 68).
+   - "RECOMENDADO" (ai_score 75 a 92): Afinidad psicológica y vincular evidente y comprobada en notas, apego compatible, visión de vida y valores nucleares alineados, sin dealbreakers ni red flags de seguridad. Diferencias normales complementarias o agendas laborales habituales se consideran compatibles, NO causales de castigo.
+   - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con sustancia relacional aceptable pero con puntos menores a conversar o verificar (rutinas, logística o preferencias secundarias).
    - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos de conexión, PERO existen reservas clínicas o de estilo de vida reales que requieren validación mutua (apego ansioso/evitativo sin trabajar, ritmo de rumba muy dispar, o duelo afectivo menor a 1 año).
    - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida que dificulta la conexión.
    - "NO RECOMENDADO" (ai_score 0 a 35): Red flags de seguridad (score 0), dealbreakers explícitos o incompatibilidad directa en estilo de vida o valores fundamentales.
@@ -5860,10 +5936,10 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 {{
   "ai_score": <entero coherente con la rúbrica, 0 si hay red flag de seguridad>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
-  "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas y perfiles reales>",
+  "analisis": "<2-3 líneas con análisis clínico aterrizado a las notas y perfiles reales; INICIA SIEMPRE por la dinámica psicológica y de apego/valores, dejando datos logísticos para una mención contextual al final>",
   "red_flags_seguridad": ["<alertas críticas de seguridad o vacía si no hay>"],
   "deal_breakers": ["<solo discrepancias y fricciones reales, vacía si coinciden o no hay>"],
-  "puntos_fuertes": ["<1 a 3 hechos concretos empíricos citando las notas, CERO generalidades>"],
+  "puntos_fuertes": ["<2 a 4 hechos concretos empíricos citando las notas, ORDENADOS con sustancia psicológica primero y logística al final, CERO generalidades>"],
   "client_summary": {{
     "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
     "que_busca": "<1-2 líneas con visión de pareja y límites>",
@@ -9674,6 +9750,241 @@ async def get_incomplete_profiles(
         "total_pages": total_pages,
         "profiles": profiles_list
     }
+
+
+# ─── MÓDULO RESCATE DE HOMBRES (1.116 LEADS SIN ENTREVISTA) ───────────────────
+
+class LeadMenRescueUpdateRequest(BaseModel):
+    responsable: Optional[str] = None
+    contact_status: Optional[str] = None  # PENDIENTE, CONTACTADO, AGENDO, DESCARTADO
+    contact_notes: Optional[str] = None
+
+
+@router.get("/leads-men-rescue")
+async def get_leads_men_rescue(
+    city_filter: str = Query("all", description="all, bogota, medellin, cali, miami, eje_cafetero, otras"),
+    status_filter: str = Query("all", description="all, PENDIENTE, CONTACTADO, AGENDO, DESCARTADO"),
+    responsable: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna la lista de hombres sin entrevista clínica en 'leads_pendientes_entrevista'
+    para la campaña de reactivación comercial de María y Lina.
+    Incluye enlace directo de WhatsApp con mensaje personalizado, filtros por ciudad y tracking de estado.
+    """
+    if hasattr(city_filter, 'default'):
+        city_filter = str(city_filter.default or "all")
+    if hasattr(status_filter, 'default'):
+        status_filter = str(status_filter.default or "all")
+    if hasattr(responsable, 'default'):
+        responsable = responsable.default
+    if hasattr(search, 'default'):
+        search = search.default
+    if hasattr(page, 'default'):
+        page = int(page.default or 1)
+    if hasattr(page_size, 'default'):
+        page_size = int(page_size.default or 50)
+
+    where_clauses = ["l.gender = 'Hombre'"]
+    params = {}
+
+    # Filtro por Ciudad
+    if city_filter and city_filter != "all":
+        cf = str(city_filter).lower()
+        if cf == "bogota":
+            where_clauses.append("l.city ILIKE '%bogot%'")
+        elif cf == "medellin":
+            where_clauses.append("(l.city ILIKE '%medell%' OR l.city ILIKE '%envigado%' OR l.city ILIKE '%sabaneta%' OR l.city ILIKE '%itagui%')")
+        elif cf == "cali":
+            where_clauses.append("l.city ILIKE '%cali%'")
+        elif cf == "miami":
+            where_clauses.append("(l.city ILIKE '%miami%' OR l.city ILIKE '%florida%' OR l.city ILIKE '%hollywood%')")
+        elif cf == "eje_cafetero":
+            where_clauses.append("(l.city ILIKE '%pereira%' OR l.city ILIKE '%manizales%' OR l.city ILIKE '%armenia%' OR l.city ILIKE '%dosquebradas%')")
+        elif cf == "otras":
+            where_clauses.append("""(
+                l.city NOT ILIKE '%bogot%' AND 
+                l.city NOT ILIKE '%medell%' AND l.city NOT ILIKE '%envigado%' AND l.city NOT ILIKE '%sabaneta%' AND l.city NOT ILIKE '%itagui%' AND
+                l.city NOT ILIKE '%cali%' AND
+                l.city NOT ILIKE '%miami%' AND l.city NOT ILIKE '%florida%' AND l.city NOT ILIKE '%hollywood%' AND
+                l.city NOT ILIKE '%pereira%' AND l.city NOT ILIKE '%manizales%' AND l.city NOT ILIKE '%armenia%' AND l.city NOT ILIKE '%dosquebradas%'
+            )""")
+
+    # Filtro por Estado
+    if status_filter and status_filter != "all":
+        where_clauses.append("COALESCE(l.contact_status, 'PENDIENTE') = :st_filter")
+        params["st_filter"] = str(status_filter).upper()
+
+    # Filtro por Responsable
+    if responsable and isinstance(responsable, str) and responsable.strip():
+        where_clauses.append("l.responsable = :resp")
+        params["resp"] = responsable.strip()
+
+    # Búsqueda
+    if search and isinstance(search, str) and search.strip():
+        where_clauses.append("(COALESCE(u.name, l.full_name_raw) ILIKE :srch OR u.phone ILIKE :srch OR u.email ILIKE :srch)")
+        params["srch"] = f"%{search.strip()}%"
+
+    where_sql = " AND ".join(where_clauses)
+
+    # 1. Conteos globales y agregados para badges
+    stats_query = """
+        SELECT
+            count(*) as total_men,
+            count(*) FILTER (WHERE l.city ILIKE '%bogot%') as c_bogota,
+            count(*) FILTER (WHERE l.city ILIKE '%medell%' OR l.city ILIKE '%envigado%' OR l.city ILIKE '%sabaneta%' OR l.city ILIKE '%itagui%') as c_medellin,
+            count(*) FILTER (WHERE l.city ILIKE '%cali%') as c_cali,
+            count(*) FILTER (WHERE l.city ILIKE '%miami%' OR l.city ILIKE '%florida%' OR l.city ILIKE '%hollywood%') as c_miami,
+            count(*) FILTER (WHERE l.city ILIKE '%pereira%' OR l.city ILIKE '%manizales%' OR l.city ILIKE '%armenia%' OR l.city ILIKE '%dosquebradas%') as c_eje_cafetero,
+            count(*) FILTER (WHERE COALESCE(l.contact_status, 'PENDIENTE') = 'PENDIENTE') as s_pendiente,
+            count(*) FILTER (WHERE COALESCE(l.contact_status, 'PENDIENTE') = 'CONTACTADO') as s_contactado,
+            count(*) FILTER (WHERE COALESCE(l.contact_status, 'PENDIENTE') = 'AGENDO') as s_agendo,
+            count(*) FILTER (WHERE COALESCE(l.contact_status, 'PENDIENTE') = 'DESCARTADO') as s_descartado
+        FROM leads_pendientes_entrevista l
+        WHERE l.gender = 'Hombre'
+    """
+    stats_res = (await db.execute(text(stats_query))).mappings().first()
+
+    # 2. Conteo filtrado
+    count_sql = f"""
+        SELECT count(*)
+        FROM leads_pendientes_entrevista l
+        LEFT JOIN users u ON u.id = l.user_id
+        WHERE {where_sql}
+    """
+    total_matching = (await db.execute(text(count_sql), params)).scalar() or 0
+
+    # 3. Lista paginada
+    offset = (page - 1) * page_size
+    list_sql = f"""
+        SELECT 
+            l.user_id,
+            COALESCE(u.name, l.full_name_raw, 'Hombre') as name,
+            COALESCE(u.phone, '') as phone,
+            COALESCE(u.email, '') as email,
+            COALESCE(l.city, 'Bogotá') as city,
+            l.age,
+            COALESCE(l.plan_tier, 'Sin plan') as plan_tier,
+            COALESCE(l.responsable, 'Sin asignar') as responsable,
+            COALESCE(l.contact_status, 'PENDIENTE') as contact_status,
+            l.contact_notes,
+            l.contacted_at,
+            u.created_at as registration_date
+        FROM leads_pendientes_entrevista l
+        LEFT JOIN users u ON u.id = l.user_id
+        WHERE {where_sql}
+        ORDER BY l.user_id DESC
+        LIMIT :limit OFFSET :offset
+    """
+    params["limit"] = page_size
+    params["offset"] = offset
+
+    leads_rows = (await db.execute(text(list_sql), params)).mappings().all()
+
+    leads_list = []
+    for r in leads_rows:
+        raw_p = str(r["phone"] or "").strip()
+        clean_p = re.sub(r'\D', '', raw_p)
+        if len(clean_p) == 10 and clean_p.startswith('3'):
+            clean_p = f"57{clean_p}"
+        elif len(clean_p) == 7:
+            clean_p = f"571{clean_p}"
+
+        first_name = (r["name"] or "Hola").split()[0].title()
+        wa_text = (
+            f"Hola {first_name}, te saludamos del equipo de Daily Lover. ✨\n"
+            f"Vemos que estás registrado en nuestra comunidad y queremos invitarte a agendar "
+            f"tu entrevista clínica con una de nuestras psicólogas para activar tu perfil y empezar a presentarte candidatas compatibles.\n\n"
+            f"¿Tienes disponibilidad esta semana para que te enviemos los horarios disponibles?"
+        )
+        whatsapp_url = f"https://wa.me/{clean_p}?text={quote(wa_text)}" if clean_p else ""
+
+        # Bucket de ciudad para badge
+        c_low = (r["city"] or "").lower()
+        if "bogot" in c_low:
+            city_group = "Bogotá"
+        elif any(k in c_low for k in ["medell", "envigado", "sabaneta", "itagui"]):
+            city_group = "Medellín"
+        elif "cali" in c_low:
+            city_group = "Cali"
+        elif any(k in c_low for k in ["miami", "florida", "hollywood"]):
+            city_group = "Miami"
+        elif any(k in c_low for k in ["pereira", "manizales", "armenia", "dosquebradas"]):
+            city_group = "Eje Cafetero"
+        else:
+            city_group = "Otras"
+
+        leads_list.append({
+            "user_id": r["user_id"],
+            "name": r["name"],
+            "phone": raw_p,
+            "clean_phone": clean_p,
+            "email": r["email"],
+            "city": r["city"],
+            "city_group": city_group,
+            "age": r["age"],
+            "plan_tier": r["plan_tier"],
+            "responsable": r["responsable"],
+            "contact_status": r["contact_status"],
+            "contact_notes": r["contact_notes"] or "",
+            "contacted_at": r["contacted_at"].strftime("%Y-%m-%d %H:%M") if r["contacted_at"] else None,
+            "registration_date": r["registration_date"].strftime("%Y-%m-%d") if r["registration_date"] else None,
+            "whatsapp_url": whatsapp_url
+        })
+
+    total_pages = max(1, (total_matching + page_size - 1) // page_size)
+
+    return {
+        "total": total_matching,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "stats": dict(stats_res) if stats_res else {},
+        "leads": leads_list
+    }
+
+
+@router.patch("/leads-men-rescue/{user_id}")
+async def update_lead_man_rescue(
+    user_id: int,
+    payload: LeadMenRescueUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Actualiza responsable, estado de contacto y notas para un lead en rescate masculino."""
+    updates = []
+    params = {"uid": user_id}
+
+    if payload.responsable is not None:
+        updates.append("responsable = :resp")
+        params["resp"] = payload.responsable.strip()
+
+    if payload.contact_status is not None:
+        st = payload.contact_status.strip().upper()
+        if st not in ["PENDIENTE", "CONTACTADO", "AGENDO", "DESCARTADO"]:
+            raise HTTPException(status_code=400, detail="Estado de contacto inválido")
+        updates.append("contact_status = :st")
+        params["st"] = st
+        updates.append("contacted_at = NOW()")
+
+    if payload.contact_notes is not None:
+        updates.append("contact_notes = :notes")
+        params["notes"] = payload.contact_notes.strip()
+
+    if not updates:
+        return {"status": "noop", "message": "Nada que actualizar"}
+
+    sql = f"""
+        UPDATE leads_pendientes_entrevista
+        SET {', '.join(updates)}
+        WHERE user_id = :uid
+    """
+    await db.execute(text(sql), params)
+    await db.commit()
+
+    return {"status": "success", "user_id": user_id, "message": "Lead actualizado correctamente"}
 
 
 

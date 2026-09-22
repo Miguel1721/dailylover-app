@@ -5,6 +5,15 @@ import {
 } from 'lucide-react'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
+export const OFFICIAL_REFUND_CATEGORIES = [
+  'Descalificación Clínica / Protocolo de Seguridad',
+  'Pool Insuficiente por Edad (>50 años)',
+  'Sin Cobertura Geográfica',
+  'Cambio de Estado Sentimental',
+  'Insatisfacción con el Servicio / Troublemakers',
+  'Desistimiento Voluntario'
+]
+
 export default function RefundsQueue() {
   const { token } = useAuth()
   const [refunds, setRefunds] = useState([])
@@ -18,6 +27,7 @@ export default function RefundsQueue() {
     person_name: '',
     psychologist_name: 'General',
     plan_tier: '',
+    category: 'Descalificación Clínica / Protocolo de Seguridad',
     reason: ''
   })
   const [submittingManual, setSubmittingManual] = useState(false)
@@ -90,7 +100,7 @@ export default function RefundsQueue() {
       })
       if (!res.ok) throw new Error('Error al registrar refund manual')
       setShowAddModal(false)
-      setNewRefund({ person_name: '', psychologist_name: 'General', plan_tier: '', reason: '' })
+      setNewRefund({ person_name: '', psychologist_name: 'General', plan_tier: '', category: OFFICIAL_REFUND_CATEGORIES[0], reason: '' })
       fetchRefunds()
       alert('✓ Solicitud de refund registrada exitosamente en la cola de Lina.')
     } catch (err) {
@@ -501,6 +511,25 @@ export default function RefundsQueue() {
                     }}
                   />
                 </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Categoría Clínica Oficial *
+                </label>
+                <select
+                  value={newRefund.category || OFFICIAL_REFUND_CATEGORIES[0]}
+                  onChange={e => setNewRefund({ ...newRefund, category: e.target.value })}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 13, fontWeight: 600
+                  }}
+                >
+                  {OFFICIAL_REFUND_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

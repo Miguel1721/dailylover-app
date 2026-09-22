@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { Plus, Search, ArrowUpRight } from 'lucide-react'
+import NequiPaymentModal from '../components/NequiPaymentModal'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
@@ -121,6 +122,7 @@ export default function Income() {
   const [loading, setLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [showNequiModal, setShowNequiModal] = useState(false)
 
   const fetchIncome = useCallback(() => {
     setLoading(true)
@@ -149,11 +151,24 @@ export default function Income() {
           <h1>Ingresos</h1>
           <p className="page-subtitle">Libro diario de ingresos y recaudos</p>
         </div>
-        {hasPermission('ingresos', 'create') && (
-          <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={() => setShowModal(true)}>
-            <Plus size={16} /> Registrar Ingreso
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button 
+            className="btn" 
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: 8,
+              background: 'linear-gradient(135deg, #EB008D 0%, #B8324F 100%)',
+              color: '#FFF', fontWeight: 700, border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer'
+            }} 
+            onClick={() => setShowNequiModal(true)}
+          >
+            💳 Registrar Pago Nequi
           </button>
-        )}
+          {hasPermission('ingresos', 'create') && (
+            <button className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={() => setShowModal(true)}>
+              <Plus size={16} /> Registrar Ingreso Manual
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="content-area">
@@ -267,6 +282,7 @@ export default function Income() {
       </div>
 
       {showModal && <IncomeModal onClose={() => setShowModal(false)} onSaved={fetchIncome} />}
+      {showNequiModal && <NequiPaymentModal isOpen={showNequiModal} onClose={() => setShowNequiModal(false)} onSuccess={fetchIncome} />}
     </div>
   )
 }

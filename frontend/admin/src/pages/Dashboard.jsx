@@ -146,9 +146,23 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Dashboard</h1>
-        <p className="page-subtitle">Resumen operativo de Daily Lover</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>Dashboard</h1>
+          <p className="page-subtitle">Resumen operativo de Daily Lover</p>
+        </div>
+        <a
+          href="/admin/kpis"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'linear-gradient(135deg, #EB008D 0%, #B8324F 100%)',
+            color: '#FFF', fontWeight: 700, fontSize: 13,
+            padding: '8px 16px', borderRadius: 8, textDecoration: 'none',
+            boxShadow: '0 4px 12px rgba(235, 0, 141, 0.3)'
+          }}
+        >
+          📊 Tablero KPIs & Metas (15/día)
+        </a>
       </div>
       <div className="content-area">
         {/* ── Vista Hoy Banner ── */}

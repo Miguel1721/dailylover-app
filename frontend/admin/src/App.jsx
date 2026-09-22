@@ -22,6 +22,8 @@ import Payroll from './pages/Payroll'
 import Income from './pages/Income'
 import Expenses from './pages/Expenses'
 import CashFlow from './pages/CashFlow'
+import DashboardKPIs from './pages/DashboardKPIs'
+import NequiPaymentModal from './components/NequiPaymentModal'
 import Roles from './pages/Roles'
 import UserAccounts from './pages/UserAccounts'
 import ConfiguracionFormularios from './pages/ConfiguracionFormularios'
@@ -276,9 +278,10 @@ function Sidebar({ isOpen, onClose }) {
   // Navegación exclusiva para Servicio al Cliente (CS)
   const csNavItems = [
     { to: '/cs-dashboard', icon: Headphones, label: '🎧 Mesa de Control CS' },
+    { to: '/kpis', icon: FileSpreadsheet, label: '📊 KPIs & Metas Operativas' },
+    { to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' },
     { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
     { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Citas Aprobadas por María' },
-    { to: '/matchmaking/perfiles-incompletos', icon: UserX, label: '⚠️ Fichas Incompletas' },
     { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
     { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
     { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación' }
@@ -288,6 +291,7 @@ function Sidebar({ isOpen, onClose }) {
   const coreItems = [
     ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/', icon: LayoutDashboard, label: 'Dashboard Dirección', module: 'dashboard', action: 'view', end: true }] : []),
+    ...(isMaria ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas', module: 'dashboard', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
     ...(!isLina && !isCliente ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
@@ -300,7 +304,7 @@ function Sidebar({ isOpen, onClose }) {
     ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc || isCs ? [{ to: '/matchmaking/perfiles-incompletos', icon: UserX, label: '⚠️ Fichas Incompletas', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc || isCs ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : '🛡️ Aprobados por María', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
@@ -619,6 +623,7 @@ function HomeRoute() {
 function AppContent() {
   const { token, user, isOriginalAdmin, previewRole, setPreviewRole, loading } = useAuth()
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark')
+  const [showNequiModal, setShowNequiModal] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sidebar_open')
@@ -788,6 +793,20 @@ function AppContent() {
                     )}
                   </div>
                   <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button
+                      onClick={() => setShowNequiModal(true)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'linear-gradient(135deg, #EB008D 0%, #B8324F 100%)',
+                        color: '#FFF', fontSize: 12, fontWeight: 700,
+                        border: 'none', borderRadius: 8, padding: '7px 12px',
+                        cursor: 'pointer', boxShadow: '0 2px 8px rgba(235, 0, 141, 0.3)',
+                        flexShrink: 0
+                      }}
+                      title="Registrar pago express de Instagram / Nequi (30 segundos)"
+                    >
+                      💳 + Pago Nequi
+                    </button>
                     {isPsychologistUser && <WorkTimerWidget />}
                     <CsNovedadesNotificationBell />
                     <button
@@ -819,6 +838,7 @@ function AppContent() {
 
                     {/* MÓDULO: SUPERVISIÓN MARÍA PAULA & DIRECCIÓN */}
                     <Route path="/general" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/kpis" element={<AreaErrorBoundary areaName="Tablero Ejecutivo de KPIs"><ProtectedRoute module="dashboard" action="view"><DashboardKPIs /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/auditoria-psicologas" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/supervision-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/aprobados-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute></AreaErrorBoundary>} />
@@ -903,6 +923,7 @@ function AppContent() {
               <CopilotWidget />
               <ForcePasswordChangeModal />
               <NotificationToastContainer />
+              <NequiPaymentModal isOpen={showNequiModal} onClose={() => setShowNequiModal(false)} />
             </div>
           ) : (
             <Login />

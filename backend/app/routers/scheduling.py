@@ -1436,3 +1436,139 @@ async def list_interview_appointments(
         
     return {"appointments": appts, "total": len(appts)}
 
+
+# ─── MÓDULO 6: CS AUTOMATED METRICS (LINA & CUSTOMER SERVICE) ─────────────────
+
+def classify_cs_city(raw_city: Optional[str]) -> str:
+    """Clasifica la ciudad para las métricas de servicio al cliente con agrupación de Eje Cafetero."""
+    if not raw_city:
+        return "Bogotá"
+    c = raw_city.lower().strip()
+    if any(k in c for k in ["bogot", "chía", "chia", "cajic", "soacha", "zipaquir"]):
+        return "Bogotá"
+    if any(k in c for k in ["medell", "envigado", "sabaneta", "itagui", "itaguí", "bello"]):
+        return "Medellín"
+    if "cali" in c:
+        return "Cali"
+    if any(k in c for k in ["miami", "florida", "hollywood"]):
+        return "Miami"
+    if any(k in c for k in ["pereira", "manizales", "armenia", "dosquebradas"]):
+        return "Eje Cafetero"
+    return "Otras"
+
+
+@router.get("/scheduling/cs-daily-metrics")
+async def get_cs_daily_metrics(
+    start_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    city: Optional[str] = Query(None),
+    days: Optional[int] = Query(None, description="Últimos N días"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna métricas automatizadas de Customer Service (CS):
+    - Citas agendadas y citas reprogramadas por fecha y ciudad.
+    - Reservas de restaurantes confirmadas y distribución por ciudad.
+    - Tasa de reprogramación y métricas de soporte operacional para Lina.
+    """
+    if hasattr(start_date, 'default'):
+        start_date = start_date.default
+    if hasattr(end_date, 'default'):
+        end_date = end_date.default
+    if hasattr(city, 'default'):
+        city = city.default
+    if hasattr(days, 'default'):
+        days = days.default
+
+    if days and not start_date:
+        start_date = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    where_parts = []
+    params = {}
+
+    if start_date and isinstance(start_date, str) and start_date.strip():
+        where_parts.append("sd.created_at >= :start_date")
+        params["start_date"] = datetime.strptime(start_date.strip()[:10], "%Y-%m-%d").replace(hour=0, minute=0, second=0)
+    elif isinstance(start_date, (datetime, date)):
+        where_parts.append("sd.created_at >= :start_date")
+        params["start_date"] = start_date
+
+    if end_date and isinstance(end_date, str) and end_date.strip():
+        where_parts.append("sd.created_at <= :end_date")
+        params["end_date"] = datetime.strptime(end_date.strip()[:10], "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    elif isinstance(end_date, (datetime, date)):
+        where_parts.append("sd.created_at <= :end_date")
+        params["end_date"] = end_date
+
+    where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+    # 1. Agrupación por día y ciudad
+    query = f"""
+        SELECT 
+            TO_CHAR(sd.created_at, 'YYYY-MM-DD') as date_str,
+            sd.city as raw_city,
+            count(*) as total_scheduled,
+            count(*) FILTER (WHERE sd.reschedule = true) as total_rescheduled,
+            count(*) FILTER (WHERE sd.reservation_confirmed = true) as total_reservations
+        FROM scheduled_dates sd
+        {where_sql}
+        GROUP BY date_str, raw_city
+        ORDER BY date_str DESC, raw_city ASC
+    """
+    rows = (await db.execute(text(query), params)).mappings().all()
+
+    # Consolidar por día
+    daily_map = {}
+    city_totals = {"Bogotá": 0, "Medellín": 0, "Cali": 0, "Miami": 0, "Eje Cafetero": 0, "Otras": 0}
+    reservations_by_city = {"Bogotá": 0, "Medellín": 0, "Cali": 0, "Miami": 0, "Eje Cafetero": 0, "Otras": 0}
+    total_dates = 0
+    total_rescheduled = 0
+    total_reservations = 0
+
+    for r in rows:
+        d_str = r["date_str"] or "Sin fecha"
+        c_bucket = classify_cs_city(r["raw_city"])
+        sched = int(r["total_scheduled"] or 0)
+        resched = int(r["total_rescheduled"] or 0)
+        resv = int(r["total_reservations"] or 0)
+
+        total_dates += sched
+        total_rescheduled += resched
+        total_reservations += resv
+
+        city_totals[c_bucket] = city_totals.get(c_bucket, 0) + sched
+        reservations_by_city[c_bucket] = reservations_by_city.get(c_bucket, 0) + resv
+
+        if d_str not in daily_map:
+            daily_map[d_str] = {
+                "date": d_str,
+                "total_scheduled": 0,
+                "total_rescheduled": 0,
+                "total_reservations": 0,
+                "by_city": {"Bogotá": 0, "Medellín": 0, "Cali": 0, "Miami": 0, "Eje Cafetero": 0, "Otras": 0},
+                "reservations_by_city": {"Bogotá": 0, "Medellín": 0, "Cali": 0, "Miami": 0, "Eje Cafetero": 0, "Otras": 0}
+            }
+
+        daily_map[d_str]["total_scheduled"] += sched
+        daily_map[d_str]["total_rescheduled"] += resched
+        daily_map[d_str]["total_reservations"] += resv
+        daily_map[d_str]["by_city"][c_bucket] = daily_map[d_str]["by_city"].get(c_bucket, 0) + sched
+        daily_map[d_str]["reservations_by_city"][c_bucket] = daily_map[d_str]["reservations_by_city"].get(c_bucket, 0) + resv
+
+    days_list = list(daily_map.values())
+    reschedule_rate = round(total_rescheduled / total_dates * 100.0, 1) if total_dates > 0 else 0.0
+
+    return {
+        "summary": {
+            "total_scheduled_dates": total_dates,
+            "total_rescheduled": total_rescheduled,
+            "reschedule_rate_pct": reschedule_rate,
+            "total_confirmed_reservations": total_reservations,
+            "scheduled_by_city": city_totals,
+            "reservations_by_city": reservations_by_city
+        },
+        "daily_breakdown": days_list,
+        "total_days": len(days_list)
+    }
+
+
