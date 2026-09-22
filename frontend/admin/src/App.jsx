@@ -56,7 +56,8 @@ import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import TroubleMatches from './pages/matchmaking/TroubleMatches'
-import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet, AlertTriangle, BellRing, BookOpen, Clock } from 'lucide-react'
+import PerfilesIncompletos from './pages/matchmaking/PerfilesIncompletos'
+import { Award, UserPlus, Globe, ShieldCheck, Headphones, Eye, Brain, ClipboardList, Lock, Flame, FileSpreadsheet, AlertTriangle, BellRing, BookOpen, Clock, UserX } from 'lucide-react'
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal'
 import CsNovedadesNotificationBell from './components/CsNovedadesNotificationBell'
 import WorkTimerWidget from './components/WorkTimerWidget'
@@ -277,6 +278,7 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/cs-dashboard', icon: Headphones, label: '🎧 Mesa de Control CS' },
     { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
     { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Citas Aprobadas por María' },
+    { to: '/matchmaking/perfiles-incompletos', icon: UserX, label: '⚠️ Fichas Incompletas' },
     { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
     { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
     { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación' }
@@ -297,13 +299,14 @@ function Sidebar({ isOpen, onClose }) {
     ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión María', module: 'matching', action: 'view' }] : []),
     ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: '📋 PROFILES', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isPsyc || isCs ? [{ to: '/matchmaking/perfiles-incompletos', icon: UserX, label: '⚠️ Fichas Incompletas', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : '🛡️ Aprobados por María', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : '🛡️ Aprobados por María', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Aceptadas', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs || isPsyc ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc || isCs ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales', module: 'matching', action: 'view' }] : []),
+    ...(isMaria || isCs ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
+    ...(isMaria ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
   ]
 
@@ -835,6 +838,7 @@ function AppContent() {
                     <Route path="/matchmaking/entrevista" element={<AreaErrorBoundary areaName="Entrevista Clínica & Hub"><ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/cola-atrasados" element={<AreaErrorBoundary areaName="Cola de Atrasados Clínicos"><ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/matches-atrasados" element={<AreaErrorBoundary areaName="Matches Atrasados"><ProtectedRoute module="matching" action="view"><MatchesAtrasados /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/perfiles-incompletos" element={<AreaErrorBoundary areaName="Fichas Incompletas"><ProtectedRoute module="matching" action="view"><PerfilesIncompletos /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/profiles" element={<AreaErrorBoundary areaName="PROFILES (Ingreso de Perfiles)"><ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/intake" element={<AreaErrorBoundary areaName="PROFILES (Ingreso de Perfiles)"><ProtectedRoute module="matching" action="view"><IntakeClientes /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/prioritarios" element={<AreaErrorBoundary areaName="Casos Prioritarios"><ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute></AreaErrorBoundary>} />
@@ -876,6 +880,8 @@ function AppContent() {
                     <Route path="/percepcion-psicologa" element={<Navigate to="/matchmaking/entrevista?tab=percepcion" replace />} />
                     <Route path="/trouble" element={<Navigate to="/matchmaking/trouble" replace />} />
                     <Route path="/prioritarios" element={<Navigate to="/matchmaking/prioritarios" replace />} />
+                    <Route path="/perfiles-incompletos" element={<Navigate to="/matchmaking/perfiles-incompletos" replace />} />
+                    <Route path="/fichas-incompletas" element={<Navigate to="/matchmaking/perfiles-incompletos" replace />} />
                     <Route path="/corazoncito" element={<Navigate to="/matchmaking/prioritarios" replace />} />
                     <Route path="/supervision-maria" element={<Navigate to="/matchmaking/supervision-maria" replace />} />
                     <Route path="/supervision" element={<Navigate to="/matchmaking/supervision-maria" replace />} />

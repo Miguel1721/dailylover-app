@@ -23,7 +23,12 @@ from sqlalchemy import text
 from app.database import get_db
 from app.config import get_settings
 from app.core.permissions import require_permission, get_current_user
-from app.services.clinical_profile_extractor import ClinicalProfileExtractor
+from app.services.clinical_profile_extractor import (
+    ClinicalProfileExtractor,
+    infer_gender_from_name_and_bio,
+    infer_city_from_text,
+    get_metro_cluster
+)
 
 router = APIRouter(prefix="/api/v1/matchmaking", tags=["Matchmaking Operational"])
 
@@ -99,6 +104,17 @@ ALLOWED_STATUSES = [
     "NO MATCH/CAMBIAR", "NO MATCH", "CAMBIAR", "RECHAZADO", "RECHAZADA", "RECHAZADO POR CLIENTE"
 ]
 
+def clean_plan_name(plan_str: Optional[str]) -> str:
+    """
+    Sanitiza nombres de planes con errores tipográficos o de codificación (ej. 'B??sico 40k').
+    """
+    if not plan_str or not str(plan_str).strip():
+        return "Estándar 65k (2 citas)"
+    s = str(plan_str).strip()
+    s = re.sub(r'b\?+sico', 'Básico', s, flags=re.IGNORECASE)
+    s = re.sub(r'est\?+ndar', 'Estándar', s, flags=re.IGNORECASE)
+    return s
+
 def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
     """
     Retorna la cantidad exacta de citas/slots según el plan activo (SSOT canónico):
@@ -110,7 +126,7 @@ def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
     """
     if not plan_str or not str(plan_str).strip():
         return 2
-    p = str(plan_str).lower().strip()
+    p = clean_plan_name(plan_str).lower().strip()
     m = re.search(r'(\d+)\s*citas?', p)
     if m:
         try:
@@ -213,15 +229,15 @@ def is_valid_person_name(val: Optional[str]) -> bool:
 # ─── SCHEMAS ──────────────────────────────────────────────────────────────────
 
 class IntakeClientRequest(BaseModel):
-    person_a: str
+    profile_url: Optional[str] = None
     psychologist_name: str
+    person_a: Optional[str] = None
     city: Optional[str] = None
     pref: Optional[str] = None
     plan_tier: Optional[str] = None
     crm_id: Optional[str] = None
     observations: Optional[str] = None
     is_priority: Optional[bool] = False
-    profile_url: Optional[str] = None
     quick_notes: Optional[str] = None
     age: Optional[int] = None
     phone: Optional[str] = None
@@ -304,13 +320,26 @@ class DateFeedbackRequest(BaseModel):
 async def auto_refresh_priority_matches(db: AsyncSession):
     """
     Revisa automáticamente a los clientes en la mesa de trabajo operativa (operational_matches).
-    Si han transcurrido más de 15 días desde su pago o creación de slot,
-    y no han tenido actividad de cita (sin fecha agendada o última cita > 15 días),
-    se marcan automáticamente como is_priority = true.
-    Esto reemplaza el 'corazoncito' manual de Sheets y asegura que la psicóloga
-    vea inmediatamente la alerta '⚡ Prioritario' al tope de su mesa de trabajo.
+    Solo se marcan como prioritarios clientes que:
+    1. NO tienen Persona B asignada (person_b IS NULL o vacío).
+    2. NO están aprobados por María ni en estados terminales/pausados.
+    3. Han transcurrido más de 15 días desde su pago/ingreso sin pareja propuesta.
+    Además, limpia el flag is_priority para cualquier caso que ya tenga Persona B o esté aprobado.
     """
     try:
+        # 1. Limpieza preventiva: casos que ya tienen Persona B o están aprobados NUNCA deben ser prioritarios
+        await db.execute(text("""
+            UPDATE operational_matches
+            SET is_priority = false, updated_at = NOW()
+            WHERE is_priority = true
+              AND (
+                  approved_by_maria = true
+                  OR UPPER(status) IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'CITA COMPLETADA', 'MATCH DONE', 'EN PAUSA', 'EN PAUSA INDEFINIDA', 'REFUND', 'REFUND DONE', 'DESCALIFICADO')
+                  OR (person_b IS NOT NULL AND TRIM(person_b) != '')
+              );
+        """))
+
+        # 2. Marcación de prioridad: ÚNICAMENTE casos sin Persona B con más de 15 días de espera
         res = await db.execute(text("""
             WITH client_activity AS (
                 SELECT 
@@ -332,7 +361,9 @@ async def auto_refresh_priority_matches(db: AsyncSession):
                     ) as last_date_activity
                 FROM operational_matches om
                 LEFT JOIN profiles p ON p.user_id = om.user_id_a
-                WHERE om.status NOT IN ('CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'EN PAUSA INDEFINIDA')
+                WHERE (om.person_b IS NULL OR TRIM(om.person_b) = '')
+                  AND om.approved_by_maria = false
+                  AND UPPER(om.status) NOT IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'EN PAUSA', 'EN PAUSA INDEFINIDA')
             )
             UPDATE operational_matches om
             SET is_priority = true, updated_at = NOW()
@@ -609,53 +640,189 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     """
     Registra/actualiza un perfil en PROFILES y genera o reasigna automáticamente sus slots
     en la mesa de trabajo de la psicóloga asignada (operational_matches).
-    Extrae o actualiza datos clínicos (quick notes, URL externa de perfil/carpeta, ciudad, edad, plan)
-    y sincroniza todo a la vista de la psicóloga.
+    Extrae automáticamente datos clínicos (quick notes, CRM ID, nombre, plan, ciudad, edad)
+    a partir de la URL del perfil (SmartMatchApp o ID) y sincroniza todo a la vista de la psicóloga.
     """
-    person_a_clean = payload.person_a.strip()
-    psyc_clean = normalize_psychologist(payload.psychologist_name) or payload.psychologist_name.strip()
+    psyc_clean = normalize_psychologist(payload.psychologist_name) or (payload.psychologist_name or "").strip()
     profile_url_clean = (payload.profile_url or "").strip()
+    person_a_clean = (payload.person_a or "").strip()
     quick_notes_clean = (payload.quick_notes or "").strip()
 
-    # 1. Buscar o resolver usuario existente en DB
-    user_row = await resolve_client_user(person_a_clean, db)
-    user_id = user_row.id if user_row else None
-    crm_id_val = payload.crm_id or (user_row.crm_id if user_row else None)
+    resolved_row = None
+    extracted_crm_id = None
 
-    # Si no existe el usuario en users, crearlo
+    # 1. Si viene URL, extraer CRM ID o buscar perfil existente
+    if profile_url_clean:
+        if "smartmatchapp.com" in profile_url_clean:
+            match = re.search(r"(?:client|clients|profile|profiles|user|users)[/#](\d+)", profile_url_clean, re.IGNORECASE)
+            if match:
+                extracted_crm_id = match.group(1)
+        if not extracted_crm_id:
+            match = re.search(r"[?&]id=(\d+)", profile_url_clean, re.IGNORECASE)
+            if match:
+                extracted_crm_id = match.group(1)
+        if not extracted_crm_id and profile_url_clean.isdigit():
+            extracted_crm_id = profile_url_clean
+        if not extracted_crm_id:
+            match = re.search(r"/(\d{3,})/?$", profile_url_clean)
+            if match:
+                extracted_crm_id = match.group(1)
+
+        if extracted_crm_id:
+            res = await db.execute(text("""
+                SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                       p.age, p.bio_notes, p.clinical_profile_360
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE u.crm_id = :cid
+                ORDER BY u.id DESC
+                LIMIT 1
+            """), {"cid": extracted_crm_id})
+            resolved_row = res.fetchone()
+
+            if not resolved_row and extracted_crm_id.isdigit():
+                res = await db.execute(text("""
+                    SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                           p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                           p.age, p.bio_notes, p.clinical_profile_360
+                    FROM users u
+                    LEFT JOIN profiles p ON p.user_id = u.id
+                    WHERE u.id = :uid
+                    LIMIT 1
+                """), {"uid": int(extracted_crm_id)})
+                resolved_row = res.fetchone()
+
+        if not resolved_row:
+            # Buscar por URL guardada previamente en clinical_profile_360
+            res = await db.execute(text("""
+                SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                       p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                       p.age, p.bio_notes, p.clinical_profile_360
+                FROM profiles p
+                JOIN users u ON u.id = p.user_id
+                WHERE p.clinical_profile_360->>'profile_url' = :url
+                LIMIT 1
+            """), {"url": profile_url_clean})
+            resolved_row = res.fetchone()
+
+    # Si aún no tenemos resolved_row y vino person_a_clean, buscar por nombre
+    if not resolved_row and person_a_clean:
+        res = await db.execute(text("""
+            SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                   p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                   p.age, p.bio_notes, p.clinical_profile_360
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+            LIMIT 1
+        """), {"n": person_a_clean})
+        resolved_row = res.fetchone()
+
+    # Extraer datos de resolved_row
+    user_id = None
+    crm_id_val = payload.crm_id or extracted_crm_id
+    city_val = payload.city or ""
+    pref_val = payload.pref or ""
+    plan_val = normalize_plan(payload.plan_tier or "")
+    age_val = payload.age
+    phone_val = (payload.phone or "").strip()
+    email_val = (payload.email or "").strip() or None
+
+    if resolved_row:
+        if not person_a_clean:
+            person_a_clean = (resolved_row.name or "").strip()
+        user_id = resolved_row.id
+        crm_id_val = resolved_row.crm_id or extracted_crm_id or payload.crm_id
+        city_val = payload.city or resolved_row.city or ""
+        pref_val = payload.pref or resolved_row.orientation or ""
+        plan_val = normalize_plan(payload.plan_tier or resolved_row.plan_tier or "")
+        age_val = payload.age or resolved_row.age
+        phone_val = payload.phone or resolved_row.phone or ""
+        email_val = payload.email or resolved_row.email or None
+
+        # Consolidar notas clínicas automáticamente si no se proporcionaron manualmente
+        if not quick_notes_clean:
+            notes_parts = []
+            if resolved_row.bio_notes and resolved_row.bio_notes.strip():
+                notes_parts.append(resolved_row.bio_notes.strip())
+
+            try:
+                ext_res = await db.execute(text("""
+                    SELECT synthesis_who_really_is, synthesis_best_match_type, attachment_style, flags_notes
+                    FROM client_extended_profile WHERE user_id = :uid LIMIT 1
+                """), {"uid": resolved_row.id})
+                ext_row = ext_res.fetchone()
+                if ext_row:
+                    if ext_row.synthesis_who_really_is and ext_row.synthesis_who_really_is.strip():
+                        if ext_row.synthesis_who_really_is.strip() not in (resolved_row.bio_notes or ""):
+                            notes_parts.append(f"Síntesis: {ext_row.synthesis_who_really_is.strip()}")
+                    if ext_row.attachment_style and ext_row.attachment_style.strip():
+                        notes_parts.append(f"Apego: {ext_row.attachment_style.strip()}")
+                    if ext_row.flags_notes and ext_row.flags_notes.strip():
+                        notes_parts.append(f"Alertas: {ext_row.flags_notes.strip()}")
+            except Exception:
+                pass
+
+            try:
+                cn_res = await db.execute(text("""
+                    SELECT note FROM client_notes WHERE user_id = :uid ORDER BY id DESC LIMIT 1
+                """), {"uid": resolved_row.id})
+                cn_row = cn_res.fetchone()
+                if cn_row and cn_row.note and cn_row.note.strip():
+                    if cn_row.note.strip() not in "\n".join(notes_parts):
+                        notes_parts.append(f"Nota CRM: {cn_row.note.strip()}")
+            except Exception:
+                pass
+
+            quick_notes_clean = "\n".join(notes_parts).strip()
+
+    # Si después de todo no tenemos nombre, rechazar con error claro
+    if not person_a_clean:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No se encontró el perfil en el sistema a partir de esta URL. "
+                "Verifica que el enlace sea de SmartMatchApp (ej: https://dailylover.smartmatchapp.com/#!/client/12345/) "
+                "o que contenga el ID del cliente."
+            )
+        )
+
+    # 2. Si no teníamos user_id resuelto, buscar o crear en users
     if not user_id:
-        phone_val = (payload.phone or "").strip()
-        if not phone_val:
-            import random
-            phone_val = f"+57300{random.randint(1000000, 9999999)}"
-        email_val = (payload.email or "").strip() or None
-        
-        ins_user = await db.execute(text("""
-            INSERT INTO users (name, phone, email, crm_id, created_at)
-            VALUES (:name, :phone, :email, :cid, NOW())
-            RETURNING id
-        """), {
-            "name": person_a_clean,
-            "phone": phone_val,
-            "email": email_val,
-            "cid": crm_id_val
-        })
-        user_id = ins_user.scalar()
-    else:
-        # Actualizar crm_id o email si vienen
-        if payload.email or crm_id_val:
-            await db.execute(text("""
-                UPDATE users SET
-                    crm_id = COALESCE(:cid, crm_id),
-                    email = COALESCE(NULLIF(:email, ''), email)
-                WHERE id = :uid
-            """), {
-                "cid": crm_id_val,
-                "email": payload.email.strip() if payload.email else None,
-                "uid": user_id
-            })
+        user_row = await resolve_client_user(person_a_clean, db)
+        user_id = user_row.id if user_row else None
+        crm_id_val = crm_id_val or (user_row.crm_id if user_row else None)
 
-    # 2. Buscar datos previos en profiles
+        if not user_id:
+            if not phone_val:
+                import random
+                phone_val = f"+57300{random.randint(1000000, 9999999)}"
+            ins_user = await db.execute(text("""
+                INSERT INTO users (name, phone, email, crm_id, created_at)
+                VALUES (:name, :phone, :email, :cid, NOW())
+                RETURNING id
+            """), {
+                "name": person_a_clean,
+                "phone": phone_val,
+                "email": email_val,
+                "cid": crm_id_val
+            })
+            user_id = ins_user.scalar()
+        else:
+            if email_val or crm_id_val:
+                await db.execute(text("""
+                    UPDATE users SET
+                        crm_id = COALESCE(:cid, crm_id),
+                        email = COALESCE(NULLIF(:email, ''), email)
+                    WHERE id = :uid
+                """), {
+                    "cid": crm_id_val,
+                    "email": email_val,
+                    "uid": user_id
+                })
+
+    # 3. Guardar o actualizar en profiles
     prof_res = await db.execute(text("""
         SELECT p.city, p.orientation, p.gender, p.plan_tier, p.responsable, p.age, p.bio_notes, p.clinical_profile_360
         FROM profiles p
@@ -664,13 +831,11 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     """), {"uid": user_id})
     prof_row = prof_res.fetchone()
 
-    city_val = payload.city or (prof_row.city if prof_row else "")
-    pref_val = payload.pref or (prof_row.orientation if prof_row else "")
-    raw_plan = payload.plan_tier or (prof_row.plan_tier if prof_row else "")
-    plan_val = normalize_plan(raw_plan)
-    age_val = payload.age or (prof_row.age if prof_row else None)
+    city_val = city_val or (prof_row.city if prof_row else "")
+    pref_val = pref_val or (prof_row.orientation if prof_row else "")
+    plan_val = plan_val or normalize_plan(prof_row.plan_tier if prof_row else "")
+    age_val = age_val or (prof_row.age if prof_row else None)
 
-    # 3. Guardar o actualizar en profiles
     existing_c360 = prof_row.clinical_profile_360 if prof_row and isinstance(prof_row.clinical_profile_360, dict) else {}
     updated_c360 = dict(existing_c360)
     if profile_url_clean:
@@ -736,8 +901,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 
     obs_final = " | ".join(obs_parts).strip() or None
 
-    # 5. Llevar automáticamente a operational_matches de la psicóloga
-    # Revisar si ya existen slots previos para esta Persona A
+    # 5. Sincronizar en operational_matches (mesa de la psicóloga)
     exist_op_res = await db.execute(text("""
         SELECT id, slot_number, status, psychologist_name, observations
         FROM operational_matches
@@ -747,7 +911,6 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     existing_slots = exist_op_res.fetchall()
 
     if existing_slots:
-        # Ya existían filas: Reasignar a la psicóloga y actualizar observaciones y datos
         for slot in existing_slots:
             new_obs = obs_final or slot.observations
             await db.execute(text("""
@@ -781,21 +944,22 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
         """), {
             "name": person_a_clean,
             "mid": slot_ids[0],
-            "details": f"Perfil actualizado desde PROFILES. Reasignado a {psyc_clean} con {len(slot_ids)} slots sincronizados."
+            "details": f"Perfil actualizado desde PROFILES. Asignado a {psyc_clean} con {len(slot_ids)} slots sincronizados."
         })
         await db.commit()
 
         return {
             "status": "success",
-            "message": f"Perfil de {person_a_clean} actualizado y sus {len(slot_ids)} slots sincronizados a la mesa de trabajo de {psyc_clean}.",
+            "message": f"Perfil de {person_a_clean} actualizado y sus {len(slot_ids)} slots sincronizados a la mesa de {psyc_clean}.",
+            "person_a": person_a_clean,
+            "psychologist_name": psyc_clean,
             "slot_ids": slot_ids,
             "user_id": user_id,
-            "psychologist_name": psyc_clean
+            "total_slots": len(slot_ids)
         }
 
-    # Si NO existían filas previas:
+    # Si NO existían filas previas en operational_matches:
     if not plan_val:
-        # Estado NO BLOQUEANTE: 1 fila PENDIENTE PLAN en amarillo
         ins_res = await db.execute(text("""
             INSERT INTO operational_matches 
             (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, observations, person_a_crm_id, user_id_a, created_at, updated_at)
@@ -826,12 +990,13 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
         return {
             "status": "warning",
             "message": f"Cliente {person_a_clean} registrado en PROFILES como PENDIENTE PLAN para {psyc_clean}.",
+            "person_a": person_a_clean,
+            "psychologist_name": psyc_clean,
             "slot_ids": [new_id],
             "user_id": user_id,
-            "psychologist_name": psyc_clean
+            "total_slots": 1
         }
 
-    # Calcular slots según el plan normalizado (Básico: 2, Estándar: 3, VIP: 4)
     num_slots = get_slots_by_plan(plan_val) or 3
     created_ids = []
     for slot_num in range(1, num_slots + 1):
@@ -864,26 +1029,14 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     })
     await db.commit()
 
-    # Intento opcional en segundo plano de sincronizar con Google Sheets PROFILES
-    try:
-        from app.services.google_sheets import append_profile_to_profiles_tab
-        append_profile_to_profiles_tab({
-            "name": person_a_clean,
-            "crm_id": crm_id_val,
-            "responsable": psyc_clean,
-            "city": city_val,
-            "age": age_val,
-            "profile_url": profile_url_clean
-        })
-    except Exception:
-        pass
-
     return {
         "status": "success",
         "message": f"Perfil de {person_a_clean} guardado en PROFILES y {num_slots} slots asignados a la mesa de trabajo de {psyc_clean}.",
+        "person_a": person_a_clean,
+        "psychologist_name": psyc_clean,
         "slot_ids": created_ids,
         "user_id": user_id,
-        "psychologist_name": psyc_clean
+        "total_slots": num_slots
     }
 
 
@@ -893,54 +1046,98 @@ async def get_intake_list(
     city: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna la lista agregada de perfiles en PROFILES con soporte para URL externa,
-    Quick Notes clínicas, ciudad, edad, plan, slots activos y estado en la mesa de la psicóloga.
+    Quick Notes clínicas, ciudad, edad, plan, slots activos y paginación ultrarrápida.
     """
-    query = """
-        SELECT 
-            m.person_a,
-            m.psychologist_name,
-            m.city,
-            m.pref,
-            m.plan_tier,
-            MAX(COALESCE(m.person_a_crm_id, u.crm_id)) as crm_id,
-            COUNT(m.id) as total_slots,
-            COUNT(CASE WHEN m.person_b IS NOT NULL AND m.person_b != '' THEN 1 END) as filled_slots,
-            COUNT(CASE WHEN m.approved_by_maria = true THEN 1 END) as approved_slots,
-            MAX(m.created_at) as created_at,
-            MAX(COALESCE(p.clinical_profile_360->>'profile_url', '')) as profile_url,
-            MAX(COALESCE(NULLIF(TRIM(p.bio_notes), ''), NULLIF(TRIM(m.observations), ''), '')) as quick_notes,
-            MAX(p.age) as age,
-            MAX(u.phone) as phone,
-            MAX(u.email) as email
-        FROM operational_matches m
-        LEFT JOIN users u ON LOWER(TRIM(u.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN profiles p ON p.user_id = u.id
-        WHERE 1=1
-    """
-    params = {}
+    where_clauses = [
+        "m.person_a IS NOT NULL AND TRIM(m.person_a) != ''",
+        "m.person_a NOT ILIKE 'ZZZ%'",
+        "m.person_a NOT ILIKE '%RESERVADO%'",
+        "m.person_a NOT ILIKE '%DISPONIBLE%'"
+    ]
+    params: Dict[str, Any] = {}
     if psychologist and psychologist.lower() not in ('all', 'todas'):
-        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
+        where_clauses.append("UPPER(m.psychologist_name) = UPPER(:psyc)")
         params["psyc"] = psychologist.strip()
     if city and city.lower() not in ('all', 'todas'):
-        query += " AND m.city ILIKE :city"
+        where_clauses.append("m.city ILIKE :city")
         params["city"] = f"%{city.strip()}%"
     if plan_tier and plan_tier.lower() not in ('all', 'todos'):
-        query += " AND m.plan_tier ILIKE :plan"
+        where_clauses.append("m.plan_tier ILIKE :plan")
         params["plan"] = f"%{plan_tier.strip()}%"
     if search:
-        query += " AND (m.person_a ILIKE :s OR m.city ILIKE :s OR m.psychologist_name ILIKE :s OR p.bio_notes ILIKE :s OR m.observations ILIKE :s)"
+        where_clauses.append("(m.person_a ILIKE :s OR m.city ILIKE :s OR m.psychologist_name ILIKE :s OR m.observations ILIKE :s)")
         params["s"] = f"%{search.strip()}%"
 
-    query += """
-        GROUP BY m.person_a, m.psychologist_name, m.city, m.pref, m.plan_tier
-        ORDER BY MAX(m.created_at) DESC
+    where_sql = " AND ".join(where_clauses)
+
+    # 1. Total clientes agregados para paginación
+    count_sql = f"""
+        SELECT COUNT(DISTINCT m.person_a)
+        FROM operational_matches m
+        WHERE {where_sql}
+    """
+    total_res = await db.execute(text(count_sql), params)
+    total_count = total_res.scalar() or 0
+
+    # 2. Consulta paginada optimizada con CTE y LATERAL JOIN
+    offset = (page - 1) * page_size
+    params["limit"] = page_size
+    params["offset"] = offset
+
+    data_sql = f"""
+        WITH client_summary AS (
+            SELECT 
+                m.person_a,
+                MAX(m.psychologist_name) as psychologist_name,
+                MAX(m.city) as city,
+                MAX(m.pref) as pref,
+                MAX(m.plan_tier) as plan_tier,
+                MAX(m.person_a_crm_id) as crm_id,
+                COUNT(m.id) as total_slots,
+                COUNT(CASE WHEN m.person_b IS NOT NULL AND m.person_b != '' THEN 1 END) as filled_slots,
+                COUNT(CASE WHEN m.approved_by_maria = true THEN 1 END) as approved_slots,
+                MAX(m.created_at) as created_at,
+                MAX(NULLIF(TRIM(m.observations), '')) as obs_sample
+            FROM operational_matches m
+            WHERE {where_sql}
+            GROUP BY m.person_a
+            ORDER BY MAX(m.created_at) DESC
+            LIMIT :limit OFFSET :offset
+        )
+        SELECT 
+            cs.person_a,
+            cs.psychologist_name,
+            cs.city,
+            cs.pref,
+            cs.plan_tier,
+            COALESCE(u.crm_id, cs.crm_id) as crm_id,
+            cs.total_slots,
+            cs.filled_slots,
+            cs.approved_slots,
+            cs.created_at,
+            COALESCE(p.clinical_profile_360->>'profile_url', '') as profile_url,
+            LEFT(COALESCE(NULLIF(TRIM(p.bio_notes), ''), NULLIF(TRIM(cs.obs_sample), ''), ''), 250) as quick_notes,
+            p.age,
+            u.phone,
+            u.email
+        FROM client_summary cs
+        LEFT JOIN LATERAL (
+            SELECT u1.id, u1.crm_id, u1.phone, u1.email
+            FROM users u1
+            WHERE LOWER(TRIM(u1.name)) = LOWER(TRIM(cs.person_a))
+            ORDER BY u1.id DESC
+            LIMIT 1
+        ) u ON true
+        LEFT JOIN profiles p ON p.user_id = u.id
     """
 
-    res = await db.execute(text(query), params)
+    res = await db.execute(text(data_sql), params)
     rows = res.fetchall()
 
     clients = []
@@ -967,7 +1164,15 @@ async def get_intake_list(
             "plan_color": PLAN_COLORS.get(r.plan_tier, "#B6D7A8")
         })
 
-    return {"clients": clients, "total": len(clients)}
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+
+    return {
+        "clients": clients,
+        "total": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages
+    }
 
 
 
@@ -4653,16 +4858,64 @@ def evaluate_bidirectional_match(
     client_prefs: dict,
     client_height_cm: Optional[int]
 ) -> dict:
+    cand_bio = getattr(cand_row, "bio_notes", "") or ""
     cand_age = getattr(cand_row, "age", None)
+    if not cand_age and cand_bio:
+        m_age = re.search(r'\b(\d{2})\s*a[ñn]os\b', cand_bio, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio, re.IGNORECASE)
+        if m_age:
+            try:
+                cand_age = int(m_age.group(1))
+            except Exception:
+                pass
+
     cand_height_str = getattr(cand_row, "estatura", None)
     cand_height_cm = parse_cm_height(cand_height_str)
     cand_prefs = getattr(cand_row, "search_preferences", None) or {}
+    if isinstance(cand_prefs, str):
+        try:
+            cand_prefs = json.loads(cand_prefs)
+        except Exception:
+            cand_prefs = {}
+    if isinstance(client_prefs, str):
+        try:
+            client_prefs = json.loads(client_prefs)
+        except Exception:
+            client_prefs = {}
 
     min_a = client_prefs.get("min_age")
     max_a = client_prefs.get("max_age")
+    client_bio = client_summary.get("bio_notes") or ""
+    if not min_a and not max_a and client_bio:
+        m_range = re.search(r'(?:rango|busca|edad|edades)[:\s]*(\d{2})\s*(?:a|-)\s*(\d{2})', client_bio, re.IGNORECASE)
+        if m_range:
+            try:
+                min_a = int(m_range.group(1))
+                max_a = int(m_range.group(2))
+            except Exception:
+                pass
+
     min_b = cand_prefs.get("min_age")
     max_b = cand_prefs.get("max_age")
+    if not min_b and not max_b and cand_bio:
+        m_range = re.search(r'(?:rango|busca|edad|edades)[:\s]*(\d{2})\s*(?:a|-)\s*(\d{2})', cand_bio, re.IGNORECASE)
+        if m_range:
+            try:
+                min_b = int(m_range.group(1))
+                max_b = int(m_range.group(2))
+            except Exception:
+                pass
+        elif re.search(r'(?:no menores|no hombres menores|cero menores)', cand_bio, re.IGNORECASE):
+            if cand_age:
+                min_b = cand_age
+
     client_age = client_summary.get("age")
+    if not client_age and client_bio:
+        m_age = re.search(r'\b(\d{2})\s*a[ñn]os\b', client_bio, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', client_bio, re.IGNORECASE)
+        if m_age:
+            try:
+                client_age = int(m_age.group(1))
+            except Exception:
+                pass
 
     age_ok = True
     age_alerts = []
@@ -4670,23 +4923,23 @@ def evaluate_bidirectional_match(
 
     if cand_age:
         if min_a and cand_age < min_a:
-            age_alerts.append(f"Candidata tiene {cand_age} años (menor al rango solicitado de {min_a}-{max_a or '—'})")
+            age_alerts.append(f"Candidato/a tiene {cand_age} años (menor al rango solicitado de {min_a}-{max_a or '—'})")
             age_ok = False
         elif max_a and cand_age > max_a:
-            age_alerts.append(f"Candidata tiene {cand_age} años (mayor al rango solicitado de {min_a or '—'}-{max_a})")
+            age_alerts.append(f"Candidato/a tiene {cand_age} años (mayor al rango solicitado de {min_a or '—'}-{max_a})")
             age_ok = False
         elif min_a or max_a:
-            age_pros.append(f"Edad de candidata ({cand_age} años) coincide con el rango ideal buscado")
+            age_pros.append(f"Edad de candidato/a ({cand_age} años) coincide con el rango ideal buscado")
 
     if client_age:
         if min_b and client_age < min_b:
-            age_alerts.append(f"Cliente ({client_age} años) es menor al rango aceptado por ella ({min_b}-{max_b or '—'})")
+            age_alerts.append(f"Cliente ({client_age} años) es menor al rango aceptado por ella/él ({min_b}-{max_b or '—'} años)")
             age_ok = False
         elif max_b and client_age > max_b:
-            age_alerts.append(f"Cliente ({client_age} años) es mayor al rango aceptado por ella ({min_b or '—'}-{max_b})")
+            age_alerts.append(f"Cliente ({client_age} años) es mayor al rango aceptado por ella/él ({min_b or '—'}-{max_b} años)")
             age_ok = False
         elif min_b or max_b:
-            age_pros.append(f"Cliente ({client_age} años) cumple el rango etario solicitado por la candidata ({min_b or '—'}-{max_b or '—'})")
+            age_pros.append(f"Cliente ({client_age} años) cumple el rango etario solicitado ({min_b or '—'}-{max_b or '—'} años)")
 
     if not min_a and not max_a and not min_b and not max_b and client_age and cand_age:
         age_diff = abs(client_age - cand_age)
@@ -4713,14 +4966,27 @@ def evaluate_bidirectional_match(
     if cand_height_cm and client_height_cm and abs(client_height_cm - cand_height_cm) <= 15:
         height_pros.append(f"Estatura armónica en pareja ({client_height_cm} cm vs {cand_height_cm} cm)")
 
+    # Cruce de Ciudad / Territorio
+    city_a = client_summary.get("city") or ""
+    city_b = getattr(cand_row, "city", None) or infer_city_from_text(cand_bio) or ""
+    cluster_a = get_metro_cluster(city_a)
+    cluster_b = get_metro_cluster(city_b)
+    city_ok = True
+    city_alerts = []
+    if cluster_a and cluster_b and cluster_a != cluster_b:
+        city_ok = False
+        city_alerts.append(f"Residencia en ciudades diferentes ({city_a or 'Bogotá'} vs {city_b or 'Otra'})")
+
     return {
-        "is_bidirectionally_compatible": age_ok and height_ok,
+        "is_bidirectionally_compatible": age_ok and height_ok and city_ok,
         "age_ok": age_ok,
         "height_ok": height_ok,
+        "city_ok": city_ok,
         "age_alerts": age_alerts,
         "age_pros": age_pros,
         "height_alerts": height_alerts,
-        "height_pros": height_pros
+        "height_pros": height_pros,
+        "city_alerts": city_alerts
     }
 
 
@@ -4889,6 +5155,54 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     cand_wants_kids = (cand_ls.get('wants_children') or '').strip().lower()
     if ('no' in c_wants_kids and 'definitivo' in c_wants_kids) and ('sí' in cand_wants_kids and 'definitivo' in cand_wants_kids):
         return True, f"Proyecto de vida incompatible: {cli.get('name')} tiene postura definitiva de no tener hijos, mientras que {cand.get('name')} tiene postura definitiva de sí tener hijos."
+
+    # 4. Incompatibilidad territorial de ciudad (Bogotá vs Medellín / clusters metropolitanos)
+    c_city = (cli.get('city') or '').strip()
+    cand_city = (cand.get('city') or '').strip()
+    c_cluster = get_metro_cluster(c_city)
+    cand_cluster = get_metro_cluster(cand_city)
+    if c_cluster and cand_cluster and c_cluster != cand_cluster:
+        return True, f"Incompatibilidad territorial de ciudad: {cli.get('name')} reside en {c_city} y {cand.get('name')} reside en {cand_city}. Matches interciudades no permitidos."
+
+    # 5. Dealbreaker etario bidireccional estricto
+    def _parse_age_val(val):
+        if val is None:
+            return None
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return None
+
+    c_age = _parse_age_val(cli.get('age'))
+    cand_age = _parse_age_val(cand.get('age'))
+
+    if c_age is None and cli.get('bio_notes'):
+        m_ca = re.search(r'\b(\d{2})\s*a[ñn]os\b', str(cli.get('bio_notes')), re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', str(cli.get('bio_notes')), re.IGNORECASE)
+        if m_ca:
+            c_age = _parse_age_val(m_ca.group(1))
+    if cand_age is None and cand.get('bio_notes'):
+        m_cda = re.search(r'\b(\d{2})\s*a[ñn]os\b', str(cand.get('bio_notes')), re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', str(cand.get('bio_notes')), re.IGNORECASE)
+        if m_cda:
+            cand_age = _parse_age_val(m_cda.group(1))
+
+    c_min_age = _parse_age_val(c_sp.get('min_age'))
+    c_max_age = _parse_age_val(c_sp.get('max_age'))
+    cand_min_age = _parse_age_val(cand_sp.get('min_age'))
+    cand_max_age = _parse_age_val(cand_sp.get('max_age'))
+
+    # Si candidato tiene edad registrada y cliente exige rango
+    if cand_age is not None:
+        if c_min_age is not None and cand_age < c_min_age:
+            return True, f"Incompatibilidad etaria: {cli.get('name')} exige pareja de mínimo {c_min_age} años, y {cand.get('name')} tiene {cand_age} años."
+        if c_max_age is not None and cand_age > c_max_age:
+            return True, f"Incompatibilidad etaria: {cli.get('name')} exige pareja de máximo {c_max_age} años, y {cand.get('name')} tiene {cand_age} años."
+
+    # Si cliente tiene edad registrada y candidato exige rango (Dealbreaker bidireccional)
+    if c_age is not None:
+        if cand_min_age is not None and c_age < cand_min_age:
+            return True, f"Incompatibilidad etaria bidireccional: {cand.get('name')} exige pareja de mínimo {cand_min_age} años, y {cli.get('name')} tiene {c_age} años."
+        if cand_max_age is not None and c_age > cand_max_age:
+            return True, f"Incompatibilidad etaria bidireccional: {cand.get('name')} exige pareja de máximo {cand_max_age} años, y {cli.get('name')} tiene {c_age} años."
 
     return False, None
 
@@ -5123,7 +5437,13 @@ async def find_candidate_matches_engine(
     """
     uid = client_summary.get("user_id")
     client_city = (client_summary.get("city") if client_summary.get("city") else "Bogotá").strip()
-    client_gender = (client_summary.get("gender") if client_summary.get("gender") else "Hombre").strip().lower()
+    raw_cg = (client_summary.get("gender") or "").strip()
+    if not raw_cg or raw_cg.lower() in ["no especificado", "none", ""]:
+        raw_cg = infer_gender_from_name_and_bio(
+            client_summary.get("name", ""),
+            client_summary.get("bio_notes", "")
+        )
+    client_gender = (raw_cg if raw_cg != "No especificado" else "Hombre").strip().lower()
     client_sg = float(client_summary["social_group_score"]) if client_summary.get("social_group_score") is not None else None
     client_act = int(client_summary["physical_activity_level"]) if client_summary.get("physical_activity_level") is not None else None
     client_edu = int(client_summary["education_level"]) if client_summary.get("education_level") is not None else None
@@ -5131,6 +5451,11 @@ async def find_candidate_matches_engine(
     client_lang_given = (client_summary.get("love_language_given") or "").lower()
     client_non_neg = client_summary.get("non_negotiables") or []
     client_prefs = (client_summary.get("search_preferences") if client_summary.get("search_preferences") else {}) or {}
+    if isinstance(client_prefs, str):
+        try:
+            client_prefs = json.loads(client_prefs)
+        except Exception:
+            client_prefs = {}
     client_height_cm = parse_cm_height(client_summary.get("estatura")) if client_summary.get("estatura") else None
     client_age = int(client_summary["age"]) if client_summary.get("age") else None
     client_attachment = client_summary.get("attachment_style")
@@ -5148,6 +5473,7 @@ async def find_candidate_matches_engine(
     c_pref_gender = (client_prefs.get("preferred_gender") or "").strip().lower()
     c_orient = (client_summary.get("orientation") or client_prefs.get("preferred_orientation") or "").strip().lower()
     is_client_male = "homb" in client_gender or "masc" in client_gender
+    is_client_female = "muj" in client_gender or "fem" in client_gender
 
     if "muj" in c_pref_gender or "fem" in c_pref_gender:
         if "homb" in c_pref_gender or "masc" in c_pref_gender:
@@ -5202,9 +5528,53 @@ async def find_candidate_matches_engine(
             )
 
     city_sql = ""
-    if client_city and client_city.lower() != "todas":
+    client_cluster = get_metro_cluster(client_city) if client_city and client_city.lower() != "todas" else None
+    if client_cluster == "medellin_metro":
+        city_sql = """
+            AND (
+                p.city ~* '(medell[ií]n|itag[uü][ií]|envigado|sabaneta|bello|la estrella|rionegro)'
+                OR ((p.city IS NULL OR p.city = '') AND (p.bio_notes IS NULL OR p.bio_notes !~* '(bogot[aá]|cedritos|chapinero|usaqu[eé]n|suba|ch[ií]a|engativ[aá]|colina|cali|barranquilla)'))
+            )
+        """
+    elif client_cluster == "bogota_metro":
+        city_sql = """
+            AND (
+                p.city ~* '(bogot[aá]|ch[ií]a|cajic[aá]|cota|soacha|zipaquir[aá]|colina|cedritos|chapinero|suba|usaqu[eé]n)'
+                OR ((p.city IS NULL OR p.city = '') AND (p.bio_notes IS NULL OR p.bio_notes !~* '(medell[ií]n|itag[uü][ií]|envigado|sabaneta|bello|cali|barranquilla)'))
+            )
+        """
+    elif client_city and client_city.lower() != "todas":
         clean_city_prefix = client_city.split()[0].replace(",", "").strip()
-        city_sql = f"AND (p.city IS NULL OR p.city = '' OR p.city ILIKE '%{clean_city_prefix}%')"
+        city_sql = f"AND (p.city ILIKE '%{clean_city_prefix}%' OR p.city IS NULL OR p.city = '')"
+
+    age_order_sql = ""
+    target_min_age = client_prefs.get("min_age")
+    target_max_age = client_prefs.get("max_age")
+    if not target_min_age and not target_max_age and client_summary.get("bio_notes"):
+        m_r = re.search(r'(?:rango|busca|edad|edades)[:\s]*(\d{2})\s*(?:a|-)\s*(\d{2})', client_summary["bio_notes"], re.IGNORECASE)
+        if m_r:
+            try:
+                target_min_age = int(m_r.group(1))
+                target_max_age = int(m_r.group(2))
+            except Exception:
+                pass
+
+    if target_min_age and target_max_age:
+        age_order_sql = f"""
+            CASE 
+                WHEN p.age BETWEEN {target_min_age - 1} AND {target_max_age + 1} THEN 0
+                WHEN p.age IS NULL THEN 1
+                ELSE 2
+            END ASC,
+        """
+    elif client_age:
+        age_order_sql = f"""
+            CASE 
+                WHEN p.age BETWEEN {max(18, client_age - 5)} AND {client_age + 5} THEN 0
+                WHEN p.age IS NULL THEN 1
+                ELSE 2
+            END ASC,
+        """
 
     cand_res = await db.execute(text(f"""
         SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
@@ -5228,7 +5598,9 @@ async def find_candidate_matches_engine(
           {city_sql}
           {orient_filter_sql}
           AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
-        ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
+        ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25) DESC,
+                 {age_order_sql}
+                 (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
                  (p.occupation IS NOT NULL AND p.occupation != '') DESC,
                  (p.age IS NOT NULL) DESC,
                  u.id DESC
@@ -5259,9 +5631,12 @@ async def find_candidate_matches_engine(
               AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
               AND {gender_filter_sql}
               {anti_opposite_name_sql}
+              {city_sql}
               {orient_filter_sql}
               AND (p.bio_notes IS NULL OR p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)')
-            ORDER BY (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
+            ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25) DESC,
+                     {age_order_sql}
+                     (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
                      (p.occupation IS NOT NULL AND p.occupation != '') DESC,
                      (p.age IS NOT NULL) DESC,
                      u.id DESC
@@ -5338,6 +5713,40 @@ async def find_candidate_matches_engine(
         cand_age = cand_eval_age
         cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
 
+        cand_sp_raw = getattr(r, "search_preferences", None) or {}
+        if isinstance(cand_sp_raw, str):
+            try:
+                cand_sp_raw = json.loads(cand_sp_raw)
+            except Exception:
+                cand_sp_raw = {}
+
+        cand_real_city = (r.city or infer_city_from_text(cand_bio_clean) or "").strip()
+
+        # =========================================================================
+        # REGLA DE EXCLUSIÓN DETERMINÍSTICA: TOLERANCIA CERO A PERFILES INCOMPLETOS
+        # Ninguna persona con datos críticos faltantes puede ser recomendada.
+        # =========================================================================
+        missing_critical_fields = []
+        if not cand_age or cand_age < 18:
+            missing_critical_fields.append("Edad no registrada")
+        if not cand_real_city or cand_real_city.lower() in ("no especificada", "none", "todas", ""):
+            missing_critical_fields.append("Ciudad de residencia no registrada")
+        if not r.gender or r.gender.strip().lower() in ("no especificado", "none", ""):
+            missing_critical_fields.append("Género no especificado")
+        if not cand_bio_clean or len(cand_bio_clean) < 25:
+            missing_critical_fields.append("Sin notas clínicas de entrevista")
+
+        if missing_critical_fields:
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": cand_age,
+                "occupation": cand_occ,
+                "reasons": [f"Perfil Incompleto (No Recomendable): Falta {', '.join(missing_critical_fields)}. Requiere contacto previo para completar ficha."],
+                "warnings": []
+            })
+            continue
+
         # 2. Extracción Pre-Match del Perfil Clínico 360° de Persona B (Candidata)
         cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
             user_id=r.id,
@@ -5352,6 +5761,9 @@ async def find_candidate_matches_engine(
                 "religion": getattr(r, "religion", None),
                 "apego": getattr(r, "apego", None),
                 "love_language": getattr(r, "love_language", None),
+                "search_preferences": cand_sp_raw,
+                "lifestyle": getattr(r, "lifestyle", None),
+                "non_negotiables": getattr(r, "non_negotiables", None),
             },
             bio_notes=cand_bio_clean,
         )
@@ -5602,8 +6014,11 @@ async def find_candidate_matches_engine(
                 strengths.append("Estilo de vida compatible")
         if cand_eval_age and bidi["is_bidirectionally_compatible"]:
             strengths.append("Filtro bidireccional mutuo validado (compatibilidad etaria armónica)")
-        if r.city:
-            strengths.append(f"Ambos residen en {r.city or client_city}")
+        cand_real_city = r.city or infer_city_from_text(r.bio_notes or "") or "No especificada"
+
+        if cand_real_city and cand_real_city != "No especificada" and client_city:
+            if get_metro_cluster(cand_real_city) == get_metro_cluster(client_city):
+                strengths.append(f"Ambos residen en {cand_real_city}")
         if not strengths:
             strengths.append("Candidato/a activo/a verificado/a en CRM")
         if bidi["age_pros"]:
@@ -5653,19 +6068,23 @@ async def find_candidate_matches_engine(
         cand_nn_list = cand_clean_non_neg
         cand_rf_list = cand_sp.get("red_flags") or []
 
+        cand_inferred_gender = r.gender or infer_gender_from_name_and_bio(cand_name, r.bio_notes or "")
+        if not cand_inferred_gender or cand_inferred_gender == "No especificado":
+            cand_inferred_gender = "Hombre" if is_client_female else "Mujer"
+
         cand_payload = {
             "user_id": r.id,
             "name": cand_name,
-            "gender": r.gender or ("Mujer" if is_male else "Hombre"),
+            "gender": cand_inferred_gender,
             "orientation": getattr(r, "orientation", None),
             "phone": r.phone or "",
             "crm_id": clean_cid if clean_cid and clean_cid.isdigit() else "",
             "crm_url": cand_crm_url,
             "client_code": r.client_code or f"DL-{r.id}",
-            "city": r.city or client_city,
+            "city": cand_real_city,
             "age": cand_age,
             "estatura": r.estatura or "",
-            "plan_tier": r.plan_tier or "Estándar 65k (2 citas)",
+            "plan_tier": clean_plan_name(r.plan_tier),
             "plan_total_dates": cand_slots_total,
             "dates_used": cand_used,
             "dates_remaining": saldo_citas_b,
@@ -5699,14 +6118,20 @@ async def find_candidate_matches_engine(
             "clinical_warnings": dealbreaker_360.get("warnings", []),
             "search_preferences": cand_sp,
             "non_negotiables": cand_nn_list,
-            "red_flags": cand_rf_list,
+            "red_flags": cand_sp.get("partner_red_flags") or cand_sp.get("red_flags") or [],
+            "partner_red_flags": cand_sp.get("partner_red_flags") or cand_sp.get("red_flags") or [],
+            "personal_red_flags": cand_sp.get("personal_red_flags") or [],
             "comparison": {
                 "client_notes": client_summary.get("bio_notes", ""),
                 "candidate_notes": cand_bio_clean,
                 "client_non_neg": clean_client_non_neg,
                 "candidate_non_neg": cand_nn_list,
-                "client_red_flags": client_prefs.get("red_flags") or [],
-                "candidate_red_flags": cand_rf_list
+                "client_red_flags": client_prefs.get("partner_red_flags") or client_prefs.get("red_flags") or [],
+                "client_partner_red_flags": client_prefs.get("partner_red_flags") or client_prefs.get("red_flags") or [],
+                "client_personal_red_flags": client_prefs.get("personal_red_flags") or [],
+                "candidate_red_flags": cand_sp.get("partner_red_flags") or cand_sp.get("red_flags") or [],
+                "candidate_partner_red_flags": cand_sp.get("partner_red_flags") or cand_sp.get("red_flags") or [],
+                "candidate_personal_red_flags": cand_sp.get("personal_red_flags") or []
             }
         }
         cand_payload["match_analysis"] = generate_clinical_match_analysis(client_summary, cand_payload)
@@ -5719,9 +6144,19 @@ async def find_candidate_matches_engine(
         # 2) Orientación sexual cruzada
         # 3) Hijos no negociables vs hijos declarados
         # 4) Posturas diametralmente opuestas sobre querer hijos
+        # 5) Incompatibilidad territorial de ciudad (Bogotá vs Medellín)
+        # 6) Dealbreaker etario bidireccional estricto
         # =========================================================================
         is_hard_dealbreaker, hard_reason = check_deterministic_hard_dealbreakers(client_summary, cand_payload)
         if is_hard_dealbreaker:
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": cand_age,
+                "occupation": cand_occ,
+                "reasons": [hard_reason],
+                "warnings": []
+            })
             continue
 
         if is_capped:
@@ -5943,12 +6378,28 @@ async def get_interview_results(
     ext_row = ext_res.fetchone()
     ext_data = dict(ext_row._mapping) if ext_row else {}
 
-    client_city = (prof_row.city if prof_row and prof_row.city else "Bogotá").strip()
-    client_gender = (prof_row.gender if prof_row and prof_row.gender else "Hombre").strip().lower()
+    raw_cc = (prof_row.city if prof_row and prof_row.city else "").strip()
+    if not raw_cc or raw_cc.lower() in ["no especificado", "none", ""]:
+        raw_cc = infer_city_from_text(prof_row.bio_notes if prof_row else "") or "Bogotá"
+    client_city = raw_cc
+    raw_cg = (prof_row.gender if prof_row and prof_row.gender else "").strip()
+    if not raw_cg or raw_cg.lower() in ["no especificado", "none", ""]:
+        raw_cg = infer_gender_from_name_and_bio(user_row.name or "", prof_row.bio_notes if prof_row else "")
+        if raw_cg != "No especificado":
+            try:
+                await db.execute(text("UPDATE profiles SET gender = :g WHERE user_id = :uid"), {"g": raw_cg, "uid": uid})
+                await db.commit()
+            except Exception:
+                pass
+    client_gender = (raw_cg if raw_cg != "No especificado" else "Hombre").strip().lower()
     client_sg = float(ext_data["social_group_score"]) if ext_data.get("social_group_score") is not None else None
     client_act = int(ext_data["physical_activity_level"]) if ext_data.get("physical_activity_level") is not None else None
-    client_non_neg = ext_data.get("non_negotiables") or []
     client_prefs = (prof_row.search_preferences if prof_row and prof_row.search_preferences else {}) or {}
+    if isinstance(client_prefs, str):
+        try:
+            client_prefs = json.loads(client_prefs)
+        except Exception:
+            client_prefs = {}
     client_height_cm = parse_cm_height(prof_row.estatura) if prof_row and prof_row.estatura else None
     client_age = int(prof_row.age) if prof_row and prof_row.age else None
     if not client_age and prof_row and prof_row.bio_notes:
@@ -6011,14 +6462,15 @@ async def get_interview_results(
         client_crm_url = f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(user_row.name or '')}"
 
     # Balance de citas del plan para Persona A (Cliente Entrevistado)
-    client_plan = prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)"
+    client_plan = clean_plan_name(prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)")
     client_slots_total = get_slots_by_plan(client_plan) or 2
     res_used_a = await db.execute(text("""
         SELECT COUNT(*) FROM operational_matches
         WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:a)))
-          AND status IN ('HECHO', 'HECHO POR MAPE', 'APROBADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita realizada', 'cita confirmada', 'Listo para match')
+          AND status IN ('HECHO', 'HECHO POR MAPE', 'MATCH DONE', 'CITA COMPLETADA', 'cita realizada')
     """), {"a": user_row.name or ""})
-    client_used = res_used_a.scalar() or 0
+    raw_client_used = res_used_a.scalar() or 0
+    client_used = min(raw_client_used, client_slots_total)
     client_saldo = max(0, client_slots_total - client_used)
 
     client_summary = {
@@ -6029,7 +6481,7 @@ async def get_interview_results(
         "crm_url": client_crm_url,
         "client_code": user_row.client_code or f"DL-{user_row.id}",
         "city": client_city,
-        "gender": prof_row.gender if prof_row else "No especificado",
+        "gender": raw_cg if raw_cg != "No especificado" else (prof_row.gender if prof_row and prof_row.gender else "No especificado"),
         "orientation": prof_row.orientation if prof_row and prof_row.orientation else (client_prefs.get("preferred_orientation") or None),
         "age": client_age,
         "estatura": prof_row.estatura if prof_row and prof_row.estatura else "",
@@ -6058,7 +6510,10 @@ async def get_interview_results(
         "lifestyle": prof_row.lifestyle if prof_row and prof_row.lifestyle else {},
         "apego": prof_row.apego if prof_row and prof_row.apego else {},
         "bio_notes": prof_row.bio_notes if prof_row and prof_row.bio_notes else "",
-        "search_preferences": client_prefs
+        "search_preferences": client_prefs,
+        "red_flags": client_prefs.get("partner_red_flags") or client_prefs.get("red_flags") or [],
+        "partner_red_flags": client_prefs.get("partner_red_flags") or client_prefs.get("red_flags") or [],
+        "personal_red_flags": client_prefs.get("personal_red_flags") or []
     }
 
     # 3. Buscar candidatos compatibles con el motor unificado de matchmaking
@@ -6078,10 +6533,11 @@ async def get_interview_results(
             if nvidia_key:
                 break
 
+    dynamic_pool_limit = 120 if (client_age and client_age >= 38) else 80
     suggested_matches, discarded_matches, client_profile_360 = await find_candidate_matches_engine(
         client_summary=client_summary,
         db=db,
-        pool_limit=60,
+        pool_limit=dynamic_pool_limit,
         max_ai_evaluations=6,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
@@ -7693,8 +8149,34 @@ def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) 
     age = info.get("age") or "No especificada"
     city = info.get("city") or "Bogotá"
     occ = info.get("occupation") or "No especificada"
-    gender = info.get("gender") or "No especificado"
     estatura = info.get("estatura") or "No especificada"
+
+    # Inferencia de género si falta
+    gender = (info.get("gender") or "").strip()
+    if not gender or gender.lower() in ["no especificado", "none", ""]:
+        gender = infer_gender_from_name_and_bio(name, info.get("bio_notes") or "")
+    if not gender or gender == "No especificado":
+        gender = "No especificado"
+
+    # Orientación sexual estructurada
+    orient = (info.get("orientation") or info.get("pref") or "").strip()
+    if not orient:
+        sp_obj = _safe_dict(info.get("search_preferences"))
+        orient = str(sp_obj.get("preferred_orientation") or "").strip()
+    if not orient:
+        bio_text_low = (info.get("bio_notes") or info.get("synthesis") or "").lower()
+        if re.search(r'\b(lesbiana|lesbica|lesb|solo mujeres)\b', bio_text_low):
+            orient = "Lesbiana"
+        elif re.search(r'\b(gay|homosexual|solo hombres)\b', bio_text_low):
+            orient = "Gay"
+        elif re.search(r'\b(bisexual|bi)\b', bio_text_low):
+            orient = "Bisexual"
+        elif "hetero" in bio_text_low or "chico" in bio_text_low or "hombre" in bio_text_low or "mujer" in bio_text_low:
+            orient = "Heterosexual"
+        else:
+            orient = "Heterosexual (por defecto en CRM)" if gender != "No especificado" else "No especificada"
+    else:
+        orient = orient.capitalize()
 
     att = info.get("attachment_style")
     if not att or att == "No especificado":
@@ -7731,11 +8213,11 @@ def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) 
         bio_notes = "Sin notas clínicas registradas en el perfil."
 
     return f"""DATOS DE {name.upper()}:
-- Demografía: Género: {gender} | Edad: {age} | Ciudad: {city} | Estatura: {estatura}
+- Demografía: Género: {gender} | Orientación Sexual: {orient} | Edad: {age} | Ciudad: {city} | Estatura: {estatura}
 - Profesión: {occ}
 - Dinámica Psicológica: Estilo de apego: {att_str} | Lenguaje del amor: {love_str} | Grupo Social: {sg_str} | Nivel deporte: {act_str}
 - Hábitos y Estilo de Vida: ¿Tiene hijos?: {has_kids} | ¿Quiere hijos?: {wants_kids} | Fuma: {smoker} | Bebe: {alcohol} | Mascotas: {pets} | Rumba: {rumba} | Valores: {values}
-- Preferencias de Pareja: No negociables: {non_neg} | Banderas rojas: {red_flags} | Qué busca: {what_searches}
+- Preferencias de Pareja: Orientación: {orient} | No negociables: {non_neg} | Banderas rojas: {red_flags} | Qué busca: {what_searches}
 - Notas Clínicas de la Psicóloga (Entrevista):
 \"\"\"{bio_notes}\"\"\""""
 
@@ -7786,13 +8268,14 @@ HISTORIAL DE LA CONVERSACIÓN:
 {history_context}
 
 --- REGLAS DE ORO CLÍNICAS (ESTRICTAS Y OBLIGATORIAS) ---
-1. LECTURA EXHAUSTIVA DE NOTAS CLÍNICAS:
-   Lee con total atención todo el texto libre dentro de "Notas Clínicas de la Psicóloga (Entrevista)".
-   Allí están los detalles de pasatiempos, gustos de cine, anécdotas, religión, familia, política y estilo de vida.
-   Si el texto contiene cualquier mención sobre el tema preguntado (ej: "amo el cine pero no las pelis de terror" o "la política no es tan relevante para ella"), cita esa frase o hecho exacto.
+1. LECTURA EXHAUSTIVA DE FICHA CLÍNICA, DEMOGRAFÍA Y NOTAS:
+   Lee con total atención los campos estructurados de cada persona (Demografía, Profesión, Dinámica Psicológica, Hábitos, Preferencias de Pareja) y todo el texto libre dentro de "Notas Clínicas de la Psicóloga (Entrevista)".
+   Allí están los datos de orientación sexual, género, edad, ciudad, profesión, pasatiempos, gustos de cine, anécdotas, religión, familia, política y estilo de vida.
+   Si preguntan sobre orientación sexual, género, edad, ciudad o profesión, responde directamente citando el dato presente en "Demografía" y "Preferencias de Pareja" (ej: "Heterosexual", "Hombre", "Mujer").
+   Si el texto de notas contiene cualquier mención sobre el tema preguntado, cita esa frase o hecho exacto.
 2. CERO ALUCINACIONES Y EXTRACCIÓN PURA (TEMPERATURA 0):
-   Solo afirma lo que esté sustentado en el texto. Si tras revisar minuciosamente las notas y campos NO hay ninguna mención sobre ese tema para esa persona (ej: vehículos, mascotas o deudas), responde exactamente: "⚠️ Sin información registrada en notas".
-   JAMÁS inventes, asumas, deduzcas ni extrapoles. Las psicólogas confían a ciegas en esta información; si no está en las notas, comunícalo sin rodeos.
+   Solo afirma lo que esté sustentado en la ficha o texto. Si tras revisar minuciosamente la ficha y notas NO hay ninguna mención sobre ese tema para esa persona (ej: vehículos o deudas), responde exactamente: "⚠️ Sin información registrada en notas".
+   JAMÁS inventes, asumas, deduzcas ni extrapoles. Las psicólogas confían a ciegas en esta información; si no está en la ficha o notas, comunícalo sin rodeos.
 3. FORMATO CONCRETO PARA PSICÓLOGAS (SIN RODEOS NI FRASES DE CORTESÍA):
    Responde de forma esquemática y al grano con este formato:
    • {name_a}: [Dato o frase exacta de sus notas o "⚠️ Sin información registrada en notas"]
@@ -7966,10 +8449,11 @@ HISTORIAL DE LA CONVERSACIÓN:
 {history_context}
 
 --- REGLAS CLÍNICAS (ESTRICTAS - TEMPERATURA 0) ---
-1. LECTURA EXHAUSTIVA DE NOTAS CLÍNICAS:
-   Inspecciona con detenimiento las notas clínicas de entrevista, hábitos, estilo de apego y dealbreakers de cada persona.
+1. LECTURA EXHAUSTIVA DE FICHA CLÍNICA, DEMOGRAFÍA Y NOTAS:
+   Inspecciona con detenimiento los campos estructurados (Demografía, Orientación Sexual, Profesión), notas clínicas de entrevista, hábitos, estilo de apego y dealbreakers de cada persona.
+   Si preguntan sobre orientación sexual, género, edad, ciudad o profesión, responde directamente citando los datos de la ficha técnica.
 2. CERO ALUCINACIONES:
-   Solo afirma lo sustentado en las notas o ficha. Si para alguna candidata no hay datos sobre ese tema, escribe: "⚠️ Sin información registrada en notas".
+   Solo afirma lo sustentado en la ficha técnica o notas. Si para alguna persona no hay datos sobre ese tema, escribe: "⚠️ Sin información registrada en notas".
 3. FORMATO ESQUEMÁTICO DIRECTO PARA PSICÓLOGAS:
    Responde con este formato exacto:
    • {client_name}: [Dato de sus notas respecto a la pregunta]
@@ -8327,5 +8811,253 @@ async def update_trouble_case(
             await db.commit()
 
     return {"status": "success", "message": "Actualizado correctamente"}
+
+
+# ─── PERFILES INCOMPLETOS POR CONTACTAR ───────────────────────────────────────
+
+@router.get("/incomplete-stats")
+async def get_incomplete_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Retorna métricas agregadas en tiempo real sobre la cantidad de perfiles con campos
+    críticos faltantes y cuántos de ellos tienen un plan activo/contratado.
+    """
+    res = await db.execute(text("""
+        SELECT
+            count(*) as total_users,
+            count(*) FILTER (WHERE p.age IS NULL OR p.age = 0) as missing_age,
+            count(*) FILTER (WHERE p.city IS NULL OR p.city = '' OR p.city = 'No especificada') as missing_city,
+            count(*) FILTER (WHERE p.gender IS NULL OR p.gender = '' OR p.gender = 'No especificado') as missing_gender,
+            count(*) FILTER (WHERE p.estatura IS NULL OR p.estatura = '') as missing_estatura,
+            count(*) FILTER (WHERE p.bio_notes IS NULL OR length(trim(p.bio_notes)) < 25) as missing_notes,
+            count(*) FILTER (WHERE p.search_preferences IS NULL OR p.search_preferences::text = '{}') as missing_search_prefs,
+            count(*) FILTER (
+                WHERE (p.age IS NULL OR p.age = 0)
+                   OR (p.city IS NULL OR p.city = '' OR p.city = 'No especificada')
+                   OR (p.gender IS NULL OR p.gender = '' OR p.gender = 'No especificado')
+                   OR (p.bio_notes IS NULL OR length(trim(p.bio_notes)) < 25)
+            ) as total_incomplete,
+            count(*) FILTER (
+                WHERE (
+                    (p.age IS NULL OR p.age = 0)
+                    OR (p.city IS NULL OR p.city = '' OR p.city = 'No especificada')
+                    OR (p.gender IS NULL OR p.gender = '' OR p.gender = 'No especificado')
+                    OR (p.bio_notes IS NULL OR length(trim(p.bio_notes)) < 25)
+                ) AND (p.plan_tier IS NOT NULL AND p.plan_tier != '')
+            ) as incomplete_with_plan,
+            count(*) FILTER (
+                WHERE p.gender IN ('Hombre', 'Mujer')
+                  AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada')
+                  AND p.age IS NOT NULL AND p.age >= 18
+                  AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25
+            ) as total_complete_eligible
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE u.merged_into_id IS NULL
+          AND u.name NOT ILIKE 'Cliente CRM%'
+          AND u.name NOT ILIKE 'Sin nombre%'
+          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
+    """))
+    row = dict(res.fetchone()._mapping)
+    return row
+
+
+@router.get("/incomplete-profiles")
+async def get_incomplete_profiles(
+    missing_field: str = Query("all", description="all, age, city, gender, estatura, notes, search_prefs"),
+    has_plan: Optional[bool] = Query(None, description="Filtrar solo clientes con plan contratado"),
+    psychologist: Optional[str] = Query(None, description="Filtrar por psicóloga responsable"),
+    search: Optional[str] = Query(None, description="Búsqueda por nombre, teléfono, email"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Retorna la lista de usuarios con perfiles incompletos para que las psicólogas o el equipo comercial
+    los contacten por WhatsApp con 1 clic para recopilar los datos faltantes.
+    """
+    where_clauses = [
+        "u.merged_into_id IS NULL",
+        "u.name NOT ILIKE 'Cliente CRM%'",
+        "u.name NOT ILIKE 'Sin nombre%'",
+        "u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'"
+    ]
+    params: Dict[str, Any] = {}
+
+    # Filtro por tipo de campo faltante
+    if missing_field == "age":
+        where_clauses.append("(p.age IS NULL OR p.age = 0)")
+    elif missing_field == "city":
+        where_clauses.append("(p.city IS NULL OR p.city = '' OR p.city = 'No especificada')")
+    elif missing_field == "gender":
+        where_clauses.append("(p.gender IS NULL OR p.gender = '' OR p.gender = 'No especificado')")
+    elif missing_field == "estatura":
+        where_clauses.append("(p.estatura IS NULL OR p.estatura = '')")
+    elif missing_field == "notes":
+        where_clauses.append("(p.bio_notes IS NULL OR length(trim(p.bio_notes)) < 25)")
+    elif missing_field == "search_prefs":
+        where_clauses.append("(p.search_preferences IS NULL OR p.search_preferences::text = '{}')")
+    else:  # all
+        where_clauses.append("""(
+            (p.age IS NULL OR p.age = 0)
+            OR (p.city IS NULL OR p.city = '' OR p.city = 'No especificada')
+            OR (p.gender IS NULL OR p.gender = '' OR p.gender = 'No especificado')
+            OR (p.bio_notes IS NULL OR length(trim(p.bio_notes)) < 25)
+            OR (p.estatura IS NULL OR p.estatura = '')
+            OR (p.search_preferences IS NULL OR p.search_preferences::text = '{}')
+        )""")
+
+    if has_plan is True:
+        where_clauses.append("(p.plan_tier IS NOT NULL AND p.plan_tier != '')")
+    elif has_plan is False:
+        where_clauses.append("(p.plan_tier IS NULL OR p.plan_tier = '')")
+
+    if psychologist and psychologist.lower() not in ("all", "todas"):
+        where_clauses.append("p.responsable ILIKE :psyc")
+        params["psyc"] = f"%{psychologist.strip()}%"
+
+    if search:
+        where_clauses.append("(u.name ILIKE :s OR u.phone ILIKE :s OR u.email ILIKE :s OR u.crm_id ILIKE :s)")
+        params["s"] = f"%{search.strip()}%"
+
+    where_sql = " AND ".join(where_clauses)
+
+    count_res = await db.execute(text(f"""
+        SELECT count(*)
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE {where_sql}
+    """), params)
+    total_count = count_res.scalar() or 0
+
+    offset = (page - 1) * page_size
+    params["limit"] = page_size
+    params["offset"] = offset
+
+    data_res = await db.execute(text(f"""
+        SELECT u.id, u.name, u.phone, u.email, u.crm_id, u.client_code,
+               p.gender, p.city, p.age, p.plan_tier, p.responsable,
+               p.estatura, p.bio_notes, p.search_preferences
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE {where_sql}
+        ORDER BY (p.plan_tier IS NOT NULL AND p.plan_tier != '') DESC,
+                 u.id DESC
+        LIMIT :limit OFFSET :offset
+    """), params)
+    rows = data_res.fetchall()
+
+    profiles_list = []
+    for r in rows:
+        missing = []
+        filled_count = 0
+        total_tracked = 6
+
+        # 1. Edad
+        if not r.age or r.age == 0:
+            missing.append("Edad")
+        else:
+            filled_count += 1
+
+        # 2. Ciudad
+        if not r.city or r.city.strip().lower() in ("no especificada", "none", ""):
+            missing.append("Ciudad")
+        else:
+            filled_count += 1
+
+        # 3. Género
+        if not r.gender or r.gender.strip().lower() in ("no especificado", "none", ""):
+            missing.append("Género")
+        else:
+            filled_count += 1
+
+        # 4. Estatura
+        if not r.estatura or not str(r.estatura).strip():
+            missing.append("Estatura")
+        else:
+            filled_count += 1
+
+        # 5. Notas de Entrevista
+        bio = (r.bio_notes or "").strip()
+        if len(bio) < 25:
+            missing.append("Notas de Entrevista")
+        else:
+            filled_count += 1
+
+        # 6. Preferencias de Pareja
+        sp = r.search_preferences or {}
+        if isinstance(sp, str):
+            try:
+                sp = json.loads(sp)
+            except Exception:
+                sp = {}
+        if not sp or (not sp.get("min_age") and not sp.get("what_searches") and not sp.get("what_searches_in_partner")):
+            missing.append("Qué busca en Pareja")
+        else:
+            filled_count += 1
+
+        completeness_pct = int(round((filled_count / total_tracked) * 100))
+
+        # Generar enlace de WhatsApp con mensaje personalizado
+        clean_p = re.sub(r'\D', '', str(r.phone or ''))
+        if len(clean_p) == 10 and clean_p.startswith('3'):
+            clean_p = f"57{clean_p}"
+        elif len(clean_p) == 7:
+            clean_p = f"571{clean_p}"
+
+        first_name = (r.name or "Cliente").split()[0].title()
+        missing_friendly = []
+        for m in missing:
+            if m == "Edad": missing_friendly.append("tu edad")
+            elif m == "Ciudad": missing_friendly.append("tu ciudad de residencia")
+            elif m == "Estatura": missing_friendly.append("tu estatura")
+            elif m == "Notas de Entrevista": missing_friendly.append("completar tu entrevista")
+            elif m == "Qué busca en Pareja": missing_friendly.append("qué buscas en tu pareja ideal")
+            else: missing_friendly.append(m.lower())
+        
+        missing_phrase = ", ".join(missing_friendly) if missing_friendly else "unos datos clave"
+        wa_text = (
+            f"Hola {first_name}, te saludamos de Daily Lover. ✨\n"
+            f"Esperamos que estés muy bien. Para poder agendarte citas altamente compatibles y con los mejores perfiles, "
+            f"nuestro equipo de psicólogas necesita completar en tu ficha: {missing_phrase}.\n\n"
+            f"¿Nos podrías confirmar estos datos por aquí para actualizarlos en tu perfil? ¡Muchas gracias!"
+        )
+        whatsapp_url = f"https://wa.me/{clean_p}?text={quote(wa_text)}" if clean_p else ""
+
+        cid = str(r.crm_id or "").strip()
+        crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{cid}/" if (cid and cid.isdigit()) else f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(r.name or '')}"
+
+        profiles_list.append({
+            "user_id": r.id,
+            "name": r.name or "Sin nombre",
+            "phone": r.phone or "",
+            "email": r.email or "",
+            "crm_id": cid if cid.isdigit() else "",
+            "crm_url": crm_url,
+            "gender": r.gender or "No especificado",
+            "city": r.city or "No especificada",
+            "age": r.age,
+            "estatura": r.estatura or "",
+            "plan_tier": r.plan_tier or "Sin plan",
+            "responsable": r.responsable or "Sin asignar",
+            "missing_fields": missing,
+            "completeness_pct": completeness_pct,
+            "whatsapp_url": whatsapp_url,
+            "has_bio_notes": len(bio) >= 25,
+            "bio_preview": (bio[:120] + "...") if len(bio) > 120 else bio
+        })
+
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    return {
+        "total": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "profiles": profiles_list
+    }
+
 
 
