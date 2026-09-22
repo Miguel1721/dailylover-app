@@ -38,6 +38,46 @@ class OctagonalMatchEvaluator:
                 razon_bloqueo=f"Candidato no disponible en plataforma (Estado operativo: {st})"
             )
 
+        # Incompatibilidad de Orientación / Género Buscado
+        c_gender = (c_meta.get("gender") or "").strip().lower()
+        k_gender = (k_meta.get("gender") or "").strip().lower()
+        c_sp = c_meta.get("search_preferences") or {}
+        k_sp = k_meta.get("search_preferences") or {}
+
+        c_pref = (c_sp.get("preferred_gender") or c_sp.get("looking_for") or "").strip().lower()
+        k_pref = (k_sp.get("preferred_gender") or k_sp.get("looking_for") or "").strip().lower()
+        c_orient = (c_meta.get("orientation") or c_sp.get("preferred_orientation") or "").strip().lower()
+        k_orient = (k_meta.get("orientation") or k_sp.get("preferred_orientation") or "").strip().lower()
+
+        c_wants_both = ("hombre" in c_pref and "mujer" in c_pref) or ("ambos" in c_pref) or ("cualquiera" in c_pref)
+        k_wants_both = ("hombre" in k_pref and "mujer" in k_pref) or ("ambos" in k_pref) or ("cualquiera" in k_pref)
+
+        if c_pref and k_gender and not c_wants_both:
+            if ("hombre" in c_pref and "mujer" in k_gender) or ("mujer" in c_pref and "hombre" in k_gender):
+                return cls._build_rejected_result(
+                    c_meta, k_meta, score=0,
+                    razon_bloqueo=f"Incompatibilidad de género buscado: {c_meta.get('name')} busca {c_pref}, pero el candidato es {k_gender}."
+                )
+
+        if k_pref and c_gender and not k_wants_both:
+            if ("hombre" in k_pref and "mujer" in c_gender) or ("mujer" in k_pref and "hombre" in c_gender):
+                return cls._build_rejected_result(
+                    c_meta, k_meta, score=0,
+                    razon_bloqueo=f"Incompatibilidad de género buscado en candidato: {k_meta.get('name')} busca {k_pref}, pero el cliente es {c_gender}."
+                )
+
+        if ('hombre' in c_gender and 'mujer' in k_gender) or ('mujer' in c_gender and 'hombre' in k_gender):
+            if 'gay' in c_orient or 'lesb' in c_orient:
+                return cls._build_rejected_result(
+                    c_meta, k_meta, score=0,
+                    razon_bloqueo=f"Incompatibilidad de orientación sexual: {c_meta.get('name')} es homosexual/gay/lesbiana."
+                )
+            if 'gay' in k_orient or 'lesb' in k_orient:
+                return cls._build_rejected_result(
+                    c_meta, k_meta, score=0,
+                    razon_bloqueo=f"Incompatibilidad de orientación sexual: {k_meta.get('name')} es homosexual/gay/lesbiana."
+                )
+
         # ─── CAPA 1: CIMIENTOS DUROS ─────────────────────────────────────────────
         # Eje 1: Logística y Geografía
         score_logistica, fricciones_log, kill_switches_log, sinergias_log = cls._eval_logistica(
@@ -198,7 +238,6 @@ class OctagonalMatchEvaluator:
                     else:
                         tiene_viaje = bool(
                             c.get("disposicion_viajar") or k.get("disposicion_viajar") or
-                            c.get("profesion_alta_movilidad") or k.get("profesion_alta_movilidad") or
                             (c_meta and c_meta.get("disposicion_viajar")) or
                             (k_meta and k_meta.get("disposicion_viajar"))
                         )

@@ -1,0 +1,3189 @@
+{
+  "total_evaluaciones": 120,
+  "verdict_counts": {
+    "RECOMENDADO ALTO": 110,
+    "NO RECOMENDADO": 4,
+    "VIABLE CON RESERVAS": 6
+  },
+  "total_dealbreakers": 4,
+  "total_fricciones": 86,
+  "clientes": [
+    {
+      "cliente_id": 7841,
+      "cliente_nombre": "Roman Briceño",
+      "cliente_edad": 59,
+      "cliente_genero": "Hombre",
+      "cliente_ciudad": "Bogotá",
+      "perfil_resumen": {
+        "logistica": "Horario estándar",
+        "timing": "Relación Estable",
+        "hijos": true,
+        "vasectomia": true,
+        "finanzas": "Flexible / Equilibrado",
+        "conflicto": "Equilibrado",
+        "autonomia": "Baja (Fusión / Mucha cercanía)",
+        "ritmo_vital": "Muy Alta (Atleta / Alto Desgaste)",
+        "polaridad": "Dinámica Igualitaria / Colaborativa"
+      },
+      "evaluaciones": [
+        {
+          "candidato_id": 5270,
+          "candidato_nombre": "Luisa Godoy",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5271,
+          "candidato_nombre": "Luz Marina Toro Toro",
+          "candidato_edad": 49,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5276,
+          "candidato_nombre": "Adriana Gomez",
+          "candidato_edad": 37,
+          "candidato_ciudad": "34 años- sg 3",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5280,
+          "candidato_nombre": "Sofia Cristancho",
+          "candidato_edad": 22,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5282,
+          "candidato_nombre": "Daniela Ortegon",
+          "candidato_edad": 20,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5283,
+          "candidato_nombre": "Lizeth Benítez",
+          "candidato_edad": 26,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5286,
+          "candidato_nombre": "Maria Alejandra Ramirez Perez",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5290,
+          "candidato_nombre": "Stefanny Gomez",
+          "candidato_edad": 26,
+          "candidato_ciudad": "tenjo",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5292,
+          "candidato_nombre": "Mathias Gomez",
+          "candidato_edad": 34,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5293,
+          "candidato_nombre": "Katherine Ramirez",
+          "candidato_edad": 31,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5296,
+          "candidato_nombre": "Emilith Yaneth Blanco Cabrera",
+          "candidato_edad": 23,
+          "candidato_ciudad": "Bisexual, bog, sg2, 23 años.",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5298,
+          "candidato_nombre": "Maria Gneco",
+          "candidato_edad": 29,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5301,
+          "candidato_nombre": "Sara Arboleda",
+          "candidato_edad": 24,
+          "candidato_ciudad": "yes no",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5303,
+          "candidato_nombre": "Camila Jimenez",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5305,
+          "candidato_nombre": "Ana Sofia Vargas",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5310,
+          "candidato_nombre": "Laura Robles",
+          "candidato_edad": 33,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Sintonía de energía vital compartida (Muy Alta (Atleta / Alto Desgaste))",
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5311,
+          "candidato_nombre": "Sandra Carolina Jimenez Fonseca",
+          "candidato_edad": 37,
+          "candidato_ciudad": "yes no",
+          "candidato_genero": "Mujer",
+          "score_global": 85,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5274,
+          "candidato_nombre": "Laura Anchico",
+          "candidato_edad": 21,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 64,
+          "veredicto": "VIABLE CON RESERVAS",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 50,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos",
+            "Descalce de intimidad: Necesidad de hiper-independencia vs Búsqueda de atención/fusión constante"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Advertir previamente al cliente sobre: Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos. Agendar cita de bajo compromiso (café o almuerzo ligero)."
+        },
+        {
+          "candidato_id": 5273,
+          "candidato_nombre": "Manuela Ibañez",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 38,
+          "veredicto": "NO RECOMENDADO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 10,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [
+            "Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada"
+          ],
+          "recomendacion_psicologa": "Descartar propuesta. Razón principal: Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada."
+        },
+        {
+          "candidato_id": 5306,
+          "candidato_nombre": "Valeria Pajaro",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Barranquilla",
+          "candidato_genero": "Mujer",
+          "score_global": 38,
+          "veredicto": "NO RECOMENDADO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 10,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [
+            "Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada"
+          ],
+          "recomendacion_psicologa": "Descartar propuesta. Razón principal: Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada."
+        }
+      ]
+    },
+    {
+      "cliente_id": 9568,
+      "cliente_nombre": "Natalia Rodriguez",
+      "cliente_edad": 31,
+      "cliente_genero": "Mujer",
+      "cliente_ciudad": "Bogotá",
+      "perfil_resumen": {
+        "logistica": "Horario estándar",
+        "timing": "Matrimonio / Familia",
+        "hijos": false,
+        "vasectomia": false,
+        "finanzas": "Flexible / Equilibrado",
+        "conflicto": "Tiempo fuera / Reflexivo",
+        "autonomia": "Alta (Hiper-independiente)",
+        "ritmo_vital": "Moderada",
+        "polaridad": "Polaridad Tradicional (Liderazgo masculino / Receptividad femenina)"
+      },
+      "evaluaciones": [
+        {
+          "candidato_id": 5268,
+          "candidato_nombre": "APROBADO",
+          "candidato_edad": 27,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5269,
+          "candidato_nombre": "Eduardo Hernandez",
+          "candidato_edad": 30,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5272,
+          "candidato_nombre": "Juan Carlos Calderon",
+          "candidato_edad": 56,
+          "candidato_ciudad": "Mad",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5275,
+          "candidato_nombre": "Camilo Carvajal",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5279,
+          "candidato_nombre": "Santiago Carrillo",
+          "candidato_edad": 51,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5281,
+          "candidato_nombre": "Cesar Andres Mejia",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5284,
+          "candidato_nombre": "Camilo Garcia",
+          "candidato_edad": 27,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5285,
+          "candidato_nombre": "juan pablo perdomo",
+          "candidato_edad": 26,
+          "candidato_ciudad": "USA - gainesville",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5287,
+          "candidato_nombre": "Jaime Andres Alvarez",
+          "candidato_edad": 29,
+          "candidato_ciudad": "medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5288,
+          "candidato_nombre": "Juan Sebastian Martiez",
+          "candidato_edad": 33,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5289,
+          "candidato_nombre": "Juan Manuel Marques",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5291,
+          "candidato_nombre": "Ginna Margareth Niño",
+          "candidato_edad": 26,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5294,
+          "candidato_nombre": "Jhon Ortiz",
+          "candidato_edad": 30,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5297,
+          "candidato_nombre": "Vannesa Hernandez",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5299,
+          "candidato_nombre": "Daniel Santiago Martinez",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5300,
+          "candidato_nombre": "Juan David Ordoñez",
+          "candidato_edad": 22,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5304,
+          "candidato_nombre": "Oscar David Amador Ríos",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Barranquilla",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5307,
+          "candidato_nombre": "John Alexander Centeno Moreno",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5295,
+          "candidato_nombre": "Valery Hernandez",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 64,
+          "veredicto": "VIABLE CON RESERVAS",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 55,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos",
+            "Riesgo Gottman (Demanda-Retirada): Uno necesita espacio reflexivo y el otro es reactivo/inmediato"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Advertir previamente al cliente sobre: Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos. Agendar cita de bajo compromiso (café o almuerzo ligero)."
+        },
+        {
+          "candidato_id": 5302,
+          "candidato_nombre": "Kevin Santillana",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Florida",
+          "candidato_genero": "Hombre",
+          "score_global": 64,
+          "veredicto": "VIABLE CON RESERVAS",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 25,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos",
+            "Desfase de intención: Proyecto de matrimonio vs Dinámica casual sin afán"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Advertir previamente al cliente sobre: Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos. Agendar cita de bajo compromiso (café o almuerzo ligero)."
+        }
+      ]
+    },
+    {
+      "cliente_id": 12482,
+      "cliente_nombre": "Javier Lemus",
+      "cliente_edad": 38,
+      "cliente_genero": "Hombre",
+      "cliente_ciudad": "Zipaquirá",
+      "perfil_resumen": {
+        "logistica": "Régimen de rotación extrema o turnos de 12h",
+        "timing": "Relación Estable",
+        "hijos": true,
+        "vasectomia": true,
+        "finanzas": "Flexible / Equilibrado",
+        "conflicto": "Inmediato / Reactivo",
+        "autonomia": "Equilibrada",
+        "ritmo_vital": "Moderada",
+        "polaridad": "Polaridad Tradicional (Liderazgo masculino / Receptividad femenina)"
+      },
+      "evaluaciones": [
+        {
+          "candidato_id": 5270,
+          "candidato_nombre": "Luisa Godoy",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5271,
+          "candidato_nombre": "Luz Marina Toro Toro",
+          "candidato_edad": 49,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5274,
+          "candidato_nombre": "Laura Anchico",
+          "candidato_edad": 21,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5276,
+          "candidato_nombre": "Adriana Gomez",
+          "candidato_edad": 37,
+          "candidato_ciudad": "34 años- sg 3",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5280,
+          "candidato_nombre": "Sofia Cristancho",
+          "candidato_edad": 22,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5282,
+          "candidato_nombre": "Daniela Ortegon",
+          "candidato_edad": 20,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5283,
+          "candidato_nombre": "Lizeth Benítez",
+          "candidato_edad": 26,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5286,
+          "candidato_nombre": "Maria Alejandra Ramirez Perez",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5290,
+          "candidato_nombre": "Stefanny Gomez",
+          "candidato_edad": 26,
+          "candidato_ciudad": "tenjo",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5292,
+          "candidato_nombre": "Mathias Gomez",
+          "candidato_edad": 34,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5293,
+          "candidato_nombre": "Katherine Ramirez",
+          "candidato_edad": 31,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5296,
+          "candidato_nombre": "Emilith Yaneth Blanco Cabrera",
+          "candidato_edad": 23,
+          "candidato_ciudad": "Bisexual, bog, sg2, 23 años.",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5298,
+          "candidato_nombre": "Maria Gneco",
+          "candidato_edad": 29,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5301,
+          "candidato_nombre": "Sara Arboleda",
+          "candidato_edad": 24,
+          "candidato_ciudad": "yes no",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5303,
+          "candidato_nombre": "Camila Jimenez",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5305,
+          "candidato_nombre": "Ana Sofia Vargas",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5310,
+          "candidato_nombre": "Laura Robles",
+          "candidato_edad": 33,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5311,
+          "candidato_nombre": "Sandra Carolina Jimenez Fonseca",
+          "candidato_edad": 37,
+          "candidato_ciudad": "yes no",
+          "candidato_genero": "Mujer",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5273,
+          "candidato_nombre": "Manuela Ibañez",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 38,
+          "veredicto": "NO RECOMENDADO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 10,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [
+            "Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada"
+          ],
+          "recomendacion_psicologa": "Descartar propuesta. Razón principal: Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada."
+        },
+        {
+          "candidato_id": 5306,
+          "candidato_nombre": "Valeria Pajaro",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Barranquilla",
+          "candidato_genero": "Mujer",
+          "score_global": 38,
+          "veredicto": "NO RECOMENDADO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 10,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [
+            "Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada"
+          ],
+          "recomendacion_psicologa": "Descartar propuesta. Razón principal: Incompatibilidad biológica: Uno desea tener hijos y el otro tiene vasectomía cerrada."
+        }
+      ]
+    },
+    {
+      "cliente_id": 7502,
+      "cliente_nombre": "Andrea Rojas",
+      "cliente_edad": 37,
+      "cliente_genero": "Mujer",
+      "cliente_ciudad": "Bogotá",
+      "perfil_resumen": {
+        "logistica": "Custodia compartida semana de por medio",
+        "timing": "Matrimonio / Familia",
+        "hijos": true,
+        "vasectomia": false,
+        "finanzas": "Flexible / Equilibrado",
+        "conflicto": "Equilibrado",
+        "autonomia": "Equilibrada",
+        "ritmo_vital": "Moderada",
+        "polaridad": "Dinámica Igualitaria / Colaborativa"
+      },
+      "evaluaciones": [
+        {
+          "candidato_id": 5268,
+          "candidato_nombre": "APROBADO",
+          "candidato_edad": 27,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5269,
+          "candidato_nombre": "Eduardo Hernandez",
+          "candidato_edad": 30,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5272,
+          "candidato_nombre": "Juan Carlos Calderon",
+          "candidato_edad": 56,
+          "candidato_ciudad": "Mad",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5275,
+          "candidato_nombre": "Camilo Carvajal",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5279,
+          "candidato_nombre": "Santiago Carrillo",
+          "candidato_edad": 51,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5281,
+          "candidato_nombre": "Cesar Andres Mejia",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5284,
+          "candidato_nombre": "Camilo Garcia",
+          "candidato_edad": 27,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5285,
+          "candidato_nombre": "juan pablo perdomo",
+          "candidato_edad": 26,
+          "candidato_ciudad": "USA - gainesville",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5287,
+          "candidato_nombre": "Jaime Andres Alvarez",
+          "candidato_edad": 29,
+          "candidato_ciudad": "medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5288,
+          "candidato_nombre": "Juan Sebastian Martiez",
+          "candidato_edad": 33,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5289,
+          "candidato_nombre": "Juan Manuel Marques",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5291,
+          "candidato_nombre": "Ginna Margareth Niño",
+          "candidato_edad": 26,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5294,
+          "candidato_nombre": "Jhon Ortiz",
+          "candidato_edad": 30,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5295,
+          "candidato_nombre": "Valery Hernandez",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5297,
+          "candidato_nombre": "Vannesa Hernandez",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5299,
+          "candidato_nombre": "Daniel Santiago Martinez",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5300,
+          "candidato_nombre": "Juan David Ordoñez",
+          "candidato_edad": 22,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5304,
+          "candidato_nombre": "Oscar David Amador Ríos",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Barranquilla",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5307,
+          "candidato_nombre": "John Alexander Centeno Moreno",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5302,
+          "candidato_nombre": "Kevin Santillana",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Florida",
+          "candidato_genero": "Hombre",
+          "score_global": 64,
+          "veredicto": "VIABLE CON RESERVAS",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 25,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Desfase de intención: Proyecto de matrimonio vs Dinámica casual sin afán"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Advertir previamente al cliente sobre: Desfase de intención: Proyecto de matrimonio vs Dinámica casual sin afán. Agendar cita de bajo compromiso (café o almuerzo ligero)."
+        }
+      ]
+    },
+    {
+      "cliente_id": 12727,
+      "cliente_nombre": "Carlota Arias",
+      "cliente_edad": 39,
+      "cliente_genero": "Mujer",
+      "cliente_ciudad": "Bogotá",
+      "perfil_resumen": {
+        "logistica": "Régimen de rotación extrema o turnos de 12h",
+        "timing": "Matrimonio / Familia",
+        "hijos": false,
+        "vasectomia": false,
+        "finanzas": "Flexible / Equilibrado",
+        "conflicto": "Equilibrado",
+        "autonomia": "Equilibrada",
+        "ritmo_vital": "Moderada",
+        "polaridad": "Polaridad Tradicional (Liderazgo masculino / Receptividad femenina)"
+      },
+      "evaluaciones": [
+        {
+          "candidato_id": 5268,
+          "candidato_nombre": "APROBADO",
+          "candidato_edad": 27,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5269,
+          "candidato_nombre": "Eduardo Hernandez",
+          "candidato_edad": 30,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5272,
+          "candidato_nombre": "Juan Carlos Calderon",
+          "candidato_edad": 56,
+          "candidato_ciudad": "Mad",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5275,
+          "candidato_nombre": "Camilo Carvajal",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5279,
+          "candidato_nombre": "Santiago Carrillo",
+          "candidato_edad": 51,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5281,
+          "candidato_nombre": "Cesar Andres Mejia",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5284,
+          "candidato_nombre": "Camilo Garcia",
+          "candidato_edad": 27,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5285,
+          "candidato_nombre": "juan pablo perdomo",
+          "candidato_edad": 26,
+          "candidato_ciudad": "USA - gainesville",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5287,
+          "candidato_nombre": "Jaime Andres Alvarez",
+          "candidato_edad": 29,
+          "candidato_ciudad": "medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5288,
+          "candidato_nombre": "Juan Sebastian Martiez",
+          "candidato_edad": 33,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5289,
+          "candidato_nombre": "Juan Manuel Marques",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5291,
+          "candidato_nombre": "Ginna Margareth Niño",
+          "candidato_edad": 26,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5294,
+          "candidato_nombre": "Jhon Ortiz",
+          "candidato_edad": 30,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5295,
+          "candidato_nombre": "Valery Hernandez",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5297,
+          "candidato_nombre": "Vannesa Hernandez",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5299,
+          "candidato_nombre": "Daniel Santiago Martinez",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5300,
+          "candidato_nombre": "Juan David Ordoñez",
+          "candidato_edad": 22,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5304,
+          "candidato_nombre": "Oscar David Amador Ríos",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Barranquilla",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5307,
+          "candidato_nombre": "John Alexander Centeno Moreno",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Hombre",
+          "score_global": 84,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5302,
+          "candidato_nombre": "Kevin Santillana",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Florida",
+          "candidato_genero": "Hombre",
+          "score_global": 64,
+          "veredicto": "VIABLE CON RESERVAS",
+          "desglose_8_ejes": {
+            "1_logistica": 70,
+            "2_timing": 25,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 85,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [],
+          "puntos_friccion": [
+            "Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos",
+            "Desfase de intención: Proyecto de matrimonio vs Dinámica casual sin afán"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Advertir previamente al cliente sobre: Uno de los perfiles tiene régimen de trabajo por turnos o viajes extendidos. Agendar cita de bajo compromiso (café o almuerzo ligero)."
+        }
+      ]
+    },
+    {
+      "cliente_id": 12756,
+      "cliente_nombre": "Camila Motta",
+      "cliente_edad": 28,
+      "cliente_genero": "Mujer",
+      "cliente_ciudad": "Bogotá",
+      "perfil_resumen": {
+        "logistica": "Régimen de rotación extrema o turnos de 12h",
+        "timing": "Relación Estable",
+        "hijos": false,
+        "vasectomia": false,
+        "finanzas": "Flexible / Equilibrado",
+        "conflicto": "Equilibrado",
+        "autonomia": "Baja (Fusión / Mucha cercanía)",
+        "ritmo_vital": "Moderada",
+        "polaridad": "Dinámica Igualitaria / Colaborativa"
+      },
+      "evaluaciones": [
+        {
+          "candidato_id": 5270,
+          "candidato_nombre": "Luisa Godoy",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5271,
+          "candidato_nombre": "Luz Marina Toro Toro",
+          "candidato_edad": 49,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5273,
+          "candidato_nombre": "Manuela Ibañez",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5276,
+          "candidato_nombre": "Adriana Gomez",
+          "candidato_edad": 37,
+          "candidato_ciudad": "34 años- sg 3",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5280,
+          "candidato_nombre": "Sofia Cristancho",
+          "candidato_edad": 22,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5282,
+          "candidato_nombre": "Daniela Ortegon",
+          "candidato_edad": 20,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5283,
+          "candidato_nombre": "Lizeth Benítez",
+          "candidato_edad": 26,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5286,
+          "candidato_nombre": "Maria Alejandra Ramirez Perez",
+          "candidato_edad": 25,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5290,
+          "candidato_nombre": "Stefanny Gomez",
+          "candidato_edad": 26,
+          "candidato_ciudad": "tenjo",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5292,
+          "candidato_nombre": "Mathias Gomez",
+          "candidato_edad": 34,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5293,
+          "candidato_nombre": "Katherine Ramirez",
+          "candidato_edad": 31,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5296,
+          "candidato_nombre": "Emilith Yaneth Blanco Cabrera",
+          "candidato_edad": 23,
+          "candidato_ciudad": "Bisexual, bog, sg2, 23 años.",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5298,
+          "candidato_nombre": "Maria Gneco",
+          "candidato_edad": 29,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5301,
+          "candidato_nombre": "Sara Arboleda",
+          "candidato_edad": 24,
+          "candidato_ciudad": "yes no",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5303,
+          "candidato_nombre": "Camila Jimenez",
+          "candidato_edad": 32,
+          "candidato_ciudad": "Bogotá",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5305,
+          "candidato_nombre": "Ana Sofia Vargas",
+          "candidato_edad": 28,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5306,
+          "candidato_nombre": "Valeria Pajaro",
+          "candidato_edad": 24,
+          "candidato_ciudad": "Barranquilla",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5310,
+          "candidato_nombre": "Laura Robles",
+          "candidato_edad": 33,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5311,
+          "candidato_nombre": "Sandra Carolina Jimenez Fonseca",
+          "candidato_edad": 37,
+          "candidato_ciudad": "yes no",
+          "candidato_genero": "Mujer",
+          "score_global": 88,
+          "veredicto": "RECOMENDADO ALTO",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 85,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Match sólido y equilibrado. Sugerir cena o salida tranquila en lugar sin exceso de ruido para facilitar conversación profunda."
+        },
+        {
+          "candidato_id": 5274,
+          "candidato_nombre": "Laura Anchico",
+          "candidato_edad": 21,
+          "candidato_ciudad": "Medellín",
+          "candidato_genero": "Mujer",
+          "score_global": 64,
+          "veredicto": "VIABLE CON RESERVAS",
+          "desglose_8_ejes": {
+            "1_logistica": 90,
+            "2_timing": 90,
+            "3_axiologia": 90,
+            "4_conflicto": 85,
+            "5_autonomia": 50,
+            "6_ritmo_vital": 85,
+            "7_polaridad": 95,
+            "8_estetica": 85
+          },
+          "sinergias_fuertes": [
+            "Alineación en dinámica de roles: Dinámica Igualitaria / Colaborativa"
+          ],
+          "puntos_friccion": [
+            "Descalce de intimidad: Necesidad de hiper-independencia vs Búsqueda de atención/fusión constante"
+          ],
+          "deal_breakers": [],
+          "recomendacion_psicologa": "Advertir previamente al cliente sobre: Descalce de intimidad: Necesidad de hiper-independencia vs Búsqueda de atención/fusión constante. Agendar cita de bajo compromiso (café o almuerzo ligero)."
+        }
+      ]
+    }
+  ]
+}
