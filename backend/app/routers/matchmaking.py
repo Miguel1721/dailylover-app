@@ -5690,7 +5690,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
 
     models_to_try = [
         "meta/llama-3.2-11b-vision-instruct",
-        "meta/llama-3.1-8b-instruct",
+        "mistralai/mistral-large-2-instruct",
         "meta/llama-3.2-90b-vision-instruct"
     ]
 
@@ -5710,7 +5710,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             "max_tokens": 950
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=35.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=45.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -5720,15 +5720,15 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
                     _AI_MATCH_CACHE[cache_key] = res_json
                     return res_json
             elif resp.status_code == 429:
-                # Rate limit de NVIDIA: esperar 1.2s y reintentar con el siguiente modelo
-                await asyncio.sleep(1.2)
+                # Rate limit de NVIDIA: esperar 1.5s y reintentar con el siguiente modelo
+                await asyncio.sleep(1.5)
                 continue
             elif resp.status_code in (404, 410):
                 continue
             else:
                 print(f"[AI MATCH HTTP ERR] model={model} status={resp.status_code} text={resp.text[:100]}")
         except Exception as e:
-            print(f"[AI MATCH EXCEPTION] model={model} error={e}")
+            print(f"[AI MATCH EXCEPTION] model={model} error={type(e).__name__}: {repr(e)}")
             continue
 
     return None
@@ -6557,15 +6557,16 @@ async def find_candidate_matches_engine(
         should_close_client = False
         client_to_use = http_client
         if client_to_use is None:
-            client_to_use = httpx.AsyncClient(timeout=35.0)
+            client_to_use = httpx.AsyncClient(timeout=50.0)
             should_close_client = True
 
-        sem = asyncio.Semaphore(2)
+        sem = asyncio.Semaphore(1)
 
         async def _eval_with_sem(cand_item):
             if cand_item.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
                 return None
             async with sem:
+                await asyncio.sleep(0.3)
                 return await evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use)
 
         try:
