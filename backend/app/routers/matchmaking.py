@@ -5722,31 +5722,6 @@ async def find_candidate_matches_engine(
 
         cand_real_city = (r.city or infer_city_from_text(cand_bio_clean) or "").strip()
 
-        # =========================================================================
-        # REGLA DE EXCLUSIÓN DETERMINÍSTICA: TOLERANCIA CERO A PERFILES INCOMPLETOS
-        # Ninguna persona con datos críticos faltantes puede ser recomendada.
-        # =========================================================================
-        missing_critical_fields = []
-        if not cand_age or cand_age < 18:
-            missing_critical_fields.append("Edad no registrada")
-        if not cand_real_city or cand_real_city.lower() in ("no especificada", "none", "todas", ""):
-            missing_critical_fields.append("Ciudad de residencia no registrada")
-        if not r.gender or r.gender.strip().lower() in ("no especificado", "none", ""):
-            missing_critical_fields.append("Género no especificado")
-        if not cand_bio_clean or len(cand_bio_clean) < 25:
-            missing_critical_fields.append("Sin notas clínicas de entrevista")
-
-        if missing_critical_fields:
-            discarded_matches.append({
-                "candidate_user_id": r.id,
-                "candidate_name": cand_name,
-                "age": cand_age,
-                "occupation": cand_occ,
-                "reasons": [f"Perfil Incompleto (No Recomendable): Falta {', '.join(missing_critical_fields)}. Requiere contacto previo para completar ficha."],
-                "warnings": []
-            })
-            continue
-
         # 2. Extracción Pre-Match del Perfil Clínico 360° de Persona B (Candidata)
         cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
             user_id=r.id,
@@ -5964,28 +5939,80 @@ async def find_candidate_matches_engine(
         if cand_occ == "No especificado":
             missing_fields.append("Ocupación")
 
+        # -------------------------------------------------------------------------
+        # CÁLCULO DE PENALIZACIONES PROPORCIONALES POR CAMPOS INCOMPLETOS
+        # Asegura que una persona con datos vacíos nunca supere ni empate a una completa.
+        # -------------------------------------------------------------------------
+        penalizaciones = 0.0
+        total_tracked_fields = 8
+        filled_tracked_fields = 0
+
+        # 1. Notas de entrevista clínica (Peso: 18 pts)
+        if cand_bio_clean and len(cand_bio_clean) >= 25:
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 18.0
+            missing_fields.append("Notas Clínicas de Entrevista")
+
+        # 2. Preferencias declaradas (Peso: 10 pts)
+        if cand_sp_raw and (cand_sp_raw.get("min_age") or cand_sp_raw.get("what_searches") or cand_sp_raw.get("what_searches_in_partner")):
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 10.0
+            missing_fields.append("Qué busca en Pareja")
+
+        # 3. Edad verificada (Peso: 8 pts)
+        if cand_eval_age and cand_eval_age >= 18:
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 8.0
+            missing_fields.append("Edad")
+
+        # 4. Estatura (Peso: 4 pts)
+        if r.estatura and str(r.estatura).strip():
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 4.0
+            missing_fields.append("Estatura")
+
+        # 5. Nivel de actividad física / deporte (Peso: 4 pts)
+        if cand_act is not None:
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 4.0
+
+        # 6. Ocupación / Educación (Peso: 3 pts)
+        if cand_occ != "No especificado" or cand_edu is not None:
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 3.0
+
+        # 7. Estilo de apego (Peso: 3 pts)
+        if has_real_attachment:
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 3.0
+
+        # 8. Lenguaje del amor (Peso: 3 pts)
+        if cand_lang != "No especificado":
+            filled_tracked_fields += 1
+        else:
+            penalizaciones += 3.0
+
+        completeness_ratio = round(filled_tracked_fields / total_tracked_fields, 2)
+
         if max_possible_points >= 15.0:
             raw_percentage = (earned_points / max_possible_points) * 100.0
             coverage_ratio = min(1.0, max_possible_points / 100.0)
 
-            # Calibración clínica: Si faltan formularios clave (Grupo Social, Deporte, Educación),
-            # el puntaje preliminar se ajusta con una ponderación de certidumbre para no inflar
-            # a 91% lo que en realidad es un perfil con más del 50% de datos clínicos pendientes.
-            if coverage_ratio < 0.60:
-                # Cobertura preliminar (<60 pts evaluados): Rango calibrado de 45% a 74%
-                calibrated = 45.0 + (raw_percentage - 45.0) * (0.45 + 0.45 * coverage_ratio)
-                match_pct = int(min(74, max(45, round(calibrated))))
-            elif coverage_ratio < 0.80:
-                # Cobertura media (60-79 pts evaluados): Rango calibrado hasta 84%
-                calibrated = 50.0 + (raw_percentage - 50.0) * (0.60 + 0.40 * coverage_ratio)
-                match_pct = int(min(84, max(50, round(calibrated))))
-            else:
-                # Cobertura alta (>=80 pts evaluados con F1 y F2 completos): Rango completo hasta 95%
-                match_pct = int(min(95, max(45, round(raw_percentage))))
+            # Calibración clínica con penalización proporcional por datos faltantes
+            base_score = 45.0 + (raw_percentage - 45.0) * (0.50 + 0.50 * coverage_ratio)
+            penalized_score = base_score - penalizaciones
+            match_pct = int(min(95, max(20, round(penalized_score))))
         else:
-            match_pct = None
+            match_pct = max(20, int(round(40.0 - penalizaciones)))
 
-        datos_completos = (len(missing_fields) == 0)
+        datos_completos = (len(missing_fields) == 0 and completeness_ratio >= 0.85)
 
         # 6. Saldo de citas Persona B
         cand_plan = r.plan_tier or ""
@@ -6102,6 +6129,8 @@ async def find_candidate_matches_engine(
             "non_negotiables_source": cand_nn_source,
             "attachment_eval": attachment_eval,
             "datos_completos": datos_completos,
+            "completeness_ratio": completeness_ratio,
+            "penalizaciones": penalizaciones,
             "campos_faltantes": missing_fields,
             "campos_evaluados_pts": round(max_possible_points, 1),
             "saldo_citas": saldo_citas_b,
@@ -6175,6 +6204,7 @@ async def find_candidate_matches_engine(
         key=lambda x: (
             x["compatibility_pct"] is not None,
             x["compatibility_pct"] or 0,
+            x.get("completeness_ratio") or 0.0,
             x["dealbreakers_clean"],
             x["datos_completos"],
             x["user_id"]
@@ -6301,6 +6331,7 @@ async def find_candidate_matches_engine(
             key=lambda x: (
                 x["compatibility_pct"] is not None,
                 x["compatibility_pct"] or 0,
+                x.get("completeness_ratio") or 0.0,
                 x["dealbreakers_clean"],
                 x["datos_completos"],
                 x["user_id"]
@@ -6316,6 +6347,7 @@ async def find_candidate_matches_engine(
             key=lambda x: (
                 x["compatibility_pct"] is not None,
                 x["compatibility_pct"] or 0,
+                x.get("completeness_ratio") or 0.0,
                 x["dealbreakers_clean"],
                 x["datos_completos"],
                 x["user_id"]

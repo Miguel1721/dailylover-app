@@ -7,12 +7,140 @@ estructurado multidimensional ANTES de ejecutar el motor de matching.
 
 import re
 import json
+import unicodedata
 from typing import Dict, Any, List, Optional, Set
 
 def clean_text(text: Optional[str]) -> str:
     if not text:
         return ""
     return str(text).strip()
+
+def normalize_text_unaccent(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    t = unicodedata.normalize('NFD', str(text))
+    t = ''.join(c for c in t if unicodedata.category(c) != 'Mn')
+    return t.lower().strip()
+
+FEMALE_NAME_TOKENS = {
+    'maria', 'sofia', 'sara', 'daniela', 'laura', 'valentina', 'camila', 'alejandra',
+    'juliana', 'catalina', 'andrea', 'carolina', 'diana', 'natalia', 'paula', 'tatiana',
+    'amalia', 'sandra', 'claudia', 'ana', 'luisa', 'monica', 'marcela', 'adriana',
+    'patricia', 'valeria', 'gabriela', 'mariana', 'isabella', 'lucia', 'katherine',
+    'jessica', 'lina', 'silvia', 'vanessa', 'stephany', 'estefania', 'ingrid', 'leidy',
+    'yuli', 'viviana', 'ximena', 'melissa', 'elena', 'lorena', 'pilar', 'gloria',
+    'martha', 'beatriz', 'esperanza', 'rocio', 'manuela', 'veronica', 'angie', 'luz',
+    'johanna', 'paola', 'angela', 'karol', 'dayana', 'cindy', 'clara', 'mercedes',
+    'margarita', 'teresa', 'rosa', 'carmen', 'olga', 'cecilia', 'lorena'
+}
+
+MALE_NAME_TOKENS = {
+    'juan', 'carlos', 'diego', 'andres', 'pedro', 'luis', 'felipe', 'daniel', 'sebastian',
+    'jorge', 'pablo', 'alejandro', 'david', 'mateo', 'santiago', 'cristian', 'victor',
+    'gabriel', 'nicolas', 'camilo', 'miguel', 'fernando', 'ricardo', 'jose', 'manuel',
+    'rodrigo', 'mauricio', 'eduardo', 'gustavo', 'javier', 'julian', 'alberto', 'sergio',
+    'esteban', 'francisco', 'mario', 'oscar', 'cesar', 'leonardo', 'jaime', 'gonzalo',
+    'hector', 'hugo', 'ruben', 'samuel', 'alex', 'alexander', 'martin', 'lucas', 'tomas',
+    'rene', 'ivan', 'alvaro', 'guillermo', 'fabian', 'edwin', 'harold', 'german',
+    'antonio', 'jhon', 'raul', 'enrique', 'alfredo', 'alonso', 'edgar'
+}
+
+def infer_gender_from_name_and_bio(name: str, bio_notes: str = "") -> str:
+    """
+    Infiere heurísticamente el género de una persona a partir de su nombre de pila
+    y términos clave en sus notas clínicas de entrevista.
+    Retorna 'Mujer', 'Hombre' o 'No especificado'.
+    """
+    norm_name = normalize_text_unaccent(name)
+    tokens = [t for t in re.split(r'[^a-z]+', norm_name) if t]
+    if tokens:
+        first = tokens[0]
+        if first in FEMALE_NAME_TOKENS:
+            return "Mujer"
+        if first in MALE_NAME_TOKENS:
+            return "Hombre"
+        if len(tokens) > 1:
+            second = tokens[1]
+            if second in FEMALE_NAME_TOKENS and first not in MALE_NAME_TOKENS:
+                return "Mujer"
+            if second in MALE_NAME_TOKENS and first not in FEMALE_NAME_TOKENS:
+                return "Hombre"
+
+    if bio_notes:
+        norm_bio = normalize_text_unaccent(bio_notes)
+        if re.search(r'\b(una chica|la chica|una mujer|ella busca|ella es|chica querida|super parchada|soltera|graduada|abogada|ingeniera|psicologa|medica)\b', norm_bio):
+            return "Mujer"
+        if re.search(r'\b(un chico|el chico|un hombre|el busca|el es|chico querido|super parchado|soltero|graduado|abogado|ingeniero|psicologo|medico)\b', norm_bio):
+            return "Hombre"
+
+    return "No especificado"
+
+def infer_city_from_text(text: Optional[str]) -> Optional[str]:
+    """
+    Infiere la ciudad a partir de notas biográficas o texto libre.
+    Reconoce las principales ciudades y municipios metropolitanos de Colombia.
+    """
+    if not text:
+        return None
+    norm = normalize_text_unaccent(text)
+    # Área Metropolitana del Valle de Aburrá / Antioquia
+    if re.search(r'\b(medellin|itagui|itaguei|envigado|sabaneta|bello|la estrella|rionegro|poblado|laureles|belen|antioquia)\b', norm):
+        if "itagui" in norm or "itaguei" in norm:
+            return "Itagüí"
+        if "envigado" in norm:
+            return "Envigado"
+        return "Medellín"
+    # Bogotá D.C. y Sabana de Bogotá
+    if re.search(r'\b(bogota|cedritos|chapinero|usaquen|suba|chia|cajica|cota|soacha|engativa|colina|rosales|teusaquillo|cundinamarca)\b', norm):
+        if "chia" in norm:
+            return "Chía"
+        if "cajica" in norm:
+            return "Cajicá"
+        return "Bogotá"
+    # Cali y Valle del Cauca
+    if re.search(r'\b(cali|jamundi|yumbo|valle del cauca)\b', norm):
+        return "Cali"
+    # Barranquilla y Caribe
+    if re.search(r'\b(barranquilla|soledad|puerto colombia|atlantico)\b', norm):
+        return "Barranquilla"
+    if re.search(r'\b(cartagena|bolivar)\b', norm):
+        return "Cartagena"
+    # Santander
+    if re.search(r'\b(bucaramanga|floridablanca|piedecuesta|giron|santander)\b', norm):
+        return "Bucaramanga"
+    # Eje Cafetero
+    if re.search(r'\b(pereira|dosquebradas|risaralda)\b', norm):
+        return "Pereira"
+    if re.search(r'\b(manizales|caldas)\b', norm):
+        return "Manizales"
+    if re.search(r'\b(armenia|quindio)\b', norm):
+        return "Armenia"
+    return None
+
+def get_metro_cluster(city: Optional[str]) -> Optional[str]:
+    """
+    Normaliza una ciudad o municipio a su conglomerado metropolitano principal.
+    Permite emparejar personas de Medellín con Itagüí/Envigado, o Bogotá con Chía,
+    pero previene cruces de larga distancia (ej: Bogotá x Medellín o Cali x Bogotá).
+    """
+    if not city:
+        return None
+    c = normalize_text_unaccent(city)
+    if any(k in c for k in ["medellin", "itagui", "itaguei", "envigado", "sabaneta", "bello", "estrella", "rionegro", "poblado", "laureles"]):
+        return "medellin_metro"
+    if any(k in c for k in ["bogota", "chia", "cajica", "cota", "soacha", "zipaquira", "engativa", "suba", "cedritos", "chapinero", "colina", "usaquen"]):
+        return "bogota_metro"
+    if any(k in c for k in ["cali", "jamundi", "yumbo"]):
+        return "cali_metro"
+    if any(k in c for k in ["barranquilla", "soledad", "puerto colombia"]):
+        return "barranquilla_metro"
+    if any(k in c for k in ["cartagena"]):
+        return "cartagena_metro"
+    if any(k in c for k in ["bucaramanga", "floridablanca", "piedecuesta", "giron"]):
+        return "bucaramanga_metro"
+    if any(k in c for k in ["pereira", "manizales", "armenia", "dosquebradas"]):
+        return "eje_cafetero"
+    return c
 
 class ClinicalProfileExtractor:
     """
@@ -38,8 +166,9 @@ class ClinicalProfileExtractor:
         cs_notes = cs_notes or []
 
         # Consolidar todo el texto relevante para escaneo profundo
+        effective_bio = clean_text(bio_notes) or clean_text(profile_data.get("bio_notes", ""))
         all_text_blocks = [
-            clean_text(bio_notes),
+            effective_bio,
             clean_text(profile_data.get("difficult_notes", "")),
             " ".join([clean_text(o) for o in past_match_observations]),
             " ".join([clean_text(n) for n in client_notes]),
@@ -86,12 +215,61 @@ class ClinicalProfileExtractor:
             full_text=full_text,
         )
 
+        # Detección e inferencia de género robusta si no está registrado
+        raw_gender = (profile_data.get("gender") or "").strip()
+        if not raw_gender or raw_gender.lower() in ["no especificado", "none", ""]:
+            inferred_g = infer_gender_from_name_and_bio(name, bio_notes)
+            resolved_gender = inferred_g if inferred_g != "No especificado" else "No especificado"
+        else:
+            resolved_gender = raw_gender
+
+        # Detección e inferencia de ciudad
+        raw_city = (profile_data.get("city") or "").strip()
+        if not raw_city or raw_city.lower() in ["no especificado", "none", "todas", ""]:
+            inferred_c = infer_city_from_text(full_text)
+            resolved_city = inferred_c if inferred_c else "No especificada"
+        else:
+            resolved_city = raw_city
+
+        # Detección de edad propia
+        raw_age = profile_data.get("age")
+        if not raw_age:
+            m_a = re.search(r'\b(\d{2})\s*a[ñn]os\b', full_text, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', full_text, re.IGNORECASE)
+            if m_a:
+                try:
+                    raw_age = int(m_a.group(1))
+                except Exception:
+                    pass
+
+        # Rango de edad buscado (dealbreaker etario)
+        sp = profile_data.get("search_preferences") or {}
+        if isinstance(sp, str):
+            try:
+                sp = json.loads(sp)
+            except Exception:
+                sp = {}
+        min_age_pref = sp.get("min_age")
+        max_age_pref = sp.get("max_age")
+        if not min_age_pref and not max_age_pref:
+            m_r = re.search(r'(?:rango|busca|edad|edades)[:\s]*(\d{2})\s*(?:a|-)\s*(\d{2})', full_text, re.IGNORECASE)
+            if m_r:
+                try:
+                    min_age_pref = int(m_r.group(1))
+                    max_age_pref = int(m_r.group(2))
+                except Exception:
+                    pass
+            elif re.search(r'(?:no menores|no hombres menores|cero menores)', full_text, re.IGNORECASE):
+                if raw_age:
+                    min_age_pref = int(raw_age)
+
         return {
             "user_id": user_id,
             "name": name,
-            "city": profile_data.get("city") or "Bogotá",
-            "age": profile_data.get("age"),
-            "gender": profile_data.get("gender") or "No especificado",
+            "city": resolved_city,
+            "age": raw_age,
+            "min_age_pref": min_age_pref,
+            "max_age_pref": max_age_pref,
+            "gender": resolved_gender,
             "estatura": profile_data.get("estatura"),
             "occupation": profile_data.get("occupation") or cls._extract_occupation(full_text),
             "mascotas": mascotas,
@@ -139,12 +317,17 @@ class ClinicalProfileExtractor:
             text
         ))
 
+        datos_mascotas_verificados = bool(
+            rechaza_mascotas or ama_perros or tiene_perro or infaltable_perros or re.search(r"(gatos?|mascotas?|perros?|animales)", text)
+        )
+
         return {
             "ama_perros": ama_perros,
             "tiene_perro": tiene_perro,
             "infaltable_perros": infaltable_perros,
             "rechaza_mascotas": rechaza_mascotas,
             "tolera_mascotas": not rechaza_mascotas,
+            "datos_mascotas_verificados": datos_mascotas_verificados,
         }
 
     @classmethod
@@ -177,12 +360,24 @@ class ClinicalProfileExtractor:
             text
         ))
 
+        datos_hijos_verificados = bool(
+            has_children_explicit is not None 
+            or wants_children_explicit is not None 
+            or tiene_hijos 
+            or quiere_hijos 
+            or no_quiere_hijos 
+            or vasectomia 
+            or red_flag_hijos 
+            or re.search(r"(sin hijos|no tiene hijos|cero hijos)", text)
+        )
+
         return {
             "tiene_hijos": tiene_hijos,
             "quiere_hijos": quiere_hijos,
             "no_quiere_hijos": no_quiere_hijos,
             "vasectomia": vasectomia,
             "red_flag_hijos_en_pareja": red_flag_hijos,
+            "datos_hijos_verificados": datos_hijos_verificados,
         }
 
     @classmethod
@@ -200,12 +395,17 @@ class ClinicalProfileExtractor:
             text
         ))
 
+        no_fuma = bool(re.search(r"(no fuma|cero cigarrillo|no vapea|no consume nicotina|no fumo|cero tabaco)", text))
+        datos_sustancias_verificados = bool(fuma_cigarrillo or vapea or fuma_cannabis or no_fuma or rechaza_fumadores)
+
         return {
             "fuma_cigarrillo": fuma_cigarrillo,
             "vapea": vapea,
             "fuma_cannabis": fuma_cannabis,
             "consume_nicotina": fuma_cigarrillo or vapea,
             "rechaza_fumadores": rechaza_fumadores,
+            "no_fuma": no_fuma,
+            "datos_sustancias_verificados": datos_sustancias_verificados,
         }
 
     @classmethod
@@ -263,6 +463,7 @@ class ClinicalProfileExtractor:
             "codigo": codigo,
             "es_lesbiana": is_lesbiana,
             "es_gay": is_gay,
+            "es_bi": is_bi,
             "es_hetero": is_hetero and not (is_lesbiana or is_gay),
         }
 
@@ -497,52 +698,100 @@ class ClinicalProfileExtractor:
         m_a = p_a.get("mascotas", {})
         m_b = p_b.get("mascotas", {})
 
-        if (m_a.get("infaltable_perros") or m_a.get("ama_perros")) and m_b.get("rechaza_mascotas"):
-            reasons.append(
-                f"Incompatibilidad crítica en mascotas: {p_a.get('name')} exige fascinación por los perros/convive con perro, y {p_b.get('name')} declara que no le gustan las mascotas."
-            )
-        if (m_b.get("infaltable_perros") or m_b.get("ama_perros")) and m_a.get("rechaza_mascotas"):
-            reasons.append(
-                f"Incompatibilidad crítica en mascotas: {p_b.get('name')} exige fascinación por los perros/convive con perro, y {p_a.get('name')} declara que no le gustan las mascotas."
-            )
+        if (m_a.get("infaltable_perros") or m_a.get("ama_perros")):
+            if m_b.get("rechaza_mascotas"):
+                reasons.append(
+                    f"Incompatibilidad crítica en mascotas: {p_a.get('name')} exige fascinación por los perros/convive con perro, y {p_b.get('name')} declara que no le gustan las mascotas."
+                )
+            elif not m_b.get("datos_mascotas_verificados"):
+                reasons.append(
+                    f"Descarte por no-negociable no verificable: {p_a.get('name')} convive con perro y exige fascinación por los animales; la ficha de {p_b.get('name')} no tiene verificada su afinidad con mascotas."
+                )
 
-        # 2. REGLA ORIENTACIÓN SEXUAL
+        if m_a.get("rechaza_mascotas"):
+            if m_b.get("tiene_perro") or m_b.get("infaltable_perros"):
+                reasons.append(
+                    f"Incompatibilidad crítica en mascotas: {p_a.get('name')} rechaza convivir con animales y {p_b.get('name')} convive con mascotas/perros."
+                )
+
+        # 2. REGLA ORIENTACIÓN SEXUAL Y GÉNERO
         o_a = p_a.get("orientacion", {})
         o_b = p_b.get("orientacion", {})
         g_a = (p_a.get("gender") or "").lower()
         g_b = (p_b.get("gender") or "").lower()
 
-        if o_a.get("es_lesbiana") and "masc" in g_b:
+        # Si aún no tuvieran género especificado en profile_data, intentar inferirlo por el nombre
+        if not g_a or "no especificado" in g_a:
+            g_a = infer_gender_from_name_and_bio(p_a.get("name", "")).lower()
+        if not g_b or "no especificado" in g_b:
+            g_b = infer_gender_from_name_and_bio(p_b.get("name", "")).lower()
+
+        is_a_female = "muj" in g_a or "fem" in g_a
+        is_a_male = "homb" in g_a or "masc" in g_a
+        is_b_female = "muj" in g_b or "fem" in g_b
+        is_b_male = "homb" in g_b or "masc" in g_b
+
+        is_a_hetero = o_a.get("es_hetero") or o_a.get("codigo") == "hetero"
+        is_b_hetero = o_b.get("es_hetero") or o_b.get("codigo") == "hetero"
+
+        # Compatibilidad Heterosexual: rechazo absoluto de parejas del mismo sexo
+        if is_a_hetero:
+            if is_a_female and is_b_female:
+                reasons.append(f"Orientación incompatible: {p_a.get('name')} es mujer heterosexual (busca hombres) y {p_b.get('name')} es mujer.")
+            elif is_a_male and is_b_male:
+                reasons.append(f"Orientación incompatible: {p_a.get('name')} es hombre heterosexual (busca mujeres) y {p_b.get('name')} es hombre.")
+
+        if is_b_hetero:
+            if is_b_female and is_a_female and not any("es mujer" in r for r in reasons):
+                reasons.append(f"Orientación incompatible: {p_b.get('name')} es mujer heterosexual (busca hombres) y {p_a.get('name')} es mujer.")
+            elif is_b_male and is_a_male and not any("es hombre" in r for r in reasons):
+                reasons.append(f"Orientación incompatible: {p_b.get('name')} es hombre heterosexual (busca mujeres) y {p_a.get('name')} es hombre.")
+
+        # Cruce Hetero <-> Homosexual (Mujer Hetero + Hombre Gay, o Hombre Hetero + Mujer Lesbiana)
+        if is_a_hetero and is_a_female and o_b.get("es_gay"):
+            reasons.append(f"Orientación incompatible: {p_a.get('name')} es mujer heterosexual y {p_b.get('name')} es gay.")
+        if is_b_hetero and is_b_female and o_a.get("es_gay"):
+            reasons.append(f"Orientación incompatible: {p_b.get('name')} es mujer heterosexual y {p_a.get('name')} es gay.")
+        if is_a_hetero and is_a_male and o_b.get("es_lesbiana"):
+            reasons.append(f"Orientación incompatible: {p_a.get('name')} es hombre heterosexual y {p_b.get('name')} es lesbiana.")
+        if is_b_hetero and is_b_male and o_a.get("es_lesbiana"):
+            reasons.append(f"Orientación incompatible: {p_b.get('name')} es hombre heterosexual y {p_a.get('name')} es lesbiana.")
+
+        # Reglas Homosexuales existentes
+        if o_a.get("es_lesbiana") and is_b_male:
             reasons.append(f"Orientación incompatible: {p_a.get('name')} es lesbiana y {p_b.get('name')} es hombre.")
-        if o_b.get("es_lesbiana") and "masc" in g_a:
+        if o_b.get("es_lesbiana") and is_a_male:
             reasons.append(f"Orientación incompatible: {p_b.get('name')} es lesbiana y {p_a.get('name')} es hombre.")
-        if o_a.get("es_gay") and "fem" in g_b:
+        if o_a.get("es_gay") and is_b_female:
             reasons.append(f"Orientación incompatible: {p_a.get('name')} es gay y {p_b.get('name')} es mujer.")
-        if o_b.get("es_gay") and "fem" in g_a:
+        if o_b.get("es_gay") and is_a_female:
             reasons.append(f"Orientación incompatible: {p_b.get('name')} es gay y {p_a.get('name')} es mujer.")
 
         # 3. REGLA HIJOS & VASECTOMÍA
         h_a = p_a.get("hijos", {})
         h_b = p_b.get("hijos", {})
 
-        if h_a.get("red_flag_hijos_en_pareja") and h_b.get("tiene_hijos"):
-            reasons.append(f"Fricción de hijos: {p_a.get('name')} tiene como red flag parejas con hijos, y {p_b.get('name')} tiene hijos.")
-        if h_b.get("red_flag_hijos_en_pareja") and h_a.get("tiene_hijos"):
-            reasons.append(f"Fricción de hijos: {p_b.get('name')} tiene como red flag parejas con hijos, y {p_a.get('name')} tiene hijos.")
+        if h_a.get("red_flag_hijos_en_pareja"):
+            if h_b.get("tiene_hijos"):
+                reasons.append(f"Fricción de hijos: {p_a.get('name')} tiene como red flag parejas con hijos, y {p_b.get('name')} tiene hijos.")
+            elif not h_b.get("datos_hijos_verificados"):
+                reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} tiene como innegociable no salir con parejas que ya tengan hijos, y la ficha de {p_b.get('name')} no especifica si tiene hijos.")
 
-        if h_a.get("quiere_hijos") and (h_b.get("vasectomia") or h_b.get("no_quiere_hijos")):
-            reasons.append(f"Planes familiares opuestos: {p_a.get('name')} desea tener hijos y {p_b.get('name')} tiene vasectomía / no desea hijos.")
-        if h_b.get("quiere_hijos") and (h_a.get("vasectomia") or h_a.get("no_quiere_hijos")):
-            reasons.append(f"Planes familiares opuestos: {p_b.get('name')} desea tener hijos y {p_a.get('name')} tiene vasectomía / no desea hijos.")
+        if h_a.get("quiere_hijos"):
+            if h_b.get("vasectomia") or h_b.get("no_quiere_hijos"):
+                reasons.append(f"Planes familiares opuestos: {p_a.get('name')} desea tener hijos y {p_b.get('name')} tiene vasectomía / no desea hijos.")
+            elif not h_b.get("datos_hijos_verificados"):
+                reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} tiene como innegociable formar una familia con hijos, y la ficha de {p_b.get('name')} no tiene registrada su postura frente a tener hijos.")
 
         # 4. REGLA VICIOS / FUMADORES
         v_a = p_a.get("vicios", {})
         v_b = p_b.get("vicios", {})
 
-        if v_a.get("rechaza_fumadores") and v_b.get("consume_nicotina"):
-            reasons.append(f"Red flag de sustancias: {p_a.get('name')} rechaza fumadores/vicios y {p_b.get('name')} fuma/vapea.")
-        if v_b.get("rechaza_fumadores") and v_a.get("consume_nicotina"):
-            reasons.append(f"Red flag de sustancias: {p_b.get('name')} rechaza fumadores/vicios y {p_a.get('name')} fuma/vapea.")
+        if v_a.get("rechaza_fumadores"):
+            if v_b.get("consume_nicotina"):
+                reasons.append(f"Red flag de sustancias: {p_a.get('name')} rechaza fumadores/vicios y {p_b.get('name')} fuma/vapea.")
+            elif not v_b.get("datos_sustancias_verificados"):
+                reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} exige pareja no fumadora / sin vicios, y la ficha de {p_b.get('name')} no cuenta con datos verificados sobre consumo de sustancias.")
 
         # 5. REGLA CITAS PREVIAS REGISTRADAS
         hist_a = p_a.get("historial", {}).get("past_matched_names", [])
@@ -553,7 +802,58 @@ class ClinicalProfileExtractor:
         if any(name_b_lower in past.lower() for past in hist_a) or any(name_a_lower in past.lower() for past in hist_b):
             reasons.append(f"Historial previo: {p_a.get('name')} y {p_b.get('name')} ya tuvieron una cita o asignación previa en Daily Lover.")
 
-        # 6. ADVERTENCIAS CLÍNICAS (No descartan totalmente pero se alertan)
+        # 6. REGLA CIUDAD / TERRITORIO
+        city_a = p_a.get("city") or ""
+        city_b = p_b.get("city") or ""
+        cluster_a = get_metro_cluster(city_a) if city_a and city_a.lower() != "todas" else None
+        cluster_b = get_metro_cluster(city_b) if city_b and city_b.lower() != "todas" else None
+
+        if cluster_a:
+            if not city_b or city_b.strip().lower() in ("no especificada", "none", ""):
+                reasons.append(
+                    f"Descarte por no-negociable no verificable: {p_a.get('name')} reside en {city_a} y {p_b.get('name')} no tiene ciudad de residencia registrada para coordinar cita presencial."
+                )
+            elif cluster_b and cluster_a != cluster_b:
+                reasons.append(
+                    f"Incompatibilidad de ciudad: {p_a.get('name')} reside en {city_a} y {p_b.get('name')} reside en {city_b}. Matches interciudades no permitidos."
+                )
+
+        # 7. REGLA RANGO DE EDAD BIDIRECCIONAL
+        age_a = p_a.get("age")
+        age_b = p_b.get("age")
+        min_pref_a = p_a.get("min_age_pref")
+        max_pref_a = p_a.get("max_age_pref")
+        min_pref_b = p_b.get("min_age_pref")
+        max_pref_b = p_b.get("max_age_pref")
+
+        # Validación de Persona B evaluada contra los límites de Persona A
+        if min_pref_a is not None or max_pref_a is not None:
+            if not age_b or age_b == 0:
+                reasons.append(
+                    f"Descarte por no-negociable no verificable: {p_a.get('name')} exige rango de edad específico ({min_pref_a or 18} a {max_pref_a or 99} años), y {p_b.get('name')} no tiene edad registrada."
+                )
+            else:
+                if min_pref_a is not None and age_b < min_pref_a:
+                    reasons.append(
+                        f"Incompatibilidad de edad: {p_a.get('name')} exige pareja de mínimo {min_pref_a} años, y {p_b.get('name')} tiene {age_b} años."
+                    )
+                elif max_pref_a is not None and age_b > max_pref_a:
+                    reasons.append(
+                        f"Incompatibilidad de edad: {p_a.get('name')} exige pareja de máximo {max_pref_a} años, y {p_b.get('name')} tiene {age_b} años."
+                    )
+
+        # Validación de Persona A evaluada contra los límites de Persona B
+        if age_a is not None:
+            if min_pref_b is not None and age_a < min_pref_b:
+                reasons.append(
+                    f"Incompatibilidad de edad: {p_b.get('name')} exige pareja de mínimo {min_pref_b} años, y {p_a.get('name')} tiene {age_a} años."
+                )
+            elif max_pref_b is not None and age_a > max_pref_b:
+                reasons.append(
+                    f"Incompatibilidad de edad: {p_b.get('name')} exige pareja de máximo {max_pref_b} años, y {p_a.get('name')} tiene {age_a} años."
+                )
+
+        # 8. ADVERTENCIAS CLÍNICAS (No descartan totalmente pero se alertan)
         c_a = p_a.get("creencias", {})
         c_b = p_b.get("creencias", {})
         if c_a.get("exige_creyente") and c_b.get("ateo"):
