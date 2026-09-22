@@ -26,9 +26,13 @@ export default function RefundsQueue() {
   const [stripeReason, setStripeReason] = useState('requested_by_customer')
   const [stripeNotes, setStripeNotes] = useState('')
   const [stripeProcessing, setStripeProcessing] = useState(false)
+  const [refundType, setRefundType] = useState('full') // 'full' | 'partial'
+  const [partialPercentage, setPartialPercentage] = useState(50)
 
   const handleOpenStripeModal = (item) => {
     setStripeRefundTarget(item)
+    setRefundType('full')
+    setPartialPercentage(50)
     setStripeAmount(item.stripe_amount ? String(item.stripe_amount) : '')
     setStripeReason('requested_by_customer')
     setStripeNotes('')
@@ -48,6 +52,8 @@ export default function RefundsQueue() {
         },
         body: JSON.stringify({
           payment_intent_id: stripeRefundTarget.stripe_payment_intent_id || undefined,
+          refund_type: refundType,
+          percentage: refundType === 'partial' ? partialPercentage : undefined,
           amount: stripeAmount ? parseFloat(stripeAmount) : undefined,
           reason: stripeReason,
           notes: stripeNotes || undefined
@@ -581,6 +587,85 @@ export default function RefundsQueue() {
                 )}
               </div>
 
+              {/* Selector de Tipo de Reembolso: Total vs Parcial */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>
+                  Modalidad de Reembolso *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRefundType('full')
+                      setStripeAmount(stripeRefundTarget.stripe_amount ? String(stripeRefundTarget.stripe_amount) : '')
+                    }}
+                    style={{
+                      padding: '10px', borderRadius: 8,
+                      border: refundType === 'full' ? '2px solid #7c3aed' : '1px solid var(--border-color)',
+                      background: refundType === 'full' ? 'rgba(124, 58, 237, 0.15)' : 'var(--bg-base)',
+                      color: refundType === 'full' ? '#c084fc' : 'var(--text-secondary)',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center'
+                    }}
+                  >
+                    <div>Reembolso Total (100%)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Devolver todo el pago</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRefundType('partial')
+                      const base = stripeRefundTarget.stripe_amount || 65000
+                      setStripeAmount(String(Math.round((base * partialPercentage) / 100)))
+                    }}
+                    style={{
+                      padding: '10px', borderRadius: 8,
+                      border: refundType === 'partial' ? '2px solid #7c3aed' : '1px solid var(--border-color)',
+                      background: refundType === 'partial' ? 'rgba(124, 58, 237, 0.15)' : 'var(--bg-base)',
+                      color: refundType === 'partial' ? '#c084fc' : 'var(--text-secondary)',
+                      fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'center'
+                    }}
+                  >
+                    <div>Reembolso Parcial</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Devolución proporcional</div>
+                  </button>
+                </div>
+
+                {refundType === 'partial' && (
+                  <div style={{ background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.25)', borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#c084fc', marginBottom: 8 }}>
+                      Atajos rápidos de porcentaje:
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                      {[
+                        { pct: 50, label: '50% (1 cita usada)' },
+                        { pct: 30, label: '30%' },
+                        { pct: 20, label: '20%' },
+                        { pct: 75, label: '75%' }
+                      ].map(item => (
+                        <button
+                          key={item.pct}
+                          type="button"
+                          onClick={() => {
+                            setPartialPercentage(item.pct)
+                            const base = stripeRefundTarget.stripe_amount || 65000
+                            setStripeAmount(String(Math.round((base * item.pct) / 100)))
+                          }}
+                          style={{
+                            padding: '6px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                            background: partialPercentage === item.pct ? '#7c3aed' : 'var(--bg-base)',
+                            color: partialPercentage === item.pct ? '#fff' : 'var(--text-secondary)',
+                            border: '1px solid var(--border-color)', cursor: 'pointer'
+                          }}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                   Monto a Reembolsar (COP) *
@@ -590,16 +675,43 @@ export default function RefundsQueue() {
                   required
                   placeholder={stripeRefundTarget.stripe_amount ? String(stripeRefundTarget.stripe_amount) : "Ej: 65000"}
                   value={stripeAmount}
-                  onChange={e => setStripeAmount(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value
+                    setStripeAmount(val)
+                    if (stripeRefundTarget.stripe_amount && parseFloat(val) > 0) {
+                      const computedPct = Math.round((parseFloat(val) / stripeRefundTarget.stripe_amount) * 100)
+                      setPartialPercentage(computedPct)
+                    }
+                  }}
                   style={{
                     width: '100%', padding: '10px 12px', borderRadius: 6,
                     background: 'var(--bg-base)', border: '1px solid var(--border-color)',
                     color: 'var(--text-primary)', fontSize: 14, fontWeight: 600
                   }}
                 />
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                  {stripeRefundTarget.stripe_amount ? `Monto cobrado originalmente: $${stripeRefundTarget.stripe_amount.toLocaleString()} COP` : 'Si se deja el valor original, se reembolsa el 100%.'}
-                </div>
+                
+                {/* Desglose financiero en vivo */}
+                {stripeRefundTarget.stripe_amount && (
+                  <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 6, background: 'var(--bg-card)', border: '1px solid var(--border-color)', fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Monto cobrado originalmente:</span>
+                      <strong style={{ color: 'var(--text-primary)' }}>${stripeRefundTarget.stripe_amount.toLocaleString()} COP</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ color: '#f87171' }}>Monto a devolver al cliente:</span>
+                      <strong style={{ color: '#f87171' }}>
+                        -${(parseFloat(stripeAmount) || 0).toLocaleString()} COP 
+                        {stripeAmount && stripeRefundTarget.stripe_amount ? ` (${Math.round((parseFloat(stripeAmount) / stripeRefundTarget.stripe_amount) * 100)}%)` : ''}
+                      </strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: 4 }}>
+                      <span style={{ color: '#4ade80' }}>Saldo retenido en Daily Lover:</span>
+                      <strong style={{ color: '#4ade80' }}>
+                        ${Math.max(0, stripeRefundTarget.stripe_amount - (parseFloat(stripeAmount) || 0)).toLocaleString()} COP
+                      </strong>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

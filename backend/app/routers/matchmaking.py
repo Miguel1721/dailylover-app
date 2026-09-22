@@ -1680,6 +1680,8 @@ async def get_refunds_queue(
 class StripeProcessRefundRequest(BaseModel):
     payment_intent_id: Optional[str] = None
     amount: Optional[float] = None
+    percentage: Optional[float] = None  # ej. 50.0, 30.0, etc.
+    refund_type: Optional[str] = "full"  # "full" | "partial"
     reason: Optional[str] = "requested_by_customer"
     notes: Optional[str] = None
 
@@ -1692,13 +1694,12 @@ async def process_stripe_refund(
 ):
     """
     Acción exclusiva de Lina / Finanzas:
-    Ejecuta un reembolso automático en vivo a través de la API de Stripe
+    Ejecuta un reembolso automático (total o parcial) a través de la API de Stripe
     usando el Payment Intent (pi_...) asociado al cliente.
+    Incluye modo de prueba seguro para simulación sin tocar dinero real.
     """
     settings = get_settings()
     stripe_key = settings.stripe_api_key or os.environ.get("STRIPE_API_KEY", "")
-    if not stripe_key:
-        raise HTTPException(status_code=500, detail="STRIPE_API_KEY no configurada en el servidor")
 
     # 1. Obtener match y usuario
     res = await db.execute(text("""
@@ -1735,46 +1736,102 @@ async def process_stripe_refund(
             detail=f"No se encontró un Payment Intent (pi_...) asociado a '{row.person_a}'. Puedes ingresarlo manualmente en el formulario."
         )
 
-    # 2. Llamada directa a Stripe API
-    import urllib.request, urllib.parse, base64
-    auth_h = "Basic " + base64.b64encode(f"{stripe_key}:".encode()).decode()
+    # Cálculo y validación del monto (Total vs Parcial)
+    paid_total = float(row.paid_amount) if (row and row.paid_amount is not None) else None
+    refund_amt_to_charge = None
+
+    if req and req.refund_type == "partial":
+        if req.amount and req.amount > 0:
+            refund_amt_to_charge = float(req.amount)
+        elif req.percentage and req.percentage > 0 and paid_total:
+            refund_amt_to_charge = round((paid_total * float(req.percentage)) / 100.0, 2)
+    elif req and req.amount and req.amount > 0:
+        refund_amt_to_charge = float(req.amount)
+
+    if refund_amt_to_charge and paid_total and refund_amt_to_charge > paid_total:
+        raise HTTPException(
+            status_code=400,
+            detail=f"El monto a reembolsar (${refund_amt_to_charge:,.0f}) no puede ser mayor al total cobrado (${paid_total:,.0f})."
+        )
+
+    is_partial = bool(refund_amt_to_charge and paid_total and refund_amt_to_charge < (paid_total - 1.0))
+    if req and req.refund_type == "partial":
+        is_partial = True
+
+    # 2. Identificación de simulación segura vs llamada real a Stripe API
+    is_simulation = pi_to_use.startswith("pi_test_") or pi_to_use.startswith("pi_simulated_") or pi_to_use == "pi_mock_testing"
 
     refund_payload = {
         "payment_intent": pi_to_use,
         "reason": (req.reason if req and req.reason else "requested_by_customer"),
         "metadata[match_id]": str(match_id),
         "metadata[person_a]": row.person_a,
-        "metadata[processed_by]": "Lina CRM"
+        "metadata[processed_by]": "Lina CRM",
+        "metadata[refund_type]": "partial" if is_partial else "full"
     }
-    if req and req.amount and req.amount > 0:
-        refund_payload["amount"] = str(int(req.amount * 100))
+    if req and req.percentage:
+        refund_payload["metadata[percentage]"] = str(req.percentage)
 
-    encoded_data = urllib.parse.urlencode(refund_payload).encode("utf-8")
-    req_stripe = urllib.request.Request(
-        "https://api.stripe.com/v1/refunds",
-        data=encoded_data,
-        headers={"Authorization": auth_h, "Content-Type": "application/x-www-form-urlencoded"}
-    )
+    if refund_amt_to_charge:
+        refund_payload["amount"] = str(int(round(refund_amt_to_charge * 100)))
 
-    try:
-        with urllib.request.urlopen(req_stripe) as resp_stripe:
-            stripe_res = json.loads(resp_stripe.read().decode())
-    except urllib.error.HTTPError as err:
-        err_body = err.read().decode()
+    if is_simulation:
+        import uuid
+        sim_amt_cents = int(round(refund_amt_to_charge * 100)) if refund_amt_to_charge else int(round((paid_total or 65000.0) * 100))
+        sim_curr = (row.currency or "cop").lower()
+        stripe_res = {
+            "id": f"re_test_sim_{uuid.uuid4().hex[:12]}",
+            "object": "refund",
+            "amount": sim_amt_cents,
+            "currency": sim_curr,
+            "payment_intent": pi_to_use,
+            "status": "succeeded",
+            "reason": refund_payload["reason"],
+            "metadata": {
+                "match_id": str(match_id),
+                "person_a": row.person_a,
+                "processed_by": "Lina CRM",
+                "refund_type": "partial" if is_partial else "full",
+                "simulation": "true",
+                "percentage": str(req.percentage) if req and req.percentage else "N/A"
+            }
+        }
+    else:
+        if not stripe_key:
+            raise HTTPException(status_code=500, detail="STRIPE_API_KEY no configurada en el servidor")
+
+        import urllib.request, urllib.parse, base64
+        auth_h = "Basic " + base64.b64encode(f"{stripe_key}:".encode()).decode()
+
+        encoded_data = urllib.parse.urlencode(refund_payload).encode("utf-8")
+        req_stripe = urllib.request.Request(
+            "https://api.stripe.com/v1/refunds",
+            data=encoded_data,
+            headers={"Authorization": auth_h, "Content-Type": "application/x-www-form-urlencoded"}
+        )
+
         try:
-            err_json = json.loads(err_body)
-            err_msg = err_json.get("error", {}).get("message", err_body)
-        except Exception:
-            err_msg = err_body
-        raise HTTPException(status_code=400, detail=f"Error en Stripe: {err_msg}")
+            with urllib.request.urlopen(req_stripe) as resp_stripe:
+                stripe_res = json.loads(resp_stripe.read().decode())
+        except urllib.error.HTTPError as err:
+            err_body = err.read().decode()
+            try:
+                err_json = json.loads(err_body)
+                err_msg = err_json.get("error", {}).get("message", err_body)
+            except Exception:
+                err_msg = err_body
+            raise HTTPException(status_code=400, detail=f"Error en Stripe: {err_msg}")
 
     refund_id = stripe_res.get("id")
     refund_status = stripe_res.get("status")
     refunded_amt = float(stripe_res.get("amount", 0)) / 100.0
     refund_curr = stripe_res.get("currency", "cop").upper()
 
+    payment_status_to_set = "partially_refunded" if is_partial else "refunded"
+    refund_label = "PARCIAL" if is_partial else "TOTAL"
+
     # 3. Actualizar DB
-    obs_extra = f" | [REFUND AUTOMÁTICO STRIPE: {refund_id} - ${refunded_amt:,.0f} {refund_curr} ({refund_status})]"
+    obs_extra = f" | [REFUND {refund_label} STRIPE: {refund_id} - ${refunded_amt:,.0f} {refund_curr} ({refund_status})]"
     if req and req.notes:
         obs_extra += f" - Nota: {req.notes}"
 
@@ -1785,7 +1842,7 @@ async def process_stripe_refund(
         SET status = 'REFUND DONE',
             stripe_payment_intent_id = :pi,
             stripe_refund_id = :ref_id,
-            refund_amount = :amt,
+            refund_amount = COALESCE(refund_amount, 0) + :amt,
             observations = :obs,
             updated_at = NOW()
         WHERE id = :id
@@ -1799,12 +1856,17 @@ async def process_stripe_refund(
 
     await db.execute(text("""
         UPDATE stripe_payments
-        SET payment_status = 'refunded',
-            amount_refunded = :amt,
+        SET payment_status = :status,
+            amount_refunded = COALESCE(amount_refunded, 0) + :amt,
             stripe_refund_id = :ref_id,
             updated_at = NOW()
         WHERE stripe_payment_intent_id = :pi
-    """), {"amt": refunded_amt, "ref_id": refund_id, "pi": pi_to_use})
+    """), {
+        "status": payment_status_to_set,
+        "amt": refunded_amt,
+        "ref_id": refund_id,
+        "pi": pi_to_use
+    })
 
     await db.execute(text("""
         INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
@@ -1812,37 +1874,45 @@ async def process_stripe_refund(
     """), {
         "name": row.person_a,
         "mid": match_id,
-        "details": f"Reembolso automático procesado en Stripe por Lina. ID: {refund_id}, Monto: ${refunded_amt:,.0f} {refund_curr}"
+        "details": f"Reembolso {refund_label.lower()} procesado en Stripe por Lina. ID: {refund_id}, Monto: ${refunded_amt:,.0f} {refund_curr}" + (" (SIMULACIÓN)" if is_simulation else "")
     })
 
     await db.commit()
 
     # 4. Notificar a Google Sheets
-    try:
-        from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
-        tab_name = get_canonical_tab_name(row.psychologist_name)
-        asyncio.create_task(notify_apps_script_status_change(
-            tab=tab_name,
-            match_id=match_id,
-            slot_number=getattr(row, 'slot_number', 1) or 1,
-            new_status="REFUND DONE",
-            role="servicio_al_cliente",
-            person_a=row.person_a,
-            person_b=row.person_b,
-            person_a_crm_id=getattr(row, 'person_a_crm_id', None),
-            person_b_crm_id=getattr(row, 'person_b_crm_id', None),
-            extra_notes=f"Reembolso automático Stripe: {refund_id}"
-        ))
-    except Exception as e:
-        logger.warning(f"Error al notificar Apps Script: {e}")
+    if not is_simulation:
+        try:
+            from app.services.google_sheets import notify_apps_script_status_change, get_canonical_tab_name
+            tab_name = get_canonical_tab_name(row.psychologist_name)
+            asyncio.create_task(notify_apps_script_status_change(
+                tab=tab_name,
+                match_id=match_id,
+                slot_number=getattr(row, 'slot_number', 1) or 1,
+                new_status="REFUND DONE",
+                role="servicio_al_cliente",
+                person_a=row.person_a,
+                person_b=row.person_b,
+                person_a_crm_id=getattr(row, 'person_a_crm_id', None),
+                person_b_crm_id=getattr(row, 'person_b_crm_id', None),
+                extra_notes=f"Reembolso {refund_label.lower()} Stripe: {refund_id}"
+            ))
+        except Exception as e:
+            logger.warning(f"Error al notificar Apps Script: {e}")
+
+    retained = max(0.0, paid_total - refunded_amt) if paid_total else 0.0
 
     return {
         "status": "success",
+        "is_simulation": is_simulation,
         "refund_id": refund_id,
         "refund_status": refund_status,
+        "refund_type": "partial" if is_partial else "full",
         "amount_refunded": refunded_amt,
+        "paid_total": paid_total,
         "currency": refund_curr,
-        "message": f"✓ Reembolso de ${refunded_amt:,.0f} {refund_curr} procesado exitosamente en Stripe (ID: {refund_id})."
+        "retained_balance": retained,
+        "stripe_response": stripe_res,
+        "message": f"✓ Reembolso {refund_label.lower()} de ${refunded_amt:,.0f} {refund_curr} procesado exitosamente {'(SIMULADO)' if is_simulation else 'en Stripe'} (ID: {refund_id})."
     }
 
 
