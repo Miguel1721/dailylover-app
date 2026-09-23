@@ -278,7 +278,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             user_id=user_row.id if user_row else None
                         )
                     )
-                    logger.info(f"💌 Notificación VIP 650k disparada por correo a contact.mariasalinas@gmail.com para '{c_final_name}'")
+                    logger.info(f"💌 Notificación VIP 650k disparada por correo a maria.salinas@dailylover.org para '{c_final_name}'")
 
                     # 2. Correo de bienvenida al cliente con huecos disponibles para selección
                     if c_final_email and "@" in c_final_email:

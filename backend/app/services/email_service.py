@@ -14,7 +14,7 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "no-reply@dailylover.app")
 APP_BASE_URL = os.getenv("APP_BASE_URL", "https://daily-lover.agentesia.cloud")
-OWNER_EMAIL = os.getenv("OWNER_EMAIL", "contact.mariasalinas@gmail.com")
+OWNER_EMAIL = os.getenv("OWNER_EMAIL", "maria.salinas@dailylover.org")
 
 def send_email_html(to_email: str, subject: str, html_content: str) -> bool:
     """Envía un correo electrónico HTML o simula el envío si no hay credenciales SMTP."""
@@ -189,7 +189,7 @@ def build_vip_650k_notification_html(
 
         <div class="footer">
           Notificación automática del sistema Daily Lover Matchmaking.<br>
-          Enviado a contact.mariasalinas@gmail.com
+          Enviado a {OWNER_EMAIL}
         </div>
       </div>
     </body>
@@ -206,7 +206,7 @@ def send_vip_650k_alert_to_owner(
     user_id: Optional[int] = None
 ) -> bool:
     """Envía la alerta inmediata del pago de 650k al correo de la dueña (María Salinas)."""
-    to_owner = "contact.mariasalinas@gmail.com"
+    to_owner = OWNER_EMAIL
     subject = f"🌹 NUEVO PAGO PLAN VIP $650.000 COP — Entrevista Requerida: {customer_name}"
     html = build_vip_650k_notification_html(
         customer_name=customer_name,

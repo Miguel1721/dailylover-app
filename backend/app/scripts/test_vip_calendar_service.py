@@ -3,6 +3,7 @@ Unit test suite for VIP 650k Third-Party Calendar Service & Booking Flow.
 """
 
 import unittest
+import zoneinfo
 from datetime import datetime, timedelta
 from app.services.google_calendar_service import (
     calculate_available_vip_slots,
@@ -23,7 +24,8 @@ class TestVipCalendarService(unittest.TestCase):
         self.assertGreaterEqual(len(slots), 3)
         self.assertLessEqual(len(slots), 5)
 
-        now = datetime.now()
+        tz_cot = zoneinfo.ZoneInfo("America/Bogota")
+        now = datetime.now(tz_cot).replace(tzinfo=None)
         min_allowed_dt = now + timedelta(hours=47)  # pequeña holgura para segundos
 
         for s in slots:

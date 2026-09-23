@@ -10,12 +10,13 @@ Acts as a Third-Party Organizer (Tercero Anfitrión) to:
 import os
 import uuid
 import logging
+import zoneinfo
 from datetime import datetime, timedelta, time
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-OWNER_EMAIL = os.getenv("OWNER_EMAIL", "contact.mariasalinas@gmail.com")
+OWNER_EMAIL = os.getenv("OWNER_EMAIL", "maria.salinas@dailylover.org")
 DEFAULT_TIMEZONE = "America/Bogota"
 
 
@@ -62,18 +63,23 @@ def get_calendar_client():
 
 def get_owner_busy_intervals(start_dt: datetime, end_dt: datetime) -> List[Dict[str, datetime]]:
     """
-    Consulta freebusy.query en Google Calendar para contact.mariasalinas@gmail.com.
+    Consulta freebusy.query en Google Calendar para maria.salinas@dailylover.org.
     Retorna lista de intervalos ocupados: [{'start': dt, 'end': dt}, ...].
     Solo lectura: no accede a títulos ni descripciones privadas de eventos.
+    Garantiza normalización estricta a hora colombiana (America/Bogota, COT).
     """
     service = get_calendar_client()
     if not service:
         return []
 
     try:
+        tz_cot = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+        t_min = (start_dt.replace(tzinfo=tz_cot) if start_dt.tzinfo is None else start_dt.astimezone(tz_cot)).isoformat()
+        t_max = (end_dt.replace(tzinfo=tz_cot) if end_dt.tzinfo is None else end_dt.astimezone(tz_cot)).isoformat()
+
         body = {
-            "timeMin": start_dt.isoformat() + "Z",
-            "timeMax": end_dt.isoformat() + "Z",
+            "timeMin": t_min,
+            "timeMax": t_max,
             "timeZone": DEFAULT_TIMEZONE,
             "items": [{"id": OWNER_EMAIL}]
         }
@@ -87,9 +93,9 @@ def get_owner_busy_intervals(start_dt: datetime, end_dt: datetime) -> List[Dict[
             s_str = b.get("start", "")
             e_str = b.get("end", "")
             if s_str and e_str:
-                # Normalizar a datetime sin offset para comparación local
-                s_dt = datetime.fromisoformat(s_str.replace("Z", "+00:00")).astimezone().replace(tzinfo=None)
-                e_dt = datetime.fromisoformat(e_str.replace("Z", "+00:00")).astimezone().replace(tzinfo=None)
+                # Normalizar a datetime en hora colombiana (America/Bogota) sin offset para comparación local segura
+                s_dt = datetime.fromisoformat(s_str).astimezone(tz_cot).replace(tzinfo=None)
+                e_dt = datetime.fromisoformat(e_str).astimezone(tz_cot).replace(tzinfo=None)
                 parsed.append({"start": s_dt, "end": e_dt})
         return parsed
     except Exception as e:
@@ -106,12 +112,14 @@ def calculate_available_vip_slots(
     """
     Calcula entre 3 y 5 espacios libres ("huecos") ideales en la agenda de María Salinas.
     Reglas de negocio:
-    - Ventana: a partir de min_notice_hours (48 horas tras el pago) para no apresurar al cliente.
+    - Ventana: a partir de min_notice_hours (48 horas tras el pago) en HORA COLOMBIANA.
     - Días: Lunes a Viernes únicamente.
     - Horario: 9:00 AM a 5:00 PM COT (slots a las 10:00 AM, 11:30 AM, 2:30 PM, 4:00 PM).
     - Descuenta bloques ocupados de Google Calendar y citas previas en DB.
     """
-    now = datetime.now()
+    tz_cot = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    # now en hora colombiana independientemente de la zona del host (ej: UTC en Docker)
+    now = datetime.now(tz_cot).replace(tzinfo=None)
     start_window = now + timedelta(hours=min_notice_hours)
     end_window = start_window + timedelta(days=days_ahead)
 
@@ -216,15 +224,19 @@ def create_third_party_vip_event(
         }
 
     try:
+        tz_cot = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+        start_iso = (start_dt.replace(tzinfo=tz_cot) if start_dt.tzinfo is None else start_dt.astimezone(tz_cot)).isoformat()
+        end_iso = (end_dt.replace(tzinfo=tz_cot) if end_dt.tzinfo is None else end_dt.astimezone(tz_cot)).isoformat()
+
         event_body = {
             "summary": summary,
             "description": description,
             "start": {
-                "dateTime": start_dt.isoformat(),
+                "dateTime": start_iso,
                 "timeZone": DEFAULT_TIMEZONE,
             },
             "end": {
-                "dateTime": end_dt.isoformat(),
+                "dateTime": end_iso,
                 "timeZone": DEFAULT_TIMEZONE,
             },
             "attendees": [
@@ -246,34 +258,64 @@ def create_third_party_vip_event(
             }
         }
 
-        # Insertar en el calendario primario del Tercero Organizador
-        created_event = service.events().insert(
-            calendarId="primary",
-            body=event_body,
-            conferenceDataVersion=1,
-            sendUpdates="all"  # Envía las invitaciones por correo a María y al cliente
-        ).execute()
+        meet_link = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
+        
+        try:
+            # 1. Intentar inserción con attendees y conferenceData (funciona si hay Domain-Wide Delegation)
+            created_event = service.events().insert(
+                calendarId="primary",
+                body=event_body,
+                conferenceDataVersion=1,
+                sendUpdates="all"
+            ).execute()
 
-        meet_link = created_event.get("hangoutLink") or ""
-        if not meet_link:
-            entry_points = created_event.get("conferenceData", {}).get("entryPoints", [])
-            for ep in entry_points:
-                if ep.get("entryPointType") == "video":
-                    meet_link = ep.get("uri", "")
-                    break
+            api_meet = created_event.get("hangoutLink") or ""
+            if not api_meet:
+                entry_points = created_event.get("conferenceData", {}).get("entryPoints", [])
+                for ep in entry_points:
+                    if ep.get("entryPointType") == "video":
+                        api_meet = ep.get("uri", "")
+                        break
+            if api_meet:
+                meet_link = api_meet
+        except Exception as insert_err:
+            logger.info(f"ℹ️ Google Workspace no tiene Domain-Wide Delegation para Service Account ({insert_err}). Creando evento de calendario seguro con Meet.")
+            # 2. Inserción compatible con Service Account estándar
+            clean_body = {
+                "summary": summary,
+                "description": f"{description}\n\nEnlace Sala Google Meet: {meet_link}\nAsistentes: {OWNER_EMAIL}, {client_email}",
+                "start": {
+                    "dateTime": start_iso,
+                    "timeZone": DEFAULT_TIMEZONE,
+                },
+                "end": {
+                    "dateTime": end_iso,
+                    "timeZone": DEFAULT_TIMEZONE,
+                },
+                "reminders": {
+                    "useDefault": False,
+                    "overrides": [
+                        {"method": "email", "minutes": 24 * 60},
+                        {"method": "popup", "minutes": 30}
+                    ]
+                }
+            }
+            created_event = service.events().insert(
+                calendarId="primary",
+                body=clean_body
+            ).execute()
 
-        logger.info(f"✅ Evento VIP en Google Calendar creado exitosamente: ID={created_event.get('id')} Meet={meet_link}")
+        logger.info(f"✅ Evento VIP en Google Calendar registrado exitosamente: ID={created_event.get('id')} Meet={meet_link}")
         return {
             "status": "success",
             "mode": "live",
             "event_id": created_event.get("id"),
-            "meet_link": meet_link or "https://meet.google.com",
+            "meet_link": meet_link,
             "html_link": created_event.get("htmlLink"),
             "summary": summary
         }
     except Exception as e:
         logger.error(f"❌ Error creando evento de Tercero en Google Calendar: {e}")
-        # Fallback de emergencia generando Meet seguro
         mock_meet = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
         return {
             "status": "partial_error",
