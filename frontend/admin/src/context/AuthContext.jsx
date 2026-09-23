@@ -8,7 +8,8 @@ export const ADMIN_EMAILS = [
   'mariapaula@dailylover.com',
   'admin@dailylover.co',
   'admin@dailylover.com',
-  'miguel.lozano1408@gmail.com'
+  'miguel.lozano1408@gmail.com',
+  'linamcastanedaa@gmail.com'
 ]
 
 export const ADMIN_ROLES = [
