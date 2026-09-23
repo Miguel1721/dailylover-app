@@ -80,7 +80,7 @@ class OctagonalMatchEvaluator:
 
         # ─── CAPA 1: CIMIENTOS DUROS ─────────────────────────────────────────────
         # Eje 1: Logística y Distancia Real
-        score_logistica, fricciones_log, kill_switches_log, sinergias_log = cls._eval_logistica(
+        score_logistica, fricciones_log, kill_switches_log, datos_logisticos = cls._eval_logistica(
             c_ejes["1_logistica"], k_ejes["1_logistica"], c_meta, k_meta
         )
         dealbreakers_activos.extend(kill_switches_log)
@@ -123,12 +123,12 @@ class OctagonalMatchEvaluator:
         score_estetica, fricciones_est = cls._eval_estetica(c_ejes["8_estetica"], k_ejes["8_estetica"])
         puntos_friccion.extend(fricciones_est)
 
-        # ─── REBALANCEO CLÍNICO DE SINERGIAS (SUSTANCIA ARRIBA, LOGÍSTICA AL FONDO) ─
+        # ─── REBALANCEO CLÍNICO DE SINERGIAS (SUSTANCIA ARRIBA, LOGÍSTICA SEPARADA) ─
         sinergias_fuertes.extend(sinergias_ax)   # Axiología / Hijos / Visión de vida
         sinergias_fuertes.extend(sinergias_pol)  # Polaridad y roles
         sinergias_fuertes.extend(sinergias_rit)  # Ritmo vital y estilo de vida
         sinergias_fuertes.extend(sinergias_tim)  # Timing generacional
-        sinergias_fuertes.extend(sinergias_log)  # Viabilidad logística secundaria
+        # NOTA: Coincidencia geográfica se excluye de sinergias_fuertes y se expone en datos_logisticos
 
         # ─── PRINCIPIO DEL ESLABÓN DÉBIL & SCORING JERÁRQUICO ────────────────────
         score_capa1_cimientos = (score_logistica * 0.35 + score_timing * 0.30 + score_axiologia * 0.35)
@@ -145,8 +145,8 @@ class OctagonalMatchEvaluator:
             veredicto = "VIABLE CON RESERVAS"
         else:
             global_score = int(
-                (score_capa1_cimientos * 0.45) +
-                (score_capa2_convivencia * 0.35) +
+                (score_capa1_cimientos * 0.35) +
+                (score_capa2_convivencia * 0.45) +
                 (score_capa3_deseo * 0.20)
             )
             # Solo es RECOMENDADO ALTO si alcanza >= 80% y tiene coherencia clínica
@@ -170,6 +170,7 @@ class OctagonalMatchEvaluator:
             "deal_breakers": dealbreakers_activos,
             "puntos_friccion": puntos_friccion,
             "sinergias_fuertes": sinergias_fuertes,
+            "datos_logisticos": datos_logisticos,
             "recomendacion_psicologa": cls._generar_guia_cita(veredicto, dealbreakers_activos, puntos_friccion)
         }
 
@@ -206,7 +207,7 @@ class OctagonalMatchEvaluator:
         score = 80
         fricciones = []
         dealbreakers = []
-        sinergias = []
+        datos_logisticos = []
 
         # 1. Turnos y movilidad extrema
         if c.get("profesion_alta_movilidad") and k.get("profesion_alta_movilidad"):
@@ -228,7 +229,7 @@ class OctagonalMatchEvaluator:
             if city_c and city_k:
                 if city_c == city_k:
                     score += 10
-                    sinergias.append(f"Coincidencia geográfica local en {c_meta.get('city') or k_meta.get('city')}")
+                    datos_logisticos.append(f"Coincidencia geográfica local en {c_meta.get('city') or k_meta.get('city')}")
                 else:
                     cluster_c = get_metro_cluster(city_c)
                     cluster_k = get_metro_cluster(city_k)
@@ -236,7 +237,7 @@ class OctagonalMatchEvaluator:
 
                     if same_cluster:
                         score += 5
-                        sinergias.append(f"Cercanía geográfica metropolitana: {c_meta.get('city')} y {k_meta.get('city')}")
+                        datos_logisticos.append(f"Cercanía geográfica metropolitana: {c_meta.get('city')} y {k_meta.get('city')}")
                     else:
                         tiene_viaje = bool(
                             c.get("disposicion_viajar") or k.get("disposicion_viajar") or
@@ -258,7 +259,7 @@ class OctagonalMatchEvaluator:
                             score -= 20
                             fricciones.append(f"Distancia intermunicipal con disposición de viaje: {c_meta.get('city')} vs {k_meta.get('city')} (requiere coordinar fechas de visita)")
 
-        return max(10, min(95, score)), fricciones, dealbreakers, sinergias
+        return max(10, min(95, score)), fricciones, dealbreakers, datos_logisticos
 
     @classmethod
     def _eval_timing(cls, c: dict, k: dict, c_meta: dict = None, k_meta: dict = None) -> Tuple[int, List[str], List[str], List[str]]:
@@ -441,6 +442,7 @@ class OctagonalMatchEvaluator:
             "deal_breakers": [razon_bloqueo],
             "puntos_friccion": [razon_bloqueo],
             "sinergias_fuertes": [],
+            "datos_logisticos": [],
             "recomendacion_psicologa": f"No presentar este match: {razon_bloqueo}."
         }
 
