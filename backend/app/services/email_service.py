@@ -50,10 +50,42 @@ def send_email_html(to_email: str, subject: str, html_content: str) -> bool:
         return False
 
 
-def build_feedback_email_html(user_name: str, partner_name: str, match_id: int, user_id: int) -> str:
-    """Construye la plantilla HTML del correo para evaluación post-cita obligatoria."""
-    feedback_link = f"{APP_BASE_URL}/evaluacion-cita?match_id={match_id}&user_id={user_id}"
+TEST_SAFE_FEEDBACK_EMAIL = os.getenv("TEST_SAFE_FEEDBACK_EMAIL", "agente.sti.col@gmail.com")
+
+def build_feedback_email_html(
+    user_name: str,
+    partner_name: str,
+    match_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    cal_id: Optional[int] = None,
+    venue: str = "",
+    city: str = "",
+    date_time_str: str = "",
+    simulation_mode: bool = True,
+    real_user_email: str = ""
+) -> str:
+    """Construye la plantilla HTML del correo para evaluación post-cita con soporte de modo seguro."""
+    params = []
+    if match_id:
+        params.append(f"match_id={match_id}")
+    if user_id:
+        params.append(f"user_id={user_id}")
+    if cal_id:
+        params.append(f"cal_id={cal_id}")
+    query_str = f"?{'&'.join(params)}" if params else ""
+    feedback_link = f"{APP_BASE_URL}/admin/evaluacion-cita{query_str}"
     
+    simulation_banner = ""
+    if simulation_mode:
+        simulation_banner = f"""
+        <div style="background-color: rgba(212, 175, 55, 0.15); border: 1.5px dashed #D4AF37; border-radius: 10px; padding: 14px 18px; margin-bottom: 22px; color: #FFF; font-size: 13px; line-height: 1.5;">
+          <strong style="color: #FFD700; font-size: 14px;">⚠️ MODO PILOTO DE PRUEBA ACTIVO (Seguridad):</strong><br/>
+          Este correo fue generado por el despachador automático para el cliente: <strong>{user_name}</strong> (<code>{real_user_email or 'Sin correo en perfil'}</code>).<br/>
+          Encuentro: Con <strong>{partner_name}</strong> {f'en {venue} ({city})' if venue else ''} {f'· {date_time_str}' if date_time_str else ''}.<br/>
+          <em>(El envío real a clientes está deshabilitado temporalmente; este mensaje fue despachado a <code>{TEST_SAFE_FEEDBACK_EMAIL}</code> para validación).</em>
+        </div>
+        """
+
     return f"""
     <!DOCTYPE html>
     <html lang="es">
@@ -80,39 +112,90 @@ def build_feedback_email_html(user_name: str, partner_name: str, match_id: int, 
           <div class="subtitle">Acompañamiento Clínico & Matchmaking Humano</div>
         </div>
 
+        {simulation_banner}
+
         <div class="content">
           <p>Hola <strong>{user_name}</strong>,</p>
           <p>Esperamos que tu reciente encuentro con <strong>{partner_name}</strong> haya sido una experiencia enriquecedora.</p>
           
           <div class="alert-box">
-            📌 <strong>REQUISITO OBLIGATORIO DE MATCHMAKING:</strong> Para mantener activo tu perfil y continuar recibiendo nuevas propuestas de candidatos en el sistema, es obligatorio completar la retroalimentación de esta cita.
+            📌 <strong>RETROALIMENTACIÓN DE TU DATE:</strong> Para el equipo de psicología y matchmaking de Daily Lover es fundamental conocer cómo te sentiste antes, durante y después del encuentro, para afinar tus criterios y desbloquear tus siguientes propuestas de matching.
           </div>
 
           <p>Nos interesa conocer tu opinión honesta sobre:</p>
           <ul>
-            <li>El ambiente y la experiencia en el sitio.</li>
-            <li>La puntualidad y química con la persona.</li>
-            <li>Si deseas agendar una segunda cita o ajustar tus criterios de búsqueda.</li>
+            <li>El ambiente y la experiencia en el restaurante{f' ({venue})' if venue else ''}.</li>
+            <li>La puntualidad y la química con <strong>{partner_name}</strong>.</li>
+            <li>Si deseas una segunda cita o afinar las preferencias de tu perfil.</li>
           </ul>
 
           <div class="btn-container">
-            <a href="{feedback_link}" class="btn">⭐ Evaluar Cita & Continuar en Matches</a>
+            <a href="{feedback_link}" class="btn" style="color: #ffffff !important;">⭐ Calificar mi Cita con {partner_name}</a>
           </div>
 
           <p style="font-size: 12px; color: #9A8A8D; text-align: center;">
-            Si el botón no funciona, copia y pega el siguiente enlace en tu navegador:<br>
+            Si el botón no abre directamente, copia y pega este enlace en tu navegador:<br>
             <a href="{feedback_link}" style="color: #FF5A36;">{feedback_link}</a>
           </p>
         </div>
 
         <div class="footer">
           © 2026 Daily Lover App. Todos los derechos reservados.<br>
-          Bogotá & Medellín, Colombia.
+          Bogotá, Medellín & Principales Ciudades, Colombia.
         </div>
       </div>
     </body>
     </html>
     """
+
+
+def send_automated_feedback_email(
+    user_name: str,
+    real_user_email: str,
+    partner_name: str,
+    match_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    cal_id: Optional[int] = None,
+    date_time_str: str = "",
+    venue: str = "",
+    city: str = "",
+    simulation_mode: bool = True
+) -> Dict[str, Any]:
+    """
+    Despacha el correo de evaluación post-cita.
+    En modo simulación (default=True):
+    - El destinatario físico SMTP es SIEMPRE agente.sti.col@gmail.com
+    - El asunto y cuerpo dejan constancia transparente de para quién estaba configurado
+    """
+    to_email = TEST_SAFE_FEEDBACK_EMAIL if simulation_mode else (real_user_email or TEST_SAFE_FEEDBACK_EMAIL)
+    if simulation_mode:
+        subject = f"[TEST FEEDBACK] Para: {user_name} ({real_user_email or 'Sin correo'}) — ¿Cómo estuvo tu date con {partner_name}? ⭐"
+    else:
+        subject = f"¿Cómo estuvo tu date con {partner_name}? ⭐ Cuéntanos tu experiencia — Daily Lover"
+
+    html = build_feedback_email_html(
+        user_name=user_name,
+        partner_name=partner_name,
+        match_id=match_id,
+        user_id=user_id,
+        cal_id=cal_id,
+        venue=venue,
+        city=city,
+        date_time_str=date_time_str,
+        simulation_mode=simulation_mode,
+        real_user_email=real_user_email
+    )
+
+    success = send_email_html(to_email, subject, html)
+    return {
+        "success": success,
+        "recipient": to_email,
+        "configured_for_email": real_user_email,
+        "client_name": user_name,
+        "partner_name": partner_name,
+        "simulation_mode": simulation_mode
+    }
+
 
 
 def build_vip_650k_notification_html(

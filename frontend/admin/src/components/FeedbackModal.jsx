@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Star, Heart, X, CheckCircle, MessageSquare } from 'lucide-react'
+import { Star, Heart, X, CheckCircle, MessageSquare, Mail, Send } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
@@ -43,11 +43,42 @@ export default function FeedbackModal({ item, onClose, onSuccess }) {
   const [feedbackEl, setFeedbackEl] = useState('')
   const [generalNotes, setGeneralNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailMsg, setEmailMsg] = useState('')
   const [error, setError] = useState('')
 
   if (!item) return null
 
   const calId = item.calendar_id || item.id
+
+  const handleSendTestEmail = async () => {
+    setSendingEmail(true)
+    setEmailMsg('')
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/calendar/${calId}/send-feedback-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          simulation_mode: true,
+          target_override_email: 'agente.sti.col@gmail.com'
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setEmailMsg(data.message || 'Correo de feedback de prueba enviado con éxito a agente.sti.col@gmail.com')
+        if (onSuccess) onSuccess('Correo enviado a agente.sti.col@gmail.com')
+      } else {
+        setError(data.detail || 'Error al enviar correo de prueba')
+      }
+    } catch (err) {
+      setError('Error de conexión al enviar correo')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -137,6 +168,74 @@ export default function FeedbackModal({ item, onClose, onSuccess }) {
             {error}
           </div>
         )}
+
+        {/* Banner de Automatización de Correo de Feedback Post-Cita (Modo Seguro Piloto) */}
+        <div style={{
+          background: 'rgba(59, 130, 246, 0.08)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
+          borderRadius: 10,
+          padding: '12px 14px',
+          marginBottom: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Mail size={16} style={{ color: '#60A5FA' }} />
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: '#60A5FA' }}>
+                Automatización Correo Post-Cita (Modo Piloto Seguro)
+              </span>
+            </div>
+            {item.feedback_email_sent_at ? (
+              <span style={{ fontSize: 10.5, color: '#10B981', fontWeight: 700, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 8px', borderRadius: 4 }}>
+                ✉️ Despachado {new Date(item.feedback_email_sent_at).toLocaleDateString()}
+              </span>
+            ) : (
+              <span style={{ fontSize: 10.5, color: '#F59E0B', fontWeight: 700, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', padding: '2px 8px', borderRadius: 4 }}>
+                ⏳ Programado para la mañana siguiente
+              </span>
+            )}
+          </div>
+
+          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+            Este correo permite que <strong>{item.person_a}</strong> y <strong>{item.person_b}</strong> califiquen su cita de forma autónoma.
+            En esta fase piloto, el despacho físico va a <strong>agente.sti.col@gmail.com</strong> para verificar los enlaces y formato sin impactar al cliente.
+          </p>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, paddingTop: 4, borderTop: '1px solid rgba(59, 130, 246, 0.15)' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              Destino en pruebas: <code style={{ color: '#93C5FD' }}>agente.sti.col@gmail.com</code>
+            </div>
+            <button
+              type="button"
+              onClick={handleSendTestEmail}
+              disabled={sendingEmail}
+              style={{
+                background: '#3B82F6',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 6,
+                padding: '6px 12px',
+                fontSize: 11.5,
+                fontWeight: 700,
+                cursor: sendingEmail ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <Send size={12} className={sendingEmail ? 'animate-spin' : ''} />
+              {sendingEmail ? 'Enviando prueba...' : 'Disparar Correo de Prueba'}
+            </button>
+          </div>
+
+          {emailMsg && (
+            <div style={{ fontSize: 11.5, color: '#10B981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <CheckCircle size={14} /> {emailMsg}
+            </div>
+          )}
+        </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {/* Calificaciones por Estrellas */}

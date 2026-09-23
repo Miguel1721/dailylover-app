@@ -9,6 +9,7 @@ export default function EvaluacionCita() {
   const [searchParams] = useSearchParams()
   const matchId = searchParams.get('match_id')
   const userId = searchParams.get('user_id')
+  const calId = searchParams.get('cal_id')
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -23,8 +24,13 @@ export default function EvaluacionCita() {
   const [comments, setComments] = useState('')
 
   useEffect(() => {
-    if (matchId && userId) {
-      fetch(`${API}/api/v1/client/feedback-form?match_id=${matchId}&user_id=${userId}`)
+    if (matchId || calId) {
+      const q = new URLSearchParams()
+      if (matchId) q.append('match_id', matchId)
+      if (userId) q.append('user_id', userId)
+      if (calId) q.append('cal_id', calId)
+
+      fetch(`${API}/api/v1/client/feedback-form?${q.toString()}`)
         .then(r => {
           if (!r.ok) throw new Error('Cita no encontrada o expirada')
           return r.json()
@@ -41,7 +47,7 @@ export default function EvaluacionCita() {
       setError('Enlace de evaluación no válido o faltan parámetros')
       setLoading(false)
     }
-  }, [matchId, userId])
+  }, [matchId, userId, calId])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -52,8 +58,9 @@ export default function EvaluacionCita() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        match_id: parseInt(matchId),
-        user_id: parseInt(userId),
+        match_id: matchId ? parseInt(matchId) : null,
+        cal_id: calId ? parseInt(calId) : null,
+        user_id: userId ? parseInt(userId) : null,
         venue_rating: venueRating,
         punctuality_rating: punctualityRating,
         chemistry_rating: chemistryRating,

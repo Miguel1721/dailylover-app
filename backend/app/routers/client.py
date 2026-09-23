@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -379,39 +379,88 @@ async def book_interview(
 # ─── EVALUACIÓN POST-CITA OBLIGATORIA ───
 
 class PostMatchFeedbackSubmit(BaseModel):
-    match_id: int
-    user_id: int
+    match_id: Optional[int] = None
+    cal_id: Optional[int] = None
+    user_id: Optional[int] = None
     venue_rating: int = 5
     punctuality_rating: int = 5
     chemistry_rating: int = 5
     would_repeat: bool = True
-    feedback_comments: str = None
+    feedback_comments: Optional[str] = None
 
 @router.get("/feedback-form")
-async def get_feedback_form_data(match_id: int, user_id: int, db: AsyncSession = Depends(get_db)):
+async def get_feedback_form_data(
+    match_id: Optional[int] = Query(None),
+    user_id: Optional[int] = Query(None),
+    cal_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
     """Obtiene los detalles del encuentro para cargar el formulario de evaluación post-cita."""
-    match_res = await db.execute(text("""
-        SELECT id, person_a, person_b, match_date, venue, matchmaker, status, user_id_a, user_id_b,
-               feedback_completed_a, feedback_completed_b
-        FROM historical_matches WHERE id = :mid
-    """), {"mid": match_id})
-    m = match_res.fetchone()
-    if not m:
-        raise HTTPException(status_code=404, detail="Cita no encontrada")
+    # 1. Intentar buscar en scheduled_dates si hay cal_id o si match_id apunta a calendar
+    cal_row = None
+    if cal_id:
+        c_res = await db.execute(text("SELECT id, match_id, person_a, person_b, date_time, venue, city, had_date, feedback FROM scheduled_dates WHERE id = :cid"), {"cid": cal_id})
+        cal_row = c_res.fetchone()
+    elif match_id:
+        c_res = await db.execute(text("SELECT id, match_id, person_a, person_b, date_time, venue, city, had_date, feedback FROM scheduled_dates WHERE id = :mid OR match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+        cal_row = c_res.fetchone()
 
-    user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid"), {"uid": user_id})
-    u = user_res.fetchone()
-    if not u:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # 2. Intentar buscar en historical_matches
+    m = None
+    if match_id:
+        match_res = await db.execute(text("""
+            SELECT id, person_a, person_b, match_date, venue, matchmaker, status, user_id_a, user_id_b,
+                   feedback_completed_a, feedback_completed_b
+            FROM historical_matches WHERE id = :mid
+        """), {"mid": match_id})
+        m = match_res.fetchone()
 
-    evaluator_name = u.name.strip()
+    if not m and not cal_row:
+        raise HTTPException(status_code=404, detail="Cita no encontrada o enlace expirado")
+
+    # Resolver usuario evaluador
+    evaluator_name = "Cliente"
+    u = None
+    if user_id:
+        user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid"), {"uid": user_id})
+        u = user_res.fetchone()
+        if u and u.name:
+            evaluator_name = u.name.strip()
+
+    if cal_row:
+        # Resolver desde scheduled_dates
+        p_a = cal_row.person_a or "Persona A"
+        p_b = cal_row.person_b or "Persona B"
+        if u and u.name:
+            if p_a.strip().lower() == evaluator_name.lower():
+                partner_name = p_b
+            elif p_b.strip().lower() == evaluator_name.lower():
+                partner_name = p_a
+            else:
+                partner_name = p_b
+        else:
+            partner_name = p_b
+
+        already_completed = bool(cal_row.feedback and not "NO-SHOW" in cal_row.feedback.upper() and cal_row.had_date)
+        return {
+            "match_id": cal_row.match_id or cal_row.id,
+            "cal_id": cal_row.id,
+            "evaluator_name": evaluator_name if evaluator_name != "Cliente" else p_a,
+            "partner_name": partner_name,
+            "match_date": str(cal_row.date_time or 'Reciente'),
+            "venue": cal_row.venue or "Restaurante",
+            "matchmaker": "Daily Lover",
+            "already_completed": already_completed
+        }
+
+    # Resolver desde historical_matches
     partner_name = m.person_b if (m.person_a and m.person_a.strip().lower() == evaluator_name.lower()) else m.person_a
-
     is_user_a = (m.user_id_a == user_id) or (m.person_a and m.person_a.strip().lower() == evaluator_name.lower())
     already_completed = m.feedback_completed_a if is_user_a else m.feedback_completed_b
 
     return {
         "match_id": m.id,
+        "cal_id": None,
         "evaluator_name": evaluator_name,
         "partner_name": partner_name,
         "match_date": str(m.match_date or 'Reciente'),
@@ -424,51 +473,87 @@ async def get_feedback_form_data(match_id: int, user_id: int, db: AsyncSession =
 @router.post("/submit-match-feedback")
 async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession = Depends(get_db)):
     """Guarda la evaluación post-cita y desactiva el bloqueo de matchmaking para el cliente."""
-    match_res = await db.execute(text("""
-        SELECT id, person_a, person_b, user_id_a, user_id_b FROM historical_matches WHERE id = :mid
-    """), {"mid": req.match_id})
-    m = match_res.fetchone()
-    if not m:
-        raise HTTPException(status_code=404, detail="Cita no encontrada")
+    # Resolver nombre de evaluador
+    evaluator_name = "Cliente"
+    if req.user_id:
+        user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid"), {"uid": req.user_id})
+        u = user_res.fetchone()
+        if u and u.name:
+            evaluator_name = u.name.strip()
 
-    user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid"), {"uid": req.user_id})
-    u = user_res.fetchone()
-    evaluator_name = u.name if u else "Cliente"
+    # 1. Guardar en match_evaluations solo si existen registros en historical_matches y users
+    if req.match_id and req.user_id:
+        try:
+            m_chk = await db.execute(text("SELECT id FROM historical_matches WHERE id = :mid"), {"mid": req.match_id})
+            u_chk = await db.execute(text("SELECT id FROM users WHERE id = :uid"), {"uid": req.user_id})
+            if m_chk.fetchone() and u_chk.fetchone():
+                await db.execute(text("""
+                    INSERT INTO match_evaluations (match_id, user_id, evaluator_name, venue_rating, punctuality_rating, chemistry_rating, would_repeat, feedback_comments)
+                    VALUES (:mid, :uid, :ename, :vr, :pr, :cr, :wr, :comments)
+                    ON CONFLICT (match_id, user_id) DO UPDATE SET
+                        venue_rating = EXCLUDED.venue_rating,
+                        punctuality_rating = EXCLUDED.punctuality_rating,
+                        chemistry_rating = EXCLUDED.chemistry_rating,
+                        would_repeat = EXCLUDED.would_repeat,
+                        feedback_comments = EXCLUDED.feedback_comments,
+                        created_at = NOW()
+                """), {
+                    "mid": req.match_id,
+                    "uid": req.user_id,
+                    "ename": evaluator_name,
+                    "vr": req.venue_rating,
+                    "pr": req.punctuality_rating,
+                    "cr": req.chemistry_rating,
+                    "wr": req.would_repeat,
+                    "comments": req.feedback_comments or "Evaluación post-cita enviada."
+                })
+        except Exception as e:
+            logger.warning(f"No se pudo insertar en match_evaluations: {e}")
 
-    # 1. Guardar evaluación en match_evaluations
-    await db.execute(text("""
-        INSERT INTO match_evaluations (match_id, user_id, evaluator_name, venue_rating, punctuality_rating, chemistry_rating, would_repeat, feedback_comments)
-        VALUES (:mid, :uid, :ename, :vr, :pr, :cr, :wr, :comments)
-        ON CONFLICT (match_id, user_id) DO UPDATE SET
-            venue_rating = EXCLUDED.venue_rating,
-            punctuality_rating = EXCLUDED.punctuality_rating,
-            chemistry_rating = EXCLUDED.chemistry_rating,
-            would_repeat = EXCLUDED.would_repeat,
-            feedback_comments = EXCLUDED.feedback_comments,
-            created_at = NOW()
-    """), {
-        "mid": req.match_id,
-        "uid": req.user_id,
-        "ename": evaluator_name,
-        "vr": req.venue_rating,
-        "pr": req.punctuality_rating,
-        "cr": req.chemistry_rating,
-        "wr": req.would_repeat,
-        "comments": req.feedback_comments or "Evaluación post-cita enviada."
-    })
+    # 2. Si hay cal_id o coincide en scheduled_dates, actualizarlo
+    cal_target_id = req.cal_id
+    if not cal_target_id and req.match_id:
+        c_check = await db.execute(text("SELECT id, match_id, person_a, person_b FROM scheduled_dates WHERE id = :m OR match_id = :m ORDER BY id DESC LIMIT 1"), {"m": req.match_id})
+        c_row = c_check.fetchone()
+        if c_row:
+            cal_target_id = c_row.id
 
-    # 2. Actualizar estado de feedback en historical_matches
-    is_user_a = (m.user_id_a == req.user_id) or (m.person_a and m.person_a.strip().lower() == evaluator_name.lower())
-    if is_user_a:
-        await db.execute(text("UPDATE historical_matches SET feedback_completed_a = TRUE WHERE id = :mid"), {"mid": req.match_id})
-    else:
-        await db.execute(text("UPDATE historical_matches SET feedback_completed_b = TRUE WHERE id = :mid"), {"mid": req.match_id})
+    if cal_target_id:
+        rep_str = "Sí repetiría" if req.would_repeat else "No repetiría"
+        summary_txt = f"⭐ Calificación Cliente ({evaluator_name}): Química {req.chemistry_rating}/5, Lugar {req.venue_rating}/5, Puntualidad {req.punctuality_rating}/5. ¿2da cita?: {rep_str}. Comentarios: \"{req.feedback_comments or 'Sin comentarios adicionales'}\""
+        
+        await db.execute(text("""
+            UPDATE scheduled_dates
+            SET had_date = true,
+                feedback = CASE WHEN feedback IS NULL OR feedback = '' THEN :summary ELSE feedback || ' // ' || :summary END,
+                updated_at = NOW()
+            WHERE id = :cid
+        """), {"cid": cal_target_id, "summary": summary_txt})
+
+        # Si tiene match_id en operational_matches, actualizar status a CITA COMPLETADA
+        if req.match_id:
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'CITA COMPLETADA', updated_at = NOW()
+                WHERE id = :mid
+            """), {"mid": req.match_id})
+
+    # 3. Si existe en historical_matches, actualizar flags
+    if req.match_id:
+        hm_res = await db.execute(text("SELECT id, person_a, user_id_a FROM historical_matches WHERE id = :mid"), {"mid": req.match_id})
+        hm = hm_res.fetchone()
+        if hm:
+            is_user_a = (hm.user_id_a == req.user_id) or (hm.person_a and hm.person_a.strip().lower() == evaluator_name.lower())
+            if is_user_a:
+                await db.execute(text("UPDATE historical_matches SET feedback_completed_a = TRUE WHERE id = :mid"), {"mid": req.match_id})
+            else:
+                await db.execute(text("UPDATE historical_matches SET feedback_completed_b = TRUE WHERE id = :mid"), {"mid": req.match_id})
 
     await db.commit()
 
     return {
         "ok": True,
-        "message": "¡Muchas gracias! Tu evaluación ha sido registrada. Tu perfil ha sido desbloqueado para continuar en nuevos procesos de matchmaking."
+        "message": "¡Muchas gracias! Tu evaluación ha sido registrada exitosamente. Tu perfil continúa activo para tus siguientes procesos de matchmaking."
     }
 
 

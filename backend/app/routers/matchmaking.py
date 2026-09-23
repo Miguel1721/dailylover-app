@@ -2366,6 +2366,7 @@ async def get_calendar_dates(
         SELECT 
             s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city,
             s.reservation_name, s.reservation_confirmed, s.had_date, s.feedback, s.feedback_ella, s.feedback_el, s.reschedule, s.created_at, s.updated_at,
+            s.feedback_email_sent_at, s.feedback_email_status, s.feedback_email_target,
             COALESCE(NULLIF(uA.crm_id, ''), NULLIF(m.person_a_crm_id, '')) AS ua_crm_id,
             COALESCE(NULLIF(uB.crm_id, ''), NULLIF(m.person_b_crm_id, '')) AS ub_crm_id
         FROM scheduled_dates s
@@ -2469,6 +2470,9 @@ async def get_calendar_dates(
             "feedback_ella": d.get("feedback_ella") or "",
             "feedback_el": d.get("feedback_el") or "",
             "reschedule": bool(d.get("reschedule")),
+            "feedback_email_sent_at": d.get("feedback_email_sent_at").isoformat() if d.get("feedback_email_sent_at") else None,
+            "feedback_email_status": d.get("feedback_email_status") or "PENDIENTE",
+            "feedback_email_target": d.get("feedback_email_target") or "",
             "whatsapp_confirmacion": msg_confirmacion,
             "whatsapp_dia_antes": msg_dia_antes,
             "whatsapp_hoy": msg_hoy,
@@ -2786,6 +2790,318 @@ async def record_calendar_feedback(
 
     await db.commit()
     return {"status": "success", "message": "Feedback post-cita guardado exitosamente"}
+
+
+# ─── 4.1. AUTOMATIZACIÓN DE CORREOS DE FEEDBACK (MODO SEGURO PILOTO) ─────────────
+
+class SendFeedbackEmailRequest(BaseModel):
+    person: str = "both"  # "both", "person_a", "person_b"
+    simulation_mode: bool = True
+    target_override_email: Optional[str] = "agente.sti.col@gmail.com"
+
+
+async def resolve_person_email_and_id(db: AsyncSession, person_name: str):
+    """Resuelve user_id y correo electrónico de una persona por nombre."""
+    if not person_name:
+        return None, None
+    clean_name = person_name.strip()
+    res = await db.execute(text("""
+        SELECT u.id, u.email 
+        FROM users u
+        WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+        ORDER BY (u.email IS NOT NULL AND u.email != '') DESC, u.id DESC
+        LIMIT 1
+    """), {"n": clean_name})
+    row = res.fetchone()
+    if row and row.id:
+        return row.id, row.email or ""
+
+    # Búsqueda secundaria por similitud
+    res_like = await db.execute(text("""
+        SELECT id, email FROM users
+        WHERE (email IS NOT NULL AND email != '') AND (
+            LOWER(TRIM(name)) LIKE LOWER(:n_like)
+            OR LOWER(:n_full) LIKE '%' || LOWER(TRIM(name)) || '%'
+        )
+        ORDER BY id DESC LIMIT 1
+    """), {"n_like": f"%{clean_name}%", "n_full": clean_name})
+    row_like = res_like.fetchone()
+    if row_like:
+        return row_like.id, row_like.email or ""
+
+    return None, None
+
+
+def is_appointment_past(date_str: str) -> bool:
+    """
+    Determina si una cita ya se llevó a cabo (ayer o fechas pasadas),
+    manejando formatos en texto libre de Google Sheets / BD.
+    """
+    if not date_str:
+        return False
+    s = date_str.lower().strip()
+    if any(w in s for w in ["por definir", "pausar", "no quiere", "cancel", "otro date", "pendiente"]):
+        return False
+
+    months = {
+        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+        "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+        "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6, "jul": 7, "ago": 8, "sep": 9, "oct": 10, "nov": 11, "dic": 12
+    }
+    from datetime import datetime, date
+    today = datetime.now().date()
+
+    # 1. Regex ISO: 2026-09-22
+    m_iso = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m_iso:
+        try:
+            d_obj = date(int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3)))
+            return d_obj <= today
+        except Exception:
+            pass
+
+    # 2. Regex Mes Nombre: septiembre 22
+    for m_name, m_num in months.items():
+        if m_name in s:
+            m_day = re.search(r"\b(\d{1,2})\b", s)
+            if m_day:
+                day_val = int(m_day.group(1))
+                if 1 <= day_val <= 31:
+                    try:
+                        d_obj = date(today.year, m_num, day_val)
+                        return d_obj <= today
+                    except Exception:
+                        pass
+
+    # 3. Regex slash o punto: 22/09 o 9.22
+    m_slash = re.search(r"(\d{1,2})[/\.](\d{1,2})", s)
+    if m_slash:
+        p1, p2 = int(m_slash.group(1)), int(m_slash.group(2))
+        m_num = p2 if p2 <= 12 and p1 > 12 else (p1 if p1 <= 12 else p2)
+        d_num = p1 if m_num == p2 else p2
+        try:
+            d_obj = date(today.year, m_num, d_num)
+            return d_obj <= today
+        except Exception:
+            pass
+
+    return False
+
+
+@router.post("/calendar/{calendar_id}/send-feedback-email")
+async def trigger_calendar_feedback_email(
+    calendar_id: int,
+    payload: Optional[SendFeedbackEmailRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Envía manualmente el correo de evaluación post-cita para una cita específica.
+    En modo seguro (simulation_mode=True), se despacha siempre a agente.sti.col@gmail.com
+    dejando constancia del cliente configurado.
+    """
+    res = await db.execute(text("""
+        SELECT id, match_id, person_a, person_b, date_time, venue, city, had_date, feedback, reschedule
+        FROM scheduled_dates WHERE id = :id
+    """), {"id": calendar_id})
+    cal_row = res.fetchone()
+    if not cal_row:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    sim_mode = payload.simulation_mode if payload else True
+    target_override = (payload.target_override_email if payload and payload.target_override_email else "agente.sti.col@gmail.com")
+
+    id_a, email_a = await resolve_person_email_and_id(db, cal_row.person_a)
+    id_b, email_b = await resolve_person_email_and_id(db, cal_row.person_b)
+
+    from app.services.email_service import send_automated_feedback_email
+
+    dispatches = []
+    # Persona A evaluando a Persona B
+    if not payload or payload.person in ("both", "person_a"):
+        res_a = send_automated_feedback_email(
+            user_name=cal_row.person_a,
+            real_user_email=email_a or "",
+            partner_name=cal_row.person_b,
+            match_id=cal_row.match_id,
+            user_id=id_a or 0,
+            cal_id=cal_row.id,
+            date_time_str=cal_row.date_time or "",
+            venue=cal_row.venue or "",
+            city=cal_row.city or "",
+            simulation_mode=sim_mode
+        )
+        dispatches.append({"person": "person_a", "name": cal_row.person_a, "email_configurado": email_a, "result": res_a})
+
+    # Persona B evaluando a Persona A
+    if not payload or payload.person in ("both", "person_b"):
+        res_b = send_automated_feedback_email(
+            user_name=cal_row.person_b,
+            real_user_email=email_b or "",
+            partner_name=cal_row.person_a,
+            match_id=cal_row.match_id,
+            user_id=id_b or 0,
+            cal_id=cal_row.id,
+            date_time_str=cal_row.date_time or "",
+            venue=cal_row.venue or "",
+            city=cal_row.city or "",
+            simulation_mode=sim_mode
+        )
+        dispatches.append({"person": "person_b", "name": cal_row.person_b, "email_configurado": email_b, "result": res_b})
+
+    await db.execute(text("""
+        UPDATE scheduled_dates
+        SET feedback_email_sent_at = NOW(),
+            feedback_email_status = :st,
+            feedback_email_target = :tgt,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {
+        "id": calendar_id,
+        "st": "ENVIADO_TEST" if sim_mode else "ENVIADO_REAL",
+        "tgt": target_override if sim_mode else f"{email_a or ''},{email_b or ''}"
+    })
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Correo de feedback enviado exitosamente a {target_override} (Modo Seguro: {'Activo' if sim_mode else 'Desactivado'})",
+        "calendar_id": calendar_id,
+        "target_email": target_override if sim_mode else "Clientes reales",
+        "simulation_mode": sim_mode,
+        "dispatches": dispatches
+    }
+
+
+@router.post("/calendar/feedback/dispatch-automated")
+async def dispatch_automated_feedback_emails(
+    simulation_mode: bool = True,
+    force_all_pending: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Despachador automático para enviar en la mañana el correo de feedback
+    a las personas que tuvieron cita el día anterior y NO tuvieron reporte de No-Show.
+    En modo seguro (simulation_mode=True), todos los correos se envían a agente.sti.col@gmail.com
+    dejando constancia del cliente configurado.
+    """
+    query = """
+        SELECT s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city, s.had_date, s.feedback
+        FROM scheduled_dates s
+        WHERE s.date_time IS NOT NULL AND TRIM(s.date_time) != ''
+          AND (s.reschedule IS NOT TRUE)
+          AND (s.had_date IS NOT FALSE)
+          AND (
+              s.feedback IS NULL OR (
+                  NOT s.feedback ILIKE '%NO-SHOW%' 
+                  AND NOT s.feedback ILIKE '%PLANTON%' 
+                  AND NOT s.feedback ILIKE '%PLANTÓN%' 
+                  AND NOT s.feedback ILIKE '%INASISTENCIA%'
+                  AND NOT s.feedback ILIKE '%CANCEL%'
+              )
+          )
+          AND s.feedback_email_sent_at IS NULL
+        ORDER BY s.id DESC
+        LIMIT 100
+    """
+    res = await db.execute(text(query))
+    rows = res.fetchall()
+
+    from app.services.email_service import send_automated_feedback_email
+
+    dispatched = []
+    for r in rows:
+        # Verificar que la cita ya haya ocurrido (ayer o pasada)
+        if not force_all_pending and not is_appointment_past(r.date_time):
+            continue
+
+        id_a, email_a = await resolve_person_email_and_id(db, r.person_a)
+        id_b, email_b = await resolve_person_email_and_id(db, r.person_b)
+
+        # Enviar Persona A
+        send_automated_feedback_email(
+            user_name=r.person_a,
+            real_user_email=email_a or "",
+            partner_name=r.person_b,
+            match_id=r.match_id,
+            user_id=id_a or 0,
+            cal_id=r.id,
+            date_time_str=r.date_time or "",
+            venue=r.venue or "",
+            city=r.city or "",
+            simulation_mode=simulation_mode
+        )
+
+        # Enviar Persona B
+        send_automated_feedback_email(
+            user_name=r.person_b,
+            real_user_email=email_b or "",
+            partner_name=r.person_a,
+            match_id=r.match_id,
+            user_id=id_b or 0,
+            cal_id=r.id,
+            date_time_str=r.date_time or "",
+            venue=r.venue or "",
+            city=r.city or "",
+            simulation_mode=simulation_mode
+        )
+
+        await db.execute(text("""
+            UPDATE scheduled_dates
+            SET feedback_email_sent_at = NOW(),
+                feedback_email_status = :st,
+                feedback_email_target = :tgt,
+                updated_at = NOW()
+            WHERE id = :id
+        """), {
+            "id": r.id,
+            "st": "ENVIADO_TEST" if simulation_mode else "ENVIADO_REAL",
+            "tgt": "agente.sti.col@gmail.com" if simulation_mode else f"{email_a or ''},{email_b or ''}"
+        })
+
+        dispatched.append({
+            "calendar_id": r.id,
+            "person_a": r.person_a,
+            "email_a": email_a,
+            "person_b": r.person_b,
+            "email_b": email_b,
+            "date_time": r.date_time,
+            "venue": r.venue,
+            "city": r.city
+        })
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Se despacharon correos de feedback para {len(dispatched)} citas realizadas.",
+        "dispatched_count": len(dispatched),
+        "target_email": "agente.sti.col@gmail.com" if simulation_mode else "Clientes Reales",
+        "simulation_mode": simulation_mode,
+        "dispatched": dispatched
+    }
+
+
+@router.get("/calendar/feedback/status")
+async def get_feedback_dispatch_status(db: AsyncSession = Depends(get_db)):
+    """Retorna métricas del sistema automatizado de feedback post-cita."""
+    res = await db.execute(text("""
+        SELECT 
+            count(*) as total_citas,
+            count(*) FILTER (WHERE feedback_email_sent_at IS NOT NULL) as enviadas,
+            count(*) FILTER (WHERE feedback_email_sent_at IS NULL AND reschedule IS NOT TRUE AND had_date IS NOT FALSE AND (feedback IS NULL OR NOT feedback ILIKE '%NO-SHOW%')) as pendientes_envio,
+            count(*) FILTER (WHERE had_date = false OR feedback ILIKE '%NO-SHOW%') as no_shows
+        FROM scheduled_dates
+        WHERE date_time IS NOT NULL AND TRIM(date_time) != ''
+    """))
+    r = res.fetchone()
+    return {
+        "total_citas": r.total_citas if r else 0,
+        "enviadas": r.enviadas if r else 0,
+        "pendientes_envio": r.pendientes_envio if r else 0,
+        "no_shows": r.no_shows if r else 0,
+        "modo_seguro": True,
+        "target_seguro": "agente.sti.col@gmail.com"
+    }
 
 
 # ─── 5. HISTORIAL DE PERSONA & PSICÓLOGAS ACTIVAS ────────────────────────────

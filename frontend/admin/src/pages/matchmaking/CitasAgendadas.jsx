@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Calendar as CalendarIcon, Filter, Clock, MapPin, User, Search, RefreshCw, CheckCircle, Copy, RotateCcw, AlertTriangle, X } from 'lucide-react'
+import { Calendar as CalendarIcon, Filter, Clock, MapPin, User, Search, RefreshCw, CheckCircle, Copy, RotateCcw, AlertTriangle, X, Mail, Send } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
@@ -29,6 +29,8 @@ export default function CitasAgendadas() {
   const [noShowModalItem, setNoShowModalItem] = useState(null)
   const [feedbackModalItem, setFeedbackModalItem] = useState(null)
   const [quickDateFilter, setQuickDateFilter] = useState('all')
+  const [dispatchingFeedback, setDispatchingFeedback] = useState(false)
+  const [singleSendingId, setSingleSendingId] = useState(null)
 
   const getTodayStr = () => {
     const d = new Date()
@@ -163,10 +165,69 @@ export default function CitasAgendadas() {
     }
   }
 
+  const handleDispatchYesterdayFeedback = async () => {
+    if (!window.confirm("¿Deseas despachar los correos de feedback para las citas realizadas de ayer en Modo de Prueba Seguro a agente.sti.col@gmail.com?")) {
+      return
+    }
+    setDispatchingFeedback(true)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/calendar/feedback/dispatch-automated?simulation_mode=true`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccessBanner(data.message || `Despacho completado: ${data.dispatched_count || 0} citas notificadas en modo seguro.`)
+        fetchCalendar()
+      } else {
+        alert(`Error al despachar: ${data.detail || 'Ocurrió un error'}`)
+      }
+    } catch (err) {
+      alert("Error de conexión al despachar feedback.")
+    } finally {
+      setDispatchingFeedback(false)
+    }
+  }
+
+  const handleSendSingleFeedbackTest = async (item) => {
+    const calId = item.calendar_id || item.id
+    if (!calId) return
+    if (!window.confirm(`¿Enviar correo de feedback de prueba para la cita entre ${item.person_a} y ${item.person_b} a agente.sti.col@gmail.com?`)) {
+      return
+    }
+    setSingleSendingId(calId)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/calendar/${calId}/send-feedback-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          simulation_mode: true,
+          target_override_email: 'agente.sti.col@gmail.com'
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccessBanner(data.message || `Correo de prueba enviado para la cita #${calId}.`)
+        fetchCalendar()
+      } else {
+        alert(`Error: ${data.detail || 'No se pudo enviar el correo de prueba'}`)
+      }
+    } catch (err) {
+      alert("Error de conexión al enviar correo de prueba.")
+    } finally {
+      setSingleSendingId(null)
+    }
+  }
+
   return (
     <div style={{ padding: '28px 32px', maxWidth: 1650, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 14 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <CalendarIcon size={28} style={{ color: 'var(--color-primary)' }} />
@@ -177,23 +238,47 @@ export default function CitasAgendadas() {
           </p>
         </div>
 
-        <button
-          onClick={fetchCalendar}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 8,
-            padding: '8px 14px',
-            fontSize: 13,
-            color: 'var(--text-primary)',
-            cursor: 'pointer'
-          }}
-        >
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refrescar
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={handleDispatchYesterdayFeedback}
+            disabled={dispatchingFeedback}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(59, 130, 246, 0.15)',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              borderRadius: 8,
+              padding: '8px 14px',
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#60A5FA',
+              cursor: dispatchingFeedback ? 'not-allowed' : 'pointer'
+            }}
+            title="Despachar feedback automático matutino de citas de ayer en Modo Seguro Piloto (agente.sti.col@gmail.com)"
+          >
+            <Mail size={15} className={dispatchingFeedback ? 'animate-spin' : ''} />
+            {dispatchingFeedback ? 'Despachando...' : '⚡ Despachar Feedbacks Ayer (Piloto)'}
+          </button>
+
+          <button
+            onClick={fetchCalendar}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 8,
+              padding: '8px 14px',
+              fontSize: 13,
+              color: 'var(--text-primary)',
+              cursor: 'pointer'
+            }}
+          >
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refrescar
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -569,90 +654,137 @@ export default function CitasAgendadas() {
                       </button>
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                        {c.feedback && c.feedback.includes('NO-SHOW') ? (
-                          <button
-                            onClick={() => setNoShowModalItem(c)}
-                            style={{
-                              background: 'rgba(239, 68, 68, 0.2)',
-                              color: '#EF4444',
-                              border: '1px solid rgba(239, 68, 68, 0.4)',
-                              borderRadius: 6,
-                              padding: '4px 8px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}
-                            title={c.feedback}
-                          >
-                            🚨 No-Show
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setNoShowModalItem(c)}
-                            style={{
-                              background: 'rgba(239, 68, 68, 0.12)',
-                              color: '#EF4444',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              borderRadius: 6,
-                              padding: '4px 8px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}
-                            title="Registrar inasistencia o plantón"
-                          >
-                            <AlertTriangle size={12} /> No-Show
-                          </button>
-                        )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          {c.feedback && c.feedback.includes('NO-SHOW') ? (
+                            <button
+                              onClick={() => setNoShowModalItem(c)}
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.2)',
+                                color: '#EF4444',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                borderRadius: 6,
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title={c.feedback}
+                            >
+                              🚨 No-Show
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setNoShowModalItem(c)}
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                color: '#EF4444',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                borderRadius: 6,
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title="Registrar inasistencia o plantón"
+                            >
+                              <AlertTriangle size={12} /> No-Show
+                            </button>
+                          )}
 
-                        {c.had_date && c.feedback && !c.feedback.includes('NO-SHOW') ? (
-                          <button
-                            onClick={() => setFeedbackModalItem(c)}
-                            style={{
-                              background: 'rgba(16, 185, 129, 0.15)',
-                              color: '#10B981',
-                              border: '1px solid rgba(16, 185, 129, 0.4)',
-                              borderRadius: 6,
-                              padding: '4px 8px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}
-                            title={c.feedback}
-                          >
-                            ⭐ Evaluada
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setFeedbackModalItem(c)}
-                            style={{
-                              background: 'rgba(168, 85, 247, 0.15)',
-                              color: '#C084FC',
-                              border: '1px solid rgba(168, 85, 247, 0.35)',
-                              borderRadius: 6,
-                              padding: '4px 8px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }}
-                            title="Cargar calificación y retroalimentación post-cita"
-                          >
-                            ⭐ Feedback
-                          </button>
-                        )}
+                          {c.had_date && c.feedback && !c.feedback.includes('NO-SHOW') ? (
+                            <button
+                              onClick={() => setFeedbackModalItem(c)}
+                              style={{
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: '#10B981',
+                                border: '1px solid rgba(16, 185, 129, 0.4)',
+                                borderRadius: 6,
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title={c.feedback}
+                            >
+                              ⭐ Evaluada
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setFeedbackModalItem(c)}
+                              style={{
+                                background: 'rgba(168, 85, 247, 0.15)',
+                                color: '#C084FC',
+                                border: '1px solid rgba(168, 85, 247, 0.35)',
+                                borderRadius: 6,
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4
+                              }}
+                              title="Cargar calificación y retroalimentación post-cita"
+                            >
+                              ⭐ Feedback
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Indicador y disparador de correo de prueba */}
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          {c.feedback_email_sent_at ? (
+                            <span
+                              title={`Enviado el ${new Date(c.feedback_email_sent_at).toLocaleString()} a ${c.feedback_email_target || 'agente.sti.col@gmail.com'}`}
+                              style={{
+                                background: 'rgba(59, 130, 246, 0.15)',
+                                color: '#60A5FA',
+                                border: '1px solid rgba(59, 130, 246, 0.35)',
+                                borderRadius: 4,
+                                padding: '2px 6px',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
+                              }}
+                            >
+                              <Mail size={10} /> Correo Enviado (Test)
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleSendSingleFeedbackTest(c)}
+                              disabled={singleSendingId === (c.calendar_id || c.id)}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 4,
+                                padding: '2px 6px',
+                                fontSize: 10,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3
+                              }}
+                              title="Disparar correo de evaluación piloto a agente.sti.col@gmail.com"
+                            >
+                              <Send size={10} className={singleSendingId === (c.calendar_id || c.id) ? 'animate-spin' : ''} />
+                              {singleSendingId === (c.calendar_id || c.id) ? 'Enviando...' : 'Test Correo'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
