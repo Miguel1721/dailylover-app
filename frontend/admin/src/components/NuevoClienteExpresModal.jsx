@@ -41,11 +41,13 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
   const [gender, setGender] = useState('Hombre')
   const [orientation, setOrientation] = useState('hetero')
   const [planTier, setPlanTier] = useState('Estándar 65k (2 citas)')
-  const [responsable, setResponsable] = useState('SILVI')
   const [initialNotes, setInitialNotes] = useState('')
   const [createSlots, setCreateSlots] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [copiedLink, setCopiedLink] = useState(false)
+
+  const CALENDLY_URL = 'https://calendly.com/maria-salinas-dailylover/blind-dates-1-1'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -66,7 +68,7 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
           gender,
           orientation,
           plan_tier: planTier,
-          responsable,
+          responsable: 'SIN_ASIGNAR',
           initial_notes: initialNotes,
           create_slots: createSlots
         })
@@ -84,6 +86,12 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleCopyCalendly = () => {
+    navigator.clipboard.writeText(CALENDLY_URL)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 2500)
   }
 
   return (
@@ -226,39 +234,59 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Plan Contratado
-              </label>
-              <select
-                value={planTier}
-                onChange={e => setPlanTier(e.target.value)}
-                style={{
-                  width: '100%', padding: '9px 12px', borderRadius: 8,
-                  background: 'var(--bg-base)', border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)', fontSize: 13, outline: 'none'
-                }}
-              >
-                {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+              Plan Contratado
+            </label>
+            <select
+              value={planTier}
+              onChange={e => setPlanTier(e.target.value)}
+              style={{
+                width: '100%', padding: '9px 12px', borderRadius: 8,
+                background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                color: 'var(--text-primary)', fontSize: 13, outline: 'none'
+              }}
+            >
+              {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+
+          {/* Enlace Oficial de Agendamiento Calendly */}
+          <div style={{
+            background: 'rgba(150, 21, 0, 0.08)',
+            border: '1px solid rgba(150, 21, 0, 0.25)',
+            borderRadius: 8,
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10
+          }}>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                📅 Enlace Calendly para Agendar Cita (1-1):
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                {CALENDLY_URL}
+              </div>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Psicóloga Responsable
-              </label>
-              <select
-                value={responsable}
-                onChange={e => setResponsable(e.target.value)}
-                style={{
-                  width: '100%', padding: '9px 12px', borderRadius: 8,
-                  background: 'var(--bg-base)', border: '1px solid var(--border-color)',
-                  color: 'var(--text-primary)', fontSize: 13, outline: 'none'
-                }}
-              >
-                {PSYCHOLOGISTS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-            </div>
+            <button
+              type="button"
+              onClick={handleCopyCalendly}
+              style={{
+                background: copiedLink ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-card)',
+                border: '1px solid ' + (copiedLink ? '#10B981' : 'var(--border-color)'),
+                color: copiedLink ? '#10B981' : 'var(--text-primary)',
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {copiedLink ? '✓ Copiado' : 'Copiar Link'}
+            </button>
           </div>
 
           <div>
@@ -287,7 +315,7 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
               style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--color-primary)' }}
             />
             <label htmlFor="slots_chk" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
-              ⚡ Habilitar búsqueda inmediata (Crear slot en mesa de matches de la psicóloga)
+              ⚡ Habilitar búsqueda inmediata (Crear slot en mesa de matches)
             </label>
           </div>
 

@@ -496,9 +496,19 @@ async def get_my_matches(
         params["psyc_like"] = f"%{norm_psyc}%" if norm_psyc else "%"
     else:
         if norm_psyc:
-            query += " AND (UPPER(m.psychologist_name) = UPPER(:psyc) OR UPPER(m.psychologist_name) LIKE UPPER(:psyc_like))"
-            params["psyc"] = norm_psyc
-            params["psyc_like"] = f"%{norm_psyc}%"
+            psyc_upper = norm_psyc.upper()
+            if psyc_upper == 'MPS':
+                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('MPS', 'MARIA', 'MARÍA', 'MARI DE LA E', 'MARI DE LA ESPRIELLA', 'MARI SARMIENTO', 'MARI B', 'MARIB') OR UPPER(m.psychologist_name) LIKE '%MPS%' OR UPPER(m.psychologist_name) LIKE '%MARI%')"
+            elif psyc_upper in ('MAPE D', 'MAPE'):
+                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('MAPE D', 'MAPE', 'MARIA PAULA', 'MARÍA PAULA') OR UPPER(m.psychologist_name) LIKE '%MAPE%')"
+            elif psyc_upper == 'STEFFY':
+                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('STEFFY', 'STEFF') OR UPPER(m.psychologist_name) LIKE '%STEFF%')"
+            elif psyc_upper == 'SILVI':
+                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('SILVI', 'SILVANA') OR UPPER(m.psychologist_name) LIKE '%SILV%')"
+            else:
+                query += " AND (UPPER(m.psychologist_name) = UPPER(:psyc) OR UPPER(m.psychologist_name) LIKE UPPER(:psyc_like))"
+                params["psyc"] = norm_psyc
+                params["psyc_like"] = f"%{norm_psyc}%"
 
     if status_filter and status_filter.lower() not in ("all", "todos"):
         query += " AND UPPER(m.status) = UPPER(:st)"
@@ -2787,7 +2797,7 @@ async def get_active_psychologists(db: AsyncSession = Depends(get_db)):
     asegurando la presencia de las 10 psicólogas activas oficiales (JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA).
     """
     OFFICIAL_PSYCHOLOGISTS = [
-        "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU", "PIA", "ISA"
+        "MPS", "STEFFY", "SILVI", "ANA", "JENN", "PIA", "ISA", "ALEJA", "MANU", "SOFI", "MAPE D"
     ]
     res = await db.execute(text("""
         SELECT UPPER(TRIM(psychologist_name)) as psyc_name, 
@@ -7445,7 +7455,7 @@ async def get_supervision_maria(
 
     EXCLUDED = {
         "SOFI": True, "ALEJA": True, "MAPE D": True, "MAPE": True,
-        "MARIA PAULA": True, "MARÍA PAULA": True, "MANU": True, "MPS": True
+        "MARIA PAULA": True, "MARÍA PAULA": True, "MANU": True
     }
 
     # 1. Filtros de fecha para matches y perfiles
@@ -7485,7 +7495,7 @@ async def get_supervision_maria(
     p_rows = p_res.fetchall()
 
     # Base de psicólogas activas
-    active_psyc_list = ["STEFFY", "SILVI", "ANA", "JENN", "ISA", "PIA"]
+    active_psyc_list = ["STEFFY", "SILVI", "ANA", "JENN", "PIA", "ISA", "MPS"]
     psyc_data = {}
     for p in active_psyc_list:
         psyc_data[p] = {

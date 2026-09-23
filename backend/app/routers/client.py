@@ -488,7 +488,8 @@ async def get_vip_available_slots(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Calcula los espacios libres de 45 min para entrevistas VIP con María Salinas.
+    Calcula los espacios libres de 30 min para entrevistas VIP con María Salinas.
+    Franjas: 10:00 AM a 1:00 PM y 5:00 PM a 7:00 PM de Lunes a Viernes, a partir del día siguiente.
     Consulta los bloques ocupados mediante Google Calendar freebusy y citas previas en DB.
     """
     from app.services.google_calendar_service import calculate_available_vip_slots
@@ -504,8 +505,8 @@ async def get_vip_available_slots(
 
     slots = calculate_available_vip_slots(
         days_ahead=days_ahead,
-        slot_minutes=45,
-        min_notice_hours=48,
+        slot_minutes=30,
+        max_slots=6,
         existing_booked_slots=booked_slots
     )
     return {"status": "success", "slots": slots}
@@ -519,7 +520,7 @@ async def confirm_vip_booking(
     """
     Confirma el espacio seleccionado por el cliente VIP.
     El Tercero Organizador crea el evento en Google Calendar con Google Meet
-    e invita a María Salinas y al cliente, registrando la cita en interview_appointments.
+    e invita a María Salinas y al cliente, registrando la cita en interview_appointments (30 min).
     """
     from app.services.google_calendar_service import create_third_party_vip_event
     from app.services.email_service import send_vip_confirmation_emails
@@ -529,7 +530,7 @@ async def confirm_vip_booking(
     except Exception:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido (slot_iso).")
 
-    end_dt = start_dt + timedelta(minutes=45)
+    end_dt = start_dt + timedelta(minutes=30)
     time_str = start_dt.strftime("%H:%M")
     date_str = start_dt.strftime("%Y-%m-%d")
 
@@ -559,7 +560,7 @@ async def confirm_vip_booking(
         ) VALUES (
             :uid, :cname, :cemail, :cphone,
             'MPS', :adate, :tslot,
-            :mlink, 'PROGRAMADA', :notes, 2700, NOW()
+            :mlink, 'PROGRAMADA', :notes, 1800, NOW()
         )
         RETURNING id;
     """), {

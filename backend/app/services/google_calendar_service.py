@@ -20,6 +20,16 @@ OWNER_EMAIL = os.getenv("OWNER_EMAIL", "maria.salinas@dailylover.org")
 DEFAULT_TIMEZONE = "America/Bogota"
 
 
+def get_colombia_tz():
+    """Retorna la zona horaria de Colombia de forma resiliente."""
+    try:
+        import zoneinfo
+        return zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    except Exception:
+        from datetime import timezone
+        return timezone(timedelta(hours=-5))
+
+
 def get_calendar_client():
     """Retorna un cliente de Google Calendar API autenticado con cuenta de servicio o None si no hay credenciales."""
     creds_path = os.environ.get("GOOGLE_CALENDAR_CREDENTIALS_PATH") or os.environ.get("GOOGLE_SHEETS_CREDENTIALS_PATH")
@@ -73,7 +83,7 @@ def get_owner_busy_intervals(start_dt: datetime, end_dt: datetime) -> List[Dict[
         return []
 
     try:
-        tz_cot = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+        tz_cot = get_colombia_tz()
         t_min = (start_dt.replace(tzinfo=tz_cot) if start_dt.tzinfo is None else start_dt.astimezone(tz_cot)).isoformat()
         t_max = (end_dt.replace(tzinfo=tz_cot) if end_dt.tzinfo is None else end_dt.astimezone(tz_cot)).isoformat()
 
@@ -105,23 +115,32 @@ def get_owner_busy_intervals(start_dt: datetime, end_dt: datetime) -> List[Dict[
 
 def calculate_available_vip_slots(
     days_ahead: int = 7,
-    slot_minutes: int = 45,
-    min_notice_hours: int = 48,
-    existing_booked_slots: Optional[List[str]] = None
+    slot_minutes: int = 30,
+    max_slots: Optional[int] = 6,
+    max_per_day: Optional[int] = 2,
+    existing_booked_slots: Optional[List[str]] = None,
+    min_notice_hours: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
-    Calcula entre 3 y 5 espacios libres ("huecos") ideales en la agenda de María Salinas.
+    Calcula opciones de espacios libres ("huecos") ideales de 30 min en la agenda de María Salinas.
     Reglas de negocio:
-    - Ventana: a partir de min_notice_hours (48 horas tras el pago) en HORA COLOMBIANA.
+    - Ventana: a partir del día siguiente al pago en HORA COLOMBIANA.
     - Días: Lunes a Viernes únicamente.
-    - Horario: 9:00 AM a 5:00 PM COT (slots a las 10:00 AM, 11:30 AM, 2:30 PM, 4:00 PM).
-    - Descuenta bloques ocupados de Google Calendar y citas previas en DB.
+    - Franjas: 10:00 AM a 1:00 PM (10:00 - 13:00) y 5:00 PM a 7:00 PM (17:00 - 19:00).
+    - Duración: 30 minutos (media hora).
+    - Descuenta bloques ocupados de Google Calendar (freebusy) y citas previas en DB.
     """
-    tz_cot = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+    tz_cot = get_colombia_tz()
     # now en hora colombiana independientemente de la zona del host (ej: UTC en Docker)
     now = datetime.now(tz_cot).replace(tzinfo=None)
-    start_window = now + timedelta(hours=min_notice_hours)
-    end_window = start_window + timedelta(days=days_ahead)
+
+    # A partir del día siguiente que hacen el pago
+    start_day = (now + timedelta(days=1)).date()
+    end_day = start_day + timedelta(days=days_ahead)
+
+    # Ventana de consulta a Google Calendar
+    start_window = datetime.combine(start_day, time(10, 0))
+    end_window = datetime.combine(end_day, time(19, 0))
 
     busy_intervals = get_owner_busy_intervals(start_window, end_window)
     booked_set = set(existing_booked_slots or [])
@@ -130,60 +149,99 @@ def calculate_available_vip_slots(
     meses_es = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
     dias_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
-    # Horarios estándar de entrevista VIP (45 min)
-    target_hours = [
-        (10, 0),   # 10:00 AM
-        (11, 30),  # 11:30 AM
-        (14, 30),  # 2:30 PM
-        (16, 0),   # 4:00 PM
-    ]
+    # Franja Mañana (10:00 AM - 1:00 PM) y Franja Tarde (5:00 PM - 7:00 PM)
+    morning_hours = [(10, 0), (10, 30), (11, 0), (11, 30), (12, 0), (12, 30)]
+    afternoon_hours = [(17, 0), (17, 30), (18, 0), (18, 30)]
 
-    current_day = start_window.date()
-    end_day = end_window.date()
+    current_day = start_day
 
-    while current_day <= end_day and len(available_slots) < 6:
+    while current_day <= end_day:
+        if max_slots and len(available_slots) >= max_slots:
+            break
+
         # Solo Lunes (0) a Viernes (4)
         if current_day.weekday() < 5:
-            for hour, minute in target_hours:
-                slot_start = datetime.combine(current_day, time(hour, minute))
-                slot_end = slot_start + timedelta(minutes=slot_minutes)
+            day_slots = []
 
-                if slot_start < start_window:
-                    continue
+            # Si max_per_day está activado, buscar balancear mañana y tarde
+            if max_per_day and max_per_day >= 2:
+                # 1. Buscar en la mañana
+                for hour, minute in morning_hours:
+                    slot_start = datetime.combine(current_day, time(hour, minute))
+                    slot_end = slot_start + timedelta(minutes=slot_minutes)
+                    slot_key = slot_start.strftime("%Y-%m-%d %H:%M")
+                    if slot_key in booked_set:
+                        continue
+                    collision = any(not (slot_end <= b["start"] or slot_start >= b["end"]) for b in busy_intervals)
+                    if not collision:
+                        day_slots.append((slot_start, hour, minute))
+                        break  # Tomar el primer hueco óptimo de la mañana
 
-                slot_key = slot_start.strftime("%Y-%m-%d %H:%M")
-                if slot_key in booked_set:
-                    continue
+                # 2. Buscar en la tarde
+                for hour, minute in afternoon_hours:
+                    slot_start = datetime.combine(current_day, time(hour, minute))
+                    slot_end = slot_start + timedelta(minutes=slot_minutes)
+                    slot_key = slot_start.strftime("%Y-%m-%d %H:%M")
+                    if slot_key in booked_set:
+                        continue
+                    collision = any(not (slot_end <= b["start"] or slot_start >= b["end"]) for b in busy_intervals)
+                    if not collision:
+                        day_slots.append((slot_start, hour, minute))
+                        break  # Tomar el primer hueco óptimo de la tarde
 
-                # Validar colisión contra freebusy
-                collision = False
-                for b in busy_intervals:
-                    if not (slot_end <= b["start"] or slot_start >= b["end"]):
-                        collision = True
-                        break
+                # Si no hubo en la tarde o en la mañana y aún hay cupo en el día, completar
+                if len(day_slots) < max_per_day:
+                    all_hours = morning_hours + afternoon_hours
+                    for hour, minute in all_hours:
+                        slot_start = datetime.combine(current_day, time(hour, minute))
+                        if any(s[0] == slot_start for s in day_slots):
+                            continue
+                        slot_end = slot_start + timedelta(minutes=slot_minutes)
+                        slot_key = slot_start.strftime("%Y-%m-%d %H:%M")
+                        if slot_key in booked_set:
+                            continue
+                        collision = any(not (slot_end <= b["start"] or slot_start >= b["end"]) for b in busy_intervals)
+                        if not collision:
+                            day_slots.append((slot_start, hour, minute))
+                            if len(day_slots) >= max_per_day:
+                                break
+            else:
+                # Modo continuo sin límite por día
+                all_hours = morning_hours + afternoon_hours
+                for hour, minute in all_hours:
+                    slot_start = datetime.combine(current_day, time(hour, minute))
+                    slot_end = slot_start + timedelta(minutes=slot_minutes)
+                    slot_key = slot_start.strftime("%Y-%m-%d %H:%M")
+                    if slot_key in booked_set:
+                        continue
+                    collision = any(not (slot_end <= b["start"] or slot_start >= b["end"]) for b in busy_intervals)
+                    if not collision:
+                        day_slots.append((slot_start, hour, minute))
+                        if max_slots and (len(available_slots) + len(day_slots)) >= max_slots:
+                            break
 
-                if not collision:
-                    dow_name = dias_es[current_day.weekday()]
-                    mes_name = meses_es[current_day.month - 1]
-                    display_time = f"{hour if hour <= 12 else hour - 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
-                    display_date = f"{dow_name} {current_day.day} de {mes_name}"
+            # Ordenar cronológicamente y agregar al resultado
+            day_slots.sort(key=lambda x: x[0])
+            for slot_start, hour, minute in day_slots:
+                dow_name = dias_es[current_day.weekday()]
+                mes_name = meses_es[current_day.month - 1]
+                display_time = f"{hour if hour <= 12 else hour - 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
+                display_date = f"{dow_name} {current_day.day} de {mes_name}"
 
-                    available_slots.append({
-                        "slot_iso": slot_start.isoformat(),
-                        "date_str": current_day.strftime("%Y-%m-%d"),
-                        "time_str": f"{hour:02d}:{minute:02d}",
-                        "display_date": display_date,
-                        "display_time": display_time,
-                        "display_full": f"{display_date} a las {display_time}"
-                    })
+                available_slots.append({
+                    "slot_iso": slot_start.isoformat(),
+                    "date_str": current_day.strftime("%Y-%m-%d"),
+                    "time_str": f"{hour:02d}:{minute:02d}",
+                    "display_date": display_date,
+                    "display_time": display_time,
+                    "display_full": f"{display_date} a las {display_time}"
+                })
+                if max_slots and len(available_slots) >= max_slots:
+                    break
 
-                    if len(available_slots) >= 5:
-                        break
-        if len(available_slots) >= 5:
-            break
         current_day += timedelta(days=1)
 
-    return available_slots[:5]
+    return available_slots[:max_slots] if max_slots else available_slots
 
 
 def create_third_party_vip_event(
@@ -224,7 +282,7 @@ def create_third_party_vip_event(
         }
 
     try:
-        tz_cot = zoneinfo.ZoneInfo(DEFAULT_TIMEZONE)
+        tz_cot = get_colombia_tz()
         start_iso = (start_dt.replace(tzinfo=tz_cot) if start_dt.tzinfo is None else start_dt.astimezone(tz_cot)).isoformat()
         end_iso = (end_dt.replace(tzinfo=tz_cot) if end_dt.tzinfo is None else end_dt.astimezone(tz_cot)).isoformat()
 

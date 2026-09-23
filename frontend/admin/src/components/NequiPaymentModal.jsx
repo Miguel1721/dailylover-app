@@ -1,10 +1,12 @@
-import React, { useState } from 'react'
-import { X, CheckCircle, Copy, Check, MessageSquare, ExternalLink, ShieldCheck, Zap } from 'lucide-react'
+import React, { useState, useRef } from 'react'
+import { X, CheckCircle, Copy, Check, MessageSquare, ExternalLink, Upload, Image as ImageIcon, Trash2, Calendar } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia')))
   ? window.location.origin 
   : 'https://daily-lover.agentesia.cloud'
+
+const CALENDLY_URL = 'https://calendly.com/maria-salinas-dailylover/blind-dates-1-1'
 
 const CITIES = [
   'Bogotá', 'Medellín', 'Cali', 'Miami',
@@ -22,34 +24,27 @@ const PLANS = [
   { name: 'VIP 295k', price: 295000 }
 ]
 
-const PSYCHOLOGISTS = [
-  { id: 'SILVI', label: '👩‍⚕️ Silvi / Silvana' },
-  { id: 'STEFFY', label: '👩‍⚕️ Steffy / Estefania' },
-  { id: 'MAPE', label: '👩‍⚕️ Mape / María Paula' },
-  { id: 'JENN', label: '👩‍⚕️ Jenn / Jennifer' },
-  { id: 'ANA', label: '👩‍⚕️ Ana Tolosa' },
-  { id: 'MANU', label: '👩‍⚕️ Manu / Manuela' },
-  { id: 'SOFI', label: '👩‍⚕️ Sofi / Sofia' },
-  { id: 'ALEJA', label: '👩‍⚕️ Aleja' },
-  { id: 'ISA', label: '👩‍⚕️ Isa' },
-  { id: 'PIA', label: '👩‍⚕️ Pia' }
-]
-
 export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
   const { token } = useAuth()
+  const fileInputRef = useRef(null)
+
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [city, setCity] = useState('Bogotá')
   const [gender, setGender] = useState('Mujer')
   const [planTier, setPlanTier] = useState('Estándar 65k (2 citas)')
   const [amountCop, setAmountCop] = useState(65000)
-  const [reference, setReference] = useState('')
-  const [responsable, setResponsable] = useState('SILVI')
-  const [notes, setNotes] = useState('')
+
+  // Carga de Comprobante (Imagen)
+  const [receiptBase64, setReceiptBase64] = useState('')
+  const [receiptPreview, setReceiptPreview] = useState('')
+  const [receiptFileName, setReceiptFileName] = useState('')
+
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [successData, setSuccessData] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [copiedCalendly, setCopiedCalendly] = useState(false)
 
   if (!isOpen) return null
 
@@ -58,6 +53,46 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
     setPlanTier(selected)
     const found = PLANS.find(p => p.name === selected)
     if (found) setAmountCop(found.price)
+  }
+
+  const handleImageSelect = (file) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Por favor selecciona una imagen válida (JPG, PNG o WebP).')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('La imagen no puede pesar más de 10 MB.')
+      return
+    }
+
+    setError('')
+    setReceiptFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const b64 = e.target.result
+      setReceiptBase64(b64)
+      setReceiptPreview(b64)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleFileInputChange = (e) => {
+    const file = e.target.files?.[0]
+    handleImageSelect(file)
+  }
+
+  const handleRemoveImage = () => {
+    setReceiptBase64('')
+    setReceiptPreview('')
+    setReceiptFileName('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleCopyCalendly = () => {
+    navigator.clipboard.writeText(CALENDLY_URL)
+    setCopiedCalendly(true)
+    setTimeout(() => setCopiedCalendly(false), 2500)
   }
 
   const handleSubmit = async (e) => {
@@ -82,9 +117,8 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
           gender,
           plan_tier: planTier,
           amount_cop: parseFloat(amountCop),
-          payment_reference: reference.trim() || undefined,
-          notes: notes.trim() || undefined,
-          responsable
+          responsable: 'SIN_ASIGNAR',
+          receipt_base64: receiptBase64 || undefined
         })
       })
 
@@ -116,35 +150,41 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
     setGender('Mujer')
     setPlanTier('Estándar 65k (2 citas)')
     setAmountCop(65000)
-    setReference('')
-    setNotes('')
+    setReceiptBase64('')
+    setReceiptPreview('')
+    setReceiptFileName('')
     setSuccessData(null)
     setError('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
     onClose()
   }
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 2000, padding: 16
     }}>
       <div style={{
-        background: 'var(--bg-card, #1A1A1A)',
+        background: 'var(--bg-card, #1A1214)',
         borderRadius: 14,
         border: '1px solid var(--border-color, #333)',
         width: '100%',
         maxWidth: 540,
-        boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+        boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
         overflow: 'hidden',
-        color: 'var(--text-primary, #FFF)'
+        color: 'var(--text-primary, #FFF)',
+        maxHeight: '92vh',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
         {/* Header */}
         <div style={{
           padding: '16px 20px',
-          background: 'linear-gradient(135deg, rgba(235, 0, 141, 0.15) 0%, rgba(30, 30, 40, 0.4) 100%)',
+          background: 'linear-gradient(135deg, rgba(235, 0, 141, 0.18) 0%, rgba(30, 20, 24, 0.6) 100%)',
           borderBottom: '1px solid var(--border-color, #333)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          flexShrink: 0
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
@@ -160,7 +200,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                 Registrar Pago Nequi / Instagram
               </h2>
               <p style={{ fontSize: 11, color: 'var(--text-secondary, #999)', margin: 0 }}>
-                Registro express en 30s para Nina y equipo comercial
+                Registro ágil de pago y comprobante • Cita 1-1
               </p>
             </div>
           </div>
@@ -175,8 +215,8 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
           </button>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: 20 }}>
+        {/* Body (scrollable if needed) */}
+        <div style={{ padding: 20, overflowY: 'auto' }}>
           {error && (
             <div style={{
               padding: '10px 14px', borderRadius: 8, marginBottom: 14,
@@ -189,6 +229,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
 
           {!successData ? (
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Nombre y Celular */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
@@ -226,7 +267,8 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              {/* Ciudad y Género (Sin psicóloga, ya que no se asigna en esta fase) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
                     Ciudad
@@ -260,24 +302,9 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                     <option value="Hombre">Hombre</option>
                   </select>
                 </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
-                    Psicóloga
-                  </label>
-                  <select
-                    value={responsable}
-                    onChange={e => setResponsable(e.target.value)}
-                    style={{
-                      width: '100%', padding: '8px 10px', borderRadius: 6,
-                      background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
-                      color: '#FFF', fontSize: 12
-                    }}
-                  >
-                    {PSYCHOLOGISTS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
-                </div>
               </div>
 
+              {/* Plan y Monto */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
@@ -313,42 +340,149 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
-                    # Comprobante / Ref Nequi (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: M12345678"
-                    value={reference}
-                    onChange={e => setReference(e.target.value)}
+              {/* Cargar Comprobante de Pago (Imagen) */}
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 6, color: '#DDD' }}>
+                  Comprobante de Pago Nequi (Captura de Pantalla)
+                </label>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleFileInputChange}
+                  style={{ display: 'none' }}
+                />
+
+                {!receiptPreview ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
                     style={{
-                      width: '100%', padding: '8px 12px', borderRadius: 6,
-                      background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
-                      color: '#FFF', fontSize: 13
+                      border: '2px dashed rgba(235, 0, 141, 0.35)',
+                      borderRadius: 10,
+                      padding: '16px 14px',
+                      background: 'rgba(235, 0, 141, 0.04)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
                     }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
-                    Notas de Instagram / Origen (Opcional)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej: Chat DM Nina @camila_r"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    style={{
-                      width: '100%', padding: '8px 12px', borderRadius: 6,
-                      background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
-                      color: '#FFF', fontSize: 13
-                    }}
-                  />
-                </div>
+                  >
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '50%',
+                      background: 'rgba(235, 0, 141, 0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#EB008D'
+                    }}>
+                      <Upload size={20} />
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#FFF' }}>
+                        Cargar comprobante de pago (Imagen)
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary, #888)', marginTop: 2 }}>
+                        Haz clic aquí para seleccionar captura JPG, PNG o WebP
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    border: '1px solid rgba(235, 0, 141, 0.4)',
+                    borderRadius: 10,
+                    padding: 10,
+                    background: 'rgba(235, 0, 141, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden' }}>
+                      <img
+                        src={receiptPreview}
+                        alt="Comprobante"
+                        style={{
+                          width: 52,
+                          height: 52,
+                          borderRadius: 6,
+                          objectFit: 'cover',
+                          border: '1px solid rgba(255,255,255,0.1)'
+                        }}
+                      />
+                      <div style={{ overflow: 'hidden' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#FFF', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {receiptFileName || 'Comprobante cargado'}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#10B981', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <Check size={13} /> Listo para optimizar y guardar
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveImage}
+                      title="Quitar imagen"
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#EF4444',
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                    >
+                      <Trash2 size={13} /> Quitar
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 12 }}>
+              {/* Enlace Oficial de Agendamiento Calendly */}
+              <div style={{
+                background: 'rgba(235, 0, 141, 0.08)',
+                border: '1px solid rgba(235, 0, 141, 0.25)',
+                borderRadius: 8,
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10
+              }}>
+                <div style={{ overflow: 'hidden' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#EB008D', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Calendar size={14} /> Enlace Calendly para Agendar Cita (1-1):
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary, #999)', marginTop: 2, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {CALENDLY_URL}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyCalendly}
+                  style={{
+                    background: copiedCalendly ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-card, #222)',
+                    border: '1px solid ' + (copiedCalendly ? '#10B981' : 'var(--border-color, #444)'),
+                    color: copiedCalendly ? '#10B981' : 'var(--text-primary, #FFF)',
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {copiedCalendly ? '✓ Copiado' : 'Copiar Link'}
+                </button>
+              </div>
+
+              {/* Botones de Acción */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
                 <button
                   type="button"
                   onClick={handleResetAndClose}
@@ -374,7 +508,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
               </div>
             </form>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{
                 textAlign: 'center', padding: '16px 12px',
                 background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)',
@@ -390,8 +524,14 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#999' }}>
                   Monto: ${successData.amount_cop?.toLocaleString()} COP • Nequi
                 </p>
+                {successData.receipt_url && (
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#10B981' }}>
+                    ✓ Comprobante guardado en sistema
+                  </p>
+                )}
               </div>
 
+              {/* Mensaje WhatsApp generado */}
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#DDD' }}>
                   Mensaje listo para enviar por WhatsApp o Instagram:
@@ -405,6 +545,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                 </div>
               </div>
 
+              {/* Acciones principales */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <button
                   type="button"
@@ -434,6 +575,44 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                     Abrir WhatsApp Web
                   </button>
                 ) : null}
+              </div>
+
+              {/* Acceso rápido a Calendly */}
+              <div style={{
+                background: 'rgba(235, 0, 141, 0.08)',
+                border: '1px solid rgba(235, 0, 141, 0.25)',
+                borderRadius: 8,
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10
+              }}>
+                <div style={{ overflow: 'hidden' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#EB008D' }}>
+                    📅 Link de Agendamiento Calendly:
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary, #999)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {CALENDLY_URL}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyCalendly}
+                  style={{
+                    background: copiedCalendly ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-card, #222)',
+                    border: '1px solid ' + (copiedCalendly ? '#10B981' : 'var(--border-color, #444)'),
+                    color: copiedCalendly ? '#10B981' : 'var(--text-primary, #FFF)',
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {copiedCalendly ? '✓ Copiado' : 'Copiar Link'}
+                </button>
               </div>
 
               <div style={{ textAlign: 'center', marginTop: 4 }}>

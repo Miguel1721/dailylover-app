@@ -282,7 +282,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
                     # 2. Correo de bienvenida al cliente con huecos disponibles para selección
                     if c_final_email and "@" in c_final_email:
-                        slots = calculate_available_vip_slots(days_ahead=7, slot_minutes=45, min_notice_hours=48)
+                        slots = calculate_available_vip_slots(days_ahead=7, slot_minutes=30, max_slots=6)
                         token_book = f"vip_{pi_id or 'pay'}_{int(datetime.now().timestamp())}"
                         asyncio.create_task(
                             asyncio.to_thread(

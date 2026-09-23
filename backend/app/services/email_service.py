@@ -178,7 +178,7 @@ def build_vip_650k_notification_html(
           <p>Acciones inmediatas sugeridas:</p>
           <ul>
             <li>Contactar al cliente para darle la bienvenida VIP.</li>
-            <li>Agendar su entrevista de 45 a 60 minutos.</li>
+            <li>Agendar su entrevista de evaluación (30 minutos).</li>
           </ul>
 
           <div style="text-align: center; margin: 26px 0;">
@@ -272,7 +272,7 @@ def build_vip_slot_selection_email_html(
           <p>¡Te damos una cálida bienvenida al <strong>Plan VIP de Daily Lover</strong>! Hemos confirmado tu pago de manera exitosa.</p>
           
           <div class="info-box">
-            📌 <strong>Tu Entrevista Privada:</strong> La sesión de evaluación personalizada tiene una duración de 45 a 60 minutos vía <strong>Google Meet</strong> y será conducida directamente por <strong>María Paula Salinas</strong>.
+            📌 <strong>Tu Entrevista Privada:</strong> La sesión de evaluación personalizada tiene una duración de 30 minutos vía <strong>Google Meet</strong> y será conducida directamente por <strong>María Paula Salinas</strong>.
           </div>
 
           <p>Para tu comodidad, hemos analizado los espacios disponibles en la agenda para los próximos días. <strong>Por favor selecciona el horario que mejor se adapte a tu día:</strong></p>
@@ -323,7 +323,7 @@ def build_vip_confirmation_email_html(
     """Plantilla de confirmación final de la entrevista agendada con sala de Google Meet."""
     title_text = "Cita Confirmada con Cliente VIP" if is_for_owner else "Tu Entrevista VIP Está Confirmada"
     intro_text = (
-        f"El cliente <strong>{customer_name}</strong> ha seleccionado su horario para la entrevista VIP de 45 minutos."
+        f"El cliente <strong>{customer_name}</strong> ha seleccionado su horario para la entrevista VIP de 30 minutos."
         if is_for_owner else
         f"Hola <strong>{customer_name}</strong>, tu entrevista VIP con <strong>María Paula Salinas</strong> ha quedado agendada con éxito."
     )
@@ -359,7 +359,7 @@ def build_vip_confirmation_email_html(
           <div class="data-box">
             <p style="margin: 4px 0;"><strong>📅 Fecha:</strong> {display_date}</p>
             <p style="margin: 4px 0;"><strong>⏰ Hora:</strong> {display_time} (Hora Colombia)</p>
-            <p style="margin: 4px 0;"><strong>💻 Modalidad:</strong> Videollamada Google Meet (45 min)</p>
+            <p style="margin: 4px 0;"><strong>💻 Modalidad:</strong> Videollamada Google Meet (30 min)</p>
             <p style="margin: 4px 0;"><strong>🎟️ Asistentes:</strong> María Paula Salinas & {customer_name}</p>
           </div>
 

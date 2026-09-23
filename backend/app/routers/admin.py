@@ -3188,7 +3188,7 @@ class QuickCreateClientRequest(BaseModel):
     gender: Optional[str] = None
     orientation: Optional[str] = "hetero"
     plan_tier: Optional[str] = "Estándar 65k (2 citas)"
-    responsable: Optional[str] = "SILVI"
+    responsable: Optional[str] = "SIN_ASIGNAR"
     initial_notes: Optional[str] = None
     create_slots: Optional[bool] = True
 
@@ -3213,7 +3213,7 @@ async def quick_create_client(
     Alta Rápida de Cliente Exprés (en 30 segundos):
     - Valida si ya existe por teléfono o nombre.
     - Crea en users asignándole client_code único oficial (DL-XXXX).
-    - Crea en profiles con psicóloga, ciudad, orientación y plan.
+    - Crea en profiles con ciudad, orientación y plan (responsable 'SIN_ASIGNAR' hasta que agende entrevista).
     - Inserta nota clínica inicial si fue provista.
     - Si create_slots = true, crea slot en operational_matches para búsqueda inmediata.
     """
@@ -3256,7 +3256,7 @@ async def quick_create_client(
 
     plan_clean = payload.plan_tier or "Estándar 65k (2 citas)"
     city_clean = payload.city or "Bogotá"
-    resp_clean = (payload.responsable or "SILVI").upper().replace("MATCHES ", "").strip()
+    resp_clean = (payload.responsable or "SIN_ASIGNAR").upper().replace("MATCHES ", "").strip()
     notes_clean = payload.initial_notes.strip() if payload.initial_notes else ""
 
     await db.execute(text("""

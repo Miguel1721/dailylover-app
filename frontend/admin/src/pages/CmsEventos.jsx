@@ -27,7 +27,9 @@ export default function CmsEventos() {
   })
   const [uploadingImage, setUploadingImage] = useState(false)
 
-  const API_BASE = 'https://prueba-daily.agentesia.cloud/api/v1/admin'
+  const API_BASE = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia')))
+    ? `${window.location.origin}/api/v1/admin`
+    : 'https://daily-lover.agentesia.cloud/api/v1/admin'
 
   const fetchData = async () => {
     setLoading(true)

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import uuid
 import json
 import re
+import base64
 from urllib.parse import quote
 
 router = APIRouter(prefix="/api/v1/admin/finance", tags=["Finance"])
@@ -402,7 +403,8 @@ class NequiPaymentRequest(BaseModel):
     amount_cop: float
     payment_reference: Optional[str] = None
     notes: Optional[str] = None
-    responsable: Optional[str] = "SILVI"
+    responsable: Optional[str] = "SIN_ASIGNAR"
+    receipt_base64: Optional[str] = None
 
 
 @router.post("/nequi-payment", status_code=status.HTTP_201_CREATED)
@@ -415,8 +417,9 @@ async def register_nequi_payment(
     Registro rápido en 30 segundos de pagos recibidos vía Nequi/Daviplata por Instagram.
     1. Crea o asocia el usuario en users (con código DL-XXXX).
     2. Registra el ingreso en stripe_payments y income_records.
-    3. Asegura el registro en leads_pendientes_entrevista para agendar entrevista si aún no tiene perfil clínico.
-    4. Retorna el enlace de Calendly y mensaje listo para enviar al cliente por WhatsApp / Instagram.
+    3. Procesa y almacena de forma segura el comprobante de pago Nequi si fue adjuntado.
+    4. Asegura el registro en leads_pendientes_entrevista para agendar cita si aún no tiene perfil clínico.
+    5. Retorna el enlace oficial de Calendly (blind-dates-1-1) y mensaje listo para enviar al cliente por WhatsApp / Instagram.
     """
     if user is None or not isinstance(user, dict):
         user = {"employee_name": "Comercial / Admin", "email": "admin@dailylover.co"}
@@ -429,7 +432,7 @@ async def register_nequi_payment(
     amount = float(req.amount_cop)
     reference = (req.payment_reference or "").strip()
     notes = (req.notes or "").strip()
-    resp_clean = (req.responsable or "SILVI").strip().upper()
+    resp_clean = (req.responsable or "SIN_ASIGNAR").strip().upper()
     gender_clean = (req.gender or "Mujer").strip()
 
     if not name_clean:
@@ -471,10 +474,24 @@ async def register_nequi_payment(
         client_code = f"DL-{user_id:04d}"
         await db.execute(text("UPDATE users SET client_code = :cc WHERE id = :id"), {"cc": client_code, "id": user_id})
 
+    # Procesar imagen de comprobante Nequi si fue enviada
+    receipt_url = None
+    if req.receipt_base64 and len(req.receipt_base64) > 50:
+        try:
+            from app.services.image_service import optimize_and_save_photo
+            raw_b64 = req.receipt_base64
+            if "base64," in raw_b64:
+                raw_b64 = raw_b64.split("base64,")[1]
+            img_bytes = base64.b64decode(raw_b64)
+            receipt_url = optimize_and_save_photo(img_bytes, user_id)
+        except Exception as e_img:
+            print(f"Error procesando comprobante Nequi: {e_img}")
+
     # 2. Si no tiene perfil activo en profiles, asegurar registro en leads_pendientes_entrevista
     prof_row = (await db.execute(text("SELECT id FROM profiles WHERE user_id = :uid"), {"uid": user_id})).first()
     if not prof_row:
         lead_row = (await db.execute(text("SELECT user_id FROM leads_pendientes_entrevista WHERE user_id = :uid"), {"uid": user_id})).first()
+        voucher_note = f"Comprobante: {receipt_url}." if receipt_url else ""
         if not lead_row:
             await db.execute(text("""
                 INSERT INTO leads_pendientes_entrevista (
@@ -492,7 +509,7 @@ async def register_nequi_payment(
                 "plan": plan_clean,
                 "resp": resp_clean,
                 "amount": amount,
-                "notes": f"Pago Nequi registrado. Ref: {reference or 'Sin ref'}. {notes}".strip()
+                "notes": f"Pago Nequi registrado. {voucher_note} Ref: {reference or 'Sin ref'}. {notes}".strip()
             })
         else:
             await db.execute(text("""
@@ -505,7 +522,7 @@ async def register_nequi_payment(
             """), {
                 "uid": user_id,
                 "amount": amount,
-                "note_line": f"Nuevo pago Nequi: ${amount:,.0f} COP (Ref: {reference or 'N/A'})"
+                "note_line": f"Nuevo pago Nequi: ${amount:,.0f} COP {voucher_note} (Ref: {reference or 'N/A'})"
             })
 
     # 3. Registrar en stripe_payments para control consolidado
@@ -513,6 +530,7 @@ async def register_nequi_payment(
     meta_json = json.dumps({
         "payment_method": "nequi",
         "reference": reference,
+        "receipt_url": receipt_url,
         "city": city_clean,
         "notes": notes,
         "recorded_by": user.get("employee_name") or user.get("email") or "Comercial"
@@ -550,21 +568,21 @@ async def register_nequi_payment(
 
     await db.commit()
 
-    # Formatear WhatsApp / Mensaje de Instagram
+    # Formatear WhatsApp / Mensaje de Instagram con Calendly oficial
     clean_p_wa = digits_p
     if len(clean_p_wa) == 10 and clean_p_wa.startswith('3'):
         clean_p_wa = f"57{clean_p_wa}"
     elif len(clean_p_wa) == 7:
         clean_p_wa = f"571{clean_p_wa}"
 
-    calendly_url = "https://calendly.com/dailylover-entrevistas"
+    calendly_url = "https://calendly.com/maria-salinas-dailylover/blind-dates-1-1"
     form_url = f"https://dailylover.co/formulario?uid={user_id}"
 
     wa_msg = (
-        f"¡Hola {name_clean.split()[0]}! 🎉 Confirmamos tu pago de {plan_clean} por Nequi en Daily Lover.\\n\\n"
-        f"Para continuar con tu proceso y activar tus citas:\\n"
-        f"1️⃣ Agenda tu entrevista clínica de compatibilidad aquí:\\n{calendly_url}\\n\\n"
-        f"2️⃣ Completa tu ficha de perfil aquí:\\n{form_url}\\n\\n"
+        f"¡Hola {name_clean.split()[0]}! 🎉 Confirmamos tu pago de {plan_clean} por Nequi en Daily Lover.\n\n"
+        f"Para continuar con tu proceso y activar tus citas:\n"
+        f"1️⃣ Agenda tu cita aquí:\n{calendly_url}\n\n"
+        f"2️⃣ Completa tu ficha de perfil aquí:\n{form_url}\n\n"
         f"¡Estamos muy felices de acompañarte a encontrar a tu persona ideal! ✨"
     )
 
@@ -579,6 +597,7 @@ async def register_nequi_payment(
         "city": city_clean,
         "amount_cop": amount,
         "payment_reference": reference,
+        "receipt_url": receipt_url,
         "calendly_url": calendly_url,
         "form_url": form_url,
         "whatsapp_url": wa_url,
