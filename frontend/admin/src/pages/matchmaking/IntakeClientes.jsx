@@ -154,12 +154,12 @@ export default function IntakeClientes() {
     setCurrentPage(1)
   }, [selectedPsyc, selectedCity, selectedPlan, searchTerm])
 
-  // Autocompletado inteligente al escribir nombre o pegar URL
-  const handleResolveQuery = async (queryVal, source = 'name') => {
+  // Autocompletado inteligente al pegar URL de SmartMatchApp
+  const handleResolveQuery = async (queryVal) => {
     if (!queryVal || queryVal.trim().length < 3) return
     const cleanVal = queryVal.trim()
     setResolving(true)
-    setResolveHint('🔍 Buscando datos clínicos y perfil previo...')
+    setResolveHint('🔍 Extrayendo nombre, perfil y notas clínicas desde SmartMatchApp...')
 
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
@@ -171,8 +171,8 @@ export default function IntakeClientes() {
       if (res.ok && data.found) {
         setFormData(prev => ({
           ...prev,
-          person_a: data.name || prev.person_a || cleanVal,
-          profile_url: prev.profile_url || data.profile_url || data.crm_url || '',
+          person_a: data.name || prev.person_a || '',
+          profile_url: cleanVal.startsWith('http') ? cleanVal : (prev.profile_url || data.profile_url || data.crm_url || ''),
           psychologist_name: data.psychologist || prev.psychologist_name || detectedUserPsyc,
           city: data.city || prev.city || '',
           age: data.age || prev.age || '',
@@ -181,15 +181,11 @@ export default function IntakeClientes() {
           crm_id: data.crm_id || prev.crm_id || '',
           phone: data.phone || prev.phone || '',
           email: data.email || prev.email || '',
-          quick_notes: prev.quick_notes || data.quick_notes || ''
+          quick_notes: data.quick_notes || prev.quick_notes || ''
         }))
-        setResolveHint(`✅ Datos extraídos de ${data.name}${data.quick_notes ? ' (incluye notas clínicas)' : ''}`)
+        setResolveHint(`✅ Perfil extraído automáticamente: ${data.name}${data.crm_id ? ` (CRM #${data.crm_id})` : ''}`)
       } else {
-        if (cleanVal.startsWith('http')) {
-          setResolveHint('ℹ️ URL externa registrada. Por favor ingresa el nombre de la persona.')
-        } else {
-          setResolveHint('')
-        }
+        setResolveHint('⚠️ No se encontraron datos previos para este enlace en el CRM.')
       }
     } catch (err) {
       setResolveHint('')
@@ -200,8 +196,8 @@ export default function IntakeClientes() {
 
   const handleCreateClient = async (e) => {
     e.preventDefault()
-    if (!formData.person_a.trim()) {
-      alert('Por favor ingresa el nombre de la persona')
+    if (!formData.profile_url.trim() && !formData.person_a.trim()) {
+      alert('Por favor pega la URL del perfil en SmartMatchApp')
       return
     }
     setSubmitting(true)
@@ -221,8 +217,8 @@ export default function IntakeClientes() {
       if (res.ok) {
         setShowModal(false)
         setResolveHint('')
-        const savedName = formData.person_a
-        const savedPsyc = formData.psychologist_name
+        const savedName = data.person_a || formData.person_a || 'Cliente'
+        const savedPsyc = data.psychologist || formData.psychologist_name
         setFeedback({
           message: data.message || `Perfil de "${savedName}" guardado y asignado a ${savedPsyc}.`,
           person_a: savedName,
@@ -898,7 +894,7 @@ export default function IntakeClientes() {
                   <UserPlus size={20} color="#961500" /> Ingresar Perfil — PROFILES
                 </h2>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Registra al cliente con su URL, extrae sus notas clínicas y envíalo directo a su psicóloga.
+                  Pega únicamente el enlace de SmartMatchApp; el sistema extrae el nombre y todos los datos clínicos automáticamente.
                 </div>
               </div>
               <button
@@ -910,58 +906,27 @@ export default function IntakeClientes() {
             </div>
 
             <form onSubmit={handleCreateClient} style={{ padding: '20px 24px', maxHeight: '80vh', overflowY: 'auto' }}>
-              {/* Campo 1: Nombre de la Persona */}
-              <div style={{ marginBottom: 14 }}>
+              {/* Campo 1: URL de Perfil en SmartMatchApp (CRM) */}
+              <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                  👤 Nombre Completo de la Persona *
+                  🔗 URL de Perfil en SmartMatchApp (CRM) *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej: Laura Gómez, Camilo Martínez..."
-                  value={formData.person_a}
-                  onChange={e => {
-                    const val = e.target.value
-                    setFormData(prev => ({ ...prev, person_a: val }))
-                  }}
-                  onBlur={e => {
-                    if (!formData.city && !formData.quick_notes) {
-                      handleResolveQuery(e.target.value, 'name')
-                    }
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 8,
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-base)',
-                    color: 'var(--text-primary)',
-                    fontSize: 13,
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              {/* Campo 2: URL de Perfil / Carpeta (Google Drive, Entrevista, CRM) */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                  🔗 URL de Perfil / Carpeta (Google Drive, SmartMatchApp, Entrevista)
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://drive.google.com/... o https://dailylover.smartmatchapp.com/..."
+                  autoFocus
+                  placeholder="Pega aquí la URL (ej: https://dailylover.smartmatchapp.com/#!/client/4842/)"
                   value={formData.profile_url}
                   onChange={e => {
                     const val = e.target.value
                     setFormData(prev => ({ ...prev, profile_url: val }))
-                    if (val.includes('http') || val.includes('client/')) {
-                      handleResolveQuery(val, 'url')
+                    if (val.includes('http') || val.includes('client/') || /^\d{3,}$/.test(val.trim())) {
+                      handleResolveQuery(val)
                     }
                   }}
                   style={{
                     width: '100%',
-                    padding: '10px 14px',
+                    padding: '11px 14px',
                     borderRadius: 8,
                     border: '1px solid var(--border-color)',
                     background: 'var(--bg-base)',
@@ -973,7 +938,7 @@ export default function IntakeClientes() {
                 />
                 {resolving && (
                   <div style={{ fontSize: 12, marginTop: 6, color: '#3B82F6', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <RefreshCw size={14} className="animate-spin" /> Buscando coincidencias clínicas en base de datos...
+                    <RefreshCw size={14} className="animate-spin" /> Extrayendo nombre, edad, ciudad y perfil clínico desde el CRM...
                   </div>
                 )}
                 {resolveHint && !resolving && (
@@ -991,8 +956,8 @@ export default function IntakeClientes() {
                 )}
               </div>
 
-              {/* Campo 3: Psicóloga Responsable */}
-              <div style={{ marginBottom: 14 }}>
+              {/* Campo 2: Psicóloga Responsable */}
+              <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
                   💖 Psicóloga Responsable (A cuya mesa de matches irá la persona) *
                 </label>
@@ -1017,25 +982,65 @@ export default function IntakeClientes() {
                 </select>
               </div>
 
-              {/* Resumen de Datos Extraídos Automáticamente */}
-              {(formData.city || formData.plan_tier || formData.quick_notes || formData.age) && (
+              {/* Resumen de Datos Extraídos Automáticamente (Incluyendo Nombre) */}
+              {(formData.person_a || formData.city || formData.plan_tier || formData.quick_notes || formData.age || formData.crm_id) && (
                 <div style={{
-                  background: 'rgba(150, 21, 0, 0.08)',
-                  border: '1px solid rgba(150, 21, 0, 0.2)',
-                  borderRadius: 8,
-                  padding: '10px 14px',
+                  background: 'rgba(16, 185, 129, 0.07)',
+                  border: '1px solid rgba(16, 185, 129, 0.28)',
+                  borderRadius: 10,
+                  padding: '12px 16px',
                   marginBottom: 16,
                   fontSize: 12
                 }}>
-                  <div style={{ fontWeight: 700, color: '#ff8a80', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    ✓ Datos detectados automáticamente por el sistema:
+                  <div style={{ fontWeight: 800, color: '#10B981', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>✓ Datos Extraídos Automáticamente del CRM</span>
+                    {formData.crm_id && (
+                      <span style={{ background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: 12, fontSize: 11 }}>
+                        CRM #{formData.crm_id}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+
+                  {/* Nombre extraído (editable inline solo si desean ajustarlo) */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 600 }}>👤 Nombre:</span>
+                    <input
+                      type="text"
+                      value={formData.person_a}
+                      onChange={e => setFormData(prev => ({ ...prev, person_a: e.target.value }))}
+                      style={{
+                        flex: 1,
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: '1px solid rgba(255,255,255,0.12)',
+                        background: 'rgba(0,0,0,0.25)',
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: 13
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: '8px 14px' }}>
+                    {formData.age && <span>🎂 Edad: <b style={{ color: 'var(--text-primary)' }}>{formData.age} años</b></span>}
                     {formData.city && <span>📍 Ciudad: <b style={{ color: 'var(--text-primary)' }}>{formData.city}</b></span>}
-                    {formData.age && <span>🎂 Edad: <b style={{ color: 'var(--text-primary)' }}>{formData.age}</b></span>}
+                    {formData.pref && <span>🧭 Orientación: <b style={{ color: 'var(--text-primary)' }}>{formData.pref}</b></span>}
+                    {formData.phone && <span>📞 Tel: <b style={{ color: 'var(--text-primary)' }}>{formData.phone}</b></span>}
                     {formData.plan_tier && <span>💎 Plan: <b style={{ color: 'var(--text-primary)' }}>{formData.plan_tier}</b></span>}
-                    {formData.quick_notes && <span>📝 Notas clínicas vinculadas</span>}
                   </div>
+
+                  {formData.quick_notes && (
+                    <div style={{
+                      marginTop: 8,
+                      paddingTop: 8,
+                      borderTop: '1px solid rgba(255,255,255,0.08)',
+                      color: 'var(--text-secondary)',
+                      fontSize: 11.5,
+                      lineHeight: 1.4
+                    }}>
+                      <b style={{ color: 'var(--text-primary)' }}>📝 Resumen / Notas Clínicas:</b> {formData.quick_notes}
+                    </div>
+                  )}
                 </div>
               )}
 

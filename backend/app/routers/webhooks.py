@@ -447,8 +447,22 @@ async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int
             if any(k in event_type.lower() for k in ["client", "user", "profile", "preference"]):
                 crm_id = str(data.get("id") or data.get("client_id") or data.get("user_id") or "").strip()
                 phone = str(data.get("phone") or data.get("mobile") or data.get("telefono") or data.get("prof_190") or data.get("prof_phone") or "").strip()
-                name = str(data.get("name") or data.get("full_name") or data.get("nombre") or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or "").strip()
+                first_n = str(data.get("first_name") or data.get("prof_188") or "").strip()
+                last_n = str(data.get("last_name") or data.get("prof_189") or "").strip()
+                name = str(data.get("name") or data.get("full_name") or data.get("nombre") or f"{first_n} {last_n}".strip() or "").strip()
                 email = str(data.get("email") or data.get("correo") or data.get("prof_180") or data.get("prof_email") or "").strip()
+                if not name and data.get("prof_212"):
+                    ig_raw = str(data.get("prof_212") or "").strip().lstrip("@")
+                    if ig_raw and len(ig_raw) >= 3:
+                        import re as _re
+                        ig_clean = _re.sub(r'[._\-]+', ' ', ig_raw).strip().title()
+                        if ig_clean:
+                            name = f"{ig_clean} (@{ig_raw})"
+                elif not name and email and "@" in email:
+                    import re as _re
+                    em_prefix = _re.sub(r'[._\-0-9]+', ' ', email.split("@")[0]).strip().title()
+                    if em_prefix:
+                        name = em_prefix
                 city = str(data.get("city") or data.get("ciudad") or "").strip()
                 if not city and data.get("prof_191"):
                     p191 = data.get("prof_191")
@@ -489,7 +503,12 @@ async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int
                     gender = p192.get("choice_label", "") if isinstance(p192, dict) else str(p192)
 
                 # Extraer edad / fecha nacimiento
-                age = data.get("age") or data.get("edad")
+                age = data.get("age") or data.get("edad") or data.get("prof_247")
+                if age:
+                    try:
+                        age = int(float(str(age)))
+                    except Exception:
+                        age = None
                 if not age and data.get("prof_194"):
                     try:
                         b_year = int(str(data.get("prof_194"))[:4])

@@ -666,6 +666,216 @@ async def get_my_matches(
     return {"matches": matches, "total": total_matches, "cross_review_count": cross_count}
 
 
+def _extract_crm_id_from_url(raw_str: str) -> Optional[str]:
+    if not raw_str:
+        return None
+    s = raw_str.strip()
+    if s.isdigit():
+        return s
+    # Soporta /#!/client/4842/, /#!/client/match_preferences/4303/, /#!/client/4768/photo/list/, etc.
+    m = re.search(r"(?:client|clients|profile|profiles|user|users|view)(?:/[a-z_]+)*[/=#!]+(\d+)", s, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    m = re.search(r"[?&]id=(\d+)", s, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    m = re.search(r"/(\d{3,})(?:/[a-z_]+)*/?$", s, re.IGNORECASE)
+    if m:
+        return m.group(1)
+    return None
+
+
+async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
+    """
+    Si un CRM ID de SmartMatchApp no existe aún en users o tiene nombre genérico ('Cliente CRM%'),
+    inspecciona webhook_events_raw para ese CRM ID, sintetiza todos sus campos (prof_188, prof_189,
+    prof_212, prof_190, prof_191, prof_192, prof_193, prof_194, prof_199, prof_213, pref_64)
+    y hace upsert automático en users y profiles.
+    """
+    if not crm_id:
+        return None
+    try:
+        wh_res = await db.execute(text("""
+            SELECT payload FROM webhook_events_raw
+            WHERE COALESCE(payload->'payload'->>'id', payload->>'id', payload->'payload'->>'client_id', payload->>'client_id') = :cid
+            ORDER BY id ASC
+        """), {"cid": str(crm_id)})
+        wh_rows = wh_res.fetchall()
+        if not wh_rows:
+            return None
+
+        merged = {}
+        for r in wh_rows:
+            outer = r[0] if isinstance(r[0], dict) else {}
+            p = outer.get("payload") if isinstance(outer.get("payload"), dict) else outer
+            for k, v in p.items():
+                if v is not None and v != "":
+                    merged[k] = v
+
+        first_n = str(merged.get("first_name") or merged.get("prof_188") or "").strip()
+        last_n = str(merged.get("last_name") or merged.get("prof_189") or "").strip()
+        name = str(merged.get("name") or merged.get("full_name") or merged.get("nombre") or f"{first_n} {last_n}".strip() or "").strip()
+        email = str(merged.get("email") or merged.get("correo") or merged.get("prof_180") or merged.get("prof_email") or "").strip()
+        ig_raw = str(merged.get("prof_212") or "").strip().lstrip("@")
+        if not name and ig_raw and len(ig_raw) >= 3:
+            ig_clean = re.sub(r'[._\-]+', ' ', ig_raw).strip().title()
+            if ig_clean:
+                name = f"{ig_clean} (@{ig_raw})"
+        if not name and email and "@" in email:
+            em_prefix = re.sub(r'[._\-0-9]+', ' ', email.split("@")[0]).strip().title()
+            if em_prefix:
+                name = em_prefix
+        if not name:
+            name = f"Cliente CRM #{crm_id}"
+
+        phone = str(merged.get("phone") or merged.get("mobile") or merged.get("prof_190") or "").strip()
+        if phone:
+            phone = phone.replace(" ", "").replace("-", "")
+            if not phone.startswith("+"):
+                phone = "+57" + phone.lstrip("0")
+        else:
+            phone = f"+57300000{crm_id}"
+
+        city = str(merged.get("city") or merged.get("ciudad") or "").strip()
+        if not city and merged.get("prof_191"):
+            p191 = merged.get("prof_191")
+            if isinstance(p191, dict):
+                city = str(p191.get("city") or "").strip()
+            elif isinstance(p191, str):
+                city = p191.strip()
+
+        gender = str(merged.get("gender") or "").strip()
+        if not gender and merged.get("prof_192"):
+            p192 = merged.get("prof_192")
+            gender = str(p192.get("choice_label", "") if isinstance(p192, dict) else p192).strip()
+
+        orientation = ""
+        pref_65 = merged.get("pref_65")
+        if isinstance(pref_65, list) and len(pref_65) > 0 and isinstance(pref_65[0], dict):
+            lbl = pref_65[0].get("choice_label", "").lower()
+            if "hetero" in lbl:
+                orientation = "hetero"
+            elif "gay" in lbl or "homo" in lbl:
+                orientation = "gay"
+            elif "lesb" in lbl:
+                orientation = "lesb"
+            elif "bi" in lbl:
+                orientation = "bi"
+        if not orientation and merged.get("prof_193"):
+            p193 = merged.get("prof_193")
+            lbl = str(p193.get("choice_label", "") if isinstance(p193, dict) else p193).lower()
+            if "hetero" in lbl:
+                orientation = "hetero"
+            elif "gay" in lbl or "homo" in lbl:
+                orientation = "gay"
+            elif "lesb" in lbl:
+                orientation = "lesb"
+            elif "bi" in lbl:
+                orientation = "bi"
+
+        age = merged.get("age") or merged.get("prof_247")
+        if age:
+            try:
+                age = int(float(str(age)))
+            except Exception:
+                age = None
+        if not age and merged.get("prof_194"):
+            try:
+                b_year = int(str(merged.get("prof_194"))[:4])
+                age = datetime.now().year - b_year
+            except Exception:
+                pass
+
+        occupation = str(merged.get("prof_199") or merged.get("occupation") or "").strip()
+        university = str(merged.get("prof_213") or "").strip()
+        bio_essay = str(merged.get("pref_64") or "").strip()
+
+        bio_parts = []
+        if occupation:
+            bio_parts.append(f"Ocupación: {occupation}")
+        if university:
+            bio_parts.append(f"Universidad: {university}")
+        if ig_raw:
+            bio_parts.append(f"IG: @{ig_raw}")
+        if bio_essay:
+            bio_parts.append(bio_essay)
+        bio_notes_synth = " | ".join(bio_parts)
+
+        # Upsert en users
+        u_res = await db.execute(text("SELECT id, name FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": str(crm_id)})
+        u_row = u_res.fetchone()
+        if not u_row and phone and not phone.startswith("+57300000"):
+            u_res = await db.execute(text("SELECT id, name FROM users WHERE phone = :ph LIMIT 1"), {"ph": phone})
+            u_row = u_res.fetchone()
+
+        if u_row:
+            uid = u_row.id
+            await db.execute(text("""
+                UPDATE users SET
+                    name = CASE
+                        WHEN (users.name IS NULL OR users.name = '' OR users.name LIKE 'Cliente CRM%') AND NULLIF(:name, '') IS NOT NULL THEN :name
+                        ELSE users.name
+                    END,
+                    email = COALESCE(NULLIF(:email, ''), users.email),
+                    crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id)
+                WHERE id = :uid
+            """), {"uid": uid, "name": name, "email": email, "cid": str(crm_id)})
+        else:
+            ins_u = await db.execute(text("""
+                INSERT INTO users (phone, name, email, crm_id, created_at)
+                VALUES (:phone, :name, :email, :cid, NOW())
+                ON CONFLICT (phone) DO UPDATE SET
+                    name = COALESCE(NULLIF(EXCLUDED.name, ''), users.name),
+                    email = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
+                    crm_id = COALESCE(NULLIF(EXCLUDED.crm_id, ''), users.crm_id)
+                RETURNING id
+            """), {"phone": phone, "name": name, "email": email or None, "cid": str(crm_id)})
+            uid = ins_u.scalar()
+
+        # Upsert en profiles
+        p_res = await db.execute(text("SELECT user_id FROM profiles WHERE user_id = :uid LIMIT 1"), {"uid": uid})
+        p_row = p_res.fetchone()
+        if p_row:
+            await db.execute(text("""
+                UPDATE profiles SET
+                    city = COALESCE(NULLIF(profiles.city, ''), NULLIF(:city, '')),
+                    orientation = COALESCE(NULLIF(profiles.orientation, ''), NULLIF(:ori, '')),
+                    gender = COALESCE(NULLIF(profiles.gender, ''), NULLIF(:gen, '')),
+                    age = COALESCE(profiles.age, CAST(:age AS INTEGER)),
+                    occupation = COALESCE(NULLIF(profiles.occupation, ''), NULLIF(:occ, '')),
+                    bio_notes = CASE
+                        WHEN (profiles.bio_notes IS NULL OR profiles.bio_notes = '') AND NULLIF(:bio, '') IS NOT NULL THEN :bio
+                        ELSE profiles.bio_notes
+                    END
+                WHERE user_id = :uid
+            """), {
+                "uid": uid, "city": city, "ori": orientation,
+                "gen": gender, "age": age, "occ": occupation, "bio": bio_notes_synth
+            })
+        else:
+            await db.execute(text("""
+                INSERT INTO profiles (user_id, city, orientation, gender, age, occupation, bio_notes)
+                VALUES (:uid, :city, :ori, :gen, CAST(:age AS INTEGER), :occ, :bio)
+            """), {
+                "uid": uid, "city": city or None, "ori": orientation or None,
+                "gen": gender or None, "age": age, "occ": occupation or None, "bio": bio_notes_synth or None
+            })
+        await db.commit()
+
+        final_q = await db.execute(text("""
+            SELECT u.id, u.name, u.email, u.phone, u.crm_id,
+                   p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
+                   p.age, p.bio_notes, p.clinical_profile_360
+            FROM users u
+            LEFT JOIN profiles p ON p.user_id = u.id
+            WHERE u.id = :uid
+            LIMIT 1
+        """), {"uid": uid})
+        return final_q.fetchone()
+    except Exception:
+        return None
+
+
 @router.post("/intake-client")
 async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -680,25 +890,10 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
     quick_notes_clean = (payload.quick_notes or "").strip()
 
     resolved_row = None
-    extracted_crm_id = None
+    extracted_crm_id = _extract_crm_id_from_url(profile_url_clean) or (payload.crm_id or "").strip() or None
 
-    # 1. Si viene URL, extraer CRM ID o buscar perfil existente
-    if profile_url_clean:
-        if "smartmatchapp.com" in profile_url_clean:
-            match = re.search(r"(?:client|clients|profile|profiles|user|users)[/#](\d+)", profile_url_clean, re.IGNORECASE)
-            if match:
-                extracted_crm_id = match.group(1)
-        if not extracted_crm_id:
-            match = re.search(r"[?&]id=(\d+)", profile_url_clean, re.IGNORECASE)
-            if match:
-                extracted_crm_id = match.group(1)
-        if not extracted_crm_id and profile_url_clean.isdigit():
-            extracted_crm_id = profile_url_clean
-        if not extracted_crm_id:
-            match = re.search(r"/(\d{3,})/?$", profile_url_clean)
-            if match:
-                extracted_crm_id = match.group(1)
-
+    # 1. Si viene URL o CRM ID, extraer CRM ID o buscar perfil existente
+    if profile_url_clean or extracted_crm_id:
         if extracted_crm_id:
             res = await db.execute(text("""
                 SELECT u.id, u.name, u.email, u.phone, u.crm_id,
@@ -712,6 +907,11 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             """), {"cid": extracted_crm_id})
             resolved_row = res.fetchone()
 
+            if not resolved_row or (resolved_row.name and resolved_row.name.startswith("Cliente CRM")):
+                wh_synced = await _sync_crm_id_from_webhooks(extracted_crm_id, db)
+                if wh_synced:
+                    resolved_row = wh_synced
+
             if not resolved_row and extracted_crm_id.isdigit():
                 res = await db.execute(text("""
                     SELECT u.id, u.name, u.email, u.phone, u.crm_id,
@@ -724,7 +924,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
                 """), {"uid": int(extracted_crm_id)})
                 resolved_row = res.fetchone()
 
-        if not resolved_row:
+        if not resolved_row and profile_url_clean:
             # Buscar por URL guardada previamente en clinical_profile_360
             res = await db.execute(text("""
                 SELECT u.id, u.name, u.email, u.phone, u.crm_id,
@@ -3519,14 +3719,7 @@ async def resolve_profile(
         raise HTTPException(status_code=400, detail="Entrada vacía")
 
     # 1. Intentar extraer CRM ID por regex de URL o número directo
-    extracted_crm_id = None
-    url_match = re.search(r"(?:client|profile|view)[/=#!]+(\d+)", raw_input, re.IGNORECASE) or re.search(r"(?:client|profile|view)/(\d+)", raw_input, re.IGNORECASE)
-    if url_match:
-        extracted_crm_id = url_match.group(1)
-    elif re.search(r"[?&]id=(\d+)", raw_input, re.IGNORECASE):
-        extracted_crm_id = re.search(r"[?&]id=(\d+)", raw_input, re.IGNORECASE).group(1)
-    elif raw_input.isdigit():
-        extracted_crm_id = raw_input
+    extracted_crm_id = _extract_crm_id_from_url(raw_input)
 
     # 2. Búsqueda en DB por crm_id o user id
     row = None
@@ -3534,7 +3727,7 @@ async def resolve_profile(
         res = await db.execute(text("""
             SELECT u.id, u.name, u.email, u.phone, u.crm_id,
                    p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
-                   p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
+                   p.age, p.bio_notes, p.clinical_profile_360
             FROM users u
             LEFT JOIN profiles p ON p.user_id = u.id
             WHERE u.crm_id = :cid
@@ -3543,11 +3736,16 @@ async def resolve_profile(
         """), {"cid": extracted_crm_id})
         row = res.fetchone()
 
+        if not row or (row.name and row.name.startswith("Cliente CRM")):
+            wh_synced = await _sync_crm_id_from_webhooks(extracted_crm_id, db)
+            if wh_synced:
+                row = wh_synced
+
         if not row and extracted_crm_id.isdigit():
             res = await db.execute(text("""
                 SELECT u.id, u.name, u.email, u.phone, u.crm_id,
                        p.city, p.orientation, p.gender, p.plan_tier, p.responsable,
-                       p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
+                       p.age, p.bio_notes, p.clinical_profile_360
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE u.id = :uid
