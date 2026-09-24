@@ -31,7 +31,17 @@ FEMALE_NAME_TOKENS = {
     'yuli', 'viviana', 'ximena', 'melissa', 'elena', 'lorena', 'pilar', 'gloria',
     'martha', 'beatriz', 'esperanza', 'rocio', 'manuela', 'veronica', 'angie', 'luz',
     'johanna', 'paola', 'angela', 'karol', 'dayana', 'cindy', 'clara', 'mercedes',
-    'margarita', 'teresa', 'rosa', 'carmen', 'olga', 'cecilia', 'lorena'
+    'margarita', 'teresa', 'rosa', 'carmen', 'olga', 'cecilia',
+    # Nombres femeninos reales verificados en la base de datos de usuarios
+    'susana', 'susan', 'isabel', 'isabela', 'angelica', 'karen', 'lizeth', 'erika',
+    'eliana', 'juanita', 'juana', 'liliana', 'jennifer', 'jimena', 'stephanie',
+    'stefanny', 'alexandra', 'jenny', 'johana', 'nathalia', 'mayra', 'cristina',
+    'milena', 'yenny', 'wendy', 'gina', 'karla', 'paulina', 'carol', 'linda',
+    'kelly', 'julieth', 'jeimy', 'sonia', 'zuleima', 'joanna', 'katya', 'bibiana',
+    'luna', 'elizabeth', 'maritza', 'astrid', 'constanza', 'ivonne', 'shirley',
+    'giselle', 'dora', 'miriam', 'myriam', 'francy', 'blanca', 'gladys', 'nidia',
+    'yamile', 'leidys', 'yuliana', 'marina', 'eugenia', 'alicia', 'victoria',
+    'silvana', 'danitza', 'salome', 'antonella', 'samanta', 'samantha'
 }
 
 MALE_NAME_TOKENS = {
@@ -42,7 +52,12 @@ MALE_NAME_TOKENS = {
     'esteban', 'francisco', 'mario', 'oscar', 'cesar', 'leonardo', 'jaime', 'gonzalo',
     'hector', 'hugo', 'ruben', 'samuel', 'alex', 'alexander', 'martin', 'lucas', 'tomas',
     'rene', 'ivan', 'alvaro', 'guillermo', 'fabian', 'edwin', 'harold', 'german',
-    'antonio', 'jhon', 'raul', 'enrique', 'alfredo', 'alonso', 'edgar'
+    'antonio', 'jhon', 'raul', 'enrique', 'alfredo', 'alonso', 'edgar',
+    # Nombres masculinos reales verificados en la base de datos de usuarios
+    'john', 'jonathan', 'michael', 'brian', 'kevin', 'omar', 'fabio', 'federico',
+    'christian', 'angel', 'brayan', 'bryan', 'rafael', 'wilson', 'johann', 'johan',
+    'jacobo', 'nelson', 'orlando', 'william', 'vladimir', 'hernan', 'marcelo',
+    'giovanny', 'danny', 'dario', 'didier', 'marco', 'gordon', 'erik'
 }
 
 def infer_gender_from_name_and_bio(name: str, bio_notes: str = "") -> str:

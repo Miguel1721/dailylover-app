@@ -6366,12 +6366,47 @@ async def find_candidate_matches_engine(
     uid = client_summary.get("user_id")
     client_city = (client_summary.get("city") if client_summary.get("city") else "Bogotá").strip()
     raw_cg = (client_summary.get("gender") or "").strip()
-    if not raw_cg or raw_cg.lower() in ["no especificado", "none", ""]:
+    if not raw_cg or raw_cg.lower() in ["no especificado", "none", "", "genero no determinado", "género no determinado"]:
         raw_cg = infer_gender_from_name_and_bio(
             client_summary.get("name", ""),
             client_summary.get("bio_notes", "")
         )
-    client_gender = (raw_cg if raw_cg != "No especificado" else "Hombre").strip().lower()
+
+    # REGLA ESTRICTA: Prohibido asumir ciegamente "Hombre" si el género no se pudo determinar con certeza.
+    if not raw_cg or raw_cg in ["No especificado", "None", ""]:
+        client_summary["gender"] = "Género no determinado"
+        msg_bloqueo = (
+            f"Género no determinado para {client_summary.get('name', 'el cliente')}: "
+            "No es posible determinar con certeza su género a partir de su ficha o nombre. "
+            "Por favor registre el género manualmente en la ficha de SmartMatchApp (CRM) "
+            "para habilitar el motor de matchmaking y evitar asignaciones erróneas en cascada."
+        )
+        discarded_matches = [{
+            "user_id": client_summary.get("user_id"),
+            "name": client_summary.get("name"),
+            "reasons": [msg_bloqueo]
+        }]
+        try:
+            client_p360 = ClinicalProfileExtractor.extract_full_profile_360(
+                client_summary.get("bio_notes", ""),
+                client_summary.get("lifestyle") or {},
+                client_summary.get("search_preferences") or {},
+                client_summary.get("apego") or {},
+                client_summary.get("name", ""),
+                client_summary.get("age"),
+                client_summary.get("city", "Bogotá"),
+                "No especificado",
+                client_summary.get("estatura", ""),
+                client_summary.get("occupation", "")
+            )
+        except Exception:
+            client_p360 = {}
+        client_p360["genero_bloqueado"] = True
+        client_p360["motivo_bloqueo"] = msg_bloqueo
+        client_p360["warning"] = msg_bloqueo
+        return [], discarded_matches, client_p360
+
+    client_gender = raw_cg.strip().lower()
     client_sg = float(client_summary["social_group_score"]) if client_summary.get("social_group_score") is not None else None
     client_act = int(client_summary["physical_activity_level"]) if client_summary.get("physical_activity_level") is not None else None
     client_edu = int(client_summary["education_level"]) if client_summary.get("education_level") is not None else None
@@ -7415,15 +7450,15 @@ async def get_interview_results(
         raw_cc = infer_city_from_text(prof_row.bio_notes if prof_row else "") or "Bogotá"
     client_city = raw_cc
     raw_cg = (prof_row.gender if prof_row and prof_row.gender else "").strip()
-    if not raw_cg or raw_cg.lower() in ["no especificado", "none", ""]:
+    if not raw_cg or raw_cg.lower() in ["no especificado", "none", "", "genero no determinado", "género no determinado"]:
         raw_cg = infer_gender_from_name_and_bio(user_row.name or "", prof_row.bio_notes if prof_row else "")
-        if raw_cg != "No especificado":
+        if raw_cg and raw_cg not in ["No especificado", "None", ""]:
             try:
                 await db.execute(text("UPDATE profiles SET gender = :g WHERE user_id = :uid"), {"g": raw_cg, "uid": uid})
                 await db.commit()
             except Exception:
                 pass
-    client_gender = (raw_cg if raw_cg != "No especificado" else "Hombre").strip().lower()
+    client_gender = raw_cg.strip().lower() if raw_cg and raw_cg not in ["No especificado", "None", ""] else "género no determinado"
     client_sg = float(ext_data["social_group_score"]) if ext_data.get("social_group_score") is not None else None
     client_act = int(ext_data["physical_activity_level"]) if ext_data.get("physical_activity_level") is not None else None
     client_prefs = (prof_row.search_preferences if prof_row and prof_row.search_preferences else {}) or {}
@@ -7513,7 +7548,7 @@ async def get_interview_results(
         "crm_url": client_crm_url,
         "client_code": user_row.client_code or f"DL-{user_row.id}",
         "city": client_city,
-        "gender": raw_cg if raw_cg != "No especificado" else (prof_row.gender if prof_row and prof_row.gender else "No especificado"),
+        "gender": raw_cg if raw_cg and raw_cg not in ["No especificado", "None", ""] else (prof_row.gender if prof_row and prof_row.gender and prof_row.gender not in ["No especificado", "None", ""] else "Género no determinado"),
         "orientation": prof_row.orientation if prof_row and prof_row.orientation else (client_prefs.get("preferred_orientation") or None),
         "age": client_age,
         "estatura": prof_row.estatura if prof_row and prof_row.estatura else "",
