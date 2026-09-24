@@ -477,32 +477,32 @@ export default function CitasAgendadas() {
             No hay citas confirmadas en el rango seleccionado.
           </div>
         ) : (
-          <div className="table-container">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div className="table-container" style={{ overflowX: 'auto', width: '100%' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
               <thead>
                 <tr style={{ background: 'rgba(150,21,0,0.06)', borderBottom: '1px solid var(--border-color)' }}>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>#</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Fecha Cita</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Persona A (Cliente)</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Persona B (Candidato)</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Lugar / Restaurante</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'left', fontWeight: 700 }}>Ciudad</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Reserva</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Mensajería WhatsApp</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Reprogramar</th>
-                  <th style={{ padding: '12px 16px', fontSize: 11, textAlign: 'center', fontWeight: 700 }}>Seguimiento &amp; Feedback</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'left', fontWeight: 700, width: 45 }}>#</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'left', fontWeight: 700, width: 130 }}>Fecha Cita</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'left', fontWeight: 700, width: 150 }}>Persona A (Cliente)</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'left', fontWeight: 700, width: 150 }}>Persona B (Candidato)</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'left', fontWeight: 700, width: 170 }}>Lugar / Restaurante</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'left', fontWeight: 700, width: 85 }}>Ciudad</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'center', fontWeight: 700, width: 95 }}>Reserva</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'center', fontWeight: 700, width: 190 }}>Mensajería WhatsApp</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'center', fontWeight: 700, width: 95 }}>Reprogramar</th>
+                  <th style={{ padding: '12px 10px', fontSize: 11, textAlign: 'center', fontWeight: 700, width: 115 }}>Seguimiento &amp; Feedback</th>
                 </tr>
               </thead>
               <tbody>
                 {calendarDates.map(c => (
                   <tr key={c.calendar_id || c.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>{c.calendar_id || c.id}</td>
-                    <td style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-primary)', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '10px 10px', fontSize: 12, color: 'var(--text-muted)' }}>{c.calendar_id || c.id}</td>
+                    <td style={{ padding: '10px 10px', fontWeight: 700, color: 'var(--color-primary)', maxWidth: 130 }}>
                       <button
                         onClick={() => {
                           setRescheduleModalItem({ ...c, _isDirectAssign: true })
                         }}
-                        title="Clic para cambiar o asignar fecha y hora"
+                        title={`Clic para cambiar o asignar fecha y hora: ${c.scheduled_date || c.date_time || 'Por definir'}`}
                         style={{
                           background: 'none',
                           border: 'none',
@@ -514,22 +514,36 @@ export default function CitasAgendadas() {
                           padding: 0,
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: 4
+                          gap: 4,
+                          maxWidth: 120,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
                         }}
                       >
                         📅 {c.scheduled_date || c.date_time || 'Por definir'}
                       </button>
                     </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 700 }}>
+                    <td style={{ padding: '10px 10px', fontWeight: 700, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       <CrmPersonLink name={c.person_a} crmId={c.person_a_crm_id} />
                     </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 700 }}>
+                    <td style={{ padding: '10px 10px', fontWeight: 700, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       <CrmPersonLink name={c.person_b} crmId={c.person_b_crm_id} />
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13 }}>
+                    <td style={{ padding: '10px 10px', fontSize: 13, maxWidth: 170 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ color: c.venue && !c.venue.toLowerCase().includes('por definir') ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                          📍 {c.venue && !c.venue.toLowerCase().includes('por definir') ? c.venue : 'Restaurante por definir'}
+                        <span 
+                          title={c.venue && !c.venue.toLowerCase().includes('por definir') ? c.venue : 'Restaurante por definir'}
+                          style={{ 
+                            color: c.venue && !c.venue.toLowerCase().includes('por definir') ? 'var(--text-primary)' : 'var(--text-muted)',
+                            maxWidth: 110,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            display: 'inline-block'
+                          }}
+                        >
+                          📍 {c.venue && !c.venue.toLowerCase().includes('por definir') ? c.venue : 'Por definir'}
                         </span>
                         <button
                           onClick={() => {
@@ -544,7 +558,8 @@ export default function CitasAgendadas() {
                             fontSize: 10,
                             fontWeight: 700,
                             cursor: 'pointer',
-                            whiteSpace: 'nowrap'
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0
                           }}
                           title="Abrir filtros para escoger restaurante y horario"
                         >
@@ -552,10 +567,10 @@ export default function CitasAgendadas() {
                         </button>
                       </div>
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13 }}>
+                    <td style={{ padding: '10px 10px', fontSize: 13 }}>
                       {c.city || 'Bogotá'}
                     </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                       <button
                         onClick={() => handleUpdateDate(c.calendar_id || c.id, { reservation_confirmed: !c.reservation_confirmed })}
                         style={{
@@ -572,7 +587,7 @@ export default function CitasAgendadas() {
                         {c.reservation_confirmed ? '📌 Reservada' : 'Marcar reserva'}
                       </button>
                     </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <button
                           onClick={() => copyToClipboard(c.msg_confirmation || `Hola! Tu cita está confirmada para ${c.scheduled_date || c.date_time} en ${c.venue}.`, 'confirmación', c.calendar_id || c.id)}
@@ -633,7 +648,7 @@ export default function CitasAgendadas() {
                         </button>
                       </div>
                     </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                       <button
                         onClick={() => setRescheduleModalItem({ ...c, _isDirectAssign: false })}
                         style={{
@@ -653,7 +668,7 @@ export default function CitasAgendadas() {
                         <RotateCcw size={12} /> Reprogramar
                       </button>
                     </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
                         <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                           {c.feedback && c.feedback.includes('NO-SHOW') ? (

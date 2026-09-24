@@ -287,115 +287,134 @@ export default function TroubleMatches() {
         </div>
       </div>
 
-      {/* BARRA DE PRUEBA RÁPIDA DE ALERTAS EN VIVO (Móvil & Escritorio) */}
-      <div style={{
-        background: 'rgba(150, 21, 0, 0.08)',
-        border: '1px solid rgba(150, 21, 0, 0.25)',
-        borderRadius: 12,
-        padding: '12px 16px',
-        marginBottom: 20,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8
+      {/* HERRAMIENTAS DE DESARROLLO (SIMULADOR OCULTO PARA CS/OPERACIÓN) */}
+      <details style={{
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px dashed var(--border-color)',
+        borderRadius: 10,
+        padding: '10px 14px',
+        marginBottom: 20
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Bell size={16} color="var(--color-primary)" />
-            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
-              ⚡ Simulador de Alertas en Tiempo Real
+        <summary style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: 'var(--text-muted)',
+          cursor: 'pointer',
+          userSelect: 'none',
+          outline: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6
+        }}>
+          <span>🔧 Herramientas de Desarrollo (Simulador de Alertas de Prueba - Uso Interno Técnico)</span>
+        </summary>
+        <div style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: '1px solid var(--border-color)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Bell size={16} color="var(--color-primary)" />
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>
+                ⚡ Simulador de Alertas en Tiempo Real
+              </span>
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              Toca cualquier botón para probar cómo te llega la notificación con audio y banner flotante:
             </span>
           </div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            Toca cualquier botón para probar cómo te llega la notificación con audio y banner flotante:
-          </span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+            <button
+              disabled={simulating}
+              onClick={() => handleQuickSimulate('APPROVAL')}
+              style={{
+                background: 'rgba(16, 185, 129, 0.15)',
+                color: '#10B981',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                minHeight: 40
+              }}
+            >
+              <Sparkles size={13} /> Cita Aprobada
+            </button>
+            <button
+              disabled={simulating}
+              onClick={() => handleQuickSimulate('NO_SHOW')}
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: '#EF4444',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                minHeight: 40
+              }}
+            >
+              <AlertTriangle size={13} /> Alerta No-Show
+            </button>
+            <button
+              disabled={simulating}
+              onClick={() => handleQuickSimulate('STATUS_CHANGE')}
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#A855F7',
+                border: '1px solid rgba(168, 85, 247, 0.4)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                minHeight: 40
+              }}
+            >
+              <Heart size={13} /> Match Hecho
+            </button>
+            <button
+              disabled={simulating}
+              onClick={() => handleQuickSimulate('TROUBLE')}
+              style={{
+                background: 'rgba(255, 107, 53, 0.15)',
+                color: '#FF6B35',
+                border: '1px solid rgba(255, 107, 53, 0.4)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                minHeight: 40
+              }}
+            >
+              <Flame size={13} /> Alerta Trouble
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
-          <button
-            disabled={simulating}
-            onClick={() => handleQuickSimulate('APPROVAL')}
-            style={{
-              background: 'rgba(16, 185, 129, 0.15)',
-              color: '#10B981',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
-              borderRadius: 8,
-              padding: '8px 10px',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              minHeight: 40
-            }}
-          >
-            <Sparkles size={13} /> Cita Aprobada
-          </button>
-          <button
-            disabled={simulating}
-            onClick={() => handleQuickSimulate('NO_SHOW')}
-            style={{
-              background: 'rgba(239, 68, 68, 0.15)',
-              color: '#EF4444',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              borderRadius: 8,
-              padding: '8px 10px',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              minHeight: 40
-            }}
-          >
-            <AlertTriangle size={13} /> Alerta No-Show
-          </button>
-          <button
-            disabled={simulating}
-            onClick={() => handleQuickSimulate('STATUS_CHANGE')}
-            style={{
-              background: 'rgba(168, 85, 247, 0.15)',
-              color: '#A855F7',
-              border: '1px solid rgba(168, 85, 247, 0.4)',
-              borderRadius: 8,
-              padding: '8px 10px',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              minHeight: 40
-            }}
-          >
-            <Heart size={13} /> Match Hecho
-          </button>
-          <button
-            disabled={simulating}
-            onClick={() => handleQuickSimulate('TROUBLE')}
-            style={{
-              background: 'rgba(255, 107, 53, 0.15)',
-              color: '#FF6B35',
-              border: '1px solid rgba(255, 107, 53, 0.4)',
-              borderRadius: 8,
-              padding: '8px 10px',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              minHeight: 40
-            }}
-          >
-            <Flame size={13} /> Alerta Trouble
-          </button>
-        </div>
-      </div>
+      </details>
 
       {/* KPI STAT CARDS */}
       <div style={{

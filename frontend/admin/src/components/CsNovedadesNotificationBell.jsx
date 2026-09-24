@@ -317,155 +317,169 @@ export default function CsNovedadesNotificationBell() {
             )}
           </div>
 
-          {/* SIMULADOR EN VIVO */}
-          <div style={{
-            padding: '12px 14px',
+          {/* SIMULADOR EN VIVO (HERRAMIENTA TÉCNICA COLAPSADA) */}
+          <details style={{
             background: 'var(--bg-base)',
             borderTop: '1px solid var(--border-color)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
             flexShrink: 0
           }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--color-primary)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>⚡</span> Probar Alertas en Vivo (Simulador)
+            <summary style={{
+              padding: '10px 14px',
+              fontSize: 11,
+              fontWeight: 700,
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              userSelect: 'none',
+              outline: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}>
+              <span>🔧 Probar Alertas en Vivo (Uso Técnico)</span>
+            </summary>
+            <div style={{
+              padding: '0 14px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button
+                  disabled={simulating}
+                  onClick={() => handleSimulate('INACTIVITY_15D')}
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.15)',
+                    color: '#F59E0B',
+                    border: '1px solid rgba(245, 158, 11, 0.4)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    minHeight: 40
+                  }}
+                  title="Simular inactividad >15d con redirección directa a Prioritarios de Psicóloga"
+                >
+                  <Flame size={13} /> ⚡ Inactividad 16d
+                </button>
+
+                <button
+                  disabled={simulating}
+                  onClick={() => handleSimulate('VIP_650K')}
+                  style={{
+                    background: 'rgba(234, 179, 8, 0.15)',
+                    color: '#EAB308',
+                    border: '1px solid rgba(234, 179, 8, 0.4)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    minHeight: 40
+                  }}
+                  title="Simular nuevo cliente VIP Plan 650k con redirección y apertura automática de perfil"
+                >
+                  <Sparkles size={13} /> 👑 VIP Plan 650k
+                </button>
+
+                <button
+                  disabled={simulating}
+                  onClick={() => handleSimulate('APPROVAL')}
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10B981',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    minHeight: 40
+                  }}
+                >
+                  <Sparkles size={13} /> Cita Aprobada
+                </button>
+
+                <button
+                  disabled={simulating}
+                  onClick={() => handleSimulate('NO_SHOW')}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#EF4444',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    minHeight: 40
+                  }}
+                >
+                  <AlertTriangle size={13} /> Alerta No-Show
+                </button>
+
+                <button
+                  disabled={simulating}
+                  onClick={() => handleSimulate('STATUS_CHANGE')}
+                  style={{
+                    background: 'rgba(168, 85, 247, 0.15)',
+                    color: '#A855F7',
+                    border: '1px solid rgba(168, 85, 247, 0.4)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    minHeight: 40
+                  }}
+                >
+                  <Heart size={13} /> Match Hecho
+                </button>
+
+                <button
+                  disabled={simulating}
+                  onClick={() => handleSimulate('TROUBLE')}
+                  style={{
+                    background: 'rgba(255, 107, 53, 0.15)',
+                    color: '#FF6B35',
+                    border: '1px solid rgba(255, 107, 53, 0.4)',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    minHeight: 40
+                  }}
+                >
+                  <Flame size={13} /> Alerta Trouble
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <button
-                disabled={simulating}
-                onClick={() => handleSimulate('INACTIVITY_15D')}
-                style={{
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  color: '#F59E0B',
-                  border: '1px solid rgba(245, 158, 11, 0.4)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  minHeight: 40
-                }}
-                title="Simular inactividad >15d con redirección directa a Prioritarios de Psicóloga"
-              >
-                <Flame size={13} /> ⚡ Inactividad 16d
-              </button>
-
-              <button
-                disabled={simulating}
-                onClick={() => handleSimulate('VIP_650K')}
-                style={{
-                  background: 'rgba(234, 179, 8, 0.15)',
-                  color: '#EAB308',
-                  border: '1px solid rgba(234, 179, 8, 0.4)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  minHeight: 40
-                }}
-                title="Simular nuevo cliente VIP Plan 650k con redirección y apertura automática de perfil"
-              >
-                <Sparkles size={13} /> 👑 VIP Plan 650k
-              </button>
-
-              <button
-                disabled={simulating}
-                onClick={() => handleSimulate('APPROVAL')}
-                style={{
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  color: '#10B981',
-                  border: '1px solid rgba(16, 185, 129, 0.4)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  minHeight: 40
-                }}
-              >
-                <Sparkles size={13} /> Cita Aprobada
-              </button>
-
-              <button
-                disabled={simulating}
-                onClick={() => handleSimulate('NO_SHOW')}
-                style={{
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  color: '#EF4444',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  minHeight: 40
-                }}
-              >
-                <AlertTriangle size={13} /> Alerta No-Show
-              </button>
-
-              <button
-                disabled={simulating}
-                onClick={() => handleSimulate('STATUS_CHANGE')}
-                style={{
-                  background: 'rgba(168, 85, 247, 0.15)',
-                  color: '#A855F7',
-                  border: '1px solid rgba(168, 85, 247, 0.4)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  minHeight: 40
-                }}
-              >
-                <Heart size={13} /> Match Hecho
-              </button>
-
-              <button
-                disabled={simulating}
-                onClick={() => handleSimulate('TROUBLE')}
-                style={{
-                  background: 'rgba(255, 107, 53, 0.15)',
-                  color: '#FF6B35',
-                  border: '1px solid rgba(255, 107, 53, 0.4)',
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  minHeight: 40
-                }}
-              >
-                <Flame size={13} /> Alerta Trouble
-              </button>
-            </div>
-          </div>
+          </details>
         </div>
         </>
       )}

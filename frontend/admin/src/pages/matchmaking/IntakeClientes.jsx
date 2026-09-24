@@ -89,9 +89,14 @@ export default function IntakeClientes() {
       .catch(e => console.error('Error fetching psychologists list:', e))
   }, [])
 
+  const [totalCount, setTotalCount] = useState(0)
+  const [serverTotalPages, setServerTotalPages] = useState(1)
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
   const fetchIntakeList = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/intake-list?`
+    let url = `${API}/api/v1/matchmaking/intake-list?page=${currentPage}&page_size=${pageSize}&`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'all') url += `city=${encodeURIComponent(selectedCity)}&`
     if (selectedPlan && selectedPlan !== 'all') url += `plan_tier=${encodeURIComponent(selectedPlan)}&`
@@ -103,24 +108,23 @@ export default function IntakeClientes() {
       .then(r => r.json())
       .then(data => {
         setClients(data.clients || [])
+        setTotalCount(data.total || 0)
+        setServerTotalPages(data.total_pages || 1)
         setLoading(false)
       })
       .catch(err => {
         console.error('Error fetching intake list:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm, token])
+  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm, currentPage, token])
 
   useEffect(() => {
     fetchIntakeList()
   }, [fetchIntakeList])
 
-  const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 50
-
   useEffect(() => {
     setCurrentPage(1)
-  }, [selectedPsyc, searchTerm])
+  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm])
 
   // Autocompletado inteligente al escribir nombre o pegar URL
   const handleResolveQuery = async (queryVal, source = 'name') => {
@@ -208,12 +212,11 @@ export default function IntakeClientes() {
     }
   }
 
-  const totalClients = clients.length
+  const totalClients = totalCount > 0 ? totalCount : clients.length
   const totalSlotsCreated = clients.reduce((acc, c) => acc + (c.total_slots || 0), 0)
   const totalWithMatches = clients.filter(c => c.filled_slots > 0).length
 
-  const totalPages = Math.ceil(clients.length / pageSize) || 1
-  const paginatedClients = clients.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const paginatedClients = clients
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 1650, margin: '0 auto' }}>
@@ -321,8 +324,10 @@ export default function IntakeClientes() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 20 }}>
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Perfiles en PROFILES</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>{totalClients}</div>
-          <div style={{ fontSize: 11, color: '#10B981', marginTop: 4 }}>Registrados en sistema</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
+            {totalClients > 0 ? totalClients.toLocaleString('es-CO') : '...'}
+          </div>
+          <div style={{ fontSize: 11, color: '#10B981', marginTop: 4 }}>Total registrados en base de datos</div>
         </div>
 
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
@@ -674,7 +679,7 @@ export default function IntakeClientes() {
       </div>
 
       {/* Paginación */}
-      {totalPages > 1 && (
+      {serverTotalPages > 1 && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -683,22 +688,24 @@ export default function IntakeClientes() {
           padding: '12px 16px',
           background: 'var(--bg-card)',
           borderRadius: 8,
-          border: '1px solid var(--border-color)'
+          border: '1px solid var(--border-color)',
+          flexWrap: 'wrap',
+          gap: 12
         }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            Mostrando <b>{(currentPage - 1) * pageSize + 1}</b> - <b>{Math.min(currentPage * pageSize, clients.length)}</b> de <b>{clients.length}</b> perfiles
+            Mostrando <b>{(currentPage - 1) * pageSize + 1}</b> - <b>{Math.min(currentPage * pageSize, totalClients)}</b> de <b>{totalClients.toLocaleString('es-CO')}</b> perfiles
           </span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-              disabled={currentPage === 1}
+              disabled={currentPage === 1 || loading}
               style={{
                 padding: '6px 12px',
                 borderRadius: 6,
                 border: '1px solid var(--border-color)',
                 background: 'var(--bg-base)',
-                color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-primary)',
-                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                color: currentPage === 1 || loading ? 'var(--text-muted)' : 'var(--text-primary)',
+                cursor: currentPage === 1 || loading ? 'not-allowed' : 'pointer',
                 fontSize: 12,
                 fontWeight: 600
               }}
@@ -706,18 +713,18 @@ export default function IntakeClientes() {
               Anterior
             </button>
             <span style={{ fontSize: 12, fontWeight: 700, padding: '0 8px', color: 'var(--text-primary)' }}>
-              Página {currentPage} de {totalPages}
+              Página {currentPage} de {serverTotalPages}
             </span>
             <button
-              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(p => Math.min(p + 1, serverTotalPages))}
+              disabled={currentPage === serverTotalPages || loading}
               style={{
                 padding: '6px 12px',
                 borderRadius: 6,
                 border: '1px solid var(--border-color)',
                 background: 'var(--bg-base)',
-                color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
-                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                color: currentPage === serverTotalPages || loading ? 'var(--text-muted)' : 'var(--text-primary)',
+                cursor: currentPage === serverTotalPages || loading ? 'not-allowed' : 'pointer',
                 fontSize: 12,
                 fontWeight: 600
               }}

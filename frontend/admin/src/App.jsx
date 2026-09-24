@@ -282,6 +282,8 @@ function Sidebar({ isOpen, onClose }) {
     { to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' },
     { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
     { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Citas Aprobadas por María' },
+    { to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES' },
+    { to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds' },
     { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
     { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
     { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación' }
@@ -292,7 +294,6 @@ function Sidebar({ isOpen, onClose }) {
     ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/', icon: LayoutDashboard, label: 'Dashboard Dirección', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas', module: 'dashboard', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/general', icon: LayoutDashboard, label: 'Dashboard Financiero', module: 'dashboard', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
     ...(!isLina && !isCliente ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
@@ -837,7 +838,7 @@ function AppContent() {
                     <Route path="/" element={<HomeRoute />} />
 
                     {/* MÓDULO: SUPERVISIÓN MARÍA PAULA & DIRECCIÓN */}
-                    <Route path="/general" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="dashboard" action="view"><Dashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/general" element={<Navigate to="/" replace />} />
                     <Route path="/kpis" element={<AreaErrorBoundary areaName="Tablero Ejecutivo de KPIs"><ProtectedRoute module="dashboard" action="view"><DashboardKPIs /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/auditoria-psicologas" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/supervision-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute></AreaErrorBoundary>} />
