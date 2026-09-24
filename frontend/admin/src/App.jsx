@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom'
+import { Search, ChevronDown, ChevronRight, CreditCard, PlusCircle } from 'lucide-react'
 import {
   LayoutDashboard, Users, Calendar, Upload, Heart,
   Wallet, Percent, TrendingUp, TrendingDown, Landmark,
@@ -223,9 +223,10 @@ function GlobalSearch() {
   )
 }
 
-function Sidebar({ isOpen, onClose }) {
+function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
   const { logout, user, config, hasPermission, previewRole, setPreviewRole, isOriginalAdmin } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const handleLogout = () => {
     logout()
@@ -251,6 +252,7 @@ function Sidebar({ isOpen, onClose }) {
     effectiveRole.toLowerCase().includes('matchmaker')
   )
   const isLina = !isAtrasadosOnly && !isCliente && effectiveRole === 'Lina (Refunds)'
+  const isMariaOnly = !isAtrasadosOnly && !isCliente && !isCs && !isPsyc && !isLina && effectiveRole === 'María'
   const isMaria = !isAtrasadosOnly && !isCliente && !isCs && !isPsyc && !isLina && (
     effectiveRole === 'María' ||
     effectiveRole === 'Admin' ||
@@ -260,123 +262,131 @@ function Sidebar({ isOpen, onClose }) {
       (user?.role && ADMIN_ROLES.includes(user.role))
     ))
   )
+  const isFullAdmin = isMaria && !isMariaOnly
 
-  const homePath = isAtrasadosOnly ? '/matchmaking/cola-atrasados' : isCliente ? '/portal-cliente' : isCs ? '/cs-dashboard' : isPsyc ? '/psicologa' : '/'
+  const homePath = isAtrasadosOnly
+    ? '/matchmaking/cola-atrasados'
+    : isCliente
+      ? '/portal-cliente'
+      : isCs
+        ? '/cs-dashboard'
+        : isPsyc
+          ? '/psicologa'
+          : isMariaOnly
+            ? '/matchmaking/supervision-maria'
+            : '/'
 
-  // Navegación exclusiva para usuario de Atrasados
   const atrasadosNavItems = [
     { to: '/matchmaking/cola-atrasados', icon: Sparkles, label: '🎙️ Cola de Atrasados' },
     { to: '/matchmaking/matches-atrasados', icon: Calendar, label: '📅 Matches Atrasados' }
   ]
 
-  // Navegación exclusiva para Cliente
   const clienteNavItems = [
     { to: '/portal-cliente', icon: Heart, label: '💖 Mi Próxima Cita' },
     { to: '/evaluacion-cita', icon: Sparkles, label: '⭐ Evaluación de Cita' }
   ]
 
-  // Navegación exclusiva para Servicio al Cliente (CS)
-  const csNavItems = [
-    { to: '/cs-dashboard', icon: Headphones, label: '🎧 Mesa de Control CS' },
-    { to: '/kpis', icon: FileSpreadsheet, label: '📊 KPIs & Metas Operativas' },
-    { to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' },
-    { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
-    { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Citas Aprobadas por María' },
-    { to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES' },
-    { to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds' },
-    { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
-    { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
-    { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación' }
+  // 4 Carpetas Colapsables (Diseño aprobado)
+  const folders = [
+    {
+      id: 'matchmaking',
+      title: '💘 Matchmaking',
+      visible: isMaria || isPsyc,
+      items: [
+        ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: '💖 Mi Panel Clínico', end: true }] : []),
+        ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión & Auditoría María' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES (Ingreso)' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' }] : []),
+        ...(isMaria ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' }] : []),
+        ...(isMaria ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales' }] : [])
+      ]
+    },
+    {
+      id: 'cs',
+      title: '🛎️ Customer Service',
+      visible: isMaria || isCs,
+      items: [
+        { to: '/cs-dashboard', icon: Headphones, label: '🎧 Mesa de Control CS' },
+        { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? '🛡️ Citas por Agendar' : '🛡️ Aprobados por María' },
+        { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
+        { to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES' },
+        ...(isCs ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' }] : []),
+        ...(isCs ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' }] : []),
+        { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
+        { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' }
+      ]
+    },
+    {
+      id: 'pagos',
+      title: '💳 Pagos y Reembolsos',
+      visible: isMaria || isCs || isLina,
+      items: [
+        { to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds' },
+        ...(isMaria || isCs ? [{
+          id: 'action-nequi',
+          isButton: true,
+          onClick: () => {
+            if (onOpenNequiModal) onOpenNequiModal()
+            if (onClose) onClose()
+          },
+          icon: Wallet,
+          label: '➕ Registrar Pago Nequi / Manual',
+          highlight: true
+        }] : []),
+        ...(isFullAdmin ? [{ to: '/ingresos', icon: TrendingUp, label: '📈 Ingresos & Conciliación' }] : []),
+        ...(isFullAdmin || isLina ? [{ to: '/flujo-de-caja', icon: Landmark, label: '🏦 Flujo de Caja' }] : []),
+        ...(isFullAdmin ? [{ to: '/gastos', icon: TrendingDown, label: '📉 Gastos Operativos' }] : [])
+      ]
+    },
+    {
+      id: 'direccion',
+      title: '📊 Dirección & Finanzas',
+      visible: isFullAdmin || isMariaOnly || isPsyc || isCs,
+      items: [
+        ...(isFullAdmin ? [{ to: '/', icon: LayoutDashboard, label: '🏛️ Dashboard Dirección', end: true }] : []),
+        ...(isFullAdmin || isMariaOnly || isCs ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas' }] : []),
+        ...(isFullAdmin ? [
+          { to: '/empleados', icon: Users, label: '👥 Empleados' },
+          { to: '/horas-psicologas', icon: Clock, label: '⏱️ Horas & Rendimiento' },
+          { to: '/nomina', icon: Wallet, label: '💼 Nómina' },
+          { to: '/comisiones', icon: Percent, label: '💸 Comisiones' },
+          { to: '/importar', icon: Upload, label: '📥 Importar Excel' },
+          { to: '/cms/eventos', icon: Calendar, label: '🗓️ CMS Eventos' },
+          { to: '/cms/ciudades', icon: Globe, label: '🌎 CMS Ciudades' },
+          { to: '/roles', icon: Shield, label: '🔐 Roles de Sistema' },
+          { to: '/usuarios', icon: UserCheck, label: '🔑 Cuentas de Acceso' },
+          { to: '/configuracion/formularios', icon: Settings, label: '⚙️ Configurar Formularios' },
+          { to: '/configuracion/alertas', icon: BellRing, label: '🔔 Configurar Alertas' }
+        ] : []),
+        { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación' }
+      ]
+    }
   ]
 
-  // Groups and items configuration — Zero noise per role
-  const coreItems = [
-    ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
-    ...(isMaria ? [{ to: '/', icon: LayoutDashboard, label: 'Dashboard Dirección', module: 'dashboard', action: 'view', end: true }] : []),
-    ...(isMaria ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas', module: 'dashboard', action: 'view' }] : []),
-    ...(!isLina && !isCliente ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
-  ]
+  const [openFolders, setOpenFolders] = useState({
+    matchmaking: true,
+    cs: true,
+    pagos: true,
+    direccion: false
+  })
 
-  const matchmakingItems = [
-    ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión & Auditoría María', module: 'matching', action: 'view' }] : []),
-    ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc || isCs ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches (Psicóloga)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? 'Citas por Agendar' : '🛡️ Aprobados por María', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Aceptadas', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isCs ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)', module: 'matching', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales', module: 'matching', action: 'view' }] : []),
-    ...(isMaria || isLina ? [{ to: '/matchmaking/refunds', icon: Wallet, label: '💰 Cola de Refunds (Lina)', module: 'matching', action: 'view' }] : [])
-  ]
+  useEffect(() => {
+    if (isPsyc) {
+      setOpenFolders({ matchmaking: true, cs: false, pagos: false, direccion: false })
+    } else if (isCs) {
+      setOpenFolders({ matchmaking: false, cs: true, pagos: true, direccion: false })
+    } else if (isMariaOnly) {
+      setOpenFolders({ matchmaking: true, cs: true, pagos: true, direccion: false })
+    } else {
+      setOpenFolders({ matchmaking: true, cs: true, pagos: true, direccion: false })
+    }
+  }, [effectiveRole, isPsyc, isCs, isMariaOnly])
 
-  const cmsItems = isMaria ? [
-    { to: '/cms/eventos', icon: Calendar, label: 'CMS Eventos', module: 'eventos', action: 'view' },
-    { to: '/cms/ciudades', icon: Globe, label: 'CMS Ciudades', module: 'eventos', action: 'view' },
-  ] : []
-
-  const personalItems = isMaria ? [
-    { to: '/empleados', icon: Users, label: 'Empleados', module: 'empleados', action: 'view' },
-    { to: '/horas-psicologas', icon: Clock, label: '⏱️ Horas & Rendimiento', module: 'empleados', action: 'view' },
-    { to: '/nomina', icon: Wallet, label: 'Nómina', module: 'nomina', action: 'view' },
-    { to: '/comisiones', icon: Percent, label: 'Comisiones', module: 'comisiones', action: 'view' },
-  ] : []
-
-  const financeItems = [
-    ...(isMaria ? [{ to: '/ingresos', icon: TrendingUp, label: 'Ingresos', module: 'ingresos', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/gastos', icon: TrendingDown, label: 'Gastos', module: 'gastos', action: 'view' }] : []),
-    ...(isMaria || isLina ? [{ to: '/flujo-de-caja', icon: Landmark, label: 'Flujo de caja', module: 'flujo_caja', action: 'view' }] : []),
-  ]
-
-  const systemItems = isMaria ? [
-    { to: '/roles', icon: Shield, label: 'Roles de Sistema', module: 'roles', action: 'view' },
-    { to: '/usuarios', icon: UserCheck, label: 'Cuentas de Acceso', module: 'usuarios', action: 'view' },
-    { to: '/configuracion/formularios', icon: Settings, label: '⚙️ Configurar Formularios', module: 'roles', action: 'view' },
-    { to: '/configuracion/alertas', icon: BellRing, label: '🔔 Configurar Alertas', module: 'roles', action: 'view' },
-    { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación', module: 'roles', action: 'view' },
-  ] : [
-    { to: '/capacitacion', icon: BookOpen, label: '📚 Manuales & Capacitación', module: 'dashboard', action: 'view' },
-  ]
-
-  const showMatchmaking = matchmakingItems.some(i => hasPermission(i.module, i.action))
-  const showPersonal = personalItems.some(i => hasPermission(i.module, i.action))
-  const showFinance = financeItems.some(i => hasPermission(i.module, i.action))
-  const showSystem = systemItems.some(i => hasPermission(i.module, i.action))
-
-  const renderNavGroup = (title, items) => {
-    const visibleItems = items.filter(i => hasPermission(i.module, i.action))
-    if (visibleItems.length === 0) return null
-
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div style={{
-          fontSize: 10,
-          fontWeight: 700,
-          color: 'var(--text-muted)',
-          padding: '0 12px 6px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em'
-        }}>
-          {title}
-        </div>
-        {visibleItems.map(({ to, icon: Icon, label, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            onClick={handleLinkClick}
-          >
-            <Icon className="nav-icon" size={16} />
-            {label}
-          </NavLink>
-        ))}
-      </div>
-    )
+  const toggleFolder = (folderId) => {
+    setOpenFolders(prev => ({ ...prev, [folderId]: !prev[folderId] }))
   }
 
   return (
@@ -384,7 +394,7 @@ function Sidebar({ isOpen, onClose }) {
       <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <NavLink to={homePath} onClick={handleLinkClick} style={{ textDecoration: 'none' }}>
           <span style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: 18 }}>Daily Lover</span>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Panel Admin</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Panel Operativo • {effectiveRole || 'Admin'}</div>
         </NavLink>
         <button 
           onClick={onClose} 
@@ -396,19 +406,9 @@ function Sidebar({ isOpen, onClose }) {
         </button>
       </div>
       
-      <nav className="sidebar-nav" style={{ flex: 1, overflowY: 'auto' }}>
+      <nav className="sidebar-nav" style={{ flex: 1, overflowY: 'auto', padding: '10px 8px' }}>
         {isAtrasadosOnly ? (
-          <div style={{ marginTop: 16 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: 'var(--text-muted)',
-              padding: '0 12px 6px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Gestión de Atrasados
-            </div>
+          <div style={{ marginTop: 8 }}>
             {atrasadosNavItems.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
@@ -422,17 +422,7 @@ function Sidebar({ isOpen, onClose }) {
             ))}
           </div>
         ) : isCliente ? (
-          <div style={{ marginTop: 16 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: 'var(--color-primary)',
-              padding: '0 12px 6px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Portal del Cliente
-            </div>
+          <div style={{ marginTop: 8 }}>
             {clienteNavItems.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
@@ -445,58 +435,114 @@ function Sidebar({ isOpen, onClose }) {
               </NavLink>
             ))}
           </div>
-        ) : isCs ? (
-          <div style={{ marginTop: 16 }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: 'var(--color-primary)',
-              padding: '0 12px 6px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            }}>
-              Mesa de Control CS
-            </div>
-            {csNavItems.map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                onClick={handleLinkClick}
-              >
-                <Icon className="nav-icon" size={16} />
-                {label}
-              </NavLink>
-            ))}
-          </div>
         ) : (
-          <>
-            {coreItems.filter(i => hasPermission(i.module, i.action)).map(({ to, icon: Icon, label, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                onClick={handleLinkClick}
-              >
-                <Icon className="nav-icon" size={16} />
-                {label}
-              </NavLink>
-            ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {folders.filter(f => f.visible && f.items.length > 0).map(folder => {
+              const isFolderOpen = !!openFolders[folder.id]
+              const hasActiveChild = folder.items.some(item => item.to && (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to)))
+              return (
+                <div
+                  key={folder.id}
+                  style={{
+                    borderRadius: 10,
+                    border: `1px solid ${hasActiveChild ? 'rgba(150, 21, 0, 0.32)' : 'rgba(255,255,255,0.05)'}`,
+                    background: isFolderOpen ? 'rgba(255,255,255,0.02)' : 'transparent',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleFolder(folder.id)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '9px 12px',
+                      background: hasActiveChild ? 'rgba(150, 21, 0, 0.12)' : 'transparent',
+                      border: 'none',
+                      color: hasActiveChild ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      letterSpacing: '0.02em'
+                    }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {folder.title}
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{
+                        fontSize: 10,
+                        padding: '1px 6px',
+                        borderRadius: 10,
+                        background: 'rgba(255,255,255,0.06)',
+                        color: 'var(--text-muted)'
+                      }}>
+                        {folder.items.length}
+                      </span>
+                      {isFolderOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </span>
+                  </button>
 
-            {showMatchmaking && renderNavGroup('Matchmaking Operativo', matchmakingItems)}
-            {isMaria && renderNavGroup('CMS Visual (María Paula)', cmsItems)}
-            {showPersonal && renderNavGroup('Personal', personalItems)}
-            {showFinance && renderNavGroup('Finanzas', financeItems)}
-            {showSystem && renderNavGroup('Sistema', systemItems)}
-          </>
+                  {isFolderOpen && (
+                    <div style={{ padding: '4px 6px 8px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {folder.items.map((item) => {
+                        const Icon = item.icon
+                        if (item.isButton) {
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={item.onClick}
+                              className="nav-item"
+                              style={{
+                                width: '100%',
+                                textAlign: 'left',
+                                border: '1px dashed rgba(235, 0, 141, 0.45)',
+                                background: 'rgba(235, 0, 141, 0.1)',
+                                color: '#ff7ac6',
+                                fontWeight: 700,
+                                fontSize: 12.5,
+                                padding: '8px 10px',
+                                borderRadius: 8,
+                                marginTop: 2,
+                                marginBottom: 2
+                              }}
+                            >
+                              <Icon className="nav-icon" size={15} />
+                              {item.label}
+                            </button>
+                          )
+                        }
+                        return (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            end={item.end}
+                            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                            onClick={handleLinkClick}
+                            style={{ fontSize: 13, padding: '7px 10px' }}
+                          >
+                            <Icon className="nav-icon" size={15} />
+                            {item.label}
+                          </NavLink>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </nav>
 
       {/* Footer & Demo Mode Indicator */}
       <div style={{
         marginTop: 'auto',
-        padding: '16px 20px',
+        padding: '14px 18px',
         borderTop: '1px solid var(--border-color)',
         fontSize: 12,
         color: 'var(--text-muted)'
@@ -506,7 +552,7 @@ function Sidebar({ isOpen, onClose }) {
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            marginBottom: 10,
+            marginBottom: 8,
             fontSize: 11,
             color: 'var(--text-secondary)'
           }}>
@@ -514,67 +560,12 @@ function Sidebar({ isOpen, onClose }) {
             <span>Modo Demo Activo</span>
           </div>
         )}
-        {isOriginalAdmin && (
-          <div style={{
-            marginBottom: 12,
-            padding: '8px 10px',
-            background: 'rgba(150, 21, 0, 0.12)',
-            borderRadius: 8,
-            border: '1px solid var(--border-color)'
-          }}>
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: 'var(--color-primary)',
-              textTransform: 'uppercase',
-              marginBottom: 6,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              <Eye size={12} /> Ver como (Simulador):
-            </div>
-            <select
-              value={previewRole || 'Admin'}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'Admin') {
-                  setPreviewRole(null);
-                  navigate('/');
-                } else {
-                  setPreviewRole(val);
-                  if (val === 'Cliente') navigate('/portal-cliente');
-                  else if (val === 'Servicio al Cliente') navigate('/cs-dashboard');
-                  else if (val === 'Psicóloga') navigate('/psicologa');
-                }
-                if (onClose) onClose();
-              }}
-              style={{
-                width: '100%',
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 6,
-                padding: '5px 8px',
-                fontSize: 12,
-                fontWeight: 600,
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="Admin">👑 Admin (Dirección)</option>
-              <option value="Psicóloga">🩺 Psicóloga / Matchmaker</option>
-              <option value="Servicio al Cliente">🎧 Servicio al Cliente (CS)</option>
-              <option value="Cliente">💖 Cliente (Portal de Citas)</option>
-            </select>
-          </div>
-        )}
 
         {user && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
               <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{user.name}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{user.role}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{effectiveRole || user.role}</div>
             </div>
             <button
               onClick={handleLogout}
@@ -616,6 +607,9 @@ function HomeRoute() {
   }
   if (effectiveRole === 'Lina (Refunds)') {
     return <Navigate to="/matchmaking/refunds" replace />
+  }
+  if (effectiveRole === 'María') {
+    return <SupervisionMaria />
   }
   return <Dashboard />
 }
@@ -708,7 +702,11 @@ function AppContent() {
         element={
           token ? (
             <div className="app">
-              <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+              <Sidebar
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+                onOpenNequiModal={() => setShowNequiModal(true)}
+              />
               {sidebarOpen && (
                 <div 
                   className="sidebar-overlay-backdrop show" 
@@ -716,8 +714,18 @@ function AppContent() {
                 />
               )}
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100vh', overflow: 'hidden' }}>
-                <header className="app-main-header">
-                  <div className="header-left">
+                <header
+                  className="app-main-header"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto 1fr',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '10px 20px'
+                  }}
+                >
+                  {/* BLOQUE 1: Navegación + Buscador Global */}
+                  <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <button
                       onClick={() => setSidebarOpen(prev => !prev)}
                       className="sidebar-toggle-btn"
@@ -728,18 +736,19 @@ function AppContent() {
                       <Menu size={18} />
                     </button>
                     <GlobalSearch />
+                  </div>
 
-                    {/* Selector 'Ver como' — visible EXCLUSIVAMENTE en escritorio (en móvil está en el menú lateral) */}
+                  {/* BLOQUE 2: Selector de Vista / Rol (Centrado) */}
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                     {isOriginalAdmin && (
-                      <div className="desktop-only-role-picker" style={{
+                      <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
-                        background: previewRole ? 'rgba(150, 21, 0, 0.18)' : 'rgba(255, 255, 255, 0.05)',
+                        background: previewRole ? 'rgba(150, 21, 0, 0.16)' : 'rgba(255, 255, 255, 0.04)',
                         border: `1px solid ${previewRole ? 'var(--color-primary)' : 'var(--border-color)'}`,
-                        borderRadius: 8,
-                        padding: '4px 10px',
-                        marginLeft: 8,
+                        borderRadius: 999,
+                        padding: '5px 14px',
                         flexShrink: 0
                       }}>
                         <Eye size={14} style={{ color: previewRole ? 'var(--color-primary)' : 'var(--text-secondary)' }} />
@@ -755,7 +764,8 @@ function AppContent() {
                               navigate('/');
                             } else {
                               setPreviewRole(val);
-                              if (val === 'Cliente') navigate('/portal-cliente');
+                              if (val === 'María') navigate('/matchmaking/supervision-maria');
+                              else if (val === 'Cliente') navigate('/portal-cliente');
                               else if (val === 'Servicio al Cliente') navigate('/cs-dashboard');
                               else if (val === 'Psicóloga') navigate('/psicologa');
                             }
@@ -764,8 +774,8 @@ function AppContent() {
                             background: 'var(--bg-card)',
                             color: 'var(--text-primary)',
                             border: '1px solid var(--border-color)',
-                            borderRadius: 6,
-                            padding: '3px 8px',
+                            borderRadius: 999,
+                            padding: '4px 10px',
                             fontSize: 12,
                             fontWeight: 600,
                             cursor: 'pointer',
@@ -773,9 +783,10 @@ function AppContent() {
                           }}
                         >
                           <option value="Admin">👑 Admin (Dirección / Vista Completa)</option>
-                          <option value="Psicóloga">🩺 Psicóloga / Matchmaker</option>
+                          <option value="María">🛡️ María (Supervisión & Matchmaking)</option>
+                          <option value="Psicóloga">💖 Psicóloga / Matchmaker</option>
                           <option value="Servicio al Cliente">🎧 Servicio al Cliente (CS)</option>
-                          <option value="Cliente">💖 Cliente (Portal de Citas)</option>
+                          <option value="Cliente">🌟 Cliente (Portal de Citas)</option>
                         </select>
                         {previewRole && (
                           <button
@@ -800,23 +811,9 @@ function AppContent() {
                       </div>
                     )}
                   </div>
-                  <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {canSeeNequi && (
-                      <button
-                        onClick={() => setShowNequiModal(true)}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          background: 'linear-gradient(135deg, #EB008D 0%, #B8324F 100%)',
-                          color: '#FFF', fontSize: 12, fontWeight: 700,
-                          border: 'none', borderRadius: 8, padding: '7px 12px',
-                          cursor: 'pointer', boxShadow: '0 2px 8px rgba(235, 0, 141, 0.3)',
-                          flexShrink: 0
-                        }}
-                        title="Registrar pago express de Instagram / Nequi (30 segundos)"
-                      >
-                        💳 + Pago Nequi
-                      </button>
-                    )}
+
+                  {/* BLOQUE 3: Alertas, Tema y Perfil de Usuario */}
+                  <div className="header-right" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
                     {isPsychologistUser && <WorkTimerWidget />}
                     {canSeeCsBell && <CsNovedadesNotificationBell />}
                     <button
@@ -840,6 +837,37 @@ function AppContent() {
                     >
                       {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
                     </button>
+                    {user && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid var(--border-color)',
+                        fontSize: 12
+                      }}>
+                        <div style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          background: 'var(--color-primary)',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: 11
+                        }}>
+                          {(user.name || 'A')[0].toUpperCase()}
+                        </div>
+                        <div style={{ lineHeight: 1.15 }}>
+                          <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 11.5 }}>{user.name || 'Admin'}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{previewRole || user.role}</div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </header>
                 <main className="main-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minWidth: 0 }}>

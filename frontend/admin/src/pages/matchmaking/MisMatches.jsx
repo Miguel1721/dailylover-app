@@ -1722,6 +1722,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     }
 
     // Si se edita Persona B, resolver CRM y chequear duplicados
+    let resolvedCrmIdB = ''
     if (field === 'person_b' && value) {
       const isUrlOrId = value.includes('http') || value.includes('smartmatchapp') || value.includes('client/') || value.includes('profile/') || /^\d{3,}$/.test(value.trim())
       if (!isUrlOrId && !bypassCrmValidation) {
@@ -1729,6 +1730,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         return
       }
       if (isUrlOrId) {
+        const mCid = value.match(/(?:client|clients|profile|profiles|user|users|view)(?:\/[a-z_]+)*[/=#!]+(\d+)/i) || value.match(/\/(\d{3,})(?:\/[a-z_]+)*\/?$/i) || value.match(/^(\d{3,})$/)
+        if (mCid) resolvedCrmIdB = mCid[1]
         try {
           const resRes = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
             method: 'POST',
@@ -1739,6 +1742,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             const dataRes = await resRes.json()
             if (dataRes.name) {
               finalValue = dataRes.name
+            }
+            if (dataRes.crm_id) {
+              resolvedCrmIdB = String(dataRes.crm_id)
             }
           }
         } catch (e) {
@@ -1771,13 +1777,17 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     setSavingId(matchId)
     setSyncStatus('saving')
     try {
+      const patchBody = { [field]: finalValue }
+      if (field === 'person_b' && resolvedCrmIdB) {
+        patchBody.person_b_crm_id = resolvedCrmIdB
+      }
       const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ [field]: finalValue })
+        body: JSON.stringify(patchBody)
       })
 
       const data = await res.json()
@@ -1785,7 +1795,11 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         setSyncStatus('error')
         alert(data.detail || 'Error al actualizar')
       } else {
-        setMatches(prev => prev.map(m => m.id === matchId ? { ...m, [field]: finalValue } : m))
+        setMatches(prev => prev.map(m => m.id === matchId ? {
+          ...m,
+          [field]: finalValue,
+          ...(field === 'person_b' && resolvedCrmIdB ? { person_b_crm_id: resolvedCrmIdB } : {})
+        } : m))
         setFeedbackMsg('Actualizado correctamente')
         setSyncStatus('synced')
         setTimeout(() => setFeedbackMsg(''), 2500)

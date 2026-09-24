@@ -250,6 +250,7 @@ class IntakeClientRequest(BaseModel):
 
 class UpdateMatchRequest(BaseModel):
     person_b: Optional[str] = None
+    person_b_crm_id: Optional[str] = None
     status: Optional[str] = None
     status_a: Optional[str] = None
     status_b: Optional[str] = None
@@ -1494,30 +1495,44 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
             raise HTTPException(status_code=400, detail="Prohibido borrar Persona B una vez asignada.")
 
         if pb_clean:
-            extracted_cid = None
-            if "http" in pb_clean or "smartmatchapp" in pb_clean or "client/" in pb_clean:
-                m = re.search(r"(?:client|profile|view)[/=#!]+(\d+)", pb_clean, re.IGNORECASE) or re.search(r"[?&]id=(\d+)", pb_clean, re.IGNORECASE)
-                if m:
-                    extracted_cid = m.group(1)
-            elif re.search(r"^\d{3,}$", pb_clean):
-                extracted_cid = pb_clean
+            extracted_cid = _extract_crm_id_from_url(pb_clean) or (payload.person_b_crm_id or "").strip() or None
 
             effective_b = pb_clean
             if extracted_cid:
                 u_res = await db.execute(text("SELECT u.name, p.responsable FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.crm_id = :cid LIMIT 1"), {"cid": extracted_cid})
                 u_row = u_res.fetchone()
+                if not u_row or (u_row.name and u_row.name.startswith("Cliente CRM")):
+                    wh_synced = await _sync_crm_id_from_webhooks(extracted_cid, db)
+                    if wh_synced:
+                        u_row = wh_synced
                 if u_row and u_row.name:
                     effective_b = u_row.name
+                elif "http" in pb_clean or "smartmatchapp" in pb_clean:
+                    effective_b = f"Cliente CRM #{extracted_cid}"
                 updates.append("person_b_crm_id = :pbcid")
                 params["pbcid"] = extracted_cid
             else:
-                # Si no viene URL ni CRM ID, verificar si existe en users y tiene crm_id
-                u_check = await db.execute(text("SELECT name, crm_id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n)) AND crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' LIMIT 1"), {"n": pb_clean})
+                # Si viene el nombre ya resuelto por resolve-profile o existente en users
+                u_check = await db.execute(text("""
+                    SELECT name, crm_id FROM users
+                    WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n))
+                    ORDER BY (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
+                    LIMIT 1
+                """), {"n": pb_clean})
                 u_c_row = u_check.fetchone()
                 if u_c_row:
                     effective_b = u_c_row.name
-                    updates.append("person_b_crm_id = :pbcid")
-                    params["pbcid"] = u_c_row.crm_id
+                    if u_c_row.crm_id:
+                        updates.append("person_b_crm_id = :pbcid")
+                        params["pbcid"] = u_c_row.crm_id
+                elif "http" in pb_clean or "smartmatchapp" in pb_clean:
+                    # Cualquier enlace de SmartMatchApp válido nunca debe bloquearse
+                    m_any_num = re.search(r"(\d{3,})", pb_clean)
+                    cid_fallback = m_any_num.group(1) if m_any_num else ""
+                    if cid_fallback:
+                        updates.append("person_b_crm_id = :pbcid")
+                        params["pbcid"] = cid_fallback
+                        effective_b = f"Cliente CRM #{cid_fallback}"
                 else:
                     raise HTTPException(
                         status_code=400,
