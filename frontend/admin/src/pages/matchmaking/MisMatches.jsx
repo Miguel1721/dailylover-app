@@ -1588,14 +1588,18 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       .catch(e => console.error('Error fetching psychologists list:', e))
   }, [])
 
+  const [sortBy, setSortBy] = useState('recent_first')
+  const [dateFilter, setDateFilter] = useState('all')
+
   const fetchMatches = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/my-matches?view_mode=${viewMode}&`
+    let url = `${API}/api/v1/matchmaking/my-matches?view_mode=${viewMode}&sort_by=${encodeURIComponent(sortBy)}&`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (statusFilter && statusFilter !== 'all') url += `status_filter=${encodeURIComponent(statusFilter)}&`
     if (cityFilter && cityFilter !== 'all') url += `city=${encodeURIComponent(cityFilter)}&`
     if (planFilter && planFilter !== 'all') url += `plan_tier=${encodeURIComponent(planFilter)}&`
     if (approvedFilter && approvedFilter !== 'all') url += `approved=${encodeURIComponent(approvedFilter)}&`
+    if (dateFilter && dateFilter !== 'all') url += `date_filter=${encodeURIComponent(dateFilter)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
@@ -1613,7 +1617,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         console.error('Error fetching matches:', err)
         setLoading(false)
       })
-  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, token])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, sortBy, dateFilter, searchTerm, token])
 
   useEffect(() => {
     fetchMatches()
@@ -2363,6 +2367,51 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             <option value="all">Aprobado: Todos</option>
             <option value="yes">Aprobado: Sí (Bloqueado)</option>
             <option value="no">Aprobado: No (En Proceso)</option>
+          </select>
+        </div>
+
+        {/* Filtro Fecha de Creación / Orden PROFILES */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <select
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 700,
+              outline: 'none'
+            }}
+          >
+            <option value="all">📅 Fecha: Todos</option>
+            <option value="new_profiles">🆕 Nuevos en PROFILES</option>
+            <option value="today">📅 Agregados Hoy</option>
+            <option value="7d">📅 Últimos 7 días</option>
+            <option value="30d">📅 Últimos 30 días</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid rgba(16,185,129,0.4)',
+              background: 'rgba(16,185,129,0.08)',
+              color: '#10B981',
+              fontSize: 12,
+              fontWeight: 700,
+              outline: 'none'
+            }}
+          >
+            <option value="recent_first">🕒 Más recientes primero (PROFILES arriba)</option>
+            <option value="created_desc">📅 Por fecha de creación (Recientes)</option>
+            <option value="sheet_order">📋 Orden Original Sheet</option>
           </select>
         </div>
 

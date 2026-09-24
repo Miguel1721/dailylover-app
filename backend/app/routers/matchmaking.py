@@ -410,6 +410,8 @@ async def get_my_matches(
     approved: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     view_mode: Optional[str] = Query("mine"),
+    sort_by: Optional[str] = Query("recent_first"),
+    date_filter: Optional[str] = Query(None),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
@@ -524,11 +526,27 @@ async def get_my_matches(
         elif approved.lower() in ("no", "false", "0", "pendiente"):
             query += " AND m.approved_by_maria = false"
 
+    if date_filter and date_filter.lower() not in ("all", "todos", "todas"):
+        df = date_filter.lower().strip()
+        if df == "today":
+            query += " AND (COALESCE(m.updated_at, m.created_at) >= CURRENT_DATE OR m.sheet_row_index IS NULL)"
+        elif df == "7d":
+            query += " AND COALESCE(m.updated_at, m.created_at) >= NOW() - INTERVAL '7 days'"
+        elif df == "30d":
+            query += " AND COALESCE(m.updated_at, m.created_at) >= NOW() - INTERVAL '30 days'"
+        elif df == "new_profiles":
+            query += " AND m.sheet_row_index IS NULL"
+
     if search:
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    query += " ORDER BY m.sheet_row_index ASC NULLS LAST, m.id ASC"
+    if sort_by == "created_desc":
+        query += " ORDER BY COALESCE(m.updated_at, m.created_at) DESC NULLS LAST, m.id DESC"
+    elif sort_by == "sheet_order":
+        query += " ORDER BY m.sheet_row_index ASC NULLS FIRST, m.id DESC"
+    else:
+        query += " ORDER BY CASE WHEN m.sheet_row_index IS NULL THEN 0 ELSE 1 END ASC, CASE WHEN m.sheet_row_index IS NULL THEN m.id END DESC, m.sheet_row_index ASC, m.id DESC"
 
     # Conteo de matches cruzados pendientes para esta psicóloga
     cross_count = 0
@@ -1154,6 +1172,8 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
                     is_priority = :is_prio,
                     person_a_crm_id = COALESCE(:cid, person_a_crm_id),
                     user_id_a = COALESCE(:uid, user_id_a),
+                    sheet_row_index = NULL,
+                    created_at = NOW(),
                     updated_at = NOW()
                 WHERE id = :mid
             """), {
@@ -1277,6 +1297,8 @@ async def get_intake_list(
     city: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    date_filter: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("recent_first"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db)
@@ -1302,6 +1324,14 @@ async def get_intake_list(
     if plan_tier and plan_tier.lower() not in ('all', 'todos'):
         where_clauses.append("m.plan_tier ILIKE :plan")
         params["plan"] = f"%{plan_tier.strip()}%"
+    if date_filter and date_filter.lower() not in ('all', 'todos', 'todas'):
+        df = date_filter.lower().strip()
+        if df == 'today':
+            where_clauses.append("(COALESCE(m.updated_at, m.created_at) >= CURRENT_DATE OR m.sheet_row_index IS NULL)")
+        elif df == '7d':
+            where_clauses.append("COALESCE(m.updated_at, m.created_at) >= NOW() - INTERVAL '7 days'")
+        elif df == '30d':
+            where_clauses.append("COALESCE(m.updated_at, m.created_at) >= NOW() - INTERVAL '30 days'")
     if search:
         where_clauses.append("(m.person_a ILIKE :s OR m.city ILIKE :s OR m.psychologist_name ILIKE :s OR m.observations ILIKE :s)")
         params["s"] = f"%{search.strip()}%"
@@ -1336,6 +1366,12 @@ async def get_intake_list(
     params["limit"] = page_size
     params["offset"] = offset
 
+    order_clause = "ORDER BY CASE WHEN MIN(m.sheet_row_index) IS NULL THEN 0 ELSE 1 END ASC, GREATEST(MAX(COALESCE(m.updated_at, m.created_at)), MAX(m.created_at)) DESC, MAX(m.id) DESC"
+    if sort_by == "created_asc":
+        order_clause = "ORDER BY MIN(m.created_at) ASC"
+    elif sort_by == "sheet_order":
+        order_clause = "ORDER BY MIN(COALESCE(m.sheet_row_index, 0)) ASC, MAX(m.id) DESC"
+
     data_sql = f"""
         WITH client_summary AS (
             SELECT 
@@ -1348,12 +1384,12 @@ async def get_intake_list(
                 COUNT(m.id) as total_slots,
                 COUNT(CASE WHEN m.person_b IS NOT NULL AND m.person_b != '' THEN 1 END) as filled_slots,
                 COUNT(CASE WHEN m.approved_by_maria = true THEN 1 END) as approved_slots,
-                MAX(m.created_at) as created_at,
+                GREATEST(MAX(COALESCE(m.updated_at, m.created_at)), MAX(m.created_at)) as created_at,
                 MAX(NULLIF(TRIM(m.observations), '')) as obs_sample
             FROM operational_matches m
             WHERE {where_sql}
             GROUP BY m.person_a
-            ORDER BY MAX(m.created_at) DESC
+            {order_clause}
             LIMIT :limit OFFSET :offset
         )
         SELECT 

@@ -118,14 +118,17 @@ export default function IntakeClientes() {
   const [totalSlotsAll, setTotalSlotsAll] = useState(0)
   const [serverTotalPages, setServerTotalPages] = useState(1)
   const [currentPage, setCurrentPage] = useState(1)
+  const [selectedDateFilter, setSelectedDateFilter] = useState('all')
+  const [sortBy, setSortBy] = useState('recent_first')
   const pageSize = 50
 
   const fetchIntakeList = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/intake-list?page=${currentPage}&page_size=${pageSize}&`
+    let url = `${API}/api/v1/matchmaking/intake-list?page=${currentPage}&page_size=${pageSize}&sort_by=${encodeURIComponent(sortBy)}&`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'all') url += `city=${encodeURIComponent(selectedCity)}&`
     if (selectedPlan && selectedPlan !== 'all') url += `plan_tier=${encodeURIComponent(selectedPlan)}&`
+    if (selectedDateFilter && selectedDateFilter !== 'all') url += `date_filter=${encodeURIComponent(selectedDateFilter)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
@@ -144,7 +147,7 @@ export default function IntakeClientes() {
         console.error('Error fetching intake list:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm, currentPage, token])
+  }, [selectedPsyc, selectedCity, selectedPlan, selectedDateFilter, sortBy, searchTerm, currentPage, token])
 
   useEffect(() => {
     fetchIntakeList()
@@ -152,7 +155,7 @@ export default function IntakeClientes() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [selectedPsyc, selectedCity, selectedPlan, searchTerm])
+  }, [selectedPsyc, selectedCity, selectedPlan, selectedDateFilter, sortBy, searchTerm])
 
   // Autocompletado inteligente al pegar URL de SmartMatchApp
   const handleResolveQuery = async (queryVal) => {
@@ -486,6 +489,51 @@ export default function IntakeClientes() {
             {PLAN_TIERS.map(p => (
               <option key={p} value={p}>{p}</option>
             ))}
+          </select>
+        </div>
+
+        {/* Filtro Fecha de Creación en PROFILES */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <select
+            value={selectedDateFilter}
+            onChange={e => setSelectedDateFilter(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-base)',
+              color: 'var(--text-primary)',
+              fontSize: 12,
+              fontWeight: 700,
+              outline: 'none'
+            }}
+          >
+            <option value="all">📅 Fecha creación: Todos</option>
+            <option value="today">🆕 Agregados Hoy</option>
+            <option value="7d">📅 Últimos 7 días</option>
+            <option value="30d">📅 Últimos 30 días</option>
+          </select>
+        </div>
+
+        {/* Ordenamiento */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <select
+            value={sortBy}
+            onChange={e => setSortBy(e.target.value)}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              border: '1px solid rgba(16,185,129,0.4)',
+              background: 'rgba(16,185,129,0.08)',
+              color: '#10B981',
+              fontSize: 12,
+              fontWeight: 700,
+              outline: 'none'
+            }}
+          >
+            <option value="recent_first">🕒 Más recientes primero (PROFILES)</option>
+            <option value="sheet_order">📋 Orden Hoja (Sheet)</option>
+            <option value="created_asc">⏳ Más antiguos primero</option>
           </select>
         </div>
 
