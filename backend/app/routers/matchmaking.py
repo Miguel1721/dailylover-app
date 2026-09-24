@@ -410,6 +410,8 @@ async def get_my_matches(
     approved: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     view_mode: Optional[str] = Query("mine"),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -646,7 +648,22 @@ async def get_my_matches(
             )
         })
 
-    return {"matches": matches, "total": len(matches), "cross_review_count": cross_count}
+    total_matches = len(matches)
+    if page is not None and page_size is not None:
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        matches_slice = matches[start_idx:end_idx]
+        total_pages = max(1, (total_matches + page_size - 1) // page_size)
+        return {
+            "matches": matches_slice,
+            "total": total_matches,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "cross_review_count": cross_count
+        }
+
+    return {"matches": matches, "total": total_matches, "cross_review_count": cross_count}
 
 
 @router.post("/intake-client")
