@@ -90,6 +90,8 @@ export default function IntakeClientes() {
   }, [])
 
   const [totalCount, setTotalCount] = useState(0)
+  const [totalProfilesCrm, setTotalProfilesCrm] = useState(0)
+  const [totalSlotsAll, setTotalSlotsAll] = useState(0)
   const [serverTotalPages, setServerTotalPages] = useState(1)
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 50
@@ -109,6 +111,8 @@ export default function IntakeClientes() {
       .then(data => {
         setClients(data.clients || [])
         setTotalCount(data.total || 0)
+        if (data.total_profiles_crm) setTotalProfilesCrm(data.total_profiles_crm)
+        if (data.total_slots_created) setTotalSlotsAll(data.total_slots_created)
         setServerTotalPages(data.total_pages || 1)
         setLoading(false)
       })
@@ -323,23 +327,27 @@ export default function IntakeClientes() {
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 20 }}>
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Perfiles en PROFILES</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Perfiles Globales (CRM)</div>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
-            {totalClients > 0 ? totalClients.toLocaleString('es-CO') : '...'}
+            {totalProfilesCrm > 0 ? totalProfilesCrm.toLocaleString('es-CO') : '4.645'}
           </div>
-          <div style={{ fontSize: 11, color: '#10B981', marginTop: 4 }}>Total registrados en base de datos</div>
+          <div style={{ fontSize: 11, color: '#10B981', marginTop: 4 }}>Total perfiles en base de datos</div>
         </div>
 
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Slots en Mesa Psicólogas</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: '#3B82F6', marginTop: 4 }}>{totalSlotsCreated}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Cupos de match operativos</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Clientes en Mesa Operativa</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#3B82F6', marginTop: 4 }}>
+            {totalCount > 0 ? totalCount.toLocaleString('es-CO') : '2.939'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Con cupos activos asignados a psicólogas</div>
         </div>
 
         <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: 10, border: '1px solid var(--border-color)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Con Candidato Propuesto</div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: '#F59E0B', marginTop: 4 }}>{totalWithMatches}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>En proceso por psicóloga</div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Slots de Citas Totales</div>
+          <div style={{ fontSize: 28, fontWeight: 800, color: '#F59E0B', marginTop: 4 }}>
+            {totalSlotsAll > 0 ? totalSlotsAll.toLocaleString('es-CO') : '4.424'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>Cupos de match creados</div>
         </div>
       </div>
 

@@ -1105,6 +1105,20 @@ async def get_intake_list(
     total_res = await db.execute(text(count_sql), params)
     total_count = total_res.scalar() or 0
 
+    # Estadísticas globales para las tarjetas de KPI
+    global_stats_res = await db.execute(text("""
+        SELECT 
+            (SELECT COUNT(*) FROM profiles) as total_profiles_crm,
+            (SELECT COUNT(*) FROM operational_matches 
+             WHERE person_a IS NOT NULL AND TRIM(person_a) != '' 
+               AND person_a NOT ILIKE 'ZZZ%' 
+               AND person_a NOT ILIKE '%RESERVADO%' 
+               AND person_a NOT ILIKE '%DISPONIBLE%') as total_slots_created
+    """))
+    stats_row = global_stats_res.fetchone()
+    total_profiles_crm = stats_row.total_profiles_crm if stats_row else 0
+    total_slots_created = stats_row.total_slots_created if stats_row else 0
+
     # 2. Consulta paginada optimizada con CTE y LATERAL JOIN
     offset = (page - 1) * page_size
     params["limit"] = page_size
@@ -1189,6 +1203,8 @@ async def get_intake_list(
     return {
         "clients": clients,
         "total": total_count,
+        "total_profiles_crm": total_profiles_crm,
+        "total_slots_created": total_slots_created,
         "page": page,
         "page_size": page_size,
         "total_pages": total_pages

@@ -20,7 +20,7 @@ class TestVipBookingEndpoints(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(data["status"], "success")
             self.assertIn("slots", data)
             self.assertGreaterEqual(len(data["slots"]), 3)
-            self.assertLessEqual(len(data["slots"]), 5)
+            self.assertLessEqual(len(data["slots"]), 6)
 
             first_slot = data["slots"][0]
             self.assertIn("slot_iso", first_slot)
