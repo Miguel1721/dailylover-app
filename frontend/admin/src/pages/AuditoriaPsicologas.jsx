@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
-export default function AuditoriaPsicologas() {
+export default function AuditoriaPsicologas({ embedded = false }) {
   const { token } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -141,7 +141,7 @@ export default function AuditoriaPsicologas() {
   const teamNivel = teamEficiencia >= 60 ? 'Alto' : teamEficiencia >= 20 ? 'Medio' : 'Bajo'
 
   return (
-    <div style={{ padding: '24px 32px 64px', color: 'var(--text-primary)', maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ padding: embedded ? '16px 0 32px' : '24px 32px 64px', color: 'var(--text-primary)', maxWidth: 1400, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 16 }}>
         <div>

@@ -18,10 +18,16 @@ import { useAuth } from '../../context/AuthContext'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
+import AuditoriaPsicologas from '../AuditoriaPsicologas'
+
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
-export default function SupervisionMaria() {
+export default function SupervisionMaria({ initialTab = 'operativa' }) {
   const { token } = useAuth()
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('tab') || initialTab
+  })
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -125,14 +131,68 @@ export default function SupervisionMaria() {
 
   return (
     <div style={{ padding: '24px 32px 64px' }}>
-      {/* ─── 1. CABECERA EJECUTIVA ESTILO GOOGLE SHEETS ─── */}
+      {/* ─── SELECTOR DE PESTAÑAS: OPERATIVA VS AUDITORÍA ─── */}
       <div style={{
-        background: 'linear-gradient(135deg, rgba(150, 21, 0, 0.15) 0%, rgba(26, 18, 20, 0.9) 100%)',
-        border: '1px solid rgba(150, 21, 0, 0.3)',
-        borderRadius: 12,
-        padding: '20px 24px',
-        marginBottom: 20
+        display: 'flex',
+        gap: 10,
+        marginBottom: 20,
+        borderBottom: '1px solid var(--border-color)',
+        paddingBottom: 12
       }}>
+        <button
+          onClick={() => setActiveTab('operativa')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: 8,
+            border: activeTab === 'operativa' ? '1px solid #961500' : '1px solid var(--border-color)',
+            background: activeTab === 'operativa' ? 'rgba(150, 21, 0, 0.2)' : 'var(--bg-card)',
+            color: activeTab === 'operativa' ? '#ff8a80' : 'var(--text-secondary)',
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <Lock size={15} />
+          Operativa Diaria & Supervisión
+        </button>
+        <button
+          onClick={() => setActiveTab('auditoria')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: 8,
+            border: activeTab === 'auditoria' ? '1px solid #961500' : '1px solid var(--border-color)',
+            background: activeTab === 'auditoria' ? 'rgba(150, 21, 0, 0.2)' : 'var(--bg-card)',
+            color: activeTab === 'auditoria' ? '#ff8a80' : 'var(--text-secondary)',
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <BarChart3 size={15} />
+          Auditoría Analítica & Rendimiento
+        </button>
+      </div>
+
+      {activeTab === 'auditoria' ? (
+        <AuditoriaPsicologas embedded={true} />
+      ) : (
+        <>
+          {/* ─── 1. CABECERA EJECUTIVA ESTILO GOOGLE SHEETS ─── */}
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(150, 21, 0, 0.15) 0%, rgba(26, 18, 20, 0.9) 100%)',
+            border: '1px solid rgba(150, 21, 0, 0.3)',
+            borderRadius: 12,
+            padding: '20px 24px',
+            marginBottom: 20
+          }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
@@ -725,6 +785,8 @@ export default function SupervisionMaria() {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

@@ -38,9 +38,35 @@ export default function IntakeClientes() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
+  const isAdmin = Boolean(
+    user?.role && (
+      user.role === 'Admin' ||
+      user.role === 'Super Admin' ||
+      user.role === 'María' ||
+      user.role.toLowerCase().includes('admin') ||
+      user.role.toLowerCase().includes('director')
+    )
+  )
+
+  // Detectar psicóloga logueada
+  const detectedUserPsyc = useMemo(() => {
+    if (!user) return 'SILVI'
+    const nameUpper = (user.name || '').toUpperCase()
+    const emailUpper = (user.email || '').toUpperCase()
+    const found = PSYCHOLOGIST_LIST.find(p => nameUpper.includes(p) || emailUpper.includes(p))
+    return found || 'SILVI'
+  }, [user])
+
+  const initialPsyc = useMemo(() => {
+    const fromParam = searchParams.get('psychologist')
+    if (fromParam) return fromParam
+    if (isAdmin) return 'all'
+    return detectedUserPsyc
+  }, [searchParams, isAdmin, detectedUserPsyc])
+
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(false)
-  const [selectedPsyc, setSelectedPsyc] = useState(searchParams.get('psychologist') || 'all')
+  const [selectedPsyc, setSelectedPsyc] = useState(initialPsyc)
   const [selectedCity, setSelectedCity] = useState('all')
   const [selectedPlan, setSelectedPlan] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
@@ -49,13 +75,11 @@ export default function IntakeClientes() {
   const [feedback, setFeedback] = useState(null)
   const [psycList, setPsycList] = useState(PSYCHOLOGIST_LIST)
 
-  // Detectar psicóloga logueada
-  const detectedUserPsyc = useMemo(() => {
-    if (!user) return 'SILVI'
-    const nameUpper = (user.name || '').toUpperCase()
-    const found = PSYCHOLOGIST_LIST.find(p => nameUpper.includes(p))
-    return found || 'SILVI'
-  }, [user])
+  useEffect(() => {
+    if (!searchParams.get('psychologist') && !isAdmin && detectedUserPsyc) {
+      setSelectedPsyc(detectedUserPsyc)
+    }
+  }, [detectedUserPsyc, isAdmin, searchParams])
 
   const initialFormState = {
     person_a: '',
@@ -993,149 +1017,27 @@ export default function IntakeClientes() {
                 </select>
               </div>
 
-              {/* Campo 4: Quick Notes / Resumen Clínico */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                    📝 Quick Notes & Resumen Clínico de la Persona
-                  </label>
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                    Se trasladará a la mesa de Matches
-                  </span>
+              {/* Resumen de Datos Extraídos Automáticamente */}
+              {(formData.city || formData.plan_tier || formData.quick_notes || formData.age) && (
+                <div style={{
+                  background: 'rgba(150, 21, 0, 0.08)',
+                  border: '1px solid rgba(150, 21, 0, 0.2)',
+                  borderRadius: 8,
+                  padding: '10px 14px',
+                  marginBottom: 16,
+                  fontSize: 12
+                }}>
+                  <div style={{ fontWeight: 700, color: '#ff8a80', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✓ Datos detectados automáticamente por el sistema:
+                  </div>
+                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                    {formData.city && <span>📍 Ciudad: <b style={{ color: 'var(--text-primary)' }}>{formData.city}</b></span>}
+                    {formData.age && <span>🎂 Edad: <b style={{ color: 'var(--text-primary)' }}>{formData.age}</b></span>}
+                    {formData.plan_tier && <span>💎 Plan: <b style={{ color: 'var(--text-primary)' }}>{formData.plan_tier}</b></span>}
+                    {formData.quick_notes && <span>📝 Notas clínicas vinculadas</span>}
+                  </div>
                 </div>
-                <textarea
-                  rows={4}
-                  placeholder="Anota aquí la bio, observaciones clave de la entrevista, lo que busca, no negociables o resumen rápido..."
-                  value={formData.quick_notes}
-                  onChange={e => setFormData({ ...formData, quick_notes: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 8,
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-base)',
-                    color: 'var(--text-primary)',
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    fontFamily: 'inherit',
-                    resize: 'vertical'
-                  }}
-                />
-              </div>
-
-              {/* Fila de Datos Demográficos y Plan */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Ciudad
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej. Bogotá"
-                    value={formData.city}
-                    onChange={e => setFormData({ ...formData, city: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 12,
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Edad
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Ej. 34"
-                    value={formData.age}
-                    onChange={e => setFormData({ ...formData, age: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 12,
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Preferencia
-                  </label>
-                  <select
-                    value={formData.pref}
-                    onChange={e => setFormData({ ...formData, pref: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 12,
-                      fontWeight: 600
-                    }}
-                  >
-                    <option value="hetero">Hetero</option>
-                    <option value="gay">Gay</option>
-                    <option value="lesb">Lesb</option>
-                    <option value="bi">Bi</option>
-                  </select>
-                </div>
-
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Plan Oficial
-                  </label>
-                  <select
-                    value={formData.plan_tier}
-                    onChange={e => setFormData({ ...formData, plan_tier: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 6,
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-base)',
-                      color: 'var(--text-primary)',
-                      fontSize: 12,
-                      fontWeight: 600
-                    }}
-                  >
-                    <option value="">Pendiente Plan (1 Slot)</option>
-                    {PLAN_TIERS.map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Checkbox de Prioritario */}
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={formData.is_priority || false}
-                    onChange={e => setFormData({ ...formData, is_priority: e.target.checked })}
-                    style={{ accentColor: '#961500', width: 16, height: 16 }}
-                  />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: formData.is_priority ? '#ff8a80' : 'var(--text-primary)' }}>
-                    ⚡ Marcar como PROFILE PRIORITARIO (Urgente / Persona Difícil)
-                  </span>
-                </label>
-              </div>
+              )}
 
               {/* Botones de Acción */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

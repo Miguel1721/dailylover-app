@@ -236,7 +236,7 @@ function Sidebar({ isOpen, onClose }) {
     if (onClose) onClose()
   }
 
-  const effectiveRole = user?.role || ''
+  const effectiveRole = previewRole || user?.role || (isOriginalAdmin ? 'Super Admin' : '')
   const isAtrasadosOnly = effectiveRole === 'atrasados_only' || user?.role === 'atrasados_only'
   const isCliente = effectiveRole === 'Cliente'
   const isCs = !isAtrasadosOnly && !isCliente && (
@@ -251,7 +251,7 @@ function Sidebar({ isOpen, onClose }) {
     effectiveRole.toLowerCase().includes('matchmaker')
   )
   const isLina = !isAtrasadosOnly && !isCliente && effectiveRole === 'Lina (Refunds)'
-  const isMaria = !isAtrasadosOnly && !isCliente && !isCs && (
+  const isMaria = !isAtrasadosOnly && !isCliente && !isCs && !isPsyc && !isLina && (
     effectiveRole === 'María' ||
     effectiveRole === 'Admin' ||
     effectiveRole === 'Super Admin' ||
@@ -294,14 +294,13 @@ function Sidebar({ isOpen, onClose }) {
     ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: 'Mi Panel Clínico', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/', icon: LayoutDashboard, label: 'Dashboard Dirección', module: 'dashboard', action: 'view', end: true }] : []),
     ...(isMaria ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas', module: 'dashboard', action: 'view' }] : []),
-    ...(isMaria ? [{ to: '/auditoria-psicologas', icon: Award, label: 'Auditoría & Rendimiento', module: 'roles', action: 'view' }] : []),
     ...(!isLina && !isCliente ? [{ to: '/clientes', icon: Users, label: 'Clientes', module: 'clientes', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/proveedores', icon: Truck, label: 'Proveedores', module: 'proveedores', action: 'view' }] : []),
     ...(isMaria ? [{ to: '/importar', icon: Upload, label: 'Importar Excel', module: 'importar', action: 'view' }] : []),
   ]
 
   const matchmakingItems = [
-    ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión María', module: 'matching', action: 'view' }] : []),
+    ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión & Auditoría María', module: 'matching', action: 'view' }] : []),
     ...(isPsyc || isMaria ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación', module: 'matching', action: 'view' }] : []),
     ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES', module: 'matching', action: 'view' }] : []),
@@ -656,7 +655,10 @@ function AppContent() {
   const userEmail = (user?.email || '').toLowerCase().trim()
   const rawRole = (user?.role || '').toLowerCase()
   const rawName = (user?.name || user?.full_name || '').toLowerCase()
-  const isMariaOrAdmin = 
+  const effectiveRole = previewRole || user?.role || (isOriginalAdmin ? 'Super Admin' : '')
+  const roleLower = (effectiveRole || '').toLowerCase()
+
+  const isMariaOrAdminEffective = !previewRole && (
     userEmail.includes('maria') ||
     userEmail.includes('admin') ||
     ADMIN_EMAILS.includes(userEmail) ||
@@ -664,10 +666,15 @@ function AppContent() {
     rawName.includes('maría paula') ||
     ADMIN_ROLES.map(r => r.toLowerCase()).includes(rawRole) ||
     isOriginalAdmin
+  )
 
-  const isPsychologistUser = !isMariaOrAdmin && (
-    rawRole.includes('psicolog') ||
-    rawRole.includes('matchmaker')
+  const isCsEffective = roleLower.includes('servicio') || roleLower.includes('customer') || roleLower.includes('lina')
+  const canSeeNequi = isCsEffective || isMariaOrAdminEffective || (previewRole === 'Servicio al Cliente' || previewRole === 'Admin')
+  const canSeeCsBell = isCsEffective || isMariaOrAdminEffective || (previewRole === 'Servicio al Cliente' || previewRole === 'Admin')
+
+  const isPsychologistUser = !isMariaOrAdminEffective && !isCsEffective && (
+    roleLower.includes('psicolog') ||
+    roleLower.includes('matchmaker')
   )
 
   if (loading && token) {
@@ -794,22 +801,24 @@ function AppContent() {
                     )}
                   </div>
                   <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <button
-                      onClick={() => setShowNequiModal(true)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        background: 'linear-gradient(135deg, #EB008D 0%, #B8324F 100%)',
-                        color: '#FFF', fontSize: 12, fontWeight: 700,
-                        border: 'none', borderRadius: 8, padding: '7px 12px',
-                        cursor: 'pointer', boxShadow: '0 2px 8px rgba(235, 0, 141, 0.3)',
-                        flexShrink: 0
-                      }}
-                      title="Registrar pago express de Instagram / Nequi (30 segundos)"
-                    >
-                      💳 + Pago Nequi
-                    </button>
+                    {canSeeNequi && (
+                      <button
+                        onClick={() => setShowNequiModal(true)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          background: 'linear-gradient(135deg, #EB008D 0%, #B8324F 100%)',
+                          color: '#FFF', fontSize: 12, fontWeight: 700,
+                          border: 'none', borderRadius: 8, padding: '7px 12px',
+                          cursor: 'pointer', boxShadow: '0 2px 8px rgba(235, 0, 141, 0.3)',
+                          flexShrink: 0
+                        }}
+                        title="Registrar pago express de Instagram / Nequi (30 segundos)"
+                      >
+                        💳 + Pago Nequi
+                      </button>
+                    )}
                     {isPsychologistUser && <WorkTimerWidget />}
-                    <CsNovedadesNotificationBell />
+                    {canSeeCsBell && <CsNovedadesNotificationBell />}
                     <button
                       onClick={toggleTheme}
                       aria-label={theme === 'light' ? "Modo Oscuro" : "Modo Claro"}
@@ -840,7 +849,7 @@ function AppContent() {
                     {/* MÓDULO: SUPERVISIÓN MARÍA PAULA & DIRECCIÓN */}
                     <Route path="/general" element={<Navigate to="/" replace />} />
                     <Route path="/kpis" element={<AreaErrorBoundary areaName="Tablero Ejecutivo de KPIs"><ProtectedRoute module="dashboard" action="view"><DashboardKPIs /></ProtectedRoute></AreaErrorBoundary>} />
-                    <Route path="/auditoria-psicologas" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="roles" action="view"><AuditoriaPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/auditoria-psicologas" element={<AreaErrorBoundary areaName="Supervisión & Dirección General"><ProtectedRoute module="roles" action="view"><SupervisionMaria initialTab="auditoria" /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/supervision-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><SupervisionMaria /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/aprobados-maria" element={<AreaErrorBoundary areaName="Supervisión de María Paula"><ProtectedRoute module="matching" action="view"><AprobadosMaria /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/trouble" element={<AreaErrorBoundary areaName="Supervisión & Trouble Matches"><ProtectedRoute module="matching" action="view"><TroubleMatches /></ProtectedRoute></AreaErrorBoundary>} />

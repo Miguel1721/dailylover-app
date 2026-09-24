@@ -85,9 +85,10 @@ export const OFFICIAL_REFUND_CATEGORIES = [
   'Descalificación Clínica / Protocolo de Seguridad',
   'Pool Insuficiente por Edad (>50 años)',
   'Sin Cobertura Geográfica',
-  'Cambio de Estado Sentimental',
+  'Se encuentra actualmente en una relación',
   'Insatisfacción con el Servicio / Troublemakers',
-  'Desistimiento Voluntario'
+  'Desistimiento voluntario por demora',
+  'Desistimiento voluntario por otras razones'
 ]
 
 const PSYCHOLOGIST_LIST = [
@@ -1457,6 +1458,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   const { user, token } = useAuth()
   const isAdmin = user?.role && (user.role === 'Admin' || user.role === 'Super Admin' || user.role.toLowerCase().includes('admin') || user.role.toLowerCase().includes('director'))
+  const roleStr = (user?.role || '').toLowerCase()
+  const isCs = roleStr.includes('servicio') || roleStr.includes('customer') || roleStr === 'cs'
+  const isLina = roleStr.includes('lina') || roleStr.includes('refund')
   const isPsychologistRole = Boolean(
     user?.role === 'Psicóloga' ||
     (typeof user?.role === 'string' && user?.role.toLowerCase().includes('psicolog'))
@@ -1500,10 +1504,32 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const [crossReviewCount, setCrossReviewCount] = useState(0)
 
   // Modal de Solicitud de Refund / Descalificación (Enrutamiento directo a Lina)
-  const [refundModalTarget, setRefundModalTarget] = useState(null) // { match }
+  const [refundModalTarget, setRefundModalTarget] = useState(null) // { match, isStandalone, targetPerson }
+  const [refundPersonName, setRefundPersonName] = useState('')
+  const [refundPsychologist, setRefundPsychologist] = useState('General')
+  const [refundPlanTier, setRefundPlanTier] = useState('')
   const [refundCategory, setRefundCategory] = useState(OFFICIAL_REFUND_CATEGORIES[0])
   const [refundReason, setRefundReason] = useState('')
   const [submittingRefund, setSubmittingRefund] = useState(false)
+
+  const handleOpenManualRefund = () => {
+    setRefundModalTarget({ isStandalone: true })
+    setRefundPersonName('')
+    setRefundPsychologist(selectedPsyc && selectedPsyc !== 'all' ? selectedPsyc : 'General')
+    setRefundPlanTier('')
+    setRefundCategory(OFFICIAL_REFUND_CATEGORIES[0])
+    setRefundReason('')
+  }
+
+  const handleOpenRowRefund = (matchRow, targetPerson = 'A') => {
+    const isB = targetPerson === 'B' && matchRow.person_b
+    setRefundModalTarget({ match: matchRow, isStandalone: false, targetPerson: isB ? 'B' : 'A' })
+    setRefundPersonName(isB ? matchRow.person_b : matchRow.person_a)
+    setRefundPsychologist((isB ? matchRow.psyc_b : matchRow.psychologist_name) || matchRow.psychologist_name || 'General')
+    setRefundPlanTier(matchRow.plan_tier || '')
+    setRefundCategory(OFFICIAL_REFUND_CATEGORIES[0])
+    setRefundReason('')
+  }
 
   // Sincronizar parámetros de URL (Ej: /matchmaking/mis-matches?filter=prioritarios&search=Carlos+Mendoza)
   useEffect(() => {
@@ -1684,7 +1710,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         : OFFICIAL_REFUND_CATEGORIES[0]
       setRefundCategory(initCat)
       setRefundReason('')
-      setRefundModalTarget({ match: matchRow, initialCategory: initCat })
+      setRefundPersonName(matchRow.person_a || '')
+      setRefundPsychologist(matchRow.psychologist_name || 'General')
+      setRefundPlanTier(matchRow.plan_tier || '')
+      setRefundModalTarget({ match: matchRow, isStandalone: false, targetPerson: 'A', initialCategory: initCat })
       return
     }
 
@@ -1770,8 +1799,11 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   const handleSubmitRefund = async (e) => {
     e.preventDefault()
-    if (!refundModalTarget?.match) return
-    const m = refundModalTarget.match
+    const targetName = refundPersonName.trim()
+    if (!targetName) {
+      alert('Por favor ingrese o seleccione el nombre del cliente para el refund.')
+      return
+    }
     setSubmittingRefund(true)
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/refunds/manual`, {
@@ -1781,20 +1813,29 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          person_name: m.person_a,
-          psychologist_name: m.psychologist_name || user?.name || 'General',
-          plan_tier: m.plan_tier || '',
+          person_name: targetName,
+          psychologist_name: refundPsychologist || 'General',
+          plan_tier: refundPlanTier || '',
           category: refundCategory,
-          reason: refundReason.trim() || `Solicitud registrada desde Matches Psicólogas (${m.psychologist_name || user?.name || ''})`
+          reason: refundReason.trim() || `Solicitud registrada por WhatsApp / Servicio al Cliente`
         })
       })
       if (!res.ok) throw new Error('Error al registrar solicitud de refund')
 
-      // Actualizar estado del match en backend
-      await handleUpdateField(m.id, 'status', 'REFUND', m, true)
+      // Si proviene de un match existente en pantalla:
+      if (refundModalTarget?.match?.id) {
+        const m = refundModalTarget.match
+        if (refundModalTarget.targetPerson === 'A' || targetName.toLowerCase() === (m.person_a || '').toLowerCase()) {
+          await handleUpdateField(m.id, 'status', 'REFUND', m, true)
+        } else {
+          const prevNotes = m.cs_observations || ''
+          const updatedNotes = prevNotes ? `${prevNotes} | [REFUND B: ${targetName} (${refundCategory})]` : `[REFUND B: ${targetName} (${refundCategory})]`
+          await handleUpdateScheduleDetails(m.id, { cs_observations: updatedNotes })
+        }
+      }
 
       setRefundModalTarget(null)
-      setFeedbackMsg(`✓ Solicitud de refund enviada a la cola de Lina para ${m.person_a}`)
+      setFeedbackMsg(`✓ Solicitud de refund para "${targetName}" enviada a la cola de Lina`)
       setTimeout(() => setFeedbackMsg(''), 4500)
       fetchMatches()
     } catch (err) {
@@ -1927,6 +1968,29 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             <span style={{ fontSize: 12, color: '#10B981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
               <CheckCircle size={14} /> {feedbackMsg}
             </span>
+          )}
+          {(isOfficialMatches || isCs || isAdmin || isLina) && (
+            <button
+              onClick={handleOpenManualRefund}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: 'linear-gradient(135deg, #B8324F 0%, #961500 100%)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 10px rgba(184, 50, 79, 0.35)',
+                transition: 'all 0.15s ease'
+              }}
+              title="Registrar solicitud de refund recibida por WhatsApp (enruta directo a la cola de Lina)"
+            >
+              <Wallet size={16} /> 💰 + Registrar Refund (WhatsApp)
+            </button>
           )}
           <button
             onClick={() => navigate('/matchmaking/profiles' + (selectedPsyc && selectedPsyc !== 'all' ? `?psychologist=${encodeURIComponent(selectedPsyc)}` : ''))}
@@ -2645,6 +2709,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                           <option value="EN PAUSA">EN PAUSA</option>
                           <option value="CANCELADA">CANCELADA</option>
                           <option value="TROUBLEMAKER">TROUBLEMAKER</option>
+                          <option value="REFUND">🚨 REFUND (Solicitar)</option>
                         </select>
                       </td>
 
@@ -2965,30 +3030,53 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
                       {/* 6. OBSERVACIONES CS */}
                       <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
-                        <input
-                          type="text"
-                          defaultValue={m.cs_observations || ''}
-                          placeholder="Notas CS..."
-                          onBlur={e => {
-                            if (e.target.value !== (m.cs_observations || '')) {
-                              handleUpdateScheduleDetails(m.id, { cs_observations: e.target.value })
-                            }
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') e.target.blur()
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '6px 8px',
-                            borderRadius: 6,
-                            border: '1px solid var(--border-color)',
-                            background: 'var(--bg-base)',
-                            color: 'var(--text-primary)',
-                            fontSize: 12,
-                            outline: 'none',
-                            boxSizing: 'border-box'
-                          }}
-                        />
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            defaultValue={m.cs_observations || ''}
+                            placeholder="Notas CS..."
+                            onBlur={e => {
+                              if (e.target.value !== (m.cs_observations || '')) {
+                                handleUpdateScheduleDetails(m.id, { cs_observations: e.target.value })
+                              }
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') e.target.blur()
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: '6px 8px',
+                              borderRadius: 6,
+                              border: '1px solid var(--border-color)',
+                              background: 'var(--bg-base)',
+                              color: 'var(--text-primary)',
+                              fontSize: 12,
+                              outline: 'none',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleOpenRowRefund(m, 'A')}
+                            title="Registrar solicitud de refund para esta pareja (WhatsApp)"
+                            style={{
+                              background: 'rgba(235, 0, 141, 0.12)',
+                              border: '1px solid rgba(235, 0, 141, 0.35)',
+                              color: '#ff4081',
+                              padding: '5px 8px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            <Wallet size={12} /> Refund
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -3821,7 +3909,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         />
       )}
 
-      {/* MODAL DE SOLICITUD DE REFUND (MESA DE PSICÓLOGAS) */}
+      {/* MODAL DE SOLICITUD DE REFUND (WHATSAPP / SERVICIO AL CLIENTE Y PSICÓLOGAS) */}
       {refundModalTarget && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)',
@@ -3833,7 +3921,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             borderRadius: 14,
             border: '1px solid var(--border-color, #333)',
             width: '100%',
-            maxWidth: 500,
+            maxWidth: 540,
             padding: 24,
             boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
             color: 'var(--text-primary, #FFF)'
@@ -3850,14 +3938,17 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>
-                    Registrar Solicitud de Refund
+                    {refundModalTarget.isStandalone
+                      ? '💰 Registrar Refund (WhatsApp / Servicio al Cliente)'
+                      : '💰 Registrar Solicitud de Refund'}
                   </h3>
                   <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                    Enrutamiento directo a la cola de revisión de Lina
+                    Enrutamiento directo a la cola de revisión de Lina con categorización oficial
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setRefundModalTarget(null)}
                 style={{ background: 'transparent', border: 'none', color: '#999', cursor: 'pointer', padding: 4 }}
               >
@@ -3865,37 +3956,146 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               </button>
             </div>
 
-            {/* Datos precargados del Match / Psicóloga (Solo lectura) */}
-            <div style={{
-              background: 'var(--bg-base, #111)',
-              border: '1px solid var(--border-color, #333)',
-              borderRadius: 8,
-              padding: '10px 12px',
-              marginBottom: 16,
-              display: 'grid',
-              gridTemplateColumns: '1.2fr 1fr',
-              gap: 8,
-              fontSize: 12
-            }}>
-              <div>
-                <span style={{ color: 'var(--text-secondary)' }}>Cliente: </span>
-                <strong style={{ color: '#FFF' }}>{refundModalTarget.match?.person_a}</strong>
+            {/* Si viene vinculado a una fila de match existente */}
+            {refundModalTarget.match && (
+              <div style={{
+                background: 'var(--bg-base, #111)',
+                border: '1px solid var(--border-color, #333)',
+                borderRadius: 8,
+                padding: '10px 12px',
+                marginBottom: 14
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                  ¿A quién corresponde el refund en esta pareja?
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRefundModalTarget(prev => ({ ...prev, targetPerson: 'A' }))
+                      setRefundPersonName(refundModalTarget.match.person_a)
+                      setRefundPsychologist(refundModalTarget.match.psychologist_name || 'General')
+                      setRefundPlanTier(refundModalTarget.match.plan_tier || '')
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      border: refundModalTarget.targetPerson !== 'B' ? '1.5px solid #B8324F' : '1px solid var(--border-color)',
+                      background: refundModalTarget.targetPerson !== 'B' ? 'rgba(184, 50, 79, 0.18)' : 'rgba(255,255,255,0.03)',
+                      color: refundModalTarget.targetPerson !== 'B' ? '#FFF' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      textAlign: 'left'
+                    }}
+                  >
+                    👤 Persona A: <strong>{refundModalTarget.match.person_a}</strong>
+                  </button>
+
+                  {refundModalTarget.match.person_b && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRefundModalTarget(prev => ({ ...prev, targetPerson: 'B' }))
+                        setRefundPersonName(refundModalTarget.match.person_b)
+                        setRefundPsychologist(refundModalTarget.match.psyc_b || refundModalTarget.match.psychologist_name || 'General')
+                        setRefundPlanTier(refundModalTarget.match.plan_tier || '')
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        border: refundModalTarget.targetPerson === 'B' ? '1.5px solid #B8324F' : '1px solid var(--border-color)',
+                        background: refundModalTarget.targetPerson === 'B' ? 'rgba(184, 50, 79, 0.18)' : 'rgba(255,255,255,0.03)',
+                        color: refundModalTarget.targetPerson === 'B' ? '#FFF' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        textAlign: 'left'
+                      }}
+                    >
+                      👤 Persona B: <strong>{refundModalTarget.match.person_b}</strong>
+                    </button>
+                  )}
+                </div>
               </div>
-              <div>
-                <span style={{ color: 'var(--text-secondary)' }}>Psicóloga: </span>
-                <strong style={{ color: '#B8324F' }}>{refundModalTarget.match?.psychologist_name || user?.name || 'General'}</strong>
-              </div>
-              <div>
-                <span style={{ color: 'var(--text-secondary)' }}>Plan: </span>
-                <span style={{ color: '#F59E0B', fontWeight: 600 }}>{refundModalTarget.match?.plan_tier || 'Membresía'}</span>
-              </div>
-              <div>
-                <span style={{ color: 'var(--text-secondary)' }}>Ciudad: </span>
-                <span>{refundModalTarget.match?.city || 'Bogotá'}</span>
-              </div>
-            </div>
+            )}
 
             <form onSubmit={handleSubmitRefund} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Nombre del Cliente */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>
+                  Nombre del Cliente que solicita el Refund *
+                </label>
+                <input
+                  type="text"
+                  required
+                  list="refund-clients-datalist"
+                  placeholder="Ej: Laura Gómez / Carlos Mendoza"
+                  value={refundPersonName}
+                  onChange={e => setRefundPersonName(e.target.value)}
+                  style={{
+                    width: '100%', padding: '9px 12px', borderRadius: 8,
+                    background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
+                    color: '#FFF', fontSize: 13, outline: 'none', boxSizing: 'border-box'
+                  }}
+                />
+                <datalist id="refund-clients-datalist">
+                  {Array.from(new Set(matches.flatMap(m => [m.person_a, m.person_b]).filter(Boolean))).slice(0, 100).map(name => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              </div>
+
+              {/* Psicóloga & Plan */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>
+                    Psicóloga Responsable
+                  </label>
+                  <select
+                    value={refundPsychologist}
+                    onChange={e => setRefundPsychologist(e.target.value)}
+                    style={{
+                      width: '100%', padding: '9px 12px', borderRadius: 8,
+                      background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
+                      color: '#FFF', fontSize: 12.5, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  >
+                    <option value="General">General / No asignada</option>
+                    {psycList.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>
+                    Plan / Membresía
+                  </label>
+                  <select
+                    value={refundPlanTier}
+                    onChange={e => setRefundPlanTier(e.target.value)}
+                    style={{
+                      width: '100%', padding: '9px 12px', borderRadius: 8,
+                      background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
+                      color: '#FFF', fontSize: 12.5, outline: 'none', boxSizing: 'border-box'
+                    }}
+                  >
+                    <option value="">(Desconocido / Sin especificar)</option>
+                    <option value="Membresía">Membresía</option>
+                    <option value="Plan Esencial">Plan Esencial</option>
+                    <option value="Plan Personalizado">Plan Personalizado</option>
+                    <option value="Plan VIP">Plan VIP</option>
+                    <option value="Plan Elite">Plan Elite</option>
+                    <option value="Plan Diamante">Plan Diamante</option>
+                    <option value="Matchmaking Experience">Matchmaking Experience</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Categoría Oficial del Refund */}
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>
                   Categoría Clínica Oficial *
@@ -3906,7 +4106,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                   style={{
                     width: '100%', padding: '9px 12px', borderRadius: 8,
                     background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
-                    color: '#FFF', fontSize: 12.5, fontWeight: 600, outline: 'none'
+                    color: '#FFF', fontSize: 12.5, fontWeight: 600, outline: 'none', boxSizing: 'border-box'
                   }}
                 >
                   {OFFICIAL_REFUND_CATEGORIES.map(cat => (
@@ -3915,19 +4115,21 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 </select>
               </div>
 
+              {/* Motivo / Detalle recibido por WhatsApp */}
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>
-                  Motivo / Observación de Servicio al Cliente (Opcional):
+                  Mensaje / Observación de WhatsApp (Servicio al Cliente) *
                 </label>
                 <textarea
                   rows={3}
-                  placeholder="Ej: Inconformidad con preferencias, falta de candidatos en rango de edad, etc."
+                  required
+                  placeholder="Pegue aquí el mensaje recibido por WhatsApp o detalle el motivo del refund..."
                   value={refundReason}
                   onChange={e => setRefundReason(e.target.value)}
                   style={{
                     width: '100%', padding: '9px 12px', borderRadius: 8,
                     background: 'var(--bg-base, #111)', border: '1px solid var(--border-color, #444)',
-                    color: '#FFF', fontSize: 12.5, outline: 'none', resize: 'vertical'
+                    color: '#FFF', fontSize: 12.5, outline: 'none', resize: 'vertical', boxSizing: 'border-box'
                   }}
                 />
               </div>
@@ -3949,8 +4151,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                   disabled={submittingRefund}
                   style={{
                     padding: '8px 18px', borderRadius: 8, border: 'none',
-                    background: '#B8324F', color: '#FFF', fontSize: 13, fontWeight: 700,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
+                    background: 'linear-gradient(135deg, #B8324F 0%, #961500 100%)',
+                    color: '#FFF', fontSize: 13, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                    boxShadow: '0 2px 8px rgba(184, 50, 79, 0.4)'
                   }}
                 >
                   {submittingRefund ? 'Enviando...' : 'Enviar a Cola de Lina'}

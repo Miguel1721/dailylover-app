@@ -9,9 +9,10 @@ export const OFFICIAL_REFUND_CATEGORIES = [
   'Descalificación Clínica / Protocolo de Seguridad',
   'Pool Insuficiente por Edad (>50 años)',
   'Sin Cobertura Geográfica',
-  'Cambio de Estado Sentimental',
+  'Se encuentra actualmente en una relación',
   'Insatisfacción con el Servicio / Troublemakers',
-  'Desistimiento Voluntario'
+  'Desistimiento voluntario por demora',
+  'Desistimiento voluntario por otras razones'
 ]
 
 export default function RefundsQueue() {

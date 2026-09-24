@@ -791,6 +791,8 @@ async def run_sync():
                 key = (normalize_name(pa), normalize_name(pb), psyc)
                 existing_mid = om_map.get(key)
 
+                sheet_row = m.get("row")
+
                 if existing_mid:
                     await session.execute(
                         text("""
@@ -801,6 +803,7 @@ async def run_sync():
                                 plan_tier = COALESCE(NULLIF(:plan, ''), plan_tier),
                                 observations = COALESCE(NULLIF(:obs, ''), observations),
                                 slot_number = COALESCE(:slot, slot_number),
+                                sheet_row_index = COALESCE(:sheet_row, sheet_row_index),
                                 approved_by_maria = :appr,
                                 user_id_a = COALESCE(:uid_a, user_id_a),
                                 user_id_b = COALESCE(:uid_b, user_id_b),
@@ -809,7 +812,7 @@ async def run_sync():
                         """),
                         {
                             "st": st, "city": city, "pref": pref, "plan": plan,
-                            "obs": obs, "slot": slot, "appr": appr,
+                            "obs": obs, "slot": slot, "sheet_row": sheet_row, "appr": appr,
                             "uid_a": uid_a, "uid_b": uid_b, "mid": existing_mid
                         }
                     )
@@ -820,18 +823,18 @@ async def run_sync():
                             INSERT INTO operational_matches (
                                 person_a, person_b, user_id_a, user_id_b, psychologist_name,
                                 city, pref, plan_tier, status, approved_by_maria, observations,
-                                slot_number, created_at, updated_at
+                                slot_number, sheet_row_index, created_at, updated_at
                             ) VALUES (
                                 :pa, :pb, :uid_a, :uid_b, :psyc,
                                 :city, :pref, :plan, :st, :appr, :obs,
-                                :slot, NOW(), NOW()
+                                :slot, :sheet_row, NOW(), NOW()
                             )
                             RETURNING id;
                         """),
                         {
                             "pa": pa, "pb": pb or None, "uid_a": uid_a, "uid_b": uid_b,
                             "psyc": psyc, "city": city, "pref": pref, "plan": plan,
-                            "st": st, "appr": appr, "obs": obs, "slot": slot
+                            "st": st, "appr": appr, "obs": obs, "slot": slot, "sheet_row": sheet_row
                         }
                     )
                     new_mid = ins_om.scalar()

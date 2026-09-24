@@ -29,6 +29,11 @@ from app.services.clinical_profile_extractor import (
     infer_city_from_text,
     get_metro_cluster
 )
+from app.services.psychologist_helper import (
+    build_psychologist_sql_condition,
+    get_psychologist_aliases,
+    PSYCHOLOGIST_ALIASES
+)
 
 router = APIRouter(prefix="/api/v1/matchmaking", tags=["Matchmaking Operational"])
 
@@ -295,9 +300,10 @@ OFFICIAL_REFUND_CATEGORIES = [
     "Descalificación Clínica / Protocolo de Seguridad",
     "Pool Insuficiente por Edad (>50 años)",
     "Sin Cobertura Geográfica",
-    "Cambio de Estado Sentimental (en pareja)",
-    "Insatisfacción con Citas / Troublemakers",
-    "Desistimiento Voluntario / Arrepentimiento Inmediato"
+    "Se encuentra actualmente en una relación",
+    "Insatisfacción con el Servicio / Troublemakers",
+    "Desistimiento voluntario por demora",
+    "Desistimiento voluntario por otras razones"
 ]
 
 class ManualRefundRequest(BaseModel):
@@ -416,7 +422,7 @@ async def get_my_matches(
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.psychologist_id,
             m.city, m.pref, m.plan_tier, m.status, m.status_a, m.status_b, m.approved_by_maria, m.approved_at,
-            m.observations, m.slot_number, m.is_priority, m.created_at, m.updated_at,
+            m.observations, m.slot_number, m.is_priority, m.sheet_row_index, m.created_at, m.updated_at,
             m.person_a_crm_id, m.person_b_crm_id,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS ua_crm_id,
             COALESCE(m.person_b_crm_id, uB.crm_id, '') AS ub_crm_id,
@@ -486,29 +492,17 @@ async def get_my_matches(
     if view_mode == "cross_review":
         query += """ AND m.person_b IS NOT NULL AND TRIM(m.person_b) != ''
                      AND (
-                         UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), (SELECT mOwner.psychologist_name FROM operational_matches mOwner WHERE LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(m.person_b)) LIMIT 1))) = UPPER(:psyc)
-                         OR UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), (SELECT mOwner.psychologist_name FROM operational_matches mOwner WHERE LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(m.person_b)) LIMIT 1))) LIKE UPPER(:psyc_like)
+                         UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), (SELECT mOwner.psychologist_name FROM operational_matches mOwner WHERE LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(m.person_b)) LIMIT 1))) IN (SELECT unnest(string_to_array(:psyc_aliases, ',')))
                      )
-                     AND UPPER(m.psychologist_name) != UPPER(:psyc)
+                     AND UPPER(m.psychologist_name) NOT IN (SELECT unnest(string_to_array(:psyc_aliases, ',')))
                      AND (m.status IN ('HECHO', 'HECHO POR MAPE', 'REVISAR', 'PROPUESTO') OR m.status_b = 'REVISAR')
         """
-        params["psyc"] = norm_psyc or ""
-        params["psyc_like"] = f"%{norm_psyc}%" if norm_psyc else "%"
+        params["psyc_aliases"] = ",".join(get_psychologist_aliases(norm_psyc or ""))
     else:
         if norm_psyc:
-            psyc_upper = norm_psyc.upper()
-            if psyc_upper == 'MPS':
-                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('MPS', 'MARIA', 'MARÍA', 'MARI DE LA E', 'MARI DE LA ESPRIELLA', 'MARI SARMIENTO', 'MARI B', 'MARIB') OR UPPER(m.psychologist_name) LIKE '%MPS%' OR UPPER(m.psychologist_name) LIKE '%MARI%')"
-            elif psyc_upper in ('MAPE D', 'MAPE'):
-                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('MAPE D', 'MAPE', 'MARIA PAULA', 'MARÍA PAULA') OR UPPER(m.psychologist_name) LIKE '%MAPE%')"
-            elif psyc_upper == 'STEFFY':
-                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('STEFFY', 'STEFF') OR UPPER(m.psychologist_name) LIKE '%STEFF%')"
-            elif psyc_upper == 'SILVI':
-                query += " AND (UPPER(TRIM(m.psychologist_name)) IN ('SILVI', 'SILVANA') OR UPPER(m.psychologist_name) LIKE '%SILV%')"
-            else:
-                query += " AND (UPPER(m.psychologist_name) = UPPER(:psyc) OR UPPER(m.psychologist_name) LIKE UPPER(:psyc_like))"
-                params["psyc"] = norm_psyc
-                params["psyc_like"] = f"%{norm_psyc}%"
+            cond_sql, cond_params = build_psychologist_sql_condition("m.psychologist_name", norm_psyc, "psyc")
+            query += f" AND {cond_sql}"
+            params.update(cond_params)
 
     if status_filter and status_filter.lower() not in ("all", "todos"):
         query += " AND UPPER(m.status) = UPPER(:st)"
@@ -532,7 +526,7 @@ async def get_my_matches(
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    query += " ORDER BY m.is_priority DESC, m.created_at DESC, m.id DESC"
+    query += " ORDER BY m.sheet_row_index ASC NULLS LAST, m.id ASC"
 
     # Conteo de matches cruzados pendientes para esta psicóloga
     cross_count = 0
@@ -544,13 +538,12 @@ async def get_my_matches(
                 LEFT JOIN profiles pB ON (m.user_id_b IS NOT NULL AND pB.user_id = m.user_id_b)
                 WHERE m.person_b IS NOT NULL AND TRIM(m.person_b) != ''
                   AND (
-                      UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), '')) = UPPER(:psyc)
-                      OR UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), '')) LIKE UPPER(:psyc_like)
+                      UPPER(COALESCE(NULLIF(TRIM(pB.responsable), ''), '')) IN (SELECT unnest(string_to_array(:psyc_aliases, ',')))
                   )
-                  AND UPPER(m.psychologist_name) != UPPER(:psyc)
+                  AND UPPER(m.psychologist_name) NOT IN (SELECT unnest(string_to_array(:psyc_aliases, ',')))
                   AND (m.status IN ('HECHO', 'HECHO POR MAPE', 'REVISAR', 'PROPUESTO') OR m.status_b = 'REVISAR')
                   AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
-            """), {"psyc": norm_psyc, "psyc_like": f"%{norm_psyc}%"})
+            """), {"psyc_aliases": ",".join(get_psychologist_aliases(norm_psyc or ""))})
             cross_count = cross_res.scalar() or 0
         except Exception:
             cross_count = 0
@@ -601,6 +594,7 @@ async def get_my_matches(
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
             "psychologist_b": p_b_psyc,
             "is_priority": bool(d.get("is_priority")),
+            "sheet_row_index": d.get("sheet_row_index"),
             "cs_novedades_count": int(d.get("cs_novedades_count") or 0),
             "fecha": effective_date.strftime("%Y-%m-%d %H:%M") if effective_date else "",
             "fecha_pago_stripe": stripe_date.strftime("%Y-%m-%d %H:%M") if stripe_date else None,
@@ -1082,8 +1076,9 @@ async def get_intake_list(
     ]
     params: Dict[str, Any] = {}
     if psychologist and psychologist.lower() not in ('all', 'todas'):
-        where_clauses.append("UPPER(m.psychologist_name) = UPPER(:psyc)")
-        params["psyc"] = psychologist.strip()
+        cond_sql, cond_params = build_psychologist_sql_condition("m.psychologist_name", psychologist, "psyc")
+        where_clauses.append(cond_sql)
+        params.update(cond_params)
     if city and city.lower() not in ('all', 'todas'):
         where_clauses.append("m.city ILIKE :city")
         params["city"] = f"%{city.strip()}%"
@@ -8876,8 +8871,9 @@ async def get_agosto27_queue(
     params = {}
 
     if responsable and responsable.lower() not in ("all", "todas"):
-        where_clauses.append("responsable ILIKE :resp")
-        params["resp"] = f"%{responsable.strip()}%"
+        cond_sql, cond_params = build_psychologist_sql_condition("responsable", responsable, "resp")
+        where_clauses.append(cond_sql)
+        params.update(cond_params)
 
     if search:
         where_clauses.append("(client_name ILIKE :srch OR candidate_name ILIKE :srch OR client_crm_id ILIKE :srch)")
@@ -9098,8 +9094,9 @@ async def get_matches_atrasados(
         params["city"] = f"%{city.strip()}%"
 
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        where_clauses.append("m.psychologist_name ILIKE :psyc")
-        params["psyc"] = f"%{psychologist.strip()}%"
+        cond_sql, cond_params = build_psychologist_sql_condition("m.psychologist_name", psychologist, "psyc")
+        where_clauses.append(cond_sql)
+        params.update(cond_params)
 
     if status and status.lower() not in ("all", "todos"):
         where_clauses.append("COALESCE(c.stage, 'pendiente') = :st")
@@ -9728,8 +9725,9 @@ async def get_trouble_cases(
             where.append("(person_a ILIKE :s OR person_b ILIKE :s OR observations ILIKE :s OR psychologist_name ILIKE :s)")
             params["s"] = f"%{search.strip()}%"
         if psychologist and psychologist != "all":
-            where.append("psychologist_name ILIKE :psyc")
-            params["psyc"] = f"%{psychologist.strip()}%"
+            cond_sql, cond_params = build_psychologist_sql_condition("psychologist_name", psychologist, "psyc")
+            where.append(cond_sql)
+            params.update(cond_params)
         if city and city != "all":
             where.append("city ILIKE :city")
             params["city"] = f"%{city.strip()}%"
@@ -9985,8 +9983,9 @@ async def get_incomplete_profiles(
         where_clauses.append("(p.plan_tier IS NULL OR p.plan_tier = '')")
 
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        where_clauses.append("p.responsable ILIKE :psyc")
-        params["psyc"] = f"%{psychologist.strip()}%"
+        cond_sql, cond_params = build_psychologist_sql_condition("p.responsable", psychologist, "psyc")
+        where_clauses.append(cond_sql)
+        params.update(cond_params)
 
     if search:
         where_clauses.append("(u.name ILIKE :s OR u.phone ILIKE :s OR u.email ILIKE :s OR u.crm_id ILIKE :s)")

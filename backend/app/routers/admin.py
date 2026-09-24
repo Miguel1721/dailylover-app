@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.database import get_db
 from app.config import get_settings
 from app.core.permissions import require_permission, get_current_user
+from app.services.psychologist_helper import build_psychologist_sql_condition, get_psychologist_aliases, PSYCHOLOGIST_ALIASES
 from typing import Optional
 import math
 import json
@@ -875,19 +876,9 @@ async def get_users(
         params["search_raw"] = f"%{search.strip()}%"
 
     if responsable and responsable != "all":
-        r_clean = responsable.strip().upper()
-        aliases = [r_clean]
-        if "SILVI" in r_clean or "SILVIA" in r_clean:
-            aliases = ["SILVI", "SILVIA", "SILV"]
-        elif "STEFF" in r_clean or "STEPH" in r_clean:
-            aliases = ["STEFFY", "STEFF", "STEPHANIE"]
-        elif "PAULA" in r_clean or "MAPE" in r_clean:
-            aliases = ["MARÍA PAULA", "MARIA PAULA", "MAPE", "PAULA"]
-        elif "MANU" in r_clean:
-            aliases = ["MANU", "MANUELA"]
-
-        alias_conds = " OR ".join([f"unaccent(COALESCE(p.responsable, '')) ILIKE '%{a}%'" for a in aliases])
-        where_clauses.append(f"({alias_conds})")
+        cond_sql, cond_params = build_psychologist_sql_condition("p.responsable", responsable, "resp")
+        where_clauses.append(cond_sql)
+        params.update(cond_params)
 
     if is_difficult == "difficult_only":
         where_clauses.append("COALESCE(p.is_difficult, false) = true")
@@ -1540,22 +1531,18 @@ async def get_psychologist_agenda(
     """
     Obtiene la agenda personal de entrevistas y el listado de clientes asignados a una psicóloga específica.
     """
-    psyc = (psychologist_name or user.get("name", "SILVI")).strip().upper()
-    if "SILVI" in psyc: psyc_clean = "SILVI"
-    elif "MANU" in psyc: psyc_clean = "MANU"
-    elif "MAPE" in psyc: psyc_clean = "MAPE D"
-    elif "ALEJA" in psyc: psyc_clean = "ALEJA"
-    else: psyc_clean = psyc
+    psyc = (psychologist_name or user.get("name", "SILVI")).strip()
 
     # 1. Entrevistas de agendamiento
-    interviews_res = await db.execute(text("""
+    ia_cond, ia_params = build_psychologist_sql_condition("ia.psychologist_name", psyc, "ia_psyc")
+    interviews_res = await db.execute(text(f"""
         SELECT ia.id, ia.user_id, ia.appointment_date, ia.time_slot, ia.status, ia.notes,
                u.name AS user_name, u.phone AS user_phone, u.client_code
         FROM interview_appointments ia
         JOIN users u ON u.id = ia.user_id
-        WHERE UPPER(ia.psychologist_name) ILIKE :psyc
+        WHERE {ia_cond}
         ORDER BY ia.appointment_date ASC
-    """), {"psyc": f"%{psyc_clean}%"})
+    """), ia_params)
     interviews = [{
         "id": r.id,
         "user_id": r.user_id,
@@ -1570,13 +1557,14 @@ async def get_psychologist_agenda(
     } for r in interviews_res.fetchall()]
 
     # 2. Clientes asignados a esta psicóloga
-    clients_res = await db.execute(text("""
+    p_cond, p_params = build_psychologist_sql_condition("p.responsable", psyc, "p_psyc")
+    clients_res = await db.execute(text(f"""
         SELECT u.id, u.name, u.phone, u.client_code, p.city, p.age, p.motivacion, p.plan_tier, u.created_at
         FROM users u
         JOIN profiles p ON p.user_id = u.id
-        WHERE UPPER(COALESCE(p.responsable, '')) ILIKE :psyc
+        WHERE {p_cond}
         ORDER BY u.id DESC
-    """), {"psyc": f"%{psyc_clean}%"})
+    """), p_params)
     clients = [{
         "id": r.id,
         "name": r.name,
@@ -2366,9 +2354,10 @@ async def reassign_client(
         psyc_list = ["Silvi", "Steffy", "Manu", "María Paula"]
         psyc_counts = []
         for psyc in psyc_list:
-            cnt = (await db.execute(text("""
-                SELECT COUNT(*) FROM profiles WHERE unaccent(lower(COALESCE(responsable, ''))) ILIKE unaccent(lower(:p))
-            """), {"p": f"%{psyc}%"})).scalar() or 0
+            cond, params = build_psychologist_sql_condition("responsable", psyc, "p")
+            cnt = (await db.execute(text(f"""
+                SELECT COUNT(*) FROM profiles WHERE {cond}
+            """), params)).scalar() or 0
             psyc_counts.append((cnt, psyc))
         psyc_counts.sort()
         assigned_psyc = psyc_counts[0][1]
@@ -2468,13 +2457,11 @@ async def get_psychologists_performance(
         pname = p["name"]
         aliases = p["aliases"]
 
-        # Construir condición OR para todos los alias del psicólogo
-        alias_cond_prof = " OR ".join([f"unaccent(lower(COALESCE(pr.responsable, ''))) ILIKE :alias_{idx}" for idx in range(len(aliases))])
-        alias_cond_om = " OR ".join([f"unaccent(lower(COALESCE(om.psychologist_name, ''))) ILIKE :alias_{idx}" for idx in range(len(aliases))])
-        alias_cond_hm = " OR ".join([f"unaccent(lower(COALESCE(hm.matchmaker, ''))) ILIKE :alias_{idx}" for idx in range(len(aliases))])
-
-        alias_params = {f"alias_{idx}": f"%{a}%" for idx, a in enumerate(aliases)}
-        combined_params = {**alias_params, **date_params}
+        # Construir condición exacta para los alias canónicos del psicólogo
+        alias_cond_prof, prof_params = build_psychologist_sql_condition("pr.responsable", pkey, "palias")
+        alias_cond_om, om_params = build_psychologist_sql_condition("om.psychologist_name", pkey, "omalias")
+        alias_cond_hm, hm_params = build_psychologist_sql_condition("hm.matchmaker", pkey, "hmalias")
+        combined_params = {**prof_params, **om_params, **hm_params, **date_params}
 
         # 1. Total Clientes Asignados en PROFILES
         assigned_query = f"""
