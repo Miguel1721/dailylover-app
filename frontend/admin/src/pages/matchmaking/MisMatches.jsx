@@ -1704,6 +1704,62 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
   const aprobadosCount = matches.filter(m => m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')).length
 
+  const [compatibilityModalData, setCompatibilityModalData] = useState(null)
+  const [loadingCompatId, setLoadingCompatId] = useState(null)
+
+  const runCompatibilityCheck = async (matchRow, pbName, pbCrmId, pbUrl = '', forceOpenModal = false) => {
+    if (!matchRow?.person_a || (!pbName && !pbCrmId && !pbUrl)) return
+    setLoadingCompatId(matchRow.id)
+    try {
+      const compRes = await fetch(`${API}/api/v1/matchmaking/check-compatibility`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          person_a_name: matchRow.person_a,
+          person_a_crm_id: String(matchRow.person_a_crm_id || ''),
+          person_b_name: pbName || '',
+          person_b_crm_id: String(pbCrmId || ''),
+          person_b_url: pbUrl || ''
+        })
+      })
+      if (compRes.ok) {
+        const compData = await compRes.json()
+        const resolvedPsycBFromCheck = compData?.profile_b?.psychologist || ''
+        const resolvedNameBFromCheck = compData?.profile_b?.name || pbName || ''
+        const resolvedCidBFromCheck = compData?.profile_b?.crm_id || pbCrmId || ''
+
+        if (resolvedPsycBFromCheck || resolvedNameBFromCheck) {
+          setMatches(prev => prev.map(m => m.id === matchRow.id ? {
+            ...m,
+            person_b: resolvedNameBFromCheck || m.person_b,
+            person_b_crm_id: resolvedCidBFromCheck || m.person_b_crm_id,
+            psychologist_b: resolvedPsycBFromCheck || m.psychologist_b || ''
+          } : m))
+        }
+
+        const hasBlockingIssues = !compData.compatible || (compData.issues && compData.issues.length > 0)
+        const hasWarnings = compData.warnings && compData.warnings.length > 0
+        const hasAiDealbreakers = compData.ai_evaluation && (
+          compData.ai_evaluation.veredicto === 'NO RECOMENDADO' ||
+          (compData.ai_evaluation.deal_breakers && compData.ai_evaluation.deal_breakers.length > 0) ||
+          (compData.ai_evaluation.red_flags_seguridad && compData.ai_evaluation.red_flags_seguridad.length > 0)
+        )
+
+        if (forceOpenModal || hasBlockingIssues || hasWarnings || hasAiDealbreakers) {
+          setCompatibilityModalData({
+            matchId: matchRow.id,
+            matchRow,
+            compData
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Error checking compatibility:', err)
+    } finally {
+      setLoadingCompatId(null)
+    }
+  }
+
   const handleUpdateField = async (matchId, field, value, matchRow, bypassCrmValidation = false) => {
     let finalValue = value
 
@@ -1721,8 +1777,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       return
     }
 
-    // Si se edita Persona B, resolver CRM y chequear duplicados
+    // Si se edita Persona B, resolver CRM, Psicóloga B y chequear compatibilidad + Quick Notes IA
     let resolvedCrmIdB = ''
+    let resolvedPsycB = ''
+    let resolvedProfileMetaB = null
     if (field === 'person_b' && value) {
       const isUrlOrId = value.includes('http') || value.includes('smartmatchapp') || value.includes('client/') || value.includes('profile/') || /^\d{3,}$/.test(value.trim())
       if (!isUrlOrId && !bypassCrmValidation) {
@@ -1740,11 +1798,15 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           })
           if (resRes.ok) {
             const dataRes = await resRes.json()
+            resolvedProfileMetaB = dataRes
             if (dataRes.name) {
               finalValue = dataRes.name
             }
             if (dataRes.crm_id) {
               resolvedCrmIdB = String(dataRes.crm_id)
+            }
+            if (dataRes.psychologist) {
+              resolvedPsycB = dataRes.psychologist
             }
           }
         } catch (e) {
@@ -1778,8 +1840,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     setSyncStatus('saving')
     try {
       const patchBody = { [field]: finalValue }
-      if (field === 'person_b' && resolvedCrmIdB) {
-        patchBody.person_b_crm_id = resolvedCrmIdB
+      if (field === 'person_b') {
+        patchBody.person_b_crm_id = resolvedCrmIdB || ''
       }
       const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}`, {
         method: 'PATCH',
@@ -1795,14 +1857,27 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         setSyncStatus('error')
         alert(data.detail || 'Error al actualizar')
       } else {
+        const effectivePB = (field === 'person_b' ? (data.person_b ?? finalValue) : finalValue)
+        const effectivePBCid = (field === 'person_b' ? (data.person_b_crm_id ?? resolvedCrmIdB) : undefined)
+        const effectivePsycB = (field === 'person_b' ? (data.psychologist_b || resolvedPsycB || '') : undefined)
+
         setMatches(prev => prev.map(m => m.id === matchId ? {
           ...m,
-          [field]: finalValue,
-          ...(field === 'person_b' && resolvedCrmIdB ? { person_b_crm_id: resolvedCrmIdB } : {})
+          [field]: effectivePB,
+          ...(field === 'person_b' ? {
+            person_b_crm_id: effectivePBCid || '',
+            psychologist_b: effectivePB ? (effectivePsycB || m.psychologist_b || '') : '',
+            person_b_meta: resolvedProfileMetaB || m.person_b_meta || null
+          } : {})
         } : m))
         setFeedbackMsg('Actualizado correctamente')
         setSyncStatus('synced')
         setTimeout(() => setFeedbackMsg(''), 2500)
+
+        if (field === 'person_b' && effectivePB && matchRow) {
+          runCompatibilityCheck(matchRow, effectivePB, effectivePBCid, value, false)
+        }
+
         if (field === 'status' && value === 'HECHO') {
           fetchMatches()
         }
@@ -3246,101 +3321,160 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
                       {/* PERSONA B - EDITABLE */}
                       <td style={{ padding: isCompact ? '8px 14px' : '14px 18px', minWidth: isCompact ? 290 : 360 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input
-                            type="text"
-                            defaultValue={m.person_b || ''}
-                            placeholder="Nombre o link CRM Persona B..."
-                            disabled={isLocked}
-                            onBlur={e => {
-                              if (e.target.value !== (m.person_b || '')) {
-                                handleUpdateField(m.id, 'person_b', e.target.value, m)
-                              }
-                            }}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') e.target.blur()
-                            }}
-                            style={{
-                              width: '100%',
-                              padding: isCompact ? '6px 10px' : '8px 12px',
-                              height: isCompact ? 33 : 38,
-                              borderRadius: 8,
-                              border: '1px solid var(--border-color)',
-                              background: isLocked ? 'var(--bg-card-hover)' : 'var(--bg-base)',
-                              color: 'var(--text-primary)',
-                              fontSize: isCompact ? 12.5 : 13.5,
-                              fontWeight: 600,
-                              outline: 'none',
-                              boxSizing: 'border-box',
-                              transition: 'border-color 0.15s'
-                            }}
-                          />
-                          {(!m.person_b || m.person_b.trim() === '') ? (
-                            <button
-                              onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id || m.ua_crm_id, matchRow: m, tab: 'sugerencias' })}
-                              title={`Buscar candidatos afines con IA para ${m.person_a}`}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <input
+                              key={`${m.id}-${m.person_b || ''}-${m.person_b_crm_id || ''}`}
+                              type="text"
+                              defaultValue={m.person_b || ''}
+                              placeholder="Pegar URL SmartMatchApp de Persona B..."
+                              disabled={isLocked}
+                              onPaste={e => {
+                                const pasted = (e.clipboardData || window.clipboardData)?.getData('text') || ''
+                                if (pasted && (pasted.includes('http') || pasted.includes('smartmatchapp') || pasted.includes('client/'))) {
+                                  e.preventDefault()
+                                  handleUpdateField(m.id, 'person_b', pasted.trim(), m)
+                                }
+                              }}
+                              onBlur={e => {
+                                if (e.target.value !== (m.person_b || '')) {
+                                  handleUpdateField(m.id, 'person_b', e.target.value, m)
+                                }
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') e.target.blur()
+                              }}
                               style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                padding: isCompact ? '5px 10px' : '7px 13px',
+                                width: '100%',
+                                padding: isCompact ? '6px 10px' : '8px 12px',
                                 height: isCompact ? 33 : 38,
                                 borderRadius: 8,
-                                border: '1.5px dashed #10B981',
-                                background: 'rgba(16, 185, 129, 0.12)',
-                                color: '#10B981',
-                                fontSize: isCompact ? 11 : 12,
+                                border: '1px solid var(--border-color)',
+                                background: isLocked ? 'var(--bg-card-hover)' : 'var(--bg-base)',
+                                color: 'var(--text-primary)',
+                                fontSize: isCompact ? 12.5 : 13.5,
                                 fontWeight: 700,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                                flexShrink: 0,
-                                transition: 'all 0.15s ease'
+                                outline: 'none',
+                                boxSizing: 'border-box',
+                                transition: 'border-color 0.15s'
                               }}
-                            >
-                              <Sparkles size={isCompact ? 12 : 14} /> Buscar con IA
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id || m.ua_crm_id, matchRow: m, tab: 'sugerencias' })}
-                              title={`Ver o cambiar candidatos con sugerencias IA para ${m.person_a}`}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: isCompact ? '4px 9px' : '6px 12px',
-                                height: isCompact ? 33 : 38,
-                                borderRadius: 8,
-                                border: '1px solid rgba(16, 185, 129, 0.4)',
-                                background: 'rgba(16, 185, 129, 0.1)',
-                                color: '#10B981',
-                                fontSize: isCompact ? 11 : 12,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                                flexShrink: 0,
-                                transition: 'all 0.15s ease'
-                              }}
-                            >
-                              <Sparkles size={isCompact ? 11 : 13} /> Sugerencias IA
-                            </button>
-                          )}
+                            />
+                            {(!m.person_b || m.person_b.trim() === '') ? (
+                              <button
+                                onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id || m.ua_crm_id, matchRow: m, tab: 'sugerencias' })}
+                                title={`Buscar candidatos afines con IA para ${m.person_a}`}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  padding: isCompact ? '5px 10px' : '7px 13px',
+                                  height: isCompact ? 33 : 38,
+                                  borderRadius: 8,
+                                  border: '1.5px dashed #10B981',
+                                  background: 'rgba(16, 185, 129, 0.12)',
+                                  color: '#10B981',
+                                  fontSize: isCompact ? 11 : 12,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                <Sparkles size={isCompact ? 12 : 14} /> Buscar con IA
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => setAiModalTarget({ clientName: m.person_a, crmId: m.person_a_crm_id || m.ua_crm_id, matchRow: m, tab: 'sugerencias' })}
+                                title={`Ver o cambiar candidatos con sugerencias IA para ${m.person_a}`}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  padding: isCompact ? '4px 9px' : '6px 12px',
+                                  height: isCompact ? 33 : 38,
+                                  borderRadius: 8,
+                                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                                  background: 'rgba(16, 185, 129, 0.1)',
+                                  color: '#10B981',
+                                  fontSize: isCompact ? 11 : 12,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                <Sparkles size={isCompact ? 11 : 13} /> Sugerencias IA
+                              </button>
+                            )}
+                            {m.person_b && m.person_b.trim() !== '' && (
+                              <button
+                                onClick={() => setHistoryTarget(m.person_b_crm_id || m.ub_crm_id || m.person_b)}
+                                title={`Ver historial de ${m.person_b}`}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--text-muted)',
+                                  cursor: 'pointer',
+                                  padding: 3,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  borderRadius: 4
+                                }}
+                              >
+                                <History size={isCompact ? 13 : 15} />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Sub-barra de información y Análisis IA de Persona B */}
                           {m.person_b && m.person_b.trim() !== '' && (
-                            <button
-                              onClick={() => setHistoryTarget(m.person_b_crm_id || m.ub_crm_id || m.person_b)}
-                              title={`Ver historial de ${m.person_b}`}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: 'var(--text-muted)',
-                                cursor: 'pointer',
-                                padding: 3,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                borderRadius: 4
-                              }}
-                            >
-                              <History size={isCompact ? 13 : 15} />
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              {m.person_b_crm_id && (
+                                <a
+                                  href={`https://dailylover.smartmatchapp.com/#!/client/${m.person_b_crm_id}/`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                    fontSize: 10.5,
+                                    fontWeight: 700,
+                                    color: '#B8324F',
+                                    background: 'rgba(184, 50, 79, 0.12)',
+                                    padding: '2px 7px',
+                                    borderRadius: 5,
+                                    textDecoration: 'none'
+                                  }}
+                                  title="Abrir perfil de Persona B en SmartMatchApp"
+                                >
+                                  🔗 #{m.person_b_crm_id} <ExternalLink size={10} />
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => runCompatibilityCheck(m, m.person_b, m.person_b_crm_id, '', true)}
+                                disabled={loadingCompatId === m.id}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  color: '#A594FD',
+                                  background: 'rgba(99, 91, 255, 0.14)',
+                                  border: '1px solid rgba(99, 91, 255, 0.35)',
+                                  padding: '2px 8px',
+                                  borderRadius: 5,
+                                  cursor: 'pointer'
+                                }}
+                                title="Ver análisis clínico de compatibilidad, Dealbreakers y Quick Notes IA"
+                              >
+                                {loadingCompatId === m.id ? '⏳ Analizando...' : '🧠 Compatibilidad & Quick Notes IA'}
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -4227,6 +4361,250 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           </div>
         </div>
       )}
+
+      {/* MODAL DE COMPATIBILIDAD CLÍNICA & ANÁLISIS IA DE QUICK NOTES */}
+      {compatibilityModalData && (() => {
+        const { matchId, matchRow, compData } = compatibilityModalData
+        const pA = compData?.profile_a || {}
+        const pB = compData?.profile_b || {}
+        const ai = compData?.ai_evaluation || {}
+        const issues = compData?.issues || []
+        const warnings = compData?.warnings || []
+        const isIncompatible = !compData?.compatible || issues.length > 0 || ai.veredicto === 'NO RECOMENDADO'
+
+        return (
+          <div
+            style={{
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: 1250, padding: 18
+            }}
+            onClick={() => setCompatibilityModalData(null)}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-card, #1A1214)',
+                border: `1.5px solid ${isIncompatible ? '#EF4444' : '#F59E0B'}`,
+                borderRadius: 14,
+                width: '100%',
+                maxWidth: 820,
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: '0 18px 48px rgba(0,0,0,0.75)'
+              }}
+            >
+              {/* Header */}
+              <div style={{
+                padding: '16px 22px',
+                borderBottom: '1px solid var(--border-color)',
+                background: isIncompatible
+                  ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(26, 18, 20, 0.95) 100%)'
+                  : 'linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(26, 18, 20, 0.95) 100%)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 10,
+                    background: isIncompatible ? 'rgba(239, 68, 68, 0.22)' : 'rgba(245, 158, 11, 0.22)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 20
+                  }}>
+                    {isIncompatible ? '🚨' : '🧠'}
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {isIncompatible
+                          ? 'Incompatibilidad / Dealbreaker Detectado entre Perfiles'
+                          : 'Análisis Clínico 360° & Quick Notes IA'}
+                      </h3>
+                      {ai.ai_score !== undefined && (
+                        <span style={{
+                          padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 800,
+                          background: ai.ai_score >= 70 ? 'rgba(16, 185, 129, 0.2)' : ai.ai_score >= 45 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.25)',
+                          color: ai.ai_score >= 70 ? '#10B981' : ai.ai_score >= 45 ? '#F59E0B' : '#EF4444'
+                        }}>
+                          Afinidad IA: {ai.ai_score}% • {ai.veredicto || (isIncompatible ? 'NO RECOMENDADO' : 'REVISIÓN')}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                      <strong>{pA.name || matchRow?.person_a}</strong> (Psic. {pA.psychologist || matchRow?.psychologist_name || '—'})
+                      {' × '}
+                      <strong>{pB.name || matchRow?.person_b}</strong> (Psic. B: <strong style={{ color: '#ff7ac6' }}>{pB.psychologist || 'Sin asignar'}</strong>)
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCompatibilityModalData(null)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 4 }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* 1. Motivos de Incompatibilidad / Alertas */}
+                {(issues.length > 0 || warnings.length > 0) && (
+                  <div style={{
+                    background: issues.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.08)',
+                    border: `1px solid ${issues.length > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.35)'}`,
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: issues.length > 0 ? '#F87171' : '#FBBF24', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      ⚠️ ¿En qué son incompatibles o qué alertas se detectaron?
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-primary)' }}>
+                      {issues.map((iss, idx) => (
+                        <li key={`iss-${idx}`} style={{ color: '#FCA5A5', fontWeight: 700 }}>{iss}</li>
+                      ))}
+                      {warnings.map((w, idx) => (
+                        <li key={`warn-${idx}`} style={{ color: '#FDE68A', fontWeight: 600 }}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 2. Análisis Clínico IA de Quick Notes */}
+                {ai.analisis && (
+                  <div style={{
+                    background: 'rgba(99, 91, 255, 0.08)',
+                    border: '1px solid rgba(99, 91, 255, 0.3)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#A594FD', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      ✨ Análisis Clínico IA (Quick Notes & Ficha 360°)
+                    </div>
+                    <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--text-primary)', whiteSpace: 'pre-line' }}>
+                      {ai.analisis}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Comparativa Lado a Lado: Persona A vs Persona B + Quick Notes */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {[{ label: 'PERSONA A (CLIENTE)', data: pA, fallbackName: matchRow?.person_a }, { label: 'PERSONA B (CANDIDATO PROPUESTO)', data: pB, fallbackName: matchRow?.person_b }].map((side, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 10,
+                        padding: '12px 14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
+                          {side.label}
+                        </span>
+                        {side.data.crm_id && (
+                          <a
+                            href={`https://dailylover.smartmatchapp.com/#!/client/${side.data.crm_id}/`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 11, fontWeight: 700, color: '#B8324F', textDecoration: 'none' }}
+                          >
+                            CRM #{side.data.crm_id} ↗
+                          </a>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>
+                        {side.data.name || side.fallbackName || '—'}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11.5 }}>
+                        <span style={{ background: 'rgba(184, 50, 79, 0.14)', color: '#ff7ac6', padding: '2px 7px', borderRadius: 5, fontWeight: 700 }}>
+                          Psicóloga: {side.data.psychologist || (idx === 0 ? matchRow?.psychologist_name : 'Sin asignar')}
+                        </span>
+                        {side.data.age && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>{side.data.age} años</span>}
+                        {side.data.city && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>📍 {side.data.city}</span>}
+                        {side.data.orientation && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>💘 {side.data.orientation}</span>}
+                        {side.data.plan_tier && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>🏷️ {side.data.plan_tier}</span>}
+                      </div>
+                      <div style={{
+                        marginTop: 4,
+                        padding: '8px 10px',
+                        background: 'rgba(0,0,0,0.28)',
+                        borderRadius: 8,
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        fontSize: 12,
+                        color: 'var(--text-secondary)',
+                        maxHeight: 140,
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-line',
+                        lineHeight: 1.45
+                      }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 4 }}>
+                          📋 QUICK NOTES & OBSERVACIONES CLÍNICAS:
+                        </div>
+                        {side.data.quick_notes || 'Sin Quick Notes registradas en ficha.'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div style={{
+                padding: '14px 22px',
+                borderTop: '1px solid var(--border-color)',
+                background: 'rgba(0,0,0,0.25)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12
+              }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setCompatibilityModalData(null)
+                    await handleUpdateField(matchId, 'person_b', '', matchRow, true)
+                  }}
+                  style={{
+                    padding: '9px 16px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#FCA5A5',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  🗑️ Descartar y Quitar Persona B
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompatibilityModalData(null)}
+                  style={{
+                    padding: '9px 18px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    color: '#FFF',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✅ Conservar Persona B ({pB.name || matchRow?.person_b})
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

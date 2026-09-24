@@ -443,7 +443,7 @@ async def get_my_matches(
             COALESCE(sp.payment_date, p.last_payment_date, sp_name.payment_date) AS stripe_pay_date,
             COALESCE(sp.plan_tier, sp_name.plan_tier) AS stripe_pay_plan,
             COALESCE(csn.open_novedades_count, 0) AS cs_novedades_count,
-            COALESCE(NULLIF(TRIM(pB.responsable), ''), '') AS psyc_of_b
+            COALESCE(NULLIF(TRIM(pB.responsable), ''), NULLIF(TRIM(mOwnerB.psychologist_name), ''), '') AS psyc_of_b
         FROM operational_matches m
         LEFT JOIN (
             SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, crm_id, phone, email
@@ -455,6 +455,12 @@ async def get_my_matches(
             FROM users
             ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(person_a))) LOWER(TRIM(person_a)) AS pa_clean, psychologist_name
+            FROM operational_matches
+            WHERE person_a IS NOT NULL AND psychologist_name IS NOT NULL
+            ORDER BY LOWER(TRIM(person_a)), id DESC
+        ) mOwnerB ON mOwnerB.pa_clean = LOWER(TRIM(m.person_b))
         LEFT JOIN profiles p ON p.user_id = uA.id
         LEFT JOIN (
             SELECT DISTINCT ON (user_id) user_id, payment_date, plan_tier
@@ -1491,10 +1497,10 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
 
     if payload.person_b is not None:
         pb_clean = payload.person_b.strip()
-        if match_row.person_b and not pb_clean:
-            raise HTTPException(status_code=400, detail="Prohibido borrar Persona B una vez asignada.")
-
-        if pb_clean:
+        if not pb_clean:
+            updates.append("person_b = ''")
+            updates.append("person_b_crm_id = ''")
+        elif pb_clean:
             extracted_cid = _extract_crm_id_from_url(pb_clean) or (payload.person_b_crm_id or "").strip() or None
 
             effective_b = pb_clean
@@ -1661,7 +1667,39 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
         except Exception:
             pass
 
-    return {"status": "success", "message": f"Match {match_id} actualizado exitosamente"}
+    resolved_psyc_b = ""
+    final_pb_name = params.get("pb") or match_row.person_b or ""
+    final_pb_cid = params.get("pbcid") or getattr(match_row, "person_b_crm_id", "") or ""
+    if final_pb_name or final_pb_cid:
+        try:
+            psyc_res = await db.execute(text("""
+                SELECT COALESCE(
+                    NULLIF(TRIM(p.responsable), ''),
+                    (SELECT mOwner.psychologist_name FROM operational_matches mOwner
+                     WHERE (:cid != '' AND mOwner.person_a_crm_id = :cid)
+                        OR LOWER(TRIM(mOwner.person_a)) = LOWER(TRIM(:name))
+                     ORDER BY mOwner.id DESC LIMIT 1),
+                    ''
+                ) AS psyc_b
+                FROM users u
+                LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE (:cid != '' AND u.crm_id = :cid) OR LOWER(TRIM(u.name)) = LOWER(TRIM(:name))
+                ORDER BY (u.crm_id IS NOT NULL AND u.crm_id != '') DESC, u.id DESC
+                LIMIT 1
+            """), {"cid": str(final_pb_cid), "name": str(final_pb_name)})
+            psyc_row = psyc_res.fetchone()
+            if psyc_row and psyc_row.psyc_b:
+                resolved_psyc_b = normalize_psychologist(psyc_row.psyc_b) or psyc_row.psyc_b
+        except Exception:
+            resolved_psyc_b = ""
+
+    return {
+        "status": "success",
+        "message": f"Match {match_id} actualizado exitosamente",
+        "person_b": final_pb_name,
+        "person_b_crm_id": final_pb_cid,
+        "psychologist_b": resolved_psyc_b
+    }
 
 
 # ─── 2. PANTALLA 2: COLA DE APROBACIÓN (MARÍA) ──────────────────────────────
@@ -3915,7 +3953,34 @@ async def resolve_profile(
     except Exception:
         pass
 
-    consolidated_quick_notes = "\n".join(notes_parts).strip()
+    if not consolidated_quick_notes:
+        try:
+            obs_res = await db.execute(text("""
+                SELECT observations FROM operational_matches
+                WHERE (person_a_crm_id = :cid OR LOWER(TRIM(person_a)) = LOWER(TRIM(:name)))
+                  AND observations IS NOT NULL AND TRIM(observations) != ''
+                ORDER BY id DESC LIMIT 1
+            """), {"cid": str(final_cid), "name": str(row.name or "")})
+            obs_row = obs_res.fetchone()
+            if obs_row and obs_row.observations:
+                consolidated_quick_notes = obs_row.observations.strip()
+        except Exception:
+            pass
+
+    resolved_psyc = normalize_psychologist(row.responsable)
+    if not resolved_psyc:
+        try:
+            psyc_fb_res = await db.execute(text("""
+                SELECT psychologist_name FROM operational_matches
+                WHERE (:cid != '' AND person_a_crm_id = :cid)
+                   OR LOWER(TRIM(person_a)) = LOWER(TRIM(:name))
+                ORDER BY id DESC LIMIT 1
+            """), {"cid": str(final_cid), "name": str(row.name or "")})
+            psyc_fb_row = psyc_fb_res.fetchone()
+            if psyc_fb_row and psyc_fb_row.psychologist_name:
+                resolved_psyc = normalize_psychologist(psyc_fb_row.psychologist_name) or psyc_fb_row.psychologist_name
+        except Exception:
+            pass
 
     return {
         "found": True,
@@ -3927,7 +3992,7 @@ async def resolve_profile(
         "pref": pref_val,
         "gender": row.gender or "",
         "plan_tier": normalize_plan(row.plan_tier),
-        "psychologist": normalize_psychologist(row.responsable),
+        "psychologist": resolved_psyc or "",
         "phone": row.phone or "",
         "email": row.email or "",
         "age": row.age,
@@ -3938,60 +4003,138 @@ async def resolve_profile(
 @router.post("/check-compatibility")
 async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSession = Depends(get_db)):
     """
-    Valida la compatibilidad entre Persona A y Persona B antes de asignarlas:
+    Valida la compatibilidad 360° entre Persona A y Persona B al pegar URL/ID en Mis Matches:
     1. Cita previa completada juntos en el historial.
-    2. Compatibilidad de orientación/preferencia sexual.
-    3. Compatibilidad de ciudad.
+    2. Compatibilidad de orientación/preferencia sexual y género.
+    3. Compatibilidad de ciudad, rango de edad, estatura, hijos, tabaco, estilo de vida.
+    4. Análisis IA de Quick Notes y Ficha Clínica 360° (Dealbreakers y afinidad).
     """
     issues = []
-    
-    # 1. Obtener perfil de Persona A
-    prof_a = None
-    if payload.person_a_crm_id:
-        res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable, p.plan_tier
-            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
-            WHERE u.crm_id = :cid LIMIT 1
-        """), {"cid": str(payload.person_a_crm_id)})
-        prof_a = res.fetchone()
-    if not prof_a and payload.person_a_name:
-        res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable, p.plan_tier
-            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
-            WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) LIMIT 1
-        """), {"n": payload.person_a_name.strip()})
-        prof_a = res.fetchone()
 
-    # 2. Obtener perfil de Persona B
-    prof_b = None
-    b_cid = payload.person_b_crm_id
+    async def _fetch_full_prof(cid_val: Optional[str], name_val: Optional[str]):
+        row_p = None
+        clean_cid = (cid_val or "").strip()
+        if clean_cid:
+            res = await db.execute(text("""
+                SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
+                       p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
+                       p.bio_notes, p.responsable, p.plan_tier
+                FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE u.crm_id = :cid ORDER BY u.id DESC LIMIT 1
+            """), {"cid": str(clean_cid)})
+            row_p = res.fetchone()
+            if not row_p or (row_p.name and row_p.name.startswith("Cliente CRM")):
+                await _sync_crm_id_from_webhooks(str(clean_cid), db)
+                res = await db.execute(text("""
+                    SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
+                           p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
+                           p.bio_notes, p.responsable, p.plan_tier
+                    FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+                    WHERE u.crm_id = :cid ORDER BY u.id DESC LIMIT 1
+                """), {"cid": str(clean_cid)})
+                row_p = res.fetchone()
+        if not row_p and name_val:
+            res = await db.execute(text("""
+                SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
+                       p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
+                       p.bio_notes, p.responsable, p.plan_tier
+                FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+                ORDER BY (u.crm_id IS NOT NULL AND u.crm_id != '') DESC, u.id DESC LIMIT 1
+            """), {"n": name_val.strip()})
+            row_p = res.fetchone()
+        return row_p
+
+    async def _enrich_prof_meta(row_p, fallback_name: str, fallback_cid: str):
+        uid = row_p.user_id if row_p else None
+        p_name = (row_p.name if row_p else fallback_name) or ""
+        p_cid = (row_p.crm_id if row_p else fallback_cid) or ""
+        psyc_val = normalize_psychologist(row_p.responsable) if (row_p and row_p.responsable) else ""
+        if not psyc_val and (p_cid or p_name):
+            try:
+                r_ps = await db.execute(text("""
+                    SELECT psychologist_name FROM operational_matches
+                    WHERE (:cid != '' AND person_a_crm_id = :cid) OR LOWER(TRIM(person_a)) = LOWER(TRIM(:n))
+                    ORDER BY id DESC LIMIT 1
+                """), {"cid": str(p_cid), "n": str(p_name)})
+                rw_ps = r_ps.fetchone()
+                if rw_ps and rw_ps.psychologist_name:
+                    psyc_val = normalize_psychologist(rw_ps.psychologist_name) or rw_ps.psychologist_name
+            except Exception:
+                pass
+
+        q_parts = []
+        if row_p and row_p.bio_notes and row_p.bio_notes.strip():
+            q_parts.append(row_p.bio_notes.strip())
+        if uid:
+            try:
+                ext_r = await db.execute(text("""
+                    SELECT synthesis_who_really_is, attachment_style, love_language_given, flags_notes
+                    FROM client_extended_profile WHERE user_id = :uid LIMIT 1
+                """), {"uid": uid})
+                ext_w = ext_r.fetchone()
+                if ext_w:
+                    if ext_w.synthesis_who_really_is and ext_w.synthesis_who_really_is.strip() not in "\n".join(q_parts):
+                        q_parts.append(ext_w.synthesis_who_really_is.strip())
+                    if ext_w.flags_notes and ext_w.flags_notes.strip():
+                        q_parts.append(f"Flags: {ext_w.flags_notes.strip()}")
+            except Exception:
+                pass
+            try:
+                cn_r = await db.execute(text("SELECT note FROM client_notes WHERE user_id = :uid ORDER BY id DESC LIMIT 1"), {"uid": uid})
+                cn_w = cn_r.fetchone()
+                if cn_w and cn_w.note and cn_w.note.strip() not in "\n".join(q_parts):
+                    q_parts.append(cn_w.note.strip())
+            except Exception:
+                pass
+        if not q_parts and (p_cid or p_name):
+            try:
+                ob_r = await db.execute(text("""
+                    SELECT observations FROM operational_matches
+                    WHERE (:cid != '' AND person_a_crm_id = :cid) OR LOWER(TRIM(person_a)) = LOWER(TRIM(:n))
+                    ORDER BY id DESC LIMIT 1
+                """), {"cid": str(p_cid), "n": str(p_name)})
+                ob_w = ob_r.fetchone()
+                if ob_w and ob_w.observations:
+                    q_parts.append(ob_w.observations.strip())
+            except Exception:
+                pass
+        q_notes = "\n".join(q_parts).strip()
+        return {
+            "user_id": uid,
+            "name": p_name,
+            "crm_id": p_cid,
+            "age": row_p.age if row_p else None,
+            "city": normalize_city(row_p.city) if (row_p and row_p.city) else "",
+            "gender": (row_p.gender if row_p else "") or "",
+            "orientation": (row_p.orientation if row_p else "") or "",
+            "estatura": (row_p.estatura if row_p else "") or "",
+            "occupation": (row_p.occupation if row_p else "") or "",
+            "education": (row_p.education if row_p else "") or "",
+            "plan_tier": normalize_plan(row_p.plan_tier) if (row_p and row_p.plan_tier) else "",
+            "psychologist": psyc_val or "",
+            "search_preferences": (row_p.search_preferences if row_p else {}) or {},
+            "lifestyle": (row_p.lifestyle if row_p else {}) or {},
+            "apego": (row_p.apego if row_p else {}) or {},
+            "love_language": (row_p.love_language if row_p else "") or "",
+            "bio_notes": q_notes,
+            "quick_notes": q_notes
+        }
+
+    prof_a = await _fetch_full_prof(payload.person_a_crm_id, payload.person_a_name)
+    b_cid = (payload.person_b_crm_id or "").strip()
     if not b_cid and payload.person_b_url:
-        m = re.search(r"(?:client|profile|view)[/=#!]+(\d+)", payload.person_b_url, re.IGNORECASE) or re.search(r"[?&]id=(\d+)", payload.person_b_url, re.IGNORECASE)
-        if m:
-            b_cid = m.group(1)
-            
-    if b_cid:
-        res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable, p.plan_tier
-            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
-            WHERE u.crm_id = :cid LIMIT 1
-        """), {"cid": str(b_cid)})
-        prof_b = res.fetchone()
-    if not prof_b and payload.person_b_name:
-        res = await db.execute(text("""
-            SELECT u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura, p.search_preferences, p.responsable, p.plan_tier
-            FROM users u LEFT JOIN profiles p ON p.user_id = u.id
-            WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) LIMIT 1
-        """), {"n": payload.person_b_name.strip()})
-        prof_b = res.fetchone()
+        b_cid = _extract_crm_id_from_url(payload.person_b_url) or ""
+    prof_b = await _fetch_full_prof(b_cid, payload.person_b_name)
 
-    name_a = prof_a.name if prof_a else (payload.person_a_name or "Persona A")
-    name_b = prof_b.name if prof_b else (payload.person_b_name or "Persona B")
+    meta_a = await _enrich_prof_meta(prof_a, payload.person_a_name or "Persona A", payload.person_a_crm_id or "")
+    meta_b = await _enrich_prof_meta(prof_b, payload.person_b_name or "Persona B", b_cid)
+
+    name_a = meta_a["name"] or "Persona A"
+    name_b = meta_b["name"] or "Persona B"
 
     # ── 1. CHEQUEOS BLOQUEANTES (issues) ──
-    # Regla 1: Cita previa realizada o agendada juntos
     if name_a and name_b:
-        # Chequeo 1A: En operational_matches
         res_date = await db.execute(text("""
             SELECT COUNT(*), MAX(status) FROM operational_matches
             WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
@@ -4011,7 +4154,6 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             st_found = row_op[1] or "Registrado"
             issues.append(f"Cita previa existente en historial: {name_a} y {name_b} ya tienen registro previo en el sistema (Estado: {st_found}).")
 
-        # Chequeo 1B: En scheduled_dates
         res_sched = await db.execute(text("""
             SELECT COUNT(*), MAX(venue), MAX(date_time) FROM scheduled_dates
             WHERE ((LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b)))
@@ -4024,11 +4166,10 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             dt_found = row_sc[2] or "Fecha agendada"
             issues.append(f"Cita previa existente en calendario: {name_a} y {name_b} ya tienen una cita programada ({dt_found} en {v_found}).")
 
-    # Regla 2: Orientación / Género Real entre las dos personas
-    real_orient_a = (prof_a.orientation or "").lower().strip() if prof_a else ""
-    real_orient_b = (prof_b.orientation or "").lower().strip() if prof_b else ""
-    real_gender_a = (prof_a.gender or "").lower().strip() if prof_a else ""
-    real_gender_b = (prof_b.gender or "").lower().strip() if prof_b else ""
+    real_orient_a = (meta_a["orientation"] or "").lower().strip()
+    real_orient_b = (meta_b["orientation"] or "").lower().strip()
+    real_gender_a = (meta_a["gender"] or "").lower().strip()
+    real_gender_b = (meta_b["gender"] or "").lower().strip()
 
     if prof_a and prof_b:
         norm_a = "gay" if ("gay" in real_orient_a or "homo" in real_orient_a) else ("lesb" if "lesb" in real_orient_a else ("bi" if "bi" in real_orient_a else ("hetero" if "hetero" in real_orient_a else real_orient_a)))
@@ -4041,46 +4182,33 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         elif real_gender_a and real_gender_b and norm_a == "hetero" and norm_b == "hetero" and real_gender_a == real_gender_b:
             issues.append(f"Incompatibilidad de género para pareja hetero: Ambos perfiles tienen género '{real_gender_a}'.")
 
-    # ── 2. CHEQUEOS AMPLIADOS (SOLO AVISOS / WARNINGS NO BLOQUEANTES) ──
+    # ── 2. CHEQUEOS AMPLIADOS Y ANÁLISIS IA DE QUICK NOTES 360° ──
     warnings = []
     if prof_a and prof_b:
-        # A. Ciudad distinta
-        city_a = normalize_city(prof_a.city) if prof_a.city else ""
-        city_b = normalize_city(prof_b.city) if prof_b.city else ""
+        city_a = meta_a["city"]
+        city_b = meta_b["city"]
         if city_a and city_b and city_a.lower() != city_b.lower():
             warnings.append(f"Ciudades distintas: {name_a} está en {city_a} y {name_b} está en {city_b}.")
 
-        sp_a = prof_a.search_preferences or {}
-        sp_b = prof_b.search_preferences or {}
+        sp_a = meta_a["search_preferences"] if isinstance(meta_a["search_preferences"], dict) else {}
+        sp_b = meta_b["search_preferences"] if isinstance(meta_b["search_preferences"], dict) else {}
 
-        # B. Género preferido vs Género real
         pref_gen_a = (sp_a.get("preferred_gender") or "").strip()
         pref_gen_b = (sp_b.get("preferred_gender") or "").strip()
         if pref_gen_a and real_gender_b:
             if "hombre" in pref_gen_a.lower() and "mujer" in real_gender_b and "mujer" not in pref_gen_a.lower():
-                warnings.append(f"Preferencia de género: {name_a} busca '{pref_gen_a}' pero {name_b} es '{prof_b.gender}'.")
+                warnings.append(f"Preferencia de género: {name_a} busca '{pref_gen_a}' pero {name_b} es '{meta_b['gender']}'.")
             elif "mujer" in pref_gen_a.lower() and "hombre" in real_gender_b and "hombre" not in pref_gen_a.lower():
-                warnings.append(f"Preferencia de género: {name_a} busca '{pref_gen_a}' pero {name_b} es '{prof_b.gender}'.")
+                warnings.append(f"Preferencia de género: {name_a} busca '{pref_gen_a}' pero {name_b} es '{meta_b['gender']}'.")
 
         if pref_gen_b and real_gender_a:
             if "hombre" in pref_gen_b.lower() and "mujer" in real_gender_a and "mujer" not in pref_gen_b.lower():
-                warnings.append(f"Preferencia de género: {name_b} busca '{pref_gen_b}' pero {name_a} es '{prof_a.gender}'.")
+                warnings.append(f"Preferencia de género: {name_b} busca '{pref_gen_b}' pero {name_a} es '{meta_a['gender']}'.")
             elif "mujer" in pref_gen_b.lower() and "hombre" in real_gender_a and "hombre" not in pref_gen_b.lower():
-                warnings.append(f"Preferencia de género: {name_b} busca '{pref_gen_b}' pero {name_a} es '{prof_a.gender}'.")
+                warnings.append(f"Preferencia de género: {name_b} busca '{pref_gen_b}' pero {name_a} es '{meta_a['gender']}'.")
 
-        # C. Orientación preferida vs Orientación real
-        pref_ori_a = (sp_a.get("preferred_orientation") or "").strip()
-        pref_ori_b = (sp_b.get("preferred_orientation") or "").strip()
-        if pref_ori_a and real_orient_b:
-            if "hetero" in pref_ori_a.lower() and "hetero" not in real_orient_b and "bi" not in real_orient_b:
-                warnings.append(f"Preferencia de orientación: {name_a} busca '{pref_ori_a}' pero {name_b} es '{prof_b.orientation}'.")
-        if pref_ori_b and real_orient_a:
-            if "hetero" in pref_ori_b.lower() and "hetero" not in real_orient_a and "bi" not in real_orient_a:
-                warnings.append(f"Preferencia de orientación: {name_b} busca '{pref_ori_b}' pero {name_a} es '{prof_a.orientation}'.")
-
-        # D. Rango de edad preferido vs Edad real
-        age_a = prof_a.age
-        age_b = prof_b.age
+        age_a = meta_a["age"]
+        age_b = meta_b["age"]
         min_a, max_a = sp_a.get("min_age"), sp_a.get("max_age")
         if age_b and (min_a or max_a):
             if min_a and age_b < min_a:
@@ -4095,9 +4223,8 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             elif max_b and age_a > max_b:
                 warnings.append(f"Rango de edad: {name_a} tiene {age_a} años (mayor al rango preferido por {name_b}: {min_b or '-'}-{max_b} años).")
 
-        # E. Preferencia de estatura vs Estatura real
         pref_h_a = (sp_a.get("preferred_height") or "").strip()
-        h_b = (prof_b.estatura or "").strip()
+        h_b = (meta_b["estatura"] or "").strip()
         if pref_h_a and h_b:
             m_pref = re.search(r'(\d{3})', pref_h_a)
             m_real = re.search(r'(\d{3})', h_b)
@@ -4106,7 +4233,6 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                 if ("any" in pref_h_a.lower() or "to" in pref_h_a.lower()) and val_real < val_pref:
                     warnings.append(f"Estatura: {name_b} mide {val_real}cm (menor a la preferencia de {name_a}: {val_pref}cm+).")
 
-        # F. Límites No Negociables vs Red Flags
         non_neg_a = set(t.lower() for t in (sp_a.get("non_negotiables") or []))
         rf_b = set(t.lower() for t in (sp_b.get("red_flags") or []))
         non_neg_b = set(t.lower() for t in (sp_b.get("non_negotiables") or []))
@@ -4122,10 +4248,29 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             tags_str = ", ".join(t.title() for t in conflict_b_a)
             warnings.append(f"Conflicto de Límites: Red Flag de {name_a} coincide con Límite No Negociable de {name_b} ({tags_str}).")
 
+    # Ejecutar Evaluación IA de Quick Notes & Dealbreakers 360°
+    ai_evaluation = None
+    try:
+        is_hard_db, hard_reason = check_deterministic_hard_dealbreakers(meta_a, meta_b)
+        if is_hard_db and hard_reason and hard_reason not in issues and hard_reason not in warnings:
+            warnings.append(hard_reason)
+        nvidia_key = os.getenv("NVIDIA_API_KEY", "").strip()
+        async with httpx.AsyncClient(timeout=12.0) as client_http:
+            ai_evaluation = await evaluate_candidate_quick_notes_ai(meta_a, meta_b, nvidia_key, client_http)
+            if ai_evaluation:
+                for db_item in (ai_evaluation.get("deal_breakers") or []):
+                    if db_item and db_item not in warnings and db_item not in issues:
+                        warnings.append(f"🧠 Dealbreaker Quick Notes / IA: {db_item}")
+                for rf_item in (ai_evaluation.get("red_flags_seguridad") or []):
+                    if rf_item and rf_item not in issues:
+                        issues.append(f"🚨 Alerta Clínica / Seguridad: {rf_item}")
+    except Exception:
+        ai_evaluation = None
+
     # ── 3. CHEQUEO DE CUPO DE CITAS DE PERSONA B (PLAN TIER vs CITAS REGISTRADAS) ──
     quota_info = None
     if name_b:
-        plan_b = (prof_b.plan_tier if prof_b else "") or ""
+        plan_b = meta_b["plan_tier"] or ""
         max_dates = None
         if plan_b:
             p_low = plan_b.lower()
@@ -4161,7 +4306,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         if max_dates and total_dates_b >= max_dates:
             warnings.append(
                 f"⚠️ Cupo de citas cumplido: {name_b} ya completó sus {max_dates} citas pagadas (Plan: {plan_b}). "
-                f"Actualmente tiene {total_dates_b} citas registradas. Permitido continuar como match de cortesía / pool."
+                f"Actualmente tiene {total_dates_b} citas registradas."
             )
             quota_info = {
                 "exceeded": True,
@@ -4178,16 +4323,43 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             }
 
     return {
-        "compatible": len(issues) == 0,
+        "compatible": len(issues) == 0 and (not ai_evaluation or ai_evaluation.get("veredicto") != "NO RECOMENDADO"),
         "issues": issues,
         "warnings": warnings,
         "quota_info": quota_info,
+        "ai_evaluation": ai_evaluation,
+        "profile_a": {
+            "name": meta_a["name"],
+            "crm_id": meta_a["crm_id"],
+            "age": meta_a["age"],
+            "city": meta_a["city"],
+            "gender": meta_a["gender"],
+            "orientation": meta_a["orientation"],
+            "estatura": meta_a["estatura"],
+            "occupation": meta_a["occupation"],
+            "plan_tier": meta_a["plan_tier"],
+            "psychologist": meta_a["psychologist"],
+            "quick_notes": meta_a["quick_notes"]
+        },
+        "profile_b": {
+            "name": meta_b["name"],
+            "crm_id": meta_b["crm_id"],
+            "age": meta_b["age"],
+            "city": meta_b["city"],
+            "gender": meta_b["gender"],
+            "orientation": meta_b["orientation"],
+            "estatura": meta_b["estatura"],
+            "occupation": meta_b["occupation"],
+            "plan_tier": meta_b["plan_tier"],
+            "psychologist": meta_b["psychologist"],
+            "quick_notes": meta_b["quick_notes"]
+        },
         "name_a": name_a,
         "name_b": name_b,
-        "city_a": prof_a.city if prof_a else "",
-        "city_b": prof_b.city if prof_b else "",
-        "pref_a": prof_a.orientation if prof_a else "",
-        "pref_b": prof_b.orientation if prof_b else ""
+        "city_a": meta_a["city"],
+        "city_b": meta_b["city"],
+        "pref_a": meta_a["orientation"],
+        "pref_b": meta_b["orientation"]
     }
 
 
