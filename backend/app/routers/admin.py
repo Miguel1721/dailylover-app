@@ -860,6 +860,7 @@ async def get_users(
     has_matches: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
     is_difficult: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("clientes", "view"))
 ):
@@ -868,6 +869,12 @@ async def get_users(
 
     where_clauses = ["u.merged_into_id IS NULL"]
     params: dict = {"limit": limit, "offset": offset}
+
+    if status and status != "all":
+        if status == "baja":
+            where_clauses.append("u.status = 'baja'")
+        elif status == "active":
+            where_clauses.append("COALESCE(u.status, 'active') = 'active'")
 
     if search:
         s_clean = search.strip().lower()
@@ -931,7 +938,9 @@ async def get_users(
     rows = (await db.execute(text(f"""
         SELECT
             u.id, u.phone, u.name, u.created_at,
-            u.client_code, u.id_number,
+            u.client_code, u.id_number, u.crm_id,
+            COALESCE(u.status, 'active') AS status,
+            u.deactivation_reason, u.deactivated_at, u.deactivation_notes,
             p.user_id AS profile_user_id, p.ocean, p.apego, p.motivacion, p.rol_social,
             p.energia_social, p.momento_vital, p.intereses, p.valores,
             p.city, p.occupation, p.education, p.religion, p.love_language,
@@ -965,6 +974,11 @@ async def get_users(
             "name": r.name or "Sin nombre",
             "client_code": client_code,
             "id_number": r.id_number,
+            "crm_id": r.crm_id,
+            "status": r.status or "active",
+            "deactivation_reason": r.deactivation_reason,
+            "deactivated_at": r.deactivated_at.isoformat() if r.deactivated_at else None,
+            "deactivation_notes": r.deactivation_notes,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "has_profile": r.profile_user_id is not None,
             "city": r.city,
@@ -3189,6 +3203,113 @@ class RegisterNovedadRequest(BaseModel):
     new_plan: Optional[str] = None
     assigned_to: Optional[str] = None
 
+
+class DeactivateUserRequest(BaseModel):
+    reason: str
+    notes: Optional[str] = None
+    cancel_slots: Optional[bool] = True
+
+@router.post("/users/{user_id}/deactivate")
+async def deactivate_user(
+    user_id: int,
+    payload: DeactivateUserRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("clientes", "view"))
+):
+    """
+    Da de baja a un cliente en el CRM:
+    - Actualiza users.status = 'baja', deactivation_reason, deactivation_notes, deactivated_at
+    - Inserta nota en client_notes
+    - Si cancel_slots, cancela slots pendientes en operational_matches
+    """
+    user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid LIMIT 1"), {"uid": user_id})
+    user_row = user_res.fetchone()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    user_name = user_row.name or f"Usuario #{user_id}"
+    admin_name = current_user.get("name") or current_user.get("email") or "Administrador"
+
+    await db.execute(text("""
+        UPDATE users
+        SET status = 'baja',
+            deactivation_reason = :reason,
+            deactivation_notes = :notes,
+            deactivated_at = NOW()
+        WHERE id = :uid
+    """), {
+        "uid": user_id,
+        "reason": payload.reason.strip(),
+        "notes": (payload.notes or "").strip()
+    })
+
+    note_text = f"🚫 CLIENTE DADO DE BAJA: Motivo: {payload.reason.strip()}."
+    if payload.notes and payload.notes.strip():
+        note_text += f" Detalles: {payload.notes.strip()}."
+    note_text += f" [Registrado por: {admin_name}]"
+
+    await db.execute(text("""
+        INSERT INTO client_notes (user_id, note, source, created_at)
+        VALUES (:uid, :note, 'admin_deactivate', NOW())
+    """), {"uid": user_id, "note": note_text})
+
+    cancelled_count = 0
+    if payload.cancel_slots:
+        cancel_res = await db.execute(text("""
+            UPDATE operational_matches
+            SET status = 'DADO DE BAJA',
+                observations = COALESCE(observations, '') || ' [DADO DE BAJA: ' || :reason || ']'
+            WHERE (user_id_a = :uid OR LOWER(TRIM(person_a)) = LOWER(TRIM(:name)))
+              AND status NOT IN ('CITA REALIZADA', 'APROBADO', 'CITA COMPLETADA')
+        """), {"uid": user_id, "name": user_name, "reason": payload.reason.strip()})
+        cancelled_count = cancel_res.rowcount or 0
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Cliente {user_name} dado de baja exitosamente. ({cancelled_count} slots activos cancelados)",
+        "cancelled_slots": cancelled_count
+    }
+
+@router.post("/users/{user_id}/reactivate")
+async def reactivate_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_permission("clientes", "view"))
+):
+    """
+    Reactiva a un cliente dado de baja en el CRM.
+    """
+    user_res = await db.execute(text("SELECT id, name FROM users WHERE id = :uid LIMIT 1"), {"uid": user_id})
+    user_row = user_res.fetchone()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    user_name = user_row.name or f"Usuario #{user_id}"
+    admin_name = current_user.get("name") or current_user.get("email") or "Administrador"
+
+    await db.execute(text("""
+        UPDATE users
+        SET status = 'active',
+            deactivation_reason = NULL,
+            deactivation_notes = NULL,
+            deactivated_at = NULL
+        WHERE id = :uid
+    """), {"uid": user_id})
+
+    note_text = f"✅ CLIENTE REACTIVADO en el sistema. [Por: {admin_name}]"
+    await db.execute(text("""
+        INSERT INTO client_notes (user_id, note, source, created_at)
+        VALUES (:uid, :note, 'admin_reactivate', NOW())
+    """), {"uid": user_id, "note": note_text})
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": f"Cliente {user_name} reactivado exitosamente."
+    }
 
 @router.post("/users/quick-create")
 async def quick_create_client(

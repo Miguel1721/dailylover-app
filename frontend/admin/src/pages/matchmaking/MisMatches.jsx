@@ -7,7 +7,7 @@ import {
   Phone, MessageSquare, Utensils, Copy, Send, Calendar as CalendarIcon, Wallet
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import CrmPersonLink from '../../components/CrmPersonLink'
+import CrmPersonLink, { getSmartMatchAppUrl } from '../../components/CrmPersonLink'
 import EntrevistaResultados from './EntrevistaResultados'
 import DatosObjetivos from './DatosObjetivos'
 import PercepcionPsicologa from './PercepcionPsicologa'
@@ -245,7 +245,7 @@ function PersonHistoryModal({ queryTarget, onClose }) {
               </h2>
               {data?.crm_id && (
                 <a
-                  href={`https://dailylover.smartmatchapp.com/client/${data.crm_id}`}
+                  href={getSmartMatchAppUrl(data?.person_name || queryTarget, data.crm_id)}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ fontSize: 12, color: '#B8324F', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2 }}
@@ -1765,6 +1765,45 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   const [compatibilityModalData, setCompatibilityModalData] = useState(null)
   const [loadingCompatId, setLoadingCompatId] = useState(null)
+  const [notifyingCs, setNotifyingCs] = useState(false)
+  const [csNotifiedSuccess, setCsNotifiedSuccess] = useState('')
+
+  const handleNotifyCsUpsell = async (matchRow, pB, pA) => {
+    const personBName = pB?.name || matchRow?.person_b
+    if (!personBName) return
+    const personBCrm = pB?.crm_id || matchRow?.person_b_crm_id || ''
+    const personAName = pA?.name || matchRow?.person_a || ''
+
+    setNotifyingCs(true)
+    setCsNotifiedSuccess('')
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/notify-cs-upsell`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          match_id: matchRow?.id || null,
+          person_b_name: personBName,
+          person_b_crm_id: String(personBCrm || ''),
+          person_a_name: personAName,
+          details: `Persona B (${personBName}) ya cumplió sus citas pactadas y se propone para cita con ${personAName || 'Persona A'}. Se solicita a CS comunicarse con ella para ofrecerle adquirir una nueva cita.`
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setCsNotifiedSuccess(`📢 Ticket de venta registrado en CS para ${personBName}. Se gestionará el contacto para nueva cita.`)
+        setTimeout(() => setCsNotifiedSuccess(''), 7000)
+      } else {
+        alert(data.detail || 'Error al notificar a CS')
+      }
+    } catch (err) {
+      alert('Error de conexión al notificar a CS')
+    } finally {
+      setNotifyingCs(false)
+    }
+  }
 
   const runCompatibilityCheck = async (matchRow, pbName, pbCrmId, pbUrl = '', forceOpenModal = false, forceRefresh = false) => {
     if (!matchRow?.person_a || (!pbName && !pbCrmId && !pbUrl)) return
@@ -3547,7 +3586,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               {m.person_b_crm_id && (
                                 <a
-                                  href={`https://dailylover.smartmatchapp.com/#!/client/${m.person_b_crm_id}/`}
+                                  href={getSmartMatchAppUrl(m.person_b, m.person_b_crm_id)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   style={{
@@ -4782,14 +4821,15 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                         <span style={{ fontSize: 10.5, fontWeight: 800, color: isLight ? '#64748B' : 'var(--text-muted)', letterSpacing: '0.05em' }}>
                           {side.label}
                         </span>
-                        {side.data.crm_id && (
+                        {(side.data.crm_id || side.data.name || side.fallbackName) && (
                           <a
-                            href={`https://dailylover.smartmatchapp.com/#!/client/${side.data.crm_id}/`}
+                            href={getSmartMatchAppUrl(side.data.name || side.fallbackName, side.data.crm_id)}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{ fontSize: 11, fontWeight: 700, color: '#B8324F', textDecoration: 'none' }}
+                            title="Abrir perfil en SmartMatchApp"
                           >
-                            CRM #{side.data.crm_id} ↗
+                            CRM #{side.data.crm_id || 'Buscar'} ↗
                           </a>
                         )}
                       </div>
@@ -4834,69 +4874,116 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 borderTop: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
                 background: isLight ? '#F8FAFC' : 'rgba(0,0,0,0.25)',
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12
+                flexDirection: 'column',
+                gap: 10
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {csNotifiedSuccess && (
+                  <div style={{
+                    padding: '8px 14px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid #10B981',
+                    borderRadius: 8,
+                    color: '#10B981',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    <CheckCircle size={15} /> {csNotifiedSuccess}
+                  </div>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setCompatibilityModalData(null)
+                        await handleUpdateField(matchId, 'person_b', '', matchRow, true)
+                      }}
+                      style={{
+                        padding: '9px 16px',
+                        borderRadius: 8,
+                        border: isLight ? '1px solid #FCA5A5' : '1px solid rgba(239, 68, 68, 0.5)',
+                        background: isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.15)',
+                        color: isLight ? '#991B1B' : '#FCA5A5',
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🗑️ Descartar y Quitar Persona B
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runCompatibilityCheck(matchRow, pB.name || matchRow?.person_b, pB.crm_id || matchRow?.person_b_crm_id, '', true, true)}
+                      disabled={loadingCompatId === matchId}
+                      style={{
+                        padding: '9px 15px',
+                        borderRadius: 8,
+                        border: isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.4)',
+                        background: isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.15)',
+                        color: isLight ? '#3730A3' : '#A594FD',
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                      title="Forzar re-ejecución del motor factual y LLM"
+                    >
+                      <RefreshCw size={13} className={loadingCompatId === matchId ? 'spin' : ''} />
+                      {loadingCompatId === matchId ? 'Re-analizando...' : '🔄 Re-analizar con IA'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleNotifyCsUpsell(matchRow, pB, pA)}
+                      disabled={notifyingCs}
+                      style={{
+                        padding: '9px 15px',
+                        borderRadius: 8,
+                        border: isLight ? '1px solid #FDE68A' : '1px solid rgba(245, 158, 11, 0.4)',
+                        background: isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.14)',
+                        color: isLight ? '#B45309' : '#FBBF24',
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                      title="Notificar a Servicio al Cliente que Persona B cumplió citas para ofrecerle pagar nueva cita"
+                    >
+                      📢 {notifyingCs ? 'Notificando...' : 'Notificar a CS (Venta Nueva Cita)'}
+                    </button>
+                  </div>
+
                   <button
                     type="button"
-                    onClick={async () => {
-                      setCompatibilityModalData(null)
-                      await handleUpdateField(matchId, 'person_b', '', matchRow, true)
-                    }}
+                    onClick={() => setCompatibilityModalData(null)}
                     style={{
-                      padding: '9px 16px',
+                      padding: '9px 18px',
                       borderRadius: 8,
-                      border: isLight ? '1px solid #FCA5A5' : '1px solid rgba(239, 68, 68, 0.5)',
-                      background: isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.15)',
-                      color: isLight ? '#991B1B' : '#FCA5A5',
-                      fontSize: 12.5,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                      color: '#FFF',
+                      fontSize: 13,
                       fontWeight: 700,
                       cursor: 'pointer'
                     }}
                   >
-                    🗑️ Descartar y Quitar Persona B
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => runCompatibilityCheck(matchRow, pB.name || matchRow?.person_b, pB.crm_id || matchRow?.person_b_crm_id, '', true, true)}
-                    disabled={loadingCompatId === matchId}
-                    style={{
-                      padding: '9px 15px',
-                      borderRadius: 8,
-                      border: isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.4)',
-                      background: isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.15)',
-                      color: isLight ? '#3730A3' : '#A594FD',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6
-                    }}
-                    title="Forzar re-ejecución del motor factual y LLM"
-                  >
-                    <RefreshCw size={13} className={loadingCompatId === matchId ? 'spin' : ''} />
-                    {loadingCompatId === matchId ? 'Re-analizando...' : '🔄 Re-analizar con IA'}
+                    ✅ Conservar Persona B ({pB.name || matchRow?.person_b})
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCompatibilityModalData(null)}
-                  style={{
-                    padding: '9px 18px',
-                    borderRadius: 8,
-                    border: 'none',
-                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                    color: '#FFF',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  ✅ Conservar Persona B ({pB.name || matchRow?.person_b})
-                </button>
               </div>
             </div>
           </div>

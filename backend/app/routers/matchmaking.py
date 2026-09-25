@@ -27,7 +27,10 @@ from app.services.clinical_profile_extractor import (
     ClinicalProfileExtractor,
     infer_gender_from_name_and_bio,
     infer_city_from_text,
-    get_metro_cluster
+    get_metro_cluster,
+    FEMALE_NAME_TOKENS,
+    MALE_NAME_TOKENS,
+    normalize_text_unaccent
 )
 from app.services.psychologist_helper import (
     build_psychologist_sql_condition,
@@ -660,9 +663,9 @@ async def get_my_matches(
             "pref": normalize_pref(final_pref),
             "plan_tier": normalize_plan(final_plan),
             "person_a": pA_name,
-            "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
+            "person_a_crm_id": str(d.get("person_a_crm_id") or d.get("ua_crm_id") or "").strip() if str(d.get("person_a_crm_id") or d.get("ua_crm_id") or "").strip().lower() not in ("none", "null", "undefined") else "",
             "person_b": d.get("person_b") or "",
-            "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
+            "person_b_crm_id": str(d.get("person_b_crm_id") or d.get("ub_crm_id") or "").strip() if str(d.get("person_b_crm_id") or d.get("ub_crm_id") or "").strip().lower() not in ("none", "null", "undefined") else "",
             "psychologist_b": p_b_psyc,
             "compatibility_score": d.get("compatibility_score"),
             "compatibility_verdict": d.get("compatibility_verdict"),
@@ -4568,8 +4571,23 @@ def build_canonical_profile(
         except Exception:
             pass
 
-    # Género y Orientación
+    # Notas clínicas de entrevista (para inferencia y contexto factual)
+    quick_notes = (getattr(p_row, 'bio_notes', None) if p_row else "") or ""
+    bio_essay = str(raw_wh.get("pref_64") or "").strip()
+    if bio_essay and bio_essay not in quick_notes:
+        quick_notes = f"{quick_notes}\n{bio_essay}".strip()
+
+    # Género y Orientación con auto-corrección heurística
     genero = _choice_str(raw_wh.get("prof_192")) or (getattr(p_row, 'gender', None) if p_row else None)
+    inferred_can_g = infer_gender_from_name_and_bio(name, quick_notes)
+    if inferred_can_g in ("Hombre", "Mujer"):
+        first_tok = normalize_text_unaccent(name).split()[0] if name else ""
+        if not genero or str(genero).strip().lower() in ("", "no especificado", "none", "null"):
+            genero = inferred_can_g
+        elif str(genero).strip() != inferred_can_g:
+            if (inferred_can_g == "Mujer" and first_tok in FEMALE_NAME_TOKENS) or (inferred_can_g == "Hombre" and first_tok in MALE_NAME_TOKENS):
+                genero = inferred_can_g
+
     orientacion = None
     pref_65 = raw_wh.get("pref_65")
     if isinstance(pref_65, list) and len(pref_65) > 0:
@@ -5103,13 +5121,23 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         att_style = ext_att or apego_dict.get("style") or "No especificado"
         love_lang = (row_p.love_language if row_p else None) or ext_love or apego_dict.get("love_language") or "No especificado"
 
+        calc_gender = (row_p.gender if row_p else "") or ""
+        inferred_meta_g = infer_gender_from_name_and_bio(p_name, q_notes)
+        if inferred_meta_g in ("Hombre", "Mujer"):
+            first_tok = normalize_text_unaccent(p_name).split()[0] if p_name else ""
+            if not calc_gender or calc_gender.strip().lower() in ("", "no especificado", "none", "null"):
+                calc_gender = inferred_meta_g
+            elif calc_gender.strip() != inferred_meta_g:
+                if (inferred_meta_g == "Mujer" and first_tok in FEMALE_NAME_TOKENS) or (inferred_meta_g == "Hombre" and first_tok in MALE_NAME_TOKENS):
+                    calc_gender = inferred_meta_g
+
         return {
             "user_id": uid,
             "name": p_name,
             "crm_id": p_cid,
             "age": row_p.age if row_p else None,
             "city": normalize_city(row_p.city) if (row_p and row_p.city) else "Bogotá",
-            "gender": (row_p.gender if row_p else "") or "",
+            "gender": calc_gender,
             "orientation": (row_p.orientation if row_p else "") or "",
             "estatura": (row_p.estatura if row_p else "") or "",
             "occupation": (row_p.occupation if row_p else "") or "",
@@ -12049,6 +12077,86 @@ async def update_lead_man_rescue(
     await db.commit()
 
     return {"status": "success", "user_id": user_id, "message": "Lead actualizado correctamente"}
+
+
+class NotifyCsUpsellRequest(BaseModel):
+    match_id: Optional[int] = None
+    person_b_name: str
+    person_b_crm_id: Optional[str] = None
+    person_a_name: Optional[str] = None
+    details: Optional[str] = None
+
+@router.post("/notify-cs-upsell")
+async def notify_cs_upsell(
+    payload: NotifyCsUpsellRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Notifica a Servicio al Cliente (CS) que Persona B ya cumplió las citas de su plan
+    y que se requiere contactarla para verificar si desea pagar/adquirir una nueva cita.
+    Registra ticket en cs_novedades y nota en client_notes.
+    """
+    pB_name = payload.person_b_name.strip()
+    if not pB_name:
+        raise HTTPException(status_code=400, detail="Nombre de Persona B requerido")
+
+    creator_name = current_user.get("name") or current_user.get("email") or "Psicóloga"
+
+    # Buscar user_id de Persona B
+    u_id = None
+    clean_b_cid = (payload.person_b_crm_id or "").strip()
+    if clean_b_cid and clean_b_cid.isdigit():
+        r_u = await db.execute(text("SELECT id FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": clean_b_cid})
+        row_u = r_u.fetchone()
+        if row_u:
+            u_id = row_u.id
+
+    if not u_id:
+        r_u = await db.execute(text("SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n)) LIMIT 1"), {"n": pB_name})
+        row_u = r_u.fetchone()
+        if row_u:
+            u_id = row_u.id
+
+    detail_msg = payload.details or (
+        f"Persona B ({pB_name}) ya cumplió las citas de su plan. "
+        f"Se propuso como candidato/match para {payload.person_a_name or 'un cliente'}. "
+        f"Contactar a {pB_name} para verificar si desea pagar/adquirir una nueva cita."
+    )
+
+    # Insertar en cs_novedades
+    nov_res = await db.execute(text("""
+        INSERT INTO cs_novedades (
+            client_id, client_name, novedad_type, details, extra_dates,
+            created_by, assigned_to, status, created_at
+        ) VALUES (
+            :cid, :cname, 'VENTA_NUEVA_CITA', :det, 0,
+            :cby, 'Servicio al Cliente', 'PENDIENTE', NOW()
+        ) RETURNING id
+    """), {
+        "cid": u_id,
+        "cname": pB_name,
+        "det": detail_msg.strip(),
+        "cby": creator_name
+    })
+    nov_id = nov_res.scalar()
+
+    # Si encontramos el user_id de Persona B, registrar nota clínica
+    if u_id:
+        note_text = f"📢 NOTIFICADO A CS: Persona B cumplió citas. Contactar para ofrecer venta de nueva cita. [Por: {creator_name}]"
+        await db.execute(text("""
+            INSERT INTO client_notes (user_id, note, source, created_at)
+            VALUES (:uid, :note, 'cs_novedades_upsell', NOW())
+        """), {"uid": u_id, "note": note_text})
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "novedad_id": nov_id,
+        "message": f"Novedad enviada a Servicio al Cliente exitosamente para contactar a {pB_name}."
+    }
+
 
 
 

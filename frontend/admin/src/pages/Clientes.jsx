@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Search, Eye, ChevronLeft, ChevronRight, History, User, Heart, MapPin, Briefcase, GraduationCap, Sparkles, BookOpen, UserCheck, Phone, Cake, Ruler, Shield, Smile, Filter, CheckCircle } from 'lucide-react'
+import { Search, Eye, ChevronLeft, ChevronRight, History, User, Heart, MapPin, Briefcase, GraduationCap, Sparkles, BookOpen, UserCheck, Phone, Cake, Ruler, Shield, Smile, Filter, CheckCircle, ExternalLink, UserX, Crown, Calendar } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ClinicalNotesViewer from '../components/ClinicalNotesViewer'
 import NuevoClienteExpresModal from '../components/NuevoClienteExpresModal'
 import RegistrarNovedadModal from '../components/RegistrarNovedadModal'
+import DarDeBajaModal from '../components/DarDeBajaModal'
+import CrmPersonLink, { getSmartMatchAppUrl } from '../components/CrmPersonLink'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
@@ -154,7 +156,7 @@ function OceanBar({ label, value }) {
   )
 }
 
-function ClienteModal({ cliente, token, onClose }) {
+function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
   if (!cliente) return null
   const [activeTab, setActiveTab] = useState('perfil')
   const [fullProfile, setFullProfile] = useState(cliente)
@@ -271,7 +273,7 @@ function ClienteModal({ cliente, token, onClose }) {
             )}
 
             <div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 {cliente.name}
                 {cliente.client_code && (
                   <span style={{
@@ -283,6 +285,27 @@ function ClienteModal({ cliente, token, onClose }) {
                     borderRadius: 12
                   }}>{cliente.client_code}</span>
                 )}
+                <a
+                  href={getSmartMatchAppUrl(cliente.name, cliente.crm_id || fullProfile?.crm_id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'rgba(184, 50, 79, 0.15)',
+                    color: '#B8324F',
+                    border: '1px solid rgba(184, 50, 79, 0.35)',
+                    borderRadius: 8,
+                    padding: '3px 8px',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    textDecoration: 'none'
+                  }}
+                  title="Abrir perfil completo en SmartMatchApp CRM"
+                >
+                  🔗 CRM #{cliente.crm_id || fullProfile?.crm_id || 'Buscar'} <ExternalLink size={11} />
+                </a>
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                 {cliente.phone && <span>📞 {cliente.phone}</span>}
@@ -293,8 +316,64 @@ function ClienteModal({ cliente, token, onClose }) {
             </div>
           </div>
 
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 16, padding: '4px 10px' }}>✕</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {targetClient.status === 'baja' ? (
+              <button
+                className="btn btn-sm"
+                style={{ background: '#10B981', color: '#fff', border: 'none', fontWeight: 700, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12 }}
+                onClick={() => onReactivate && onReactivate(targetClient)}
+              >
+                ✅ Reactivar
+              </button>
+            ) : (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ color: '#EF4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.08)', fontWeight: 700, padding: '5px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                onClick={() => onDarDeBaja && onDarDeBaja(targetClient)}
+                title="Dar de baja a este cliente"
+              >
+                <UserX size={13} /> Dar de Baja
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 16, padding: '4px 10px' }}>✕</button>
+          </div>
         </div>
+
+        {/* Banner de Baja si aplica */}
+        {targetClient.status === 'baja' && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 10,
+            padding: '10px 14px',
+            marginBottom: 14,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div>
+              <div style={{ color: '#EF4444', fontWeight: 800, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <UserX size={15} /> CLIENTE DADO DE BAJA DEL SISTEMA
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                Motivo: <strong>{targetClient.deactivation_reason || 'No especificado'}</strong>
+                {targetClient.deactivated_at && ` • Fecha: ${new Date(targetClient.deactivated_at).toLocaleDateString('es-CO')}`}
+              </div>
+              {targetClient.deactivation_notes && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+                  "{targetClient.deactivation_notes}"
+                </div>
+              )}
+            </div>
+            <button
+              className="btn btn-sm"
+              style={{ background: '#10B981', color: '#fff', border: 'none', fontWeight: 700, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12 }}
+              onClick={() => onReactivate && onReactivate(targetClient)}
+            >
+              ✅ Reactivar
+            </button>
+          </div>
+        )}
 
         {/* Tab Navigation */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: 16 }}>
@@ -736,7 +815,9 @@ export default function Clientes() {
   const [cityFilter, setCityFilter] = useState('all')
   const [matchesFilter, setMatchesFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
-  const [difficultFilter, setDifficultFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('active')
+  const [darDeBajaTarget, setDarDeBajaTarget] = useState(null)
+  const [quickCreateMode, setQuickCreateMode] = useState('vip')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [showNuevoClienteModal, setShowNuevoClienteModal] = useState(false)
@@ -760,6 +841,31 @@ export default function Clientes() {
     }
   }, [location.search])
 
+  const handleReactivate = async (targetUser) => {
+    if (!window.confirm(`¿Seguro que deseas reactivar al cliente ${targetUser.name}? Volverá a estar disponible para citas y matchmaking.`)) return
+    try {
+      const res = await fetch(`${API}/api/v1/admin/users/${targetUser.id}/reactivate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setSuccessBanner(data.message || 'Cliente reactivado con éxito')
+        setTimeout(() => setSuccessBanner(''), 4000)
+        fetchUsers()
+        if (selected && selected.id === targetUser.id) {
+          setSelected(prev => ({ ...prev, status: 'active', deactivation_reason: null, deactivation_notes: null }))
+        }
+      } else {
+        alert(data.detail || 'Error al reactivar cliente')
+      }
+    } catch (e) {
+      alert('Error de conexión al reactivar cliente')
+    }
+  }
 
   const fetchUsers = useCallback(() => {
     setLoading(true)
@@ -772,7 +878,8 @@ export default function Clientes() {
       ...(cityFilter !== 'all' && { city: cityFilter }),
       ...(matchesFilter !== 'all' && { has_matches: matchesFilter }),
       ...(planFilter !== 'all' && { plan_tier: planFilter }),
-      ...(difficultFilter !== 'all' && { is_difficult: difficultFilter })
+      ...(difficultFilter !== 'all' && { is_difficult: difficultFilter }),
+      ...(statusFilter !== 'all' && { status: statusFilter })
     })
 
     fetch(`${API}/api/v1/admin/users?${params}`, {
@@ -807,7 +914,7 @@ export default function Clientes() {
         setTotal(0)
       })
       .finally(() => setLoading(false))
-  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, difficultFilter, token])
+  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, difficultFilter, statusFilter, token])
 
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
@@ -850,7 +957,34 @@ export default function Clientes() {
             📢 + Novedad / Cita Extra
           </button>
           <button
-            onClick={() => setShowNuevoClienteModal(true)}
+            onClick={() => {
+              setQuickCreateMode('vip')
+              setShowNuevoClienteModal(true)
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'linear-gradient(135deg, #FFD700 0%, #D4AF37 100%)',
+              color: '#1a1012',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 16px',
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(255, 215, 0, 0.3)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Registrar cliente VIP directamente en el sistema con código DL"
+          >
+            <Crown size={15} color="#1a1012" /> + Registrar VIP
+          </button>
+          <button
+            onClick={() => {
+              setQuickCreateMode('novip')
+              setShowNuevoClienteModal(true)
+            }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -859,16 +993,16 @@ export default function Clientes() {
               color: '#fff',
               border: 'none',
               borderRadius: 8,
-              padding: '9px 18px',
+              padding: '9px 16px',
               fontSize: 13,
               fontWeight: 700,
               cursor: 'pointer',
               boxShadow: '0 2px 10px rgba(150, 21, 0, 0.3)',
               transition: 'all 0.15s ease'
             }}
-            title="Alta inmediata en 30 segundos con código DL"
+            title="Agendar cita para cliente No-VIP vía Calendly"
           >
-            ➕ + Cliente Exprés
+            <Calendar size={15} /> + Agendar Cita (No-VIP)
           </button>
         </div>
       </div>
@@ -916,6 +1050,23 @@ export default function Clientes() {
               onChange={e => { setSearch(e.target.value); setPage(1) }}
             />
           </div>
+
+          {/* Filtro por Estado: Activo / Baja */}
+          <select
+            style={{
+              padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content',
+              background: statusFilter === 'baja' ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-base)',
+              border: statusFilter === 'baja' ? '1px solid #EF4444' : '1px solid var(--border-color)',
+              color: statusFilter === 'baja' ? '#EF4444' : 'var(--text-primary)',
+              borderRadius: 8, fontWeight: 600, cursor: 'pointer'
+            }}
+            value={statusFilter}
+            onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
+          >
+            <option value="active">🟢 Clientes Activos</option>
+            <option value="baja">🚫 Clientes de Baja</option>
+            <option value="all">📋 Todos los Estados</option>
+          </select>
 
           {/* Filtro por Plan */}
           <select
@@ -1085,6 +1236,12 @@ export default function Clientes() {
 
                     {/* Metadata Badges */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+                      {u.status === 'baja' && (
+                        <span className="badge badge-red" style={{ fontSize: 10, background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                          🚫 DADO DE BAJA: {u.deactivation_reason || 'Inactivo'}
+                        </span>
+                      )}
+                      <CrmPersonLink name={u.name} crmId={u.crm_id} />
                       {u.is_difficult && (
                         <span className="badge badge-yellow" style={{ fontSize: 10, background: 'rgba(255,193,7,0.2)', color: '#FFC107', border: '1px solid rgba(255,193,7,0.4)' }}>
                           ⚠️ Caso Complejo
@@ -1166,7 +1323,32 @@ export default function Clientes() {
                       </span>
                       {u.id_number && <span style={{ color: 'var(--text-muted)' }}>🪪 {u.id_number}</span>}
                     </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      {u.status === 'baja' ? (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11, borderColor: 'rgba(16, 185, 129, 0.3)', color: '#10B981', padding: '2px 8px' }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleReactivate(u)
+                          }}
+                          title="Reactivar a este cliente"
+                        >
+                          ✅ Reactivar
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ fontSize: 11, borderColor: 'rgba(239, 68, 68, 0.3)', color: '#EF4444', padding: '2px 8px' }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDarDeBajaTarget(u)
+                          }}
+                          title="Dar de baja a este cliente"
+                        >
+                          🚫 Dar de Baja
+                        </button>
+                      )}
                       <button
                         className="btn btn-ghost btn-sm"
                         style={{ fontSize: 11, borderColor: 'rgba(150,21,0,0.3)', color: 'var(--color-primary)', padding: '2px 8px' }}
@@ -1210,10 +1392,38 @@ export default function Clientes() {
         )}
       </div>
 
-      {selected && <ClienteModal cliente={selected} token={token} onClose={() => setSelected(null)} />}
+      {selected && (
+        <ClienteModal
+          cliente={selected}
+          token={token}
+          onClose={() => setSelected(null)}
+          onDarDeBaja={(c) => setDarDeBajaTarget(c)}
+          onReactivate={handleReactivate}
+        />
+      )}
+
+      {darDeBajaTarget && (
+        <DarDeBajaModal
+          client={darDeBajaTarget}
+          onClose={() => setDarDeBajaTarget(null)}
+          onSuccess={(msg) => {
+            setSuccessBanner(msg)
+            setTimeout(() => setSuccessBanner(''), 4000)
+            fetchUsers()
+            if (selected && selected.id === darDeBajaTarget.id) {
+              setSelected(prev => ({
+                ...prev,
+                status: 'baja',
+                deactivation_reason: 'Dado de baja recientemente'
+              }))
+            }
+          }}
+        />
+      )}
 
       {showNuevoClienteModal && (
         <NuevoClienteExpresModal
+          initialMode={quickCreateMode}
           onClose={() => setShowNuevoClienteModal(false)}
           onSuccess={(msg) => {
             setSuccessBanner(msg)

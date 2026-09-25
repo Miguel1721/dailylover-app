@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { UserPlus, X, CheckCircle, Sparkles } from 'lucide-react'
+import { UserPlus, Calendar, Crown, X, CheckCircle, ExternalLink, Copy } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
@@ -9,38 +9,30 @@ const CITIES = [
   'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
 ]
 
-const PLANS = [
-  'Estándar 65k (2 citas)',
-  'Estándar 65k (1 cita)',
-  'Estándar Plus 98k',
-  'Premium 150k',
+const VIP_PLANS = [
   'VIP 195k',
   'VIP 295k',
-  'Básico 40k',
+  'VIP Oro',
+  'Premium 150k',
   'Matchmaking Experience'
 ]
 
-const PSYCHOLOGISTS = [
-  { id: 'SILVI', label: '👩‍⚕️ Silvi / Silvana' },
-  { id: 'STEFFY', label: '👩‍⚕️ Steffy / Estefania' },
-  { id: 'MAPE', label: '👩‍⚕️ Mape / María Paula' },
-  { id: 'JENN', label: '👩‍⚕️ Jenn / Jennifer' },
-  { id: 'ANA', label: '👩‍⚕️ Ana Tolosa' },
-  { id: 'MANU', label: '👩‍⚕️ Manu / Manuela' },
-  { id: 'SOFI', label: '👩‍⚕️ Sofi / Sofia' },
-  { id: 'ALEJA', label: '👩‍⚕️ Aleja' },
-  { id: 'ISA', label: '👩‍⚕️ Isa' },
-  { id: 'PIA', label: '👩‍⚕️ Pia' }
+const NON_VIP_PLANS = [
+  'Estándar 65k (2 citas)',
+  'Estándar 65k (1 cita)',
+  'Estándar Plus 98k',
+  'Básico 40k'
 ]
 
-export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
+export default function NuevoClienteExpresModal({ onClose, onSuccess, initialMode = 'vip' }) {
   const { token } = useAuth()
+  const [mode, setMode] = useState(initialMode) // 'vip' | 'novip'
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [city, setCity] = useState('Bogotá')
   const [gender, setGender] = useState('Hombre')
   const [orientation, setOrientation] = useState('hetero')
-  const [planTier, setPlanTier] = useState('Estándar 65k (2 citas)')
+  const [planTier, setPlanTier] = useState(initialMode === 'vip' ? 'VIP 195k' : 'Estándar 65k (2 citas)')
   const [initialNotes, setInitialNotes] = useState('')
   const [createSlots, setCreateSlots] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -48,6 +40,16 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
   const [copiedLink, setCopiedLink] = useState(false)
 
   const CALENDLY_URL = 'https://calendly.com/maria-salinas-dailylover/blind-dates-1-1'
+
+  const handleModeChange = (newMode) => {
+    setMode(newMode)
+    if (newMode === 'vip') {
+      setPlanTier('VIP 195k')
+      setCreateSlots(true)
+    } else {
+      setPlanTier('Estándar 65k (2 citas)')
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -76,7 +78,7 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
 
       const data = await res.json()
       if (res.ok) {
-        if (onSuccess) onSuccess(data.message || 'Cliente creado exitosamente')
+        if (onSuccess) onSuccess(data.message || 'Cliente registrado exitosamente')
         onClose()
       } else {
         setError(data.detail || 'Error al registrar cliente')
@@ -94,29 +96,35 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
     setTimeout(() => setCopiedLink(false), 2500)
   }
 
+  const currentPlans = mode === 'vip' ? VIP_PLANS : NON_VIP_PLANS
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal"
-        style={{ width: 560, maxWidth: '95vw', padding: 24, borderRadius: 14, maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ width: 580, maxWidth: '95vw', padding: 24, borderRadius: 14, maxHeight: '92vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}
       >
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              background: 'rgba(150, 21, 0, 0.18)',
+              width: 42, height: 42, borderRadius: '50%',
+              background: mode === 'vip' ? 'rgba(255, 215, 0, 0.15)' : 'rgba(59, 130, 246, 0.15)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--color-primary)'
+              color: mode === 'vip' ? '#FFD700' : '#3B82F6',
+              border: `1px solid ${mode === 'vip' ? 'rgba(255, 215, 0, 0.4)' : 'rgba(59, 130, 246, 0.4)'}`
             }}>
-              <UserPlus size={20} />
+              {mode === 'vip' ? <Crown size={22} /> : <Calendar size={22} />}
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
-                Alta Rápida de Cliente Exprés
+                {mode === 'vip' ? '👑 Registro de Cliente VIP' : '📅 Cliente No-VIP (Agendar Cita)'}
               </h3>
               <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                Creación en 30 segundos con código único DL y slots automáticos
+                {mode === 'vip'
+                  ? 'Alta directa e inmediata en sistema con slot prioritario de búsqueda'
+                  : 'Los clientes No-VIP deben agendar cita 1-1 en Calendly'}
               </p>
             </div>
           </div>
@@ -124,6 +132,138 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
             ✕
           </button>
         </div>
+
+        {/* Segmented Switcher: VIP vs No-VIP */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 6,
+          background: 'var(--bg-base)',
+          padding: 4,
+          borderRadius: 10,
+          border: '1px solid var(--border-color)',
+          marginBottom: 16
+        }}>
+          <button
+            type="button"
+            onClick={() => handleModeChange('vip')}
+            style={{
+              padding: '9px 12px',
+              borderRadius: 8,
+              border: 'none',
+              background: mode === 'vip' ? 'rgba(255, 215, 0, 0.18)' : 'transparent',
+              color: mode === 'vip' ? '#FFD700' : 'var(--text-secondary)',
+              fontWeight: mode === 'vip' ? 800 : 600,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Crown size={16} /> 👑 Cliente VIP (Registrar)
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('novip')}
+            style={{
+              padding: '9px 12px',
+              borderRadius: 8,
+              border: 'none',
+              background: mode === 'novip' ? 'rgba(59, 130, 246, 0.18)' : 'transparent',
+              color: mode === 'novip' ? '#60A5FA' : 'var(--text-secondary)',
+              fontWeight: mode === 'novip' ? 800 : 600,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Calendar size={16} /> 📅 No-VIP (Agendar Cita)
+          </button>
+        </div>
+
+        {/* SECCIÓN ESPECIAL NO-VIP: AGENDAR CITA EN CALENDLY */}
+        {mode === 'novip' && (
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.08)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            borderRadius: 10,
+            padding: 14,
+            marginBottom: 16
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#60A5FA', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              📅 Flujo No-VIP: Agendamiento de Cita Requerido
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+              Los clientes estándar / no-VIP deben ingresar a Calendly y seleccionar su fecha/hora disponible para la cita de bienvenida.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a
+                href={CALENDLY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  background: '#2563EB',
+                  color: '#fff',
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <ExternalLink size={14} /> Abrir Calendly para Agendar Cita
+              </a>
+              <button
+                type="button"
+                onClick={handleCopyCalendly}
+                style={{
+                  background: copiedLink ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-card)',
+                  border: '1px solid ' + (copiedLink ? '#10B981' : 'var(--border-color)'),
+                  color: copiedLink ? '#10B981' : 'var(--text-primary)',
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                {copiedLink ? <CheckCircle size={14} /> : <Copy size={14} />}
+                {copiedLink ? '¡Enlace Copiado!' : 'Copiar Link Calendly'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* SECCIÓN ESPECIAL VIP: BADGE INFORMATIVO */}
+        {mode === 'vip' && (
+          <div style={{
+            background: 'rgba(255, 215, 0, 0.08)',
+            border: '1px solid rgba(255, 215, 0, 0.25)',
+            borderRadius: 10,
+            padding: 12,
+            marginBottom: 16,
+            fontSize: 12,
+            color: '#FFD700',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
+          }}>
+            <span>👑 <strong>Membresía VIP:</strong> Se registra directamente con código oficial DL y entra a la mesa de trabajo de la psicóloga con prioridad alta.</span>
+          </div>
+        )}
 
         {error && (
           <div style={{
@@ -142,7 +282,7 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
-              Nombre Completo *
+              Nombre Completo del Cliente *
             </label>
             <input
               type="text"
@@ -247,46 +387,8 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
                 color: 'var(--text-primary)', fontSize: 13, outline: 'none'
               }}
             >
-              {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+              {currentPlans.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-          </div>
-
-          {/* Enlace Oficial de Agendamiento Calendly */}
-          <div style={{
-            background: 'rgba(150, 21, 0, 0.08)',
-            border: '1px solid rgba(150, 21, 0, 0.25)',
-            borderRadius: 8,
-            padding: '10px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10
-          }}>
-            <div style={{ overflow: 'hidden' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                📅 Enlace Calendly para Agendar Cita (1-1):
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {CALENDLY_URL}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleCopyCalendly}
-              style={{
-                background: copiedLink ? 'rgba(16, 185, 129, 0.2)' : 'var(--bg-card)',
-                border: '1px solid ' + (copiedLink ? '#10B981' : 'var(--border-color)'),
-                color: copiedLink ? '#10B981' : 'var(--text-primary)',
-                padding: '6px 12px',
-                borderRadius: 6,
-                fontSize: 11,
-                fontWeight: 700,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {copiedLink ? '✓ Copiado' : 'Copiar Link'}
-            </button>
           </div>
 
           <div>
@@ -295,7 +397,7 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
             </label>
             <input
               type="text"
-              placeholder="Ej: Llegó por Instagram, pago confirmado vía Nequi..."
+              placeholder="Ej: Pago verificado vía Nequi, interesado en perfiles profesionales..."
               value={initialNotes}
               onChange={e => setInitialNotes(e.target.value)}
               style={{
@@ -315,7 +417,7 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
               style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--color-primary)' }}
             />
             <label htmlFor="slots_chk" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}>
-              ⚡ Habilitar búsqueda inmediata (Crear slot en mesa de matches)
+              ⚡ Habilitar búsqueda inmediata (Crear slot en mesa de matches de la psicóloga)
             </label>
           </div>
 
@@ -326,10 +428,18 @@ export default function NuevoClienteExpresModal({ onClose, onSuccess }) {
             <button
               type="submit"
               className="btn btn-primary"
-              style={{ padding: '9px 20px', fontSize: 13, fontWeight: 700 }}
+              style={{
+                padding: '9px 20px',
+                fontSize: 13,
+                fontWeight: 700,
+                background: mode === 'vip' ? 'linear-gradient(135deg, #B8860B, #FFD700)' : 'var(--color-primary)',
+                color: mode === 'vip' ? '#000' : '#fff'
+              }}
               disabled={submitting}
             >
-              {submitting ? 'Creando...' : '➕ Crear Cliente Exprés'}
+              {submitting
+                ? 'Registrando...'
+                : (mode === 'vip' ? '👑 Registrar Cliente VIP' : '📅 Registrar Cliente Agendado')}
             </button>
           </div>
         </form>
