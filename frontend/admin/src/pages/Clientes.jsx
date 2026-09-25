@@ -56,6 +56,23 @@ function getPlanStyle(planTier) {
   return { icon: '📋', color: 'var(--text-muted)', bg: 'rgba(255,255,255,0.05)', label: t, maxCitas: 1 }
 }
 
+function formatClinicalValue(val, fallback = 'No especificada') {
+  if (val === null || val === undefined || val === '') return fallback
+  if (typeof val === 'string' || typeof val === 'number') return String(val)
+  if (typeof val === 'object') {
+    if (val.style || val.estilo) {
+      const parts = [val.style || val.estilo]
+      if (val.temperament) parts.push(val.temperament)
+      if (val.love_language) parts.push(val.love_language)
+      return parts.join(' • ')
+    }
+    if (val.label || val.name) return val.label || val.name
+    const values = Object.values(val).filter(v => typeof v === 'string' || typeof v === 'number')
+    if (values.length > 0) return values.join(' • ')
+  }
+  return fallback
+}
+
 
 
 const AVATAR_GRADIENTS = [
@@ -414,32 +431,44 @@ function ClienteModal({ cliente, token, onClose }) {
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>❤️ LENGUAJE DEL AMOR:</div>
-                <div style={{ fontSize: 13, color: '#FFC107', fontWeight: 600 }}>{p.love_language || targetClient.love_language || 'Palabras de afirmación / Tiempo de calidad'}</div>
+                <div style={{ fontSize: 13, color: '#FFC107', fontWeight: 600 }}>
+                  {formatClinicalValue(p.love_language || (typeof p.apego === 'object' && p.apego?.love_language) || targetClient.love_language, 'Palabras de afirmación / Tiempo de calidad')}
+                </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🧠 ESTILO DE APEGO:</div>
-                <div style={{ fontSize: 13, color: '#4CAF50', fontWeight: 600 }}>{p.apego || 'Seguro / Constructivo'}</div>
+                <div style={{ fontSize: 13, color: '#4CAF50', fontWeight: 600 }}>
+                  {formatClinicalValue(p.apego, 'Seguro / Constructivo')}
+                </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎯 MOTIVACIÓN PRINCIPAL:</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.motivacion || 'Conexión profunda & proyecto de vida'}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {formatClinicalValue(p.motivacion, 'Conexión profunda & proyecto de vida')}
+                </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⚡ ENERGÍA SOCIAL & ROL:</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.energia_social || 'Ambivertido'} • {p.rol_social || 'Equilibrado'}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {formatClinicalValue(p.energia_social, 'Ambivertido')} • {formatClinicalValue(p.rol_social, 'Equilibrado')}
+                </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⛪ RELIGIÓN / VALORES:</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.religion || targetClient.religion || 'No especificada'}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {formatClinicalValue(p.religion || targetClient.religion, 'No especificada')}
+                </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⏳ MOMENTO VITAL:</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{p.momento_vital || 'Buscando relación estable a largo plazo'}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  {formatClinicalValue(p.momento_vital, 'Buscando relación estable a largo plazo')}
+                </div>
               </div>
             </div>
 

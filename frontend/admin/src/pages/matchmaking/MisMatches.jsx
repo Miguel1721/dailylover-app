@@ -56,8 +56,16 @@ const PLAN_COLORS = {
 
 const STATUS_COLORS = {
   'APROBADO': { bg: '#B6D7A8', color: '#274E13' },
+  'CITA PROGRAMADA': { bg: '#0284C7', color: '#FFFFFF' },
+  'CITA REALIZADA': { bg: '#10B981', color: '#FFFFFF' },
+  'CITA RESERVADA': { bg: '#007791', color: '#FFFFFF' },
+  'AGENDADA': { bg: '#0284C7', color: '#FFFFFF' },
+  'CONFIRMADA': { bg: '#10B981', color: '#FFFFFF' },
+  'AGENDANDO': { bg: '#0EA5E9', color: '#FFFFFF' },
+  'POR CONFIRMAR': { bg: '#F59E0B', color: '#FFFFFF' },
+  'REPROGRAMAR': { bg: '#EF4444', color: '#FFFFFF' },
   'HECHO': { bg: '#A2C4C9', color: '#134F5C' },
-  'CITA COMPLETADA': { bg: '#6AA84F', color: '#FFFFFF' },
+  'CITA COMPLETADA': { bg: '#10B981', color: '#FFFFFF' },
   'Listo para match': { bg: '#FFE599', color: '#7F6000' },
   'EN PAUSA': { bg: '#F9CB9C', color: '#783F04' },
   'EN PAUSA INDEFINIDA': { bg: '#B4A7D6', color: '#351C75' },
@@ -146,6 +154,12 @@ export const STATUS_GROUPS = [
     area: 'Servicio al Cliente & Citas',
     icon: '📞',
     options: [
+      'CITA PROGRAMADA',
+      'CITA REALIZADA',
+      'CITA RESERVADA',
+      'AGENDANDO',
+      'POR CONFIRMAR',
+      'REPROGRAMAR',
       'CITA COMPLETADA',
       'MATCH DONE',
       'EN PAUSA',
@@ -1608,6 +1622,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   const [sortBy, setSortBy] = useState('recent_first')
   const [dateFilter, setDateFilter] = useState('all')
+  const [approvalDateFilter, setApprovalDateFilter] = useState('')
 
   const fetchMatches = useCallback(() => {
     setLoading(true)
@@ -1618,6 +1633,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     if (planFilter && planFilter !== 'all') url += `plan_tier=${encodeURIComponent(planFilter)}&`
     if (approvedFilter && approvedFilter !== 'all') url += `approved=${encodeURIComponent(approvedFilter)}&`
     if (dateFilter && dateFilter !== 'all') url += `date_filter=${encodeURIComponent(dateFilter)}&`
+    if (approvalDateFilter) url += `approved_date=${encodeURIComponent(approvalDateFilter)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
@@ -1635,7 +1651,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         console.error('Error fetching matches:', err)
         setLoading(false)
       })
-  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, sortBy, dateFilter, searchTerm, token])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, sortBy, dateFilter, approvalDateFilter, searchTerm, token])
 
   useEffect(() => {
     fetchMatches()
@@ -1695,6 +1711,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   }
 
   const displayedMatches = matches.filter(m => {
+    if (approvalDateFilter) {
+      const mAppDate = (m.approved_at || m.date || m.fecha || '').slice(0, 10)
+      if (mAppDate && mAppDate !== approvalDateFilter) return false
+    }
     if (isOfficialMatches) {
       // En la pestaña oficial MATCHES (Sheets), solo existen parejas aprobadas donde AMBAS personas están confirmadas
       const hasBothPersons = m.person_a && m.person_a.trim() !== '' && m.person_b && m.person_b.trim() !== ''
@@ -2508,6 +2528,49 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             <option value="yes">Aprobado: Sí (Bloqueado)</option>
             <option value="no">Aprobado: No (En Proceso)</option>
           </select>
+        </div>
+
+        {/* Filtro Fecha de Aprobación por María */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: approvalDateFilter ? '#10B981' : 'var(--text-secondary)' }}>
+            📅 Aprobación:
+          </span>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="date"
+              value={approvalDateFilter}
+              onChange={e => setApprovalDateFilter(e.target.value)}
+              title="Filtrar por fecha de aprobación"
+              style={{
+                padding: '4px 8px',
+                borderRadius: 6,
+                border: approvalDateFilter ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                background: 'var(--bg-base)',
+                color: 'var(--text-primary)',
+                fontSize: 12,
+                outline: 'none'
+              }}
+            />
+            {approvalDateFilter && (
+              <button
+                type="button"
+                onClick={() => setApprovalDateFilter('')}
+                title="Limpiar fecha de aprobación"
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  borderRadius: 4,
+                  padding: '2px 6px',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 700
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Filtro Fecha de Creación / Orden PROFILES */}
@@ -3656,19 +3719,35 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       {/* STATUS (AGRUPADO POR ÁREA) */}
                       <td style={{ padding: isCompact ? '8px 14px' : '14px 18px' }}>
                         {isLocked ? (
-                          <span style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: isCompact ? '5px 10px' : '7px 12px',
-                            borderRadius: 8,
-                            fontSize: isCompact ? 11.5 : 12.5,
-                            fontWeight: 800,
-                            background: statusCfg.bg,
-                            color: statusCfg.color
-                          }}>
-                            <Lock size={isCompact ? 12 : 13} /> {m.status}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: isCompact ? '5px 10px' : '7px 12px',
+                              borderRadius: 8,
+                              fontSize: isCompact ? 11.5 : 12.5,
+                              fontWeight: 800,
+                              background: statusCfg.bg,
+                              color: statusCfg.color
+                            }}>
+                              <Lock size={isCompact ? 12 : 13} /> {m.status}
+                            </span>
+                            {m.scheduled_date_time && m.scheduled_date_time.trim() !== '' && !m.scheduled_date_time.toLowerCase().includes('por definir') && (
+                              <div style={{
+                                fontSize: isCompact ? 10.5 : 11,
+                                color: 'var(--text-secondary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontWeight: 600,
+                                flexWrap: 'wrap'
+                              }}>
+                                <span>📅 {m.scheduled_date_time.split(' ')[0]}</span>
+                                {m.scheduled_venue && <span title={m.scheduled_venue}>• 📍 {m.scheduled_venue}</span>}
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <select
                             value={m.status}
@@ -3744,11 +3823,18 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       </td>
 
                       {/* APROBADO POR MARÍA */}
-                      <td style={{ padding: isCompact ? '10px 8px' : '15px 12px', textAlign: 'center' }}>
+                      <td style={{ padding: isCompact ? '8px 6px' : '12px 10px', textAlign: 'center' }}>
                         {isLocked ? (
-                          <span title="Aprobado por María (Fila Bloqueada)" style={{ display: 'inline-flex', color: '#274E13' }}>
-                            <Lock size={isCompact ? 14 : 17} />
-                          </span>
+                          <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                            <span title={`Aprobado por María (Fila Bloqueada)${m.approved_at ? ` el ${m.approved_at.slice(0, 10)}` : ''}`} style={{ display: 'inline-flex', color: '#274E13' }}>
+                              <Lock size={isCompact ? 14 : 17} />
+                            </span>
+                            {m.approved_at && (
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace', fontWeight: 600 }}>
+                                {m.approved_at.slice(5, 10)}
+                              </span>
+                            )}
+                          </div>
                         ) : (
                           <span style={{ color: 'var(--text-muted)' }}>—</span>
                         )}

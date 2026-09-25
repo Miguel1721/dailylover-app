@@ -61,6 +61,14 @@ PLAN_COLORS = {
 
 STATUS_COLORS = {
     "APROBADO": "#B6D7A8",
+    "CITA PROGRAMADA": "#0284C7",
+    "CITA REALIZADA": "#10B981",
+    "CITA RESERVADA": "#007791",
+    "AGENDADA": "#0284C7",
+    "CONFIRMADA": "#10B981",
+    "AGENDANDO": "#0EA5E9",
+    "POR CONFIRMAR": "#F59E0B",
+    "REPROGRAMAR": "#EF4444",
     "HECHO": "#A2C4C9",
     "HECHO POR MAPE": "#A2C4C9",
     "NOT APPROVED": "#F4CCCC",
@@ -86,7 +94,7 @@ STATUS_COLORS = {
     "REQUEST PROFILE UPDATE": "#C9DAF8",
     "EN PAUSA": "#F9CB9C",
     "EN PAUSA INDEFINIDA": "#B4A7D6",
-    "CITA COMPLETADA": "#6AA84F",
+    "CITA COMPLETADA": "#10B981",
     "EN ESPERA": "#D9D2E9",
     "RECHAZADA POR PSICÓLOGA B": "#F4CCCC",
     "RECHAZADO POR PSICÓLOGA B": "#F4CCCC",
@@ -105,6 +113,8 @@ ALLOWED_STATUSES = [
     "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
     "Urgente", "Listo para match", "REQUEST PROFILE UPDATE",
     "EN PAUSA", "EN PAUSA INDEFINIDA", "CITA COMPLETADA", "EN ESPERA",
+    "CITA PROGRAMADA", "CITA REALIZADA", "CITA RESERVADA", "AGENDADA", "CONFIRMADA",
+    "AGENDANDO", "POR CONFIRMAR", "REPROGRAMAR",
     "RECHAZADA POR PSICÓLOGA B", "RECHAZADO POR PSICÓLOGA B",
     "NO MATCH/CAMBIAR", "NO MATCH", "CAMBIAR", "RECHAZADO", "RECHAZADA", "RECHAZADO POR CLIENTE"
 ]
@@ -416,6 +426,7 @@ async def get_my_matches(
     view_mode: Optional[str] = Query("mine"),
     sort_by: Optional[str] = Query("recent_first"),
     date_filter: Optional[str] = Query(None),
+    approved_date: Optional[str] = Query(None),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
@@ -530,6 +541,10 @@ async def get_my_matches(
         elif approved.lower() in ("no", "false", "0", "pendiente"):
             query += " AND m.approved_by_maria = false"
 
+    if approved_date:
+        query += " AND COALESCE(m.approved_at, m.updated_at)::date = CAST(:app_date AS date)"
+        params["app_date"] = approved_date.strip()[:10]
+
     if date_filter and date_filter.lower() not in ("all", "todos", "todas"):
         df = date_filter.lower().strip()
         if df == "today":
@@ -607,6 +622,35 @@ async def get_my_matches(
         raw_stripe_plan = d.get("stripe_pay_plan")
         stripe_plan = normalize_plan(raw_stripe_plan) if raw_stripe_plan else normalize_plan(final_plan)
 
+        # Determinación de estado sincronizado en tiempo real
+        raw_status = (d.get("status") or "").strip()
+        had_date = bool(d.get("had_date"))
+        reschedule = bool(d.get("reschedule"))
+        sched_dt = str(d.get("scheduled_date_time") or "").strip()
+        has_sched_date = bool(sched_dt and "por definir" not in sched_dt.lower())
+        conf_stage = (d.get("confirmation_stage") or "").strip().lower()
+
+        effective_status = raw_status or "Listo para match"
+        if had_date or raw_status in ("CITA REALIZADA", "CITA COMPLETADA", "MATCH DONE"):
+            effective_status = "CITA REALIZADA"
+        elif reschedule or raw_status == "REPROGRAMAR" or conf_stage == "reprogramar":
+            effective_status = "REPROGRAMAR"
+        elif has_sched_date or raw_status in ("CITA PROGRAMADA", "AGENDADA", "CITA CONFIRMADA", "CONFIRMADA") or conf_stage in ("agendada", "cita confirmada", "cita programada"):
+            effective_status = "CITA PROGRAMADA"
+        elif raw_status == "CITA RESERVADA":
+            effective_status = "CITA RESERVADA"
+        elif is_approved:
+            if conf_stage in ("agendando", "en gestion", "en gestión"):
+                effective_status = "AGENDANDO"
+            elif conf_stage in ("por confirmar", "por_confirmar"):
+                effective_status = "POR CONFIRMAR"
+            elif conf_stage in ("en pausa", "en_pausa"):
+                effective_status = "EN PAUSA"
+            elif raw_status and raw_status not in ("APROBADO", "HECHO", "Listo para match"):
+                effective_status = raw_status
+            else:
+                effective_status = "APROBADO"
+
         matches.append({
             "id": d.get("id"),
             "city": normalize_city(final_city),
@@ -647,15 +691,15 @@ async def get_my_matches(
             "person_b_confirmation": d.get("person_b_confirmation") or "Pendiente",
             "confirmation_stage": d.get("confirmation_stage") or "pendientes",
             "cs_observations": d.get("cs_observations") or "",
-            "status": d.get("status") or "Listo para match",
-            "status_a": d.get("status_a") or "Listo para match",
+            "status": effective_status,
+            "status_a": d.get("status_a") or effective_status,
             "status_b": d.get("status_b") or "",
             "approved_by_maria": is_approved,
             "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
             "observations": d.get("observations") or "",
             "psychologist_name": curr_psyc,
             "slot_number": d.get("slot_number") or 1,
-            "status_color": STATUS_COLORS.get(d.get("status"), "#FFF2CC"),
+            "status_color": STATUS_COLORS.get(effective_status, "#FFF2CC"),
             "plan_color": PLAN_COLORS.get(final_plan, "#F3F3F3"),
             "pref_color": PREF_COLORS.get(final_pref, "#CFE2F3"),
             "is_locked": is_approved or is_cross_locked,
@@ -1879,8 +1923,35 @@ async def update_match_service_status(
     else:
         await db.execute(text("INSERT INTO match_confirmations (match_id, stage, created_at, updated_at) VALUES (:mid, :st, NOW(), NOW())"), {"mid": match_id, "st": new_stage})
 
-    # 2. Update operational_matches updated_at
-    await db.execute(text("UPDATE operational_matches SET updated_at = NOW() WHERE id = :id"), {"id": match_id})
+    # 2. Update operational_matches status y updated_at
+    stage_to_status = {
+        "agendando": "AGENDANDO",
+        "en gestion": "AGENDANDO",
+        "en gestión": "AGENDANDO",
+        "por confirmar": "POR CONFIRMAR",
+        "por_confirmar": "POR CONFIRMAR",
+        "agendada": "CITA PROGRAMADA",
+        "cita confirmada": "CITA PROGRAMADA",
+        "cita programada": "CITA PROGRAMADA",
+        "cita realizada": "CITA REALIZADA",
+        "cita completada": "CITA REALIZADA",
+        "reprogramar": "REPROGRAMAR",
+        "en pausa": "EN PAUSA",
+        "en_pausa": "EN PAUSA",
+        "rechazó match": "RECHAZADO",
+        "rechazo match": "RECHAZADO",
+        "por llamar": "APROBADO",
+        "llamado 1": "AGENDANDO",
+        "en conversación": "AGENDANDO",
+        "en conversacion": "AGENDANDO"
+    }
+    op_status = stage_to_status.get(new_stage.lower(), new_stage.upper())
+
+    await db.execute(text("""
+        UPDATE operational_matches 
+        SET status = :st, updated_at = NOW() 
+        WHERE id = :id AND status NOT IN ('CITA REALIZADA', 'CITA COMPLETADA')
+    """), {"id": match_id, "st": op_status})
 
     # 3. Add traceability in person_history
     exist_m = await db.execute(text("SELECT person_a, person_b FROM operational_matches WHERE id = :id"), {"id": match_id})
@@ -2959,12 +3030,12 @@ async def get_calendar_dates(
         params["city"] = f"%{city.strip()}%"
 
     if date_from:
-        query += " AND s.created_at >= CAST(:d_from AS TIMESTAMP)"
-        params["d_from"] = f"{date_from} 00:00:00" if len(date_from) == 10 else date_from
+        query += " AND s.created_at::date >= CAST(:d_from AS date)"
+        params["d_from"] = date_from.strip()[:10]
 
     if date_to:
-        query += " AND s.created_at <= CAST(:d_to AS TIMESTAMP)"
-        params["d_to"] = f"{date_to} 23:59:59" if len(date_to) == 10 else date_to
+        query += " AND s.created_at::date <= CAST(:d_to AS date)"
+        params["d_to"] = date_to.strip()[:10]
 
     if search:
         query += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch OR s.city ILIKE :srch)"
@@ -3101,21 +3172,32 @@ async def update_calendar_date(
 
     await db.execute(text(f"UPDATE scheduled_dates SET {', '.join(updates)} WHERE id = :id"), params)
 
-    # Cambio W4: Reserva confirmada -> actualiza match original a 'CITA RESERVADA'
-    if payload.reservation_confirmed is True and cal_row.match_id:
-        await db.execute(text("""
-            UPDATE operational_matches
-            SET status = 'CITA RESERVADA', updated_at = NOW()
-            WHERE id = :match_id AND status NOT IN ('CITA COMPLETADA', 'CITA RESERVADA')
-        """), {"match_id": cal_row.match_id})
-
-    # 1. Cita completada con feedback -> actualiza match original a 'CITA COMPLETADA'
-    if payload.had_date and payload.feedback and cal_row.match_id:
-        await db.execute(text("""
-            UPDATE operational_matches
-            SET status = 'CITA COMPLETADA', updated_at = NOW()
-            WHERE id = :mid
-        """), {"mid": cal_row.match_id})
+    # Sincronizacion automatica de estado en operational_matches
+    if cal_row.match_id:
+        if payload.had_date is True:
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'CITA REALIZADA', updated_at = NOW()
+                WHERE id = :mid
+            """), {"mid": cal_row.match_id})
+        elif payload.reschedule is True:
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'REPROGRAMAR', updated_at = NOW()
+                WHERE id = :mid
+            """), {"mid": cal_row.match_id})
+        elif payload.reservation_confirmed is True:
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'CITA RESERVADA', updated_at = NOW()
+                WHERE id = :mid AND status NOT IN ('CITA REALIZADA', 'CITA COMPLETADA')
+            """), {"mid": cal_row.match_id})
+        elif effective_dt and "por definir" not in effective_dt.lower():
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET status = 'CITA PROGRAMADA', updated_at = NOW()
+                WHERE id = :mid AND status NOT IN ('CITA REALIZADA', 'CITA COMPLETADA', 'REPROGRAMAR')
+            """), {"mid": cal_row.match_id})
 
         await db.execute(text("""
             INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
@@ -5254,16 +5336,21 @@ async def get_matches_pending_service(
     search: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    psychologist: Optional[str] = Query(None),
+    approval_date: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna los matches aprobados por María que están en la Zona Inferior
-    (esperando contacto de Servicio al Cliente, sin fecha agendada).
+    (esperando contacto de Servicio al Cliente, sin fecha agendada),
+    con soporte para filtro por fecha de aprobación de María.
     """
     query = """
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.pref,
-            m.status, m.observations, m.created_at, m.updated_at,
+            m.status, m.observations, m.created_at, m.updated_at, m.approved_at,
             m.person_a_crm_id, m.person_b_crm_id,
             COALESCE(c.stage, 'pendiente') AS cs_stage,
             c.person_a_confirmation, c.person_b_confirmation,
@@ -5278,17 +5365,29 @@ async def get_matches_pending_service(
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
     params = {}
+    if psychologist and psychologist.lower() not in ("all", "todas"):
+        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
+        params["psyc"] = psychologist.strip()
     if city and city.lower() not in ("all", "todas"):
         query += " AND m.city ILIKE :city"
         params["city"] = f"%{city.strip()}%"
     if status and status.lower() not in ("all", "todos"):
         query += " AND COALESCE(c.stage, 'pendiente') = :st"
         params["st"] = status.strip()
+    if approval_date:
+        query += " AND COALESCE(m.approved_at, m.updated_at)::date = CAST(:app_date AS date)"
+        params["app_date"] = approval_date.strip()[:10]
+    if date_from:
+        query += " AND COALESCE(m.approved_at, m.updated_at)::date >= CAST(:d_from AS date)"
+        params["d_from"] = date_from.strip()[:10]
+    if date_to:
+        query += " AND COALESCE(m.approved_at, m.updated_at)::date <= CAST(:d_to AS date)"
+        params["d_to"] = date_to.strip()[:10]
     if search:
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    query += " ORDER BY m.updated_at DESC"
+    query += " ORDER BY COALESCE(m.approved_at, m.updated_at) DESC"
     res = await db.execute(text(query), params)
     rows = res.fetchall()
 
@@ -5303,6 +5402,9 @@ async def get_matches_pending_service(
             "ALERTA COMPATIBILIDAD" in obs_text.upper() or
             "INCOMPATIBILIDAD" in obs_text.upper()
         )
+        app_dt = d.get("approved_at") or d.get("updated_at")
+        approved_at_str = app_dt.strftime("%Y-%m-%d %H:%M") if app_dt else ""
+        approved_date_str = app_dt.strftime("%Y-%m-%d") if app_dt else ""
 
         matches.append({
             "id": d.get("id"),
@@ -5317,7 +5419,9 @@ async def get_matches_pending_service(
             "confirmation_a": d.get("person_a_confirmation") or "Pendiente",
             "confirmation_b": d.get("person_b_confirmation") or "Pendiente",
             "observations": obs_text,
-            "date": d.get("updated_at").strftime("%Y-%m-%d") if d.get("updated_at") else "",
+            "date": approved_date_str,
+            "approved_at": approved_at_str,
+            "approved_date": approved_date_str,
             "days_pending": days_pending,
             "is_overdue": days_pending >= 15,
             "has_compatibility_alert": has_comp_alert
@@ -5412,6 +5516,12 @@ async def schedule_match(
                 :mid, 'cita confirmada', CAST(:dt AS TIMESTAMP), :ven, NOW(), NOW()
             )
         """), {"mid": match_id, "dt": dt_val, "ven": payload.venue})
+
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'CITA PROGRAMADA', updated_at = NOW()
+        WHERE id = :mid
+    """), {"mid": match_id})
 
     det = f"Cita agendada para {payload.scheduled_date} en {payload.venue}"
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'DATE_SCHEDULED', :d, NOW())"), {"n": match_row.person_a, "mid": match_id, "d": det})

@@ -30,6 +30,7 @@ export default function AprobadosMaria() {
   const [selectedPsyc, setSelectedPsyc] = useState('Todas')
   const [selectedCity, setSelectedCity] = useState('Todas')
   const [searchTerm, setSearchTerm] = useState('')
+  const [approvalDate, setApprovalDate] = useState('')
 
   // Estado de Cola de Revisión de María
   const [reviewQueue, setReviewQueue] = useState([])
@@ -55,6 +56,7 @@ export default function AprobadosMaria() {
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
+    if (approvalDate) url += `date=${encodeURIComponent(approvalDate)}&`
 
     fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -69,15 +71,16 @@ export default function AprobadosMaria() {
         setReviewQueue([])
         setLoadingReview(false)
       })
-  }, [selectedPsyc, selectedCity, searchTerm, token])
+  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, token])
 
-  // 2. Cargar Cola de Servicio al Cliente
+  // 2. Cargar Cola de Servicio al Cliente (Aprobados por María)
   const fetchServiceQueue = useCallback(() => {
     setLoadingService(true)
     let url = `${API}/api/v1/matchmaking/pending-service?`
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
+    if (approvalDate) url += `approval_date=${encodeURIComponent(approvalDate)}&`
 
     fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -92,15 +95,12 @@ export default function AprobadosMaria() {
         setServiceMatches([])
         setLoadingService(false)
       })
-  }, [selectedPsyc, selectedCity, searchTerm, token])
+  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, token])
 
   useEffect(() => {
-    if (!isCsOnly) {
-      fetchReviewQueue()
-    } else {
-      fetchServiceQueue()
-    }
-  }, [fetchReviewQueue, fetchServiceQueue, isCsOnly])
+    fetchReviewQueue()
+    fetchServiceQueue()
+  }, [fetchReviewQueue, fetchServiceQueue])
 
   // Aprobar match definitivo por María
   const handleApproveMatch = async (matchId) => {
@@ -301,47 +301,84 @@ export default function AprobadosMaria() {
         </div>
       )}
 
-      {/* Si el usuario es de Servicio al Cliente se le indica su cola, para María/Admin la pantalla es 100% su Cola de Revisión */}
-      {isCsOnly && (
-        <div style={{
-          display: 'flex',
-          gap: 12,
-          marginBottom: 20,
-          borderBottom: '1px solid var(--border-color)',
-          paddingBottom: 12
-        }}>
-          <div style={{
+      {/* Selector de Pestañas: Revisión vs Aprobados/Servicio */}
+      <div style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 12,
+        marginBottom: 20,
+        borderBottom: '1px solid var(--border-color)',
+        paddingBottom: 12
+      }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('revision')}
+          style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '10px 20px',
+            gap: 8,
+            padding: '10px 18px',
             borderRadius: 10,
             fontSize: 13,
             fontWeight: 700,
-            border: '1.5px solid #B8324F',
-            background: 'rgba(184, 50, 79, 0.2)',
-            color: '#FFFFFF'
+            border: activeTab === 'revision' ? '1.5px solid #B8324F' : '1px solid var(--border-color)',
+            background: activeTab === 'revision' ? 'rgba(184, 50, 79, 0.2)' : 'var(--bg-card)',
+            color: activeTab === 'revision' ? '#FFFFFF' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          <ShieldCheck size={16} color={activeTab === 'revision' ? '#FF758F' : 'var(--text-muted)'} />
+          <span>📋 Pendientes de Aprobar</span>
+          <span style={{
+            background: activeTab === 'revision' ? '#B8324F' : 'rgba(255,255,255,0.08)',
+            color: '#FFFFFF',
+            padding: '2px 8px',
+            borderRadius: 20,
+            fontSize: 11,
+            fontWeight: 800
           }}>
-            <Headphones size={18} color="#FF758F" />
-            <span>Citas por Agendar (Servicio al Cliente)</span>
-            <span style={{
-              background: '#B8324F',
-              color: '#FFFFFF',
-              padding: '2px 8px',
-              borderRadius: 20,
-              fontSize: 11,
-              fontWeight: 800
-            }}>
-              {serviceMatches.length}
-            </span>
-          </div>
-        </div>
-      )}
+            {reviewQueue.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('servicio')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            border: activeTab === 'servicio' ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+            background: activeTab === 'servicio' ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-card)',
+            color: activeTab === 'servicio' ? '#FFFFFF' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
+        >
+          <CheckCircle size={16} color={activeTab === 'servicio' ? '#10B981' : 'var(--text-muted)'} />
+          <span>🛡️ Aprobados por María / Citas por Agendar</span>
+          <span style={{
+            background: activeTab === 'servicio' ? '#10B981' : 'rgba(255,255,255,0.08)',
+            color: '#FFFFFF',
+            padding: '2px 8px',
+            borderRadius: 20,
+            fontSize: 11,
+            fontWeight: 800
+          }}>
+            {serviceMatches.length}
+          </span>
+        </button>
+      </div>
 
       {/* Barra de Filtros Globales */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         gap: 14,
         marginBottom: 24,
         padding: 16,
@@ -420,6 +457,48 @@ export default function AprobadosMaria() {
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#10B981', marginBottom: 6 }}>
+            📅 Fecha de Aprobación
+          </label>
+          <div style={{ position: 'relative', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="date"
+              value={approvalDate}
+              onChange={e => setApprovalDate(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                background: 'var(--bg-base)',
+                border: approvalDate ? '1.5px solid #10B981' : '1px solid var(--border-color)',
+                borderRadius: 8,
+                color: 'var(--text-primary)',
+                fontSize: 13,
+                boxSizing: 'border-box'
+              }}
+            />
+            {approvalDate && (
+              <button
+                type="button"
+                onClick={() => setApprovalDate('')}
+                title="Limpiar fecha de aprobación"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 700
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -801,9 +880,13 @@ export default function AprobadosMaria() {
                         borderRadius: 6,
                         background: 'rgba(16, 185, 129, 0.15)',
                         color: '#10B981',
-                        border: '1px solid rgba(16, 185, 129, 0.3)'
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
                       }}>
-                        ✓ Aprobado por María
+                        <CheckCircle size={12} />
+                        ✓ Aprobado por María {(match.approved_at || match.date) ? `• ${match.approved_at || match.date}` : ''}
                       </span>
                     </div>
 
