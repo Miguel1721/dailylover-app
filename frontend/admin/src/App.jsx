@@ -293,12 +293,11 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
       title: '💘 Matchmaking',
       visible: isMaria || isPsyc,
       items: [
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '🗓️ Calendario & Turnos' : '📅 Mi Calendario de Turnos' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' }] : []),
         ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: '💖 Mi Panel Clínico', end: true }] : []),
-        ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión & Auditoría María' }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES (Ingreso)' }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '📅 Calendario & Turnos' : '📅 Mi Calendario de Turnos' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' }] : []),
         ...(isMaria ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' }] : []),
         ...(isMaria ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales' }] : [])
@@ -311,8 +310,8 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
       items: [
         { to: '/cs-dashboard', icon: Headphones, label: '🎧 Mesa de Control CS' },
         { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: isCs ? '🛡️ Citas por Agendar' : '🛡️ Aprobados por María' },
-        { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
         { to: '/matchmaking/matches-aprobados', icon: FileSpreadsheet, label: '📑 MATCHES' },
+        { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas Agendadas' },
         ...(isCs ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' }] : []),
         ...(isCs ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' }] : []),
         { to: '/proveedores', icon: Truck, label: '🍽️ Restaurantes Aliados' },
@@ -347,6 +346,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
       visible: isFullAdmin || isMariaOnly || isPsyc || isCs,
       items: [
         ...(isFullAdmin ? [{ to: '/', icon: LayoutDashboard, label: '🏛️ Dashboard Dirección', end: true }] : []),
+        ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión & Auditoría María' }] : []),
         ...(isFullAdmin || isMariaOnly || isCs ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas' }] : []),
         ...(isFullAdmin ? [
           { to: '/empleados', icon: Users, label: '👥 Empleados' },
@@ -379,7 +379,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
     } else if (isCs) {
       setOpenFolders({ matchmaking: false, cs: true, pagos: true, direccion: false })
     } else if (isMariaOnly) {
-      setOpenFolders({ matchmaking: true, cs: true, pagos: true, direccion: false })
+      setOpenFolders({ matchmaking: true, cs: true, pagos: true, direccion: true })
     } else {
       setOpenFolders({ matchmaking: true, cs: true, pagos: true, direccion: false })
     }

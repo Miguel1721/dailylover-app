@@ -1,24 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Bot, User, Send, X, MessageSquare } from 'lucide-react'
+import { Bot, User, Send, X, MessageSquare, ArrowRight, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react'
+import RegistrarNovedadModal from './RegistrarNovedadModal'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 export default function CopilotWidget() {
   const { token, user, hasPermission } = useAuth()
+  const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([
     {
       id: 1,
       sender: 'assistant',
-      text: '¡Hola! Soy tu Copiloto IA de Daily Lover. ¿En qué puedo ayudarte hoy?',
+      text: '¡Hola! Soy tu Copiloto IA de Daily Lover. Conozco todos los manuales y procesos operativos de la plataforma, y puedo ayudarte a resolver dudas o ejecutar acciones directamente.',
       suggestions: [
-        '¿Cuántos clientes hay en el CRM?',
-        '¿Cuál es el saldo de caja actual?',
-        '¿Qué alertas operativas tenemos hoy?',
+        '¿Cómo funciona la entrevista clínica y el radar?',
+        '¿Cuál es el protocolo de CS para agendar citas?',
+        '¿Cómo aprueba María Paula los matches?',
+        '¿Cómo se gestionan reembolsos y finanzas?',
         'Crear un nuevo evento',
-        'Agregar un nuevo empleado'
+        'Agregar un nuevo empleado',
+        'Registrar novedad de cliente'
+      ],
+      actions: [
+        { target: '/cs-dashboard', label: '🎧 Mesa de Control CS' },
+        { target: '/matchmaking/entrevista', label: '🎙️ Entrevista Clínica' },
+        { target: '/matchmaking/mis-matches', label: '💖 Mis Matches' }
       ]
     }
   ])
@@ -31,6 +41,9 @@ export default function CopilotWidget() {
   const [eventData, setEventData] = useState({ name: '', date: '', location: 'Sede Principal', format: 'Social Mixer', capacity: '', price: '' })
   const [empData, setEmpData] = useState({ full_name: '', role: '', base_salary: '', email: '', phone: '', contract_type: 'nomina' })
 
+  // Modal para novedad
+  const [modalNovedadOpen, setModalNovedadOpen] = useState(false)
+
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -39,8 +52,45 @@ export default function CopilotWidget() {
     }
   }, [messages, loading])
 
-  const addMessage = (sender, text, suggestions = null) => {
-    setMessages(prev => [...prev, { id: Date.now(), sender, text, suggestions }])
+  const addMessage = (sender, text, suggestions = null, actions = null) => {
+    setMessages(prev => [...prev, { id: Date.now(), sender, text, suggestions, actions }])
+  }
+
+  // Ejecución de acciones interactivas del chatbot
+  const handleActionClick = (target) => {
+    if (!target) return
+
+    if (target === 'action:open_novedad_modal') {
+      setModalNovedadOpen(true)
+      addMessage('assistant', 'Abriendo el modal para registrar novedad de cliente...')
+      return
+    }
+
+    if (target === 'action:create_event') {
+      if (!hasPermission('eventos', 'create')) {
+        addMessage('assistant', 'Tu rol no cuenta con permisos para crear eventos.')
+        return
+      }
+      setFlow('create_event_name')
+      addMessage('assistant', 'Iniciando creación de evento. ¿Cuál es el NOMBRE del nuevo evento?')
+      return
+    }
+
+    if (target === 'action:create_employee') {
+      if (!hasPermission('empleados', 'create')) {
+        addMessage('assistant', 'Tu rol no cuenta con permisos para agregar empleados.')
+        return
+      }
+      setFlow('create_emp_name')
+      addMessage('assistant', 'Iniciando registro de personal. ¿Cuál es el NOMBRE completo del nuevo empleado?')
+      return
+    }
+
+    // Si es una ruta interna del panel
+    if (target.startsWith('/')) {
+      navigate(target)
+      addMessage('assistant', `Navegando a: ${target}`)
+    }
   }
 
   const handleSend = async (textToSend) => {
@@ -61,10 +111,10 @@ export default function CopilotWidget() {
         return
       }
 
-      // 2. Parse general intents
-      const lower = text.toLowerCase()
+      // 2. Comandos directos locales
+      const lower = text.toLowerCase().trim()
       
-      if (lower.includes('crear un nuevo evento') || lower.includes('crear evento') || lower.includes('nuevo evento')) {
+      if (lower === 'crear un nuevo evento' || lower === 'crear evento' || lower === 'nuevo evento') {
         if (!hasPermission('eventos', 'create')) {
           addMessage('assistant', 'Lo siento, tu rol no tiene permisos para crear eventos en el sistema.')
           setLoading(false)
@@ -76,7 +126,7 @@ export default function CopilotWidget() {
         return
       }
 
-      if (lower.includes('agregar un nuevo empleado') || lower.includes('agregar empleado') || lower.includes('nuevo empleado') || lower.includes('crear empleado')) {
+      if (lower === 'agregar un nuevo empleado' || lower === 'agregar empleado' || lower === 'nuevo empleado' || lower === 'crear empleado') {
         if (!hasPermission('empleados', 'create')) {
           addMessage('assistant', 'Lo siento, tu rol no tiene permisos para agregar personal o crear empleados en el sistema.')
           setLoading(false)
@@ -88,74 +138,51 @@ export default function CopilotWidget() {
         return
       }
 
-      if (lower.includes('clientes') || lower.includes('crm') || lower.includes('cuantos clientes')) {
-        if (!hasPermission('clientes', 'view')) {
-          addMessage('assistant', 'Lo siento, no tienes permisos para visualizar los datos de los clientes.')
-          setLoading(false)
-          return
-        }
-        const res = await fetch(`${API}/api/v1/admin/stats`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        if (res.ok) {
-          const stats = await res.json()
-          addMessage('assistant', `Actualmente hay ${stats.total_users} clientes registrados en el CRM con perfiles psicológicos OCEAN completos.`)
-        } else {
-          addMessage('assistant', 'Hubo un error al consultar las estadísticas de los clientes.')
-        }
+      if (lower.includes('registrar novedad') || lower.includes('nueva novedad')) {
+        setModalNovedadOpen(true)
+        addMessage('assistant', 'He abierto el formulario para registrar la novedad de cliente.', null, [
+          { target: '/cs-dashboard', label: '🎧 Ir a Mesa de Control CS' }
+        ])
         setLoading(false)
         return
       }
 
-      if (lower.includes('caja') || lower.includes('flujo') || lower.includes('saldo') || lower.includes('finanzas')) {
-        if (!hasPermission('flujo_caja', 'view')) {
-          addMessage('assistant', 'Lo siento, tu rol no cuenta con permisos para ver el flujo de caja o el libro de finanzas.')
-          setLoading(false)
-          return
-        }
-        const res = await fetch(`${API}/api/v1/admin/finance/cashflow`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+      // 3. Consultar al Copiloto Inteligente con todo el Manual y Capacitación
+      const res = await fetch(`${API}/api/v1/admin/copilot-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          message: text,
+          role: user?.role_name || user?.role || 'Personal',
+          history: messages.slice(-6).map(m => ({ sender: m.sender, text: m.text }))
         })
-        if (res.ok) {
-          const cf = await res.json()
-          addMessage('assistant', `El saldo disponible en caja actualmente es de COP ${cf.current_balance.toLocaleString('es-CO')}.\n\nIngresos totales registrados: COP ${cf.monthly_summary.reduce((a,b)=>a+b.income, 0).toLocaleString('es-CO')}.\nGastos totales registrados: COP ${cf.monthly_summary.reduce((a,b)=>a+b.expenses, 0).toLocaleString('es-CO')}.`)
-        } else {
-          addMessage('assistant', 'Hubo un error al consultar el flujo de caja.')
-        }
-        setLoading(false)
-        return
-      }
+      })
 
-      if (lower.includes('alertas') || lower.includes('pendiente') || lower.includes('vencidos')) {
-        const res = await fetch(`${API}/api/v1/admin/stats`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        if (res.ok) {
-          const stats = await res.json()
-          let responseText = 'Alertas Operativas de hoy:\n'
-          if (stats.active_debts > 0) responseText += `⚠️ Hay ${stats.active_debts} cobros vencidos pendientes de renovación cartera.\n`
-          if (stats.pending_payrolls > 0) responseText += `💵 Hay ${stats.pending_payrolls} nómina pendiente de liquidación.\n`
-          if (stats.critical_events > 0) responseText += `🚨 Hay ${stats.critical_events} evento(s) con aforo crítico (>85% de capacidad).\n`
-          if (stats.active_debts === 0 && stats.pending_payrolls === 0 && stats.critical_events === 0) {
-            responseText = 'No se registran alertas operativas el día de hoy. ¡Todo al día!'
-          }
-          addMessage('assistant', responseText)
-        } else {
-          addMessage('assistant', 'Hubo un error al consultar las alertas operativas.')
-        }
-        setLoading(false)
-        return
+      if (res.ok) {
+        const data = await res.json()
+        addMessage('assistant', data.reply || 'Aquí tienes la información solicitada.', null, data.actions || [])
+      } else {
+        // Fallback local en caso de error de red
+        addMessage(
+          'assistant',
+          'Puedo ayudarte con cualquier proceso de Daily Lover: entrevistas clínicas, asignación de mesas con restaurantes aliados, aprobación de matches y finanzas. ¿Hacia dónde deseas dirigirte?',
+          null,
+          [
+            { target: '/cs-dashboard', label: '🎧 Mesa de Control CS' },
+            { target: '/matchmaking/entrevista', label: '🎙️ Entrevista Clínica' },
+            { target: '/matchmaking/mis-matches', label: '💖 Mis Matches' },
+            { target: '/matchmaking/supervision-maria', label: '🔒 Supervisión María' }
+          ]
+        )
       }
-
-      // Default response
-      setTimeout(() => {
-        addMessage('assistant', 'No logré entender tu instrucción. Recuerda que puedo ayudarte a consultar estadísticas de clientes, finanzas, alertas operativas o a crear eventos y empleados de forma guiada.')
-        setLoading(false)
-      }, 500)
 
     } catch (err) {
       console.error(err)
-      addMessage('assistant', 'Ocurrió un error inesperado al procesar tu solicitud.')
+      addMessage('assistant', 'Ocurrió un error al procesar tu mensaje. Por favor intenta nuevamente.')
+    } finally {
       setLoading(false)
     }
   }
@@ -169,7 +196,6 @@ export default function CopilotWidget() {
         addMessage('assistant', `Nombre del evento: "${text}".\n¿Cuál es la FECHA y HORA? (Por favor usa el formato AAAA-MM-DDTHH:MM, ej: 2026-08-15T19:00)`)
       }
       else if (flow === 'create_event_date') {
-        // Simple regex validation
         setEventData(prev => ({ ...prev, date: text }))
         setFlow('create_event_capacity')
         addMessage('assistant', `Fecha del evento: "${text}".\n¿Cuál es la CAPACIDAD máxima de asistentes? (Ej: 20)`)
@@ -216,10 +242,12 @@ export default function CopilotWidget() {
           })
           
           if (res.ok) {
-            addMessage('assistant', `🎉 ¡Éxito! El evento "${eventData.name}" ha sido creado con éxito. Puedes verificarlo en el módulo de Eventos.`)
+            addMessage('assistant', `🎉 ¡Éxito! El evento "${eventData.name}" ha sido creado con éxito.`, null, [
+              { target: '/eventos', label: '🎟️ Ver en Módulo Eventos' }
+            ])
           } else {
             const errData = await res.json().catch(() => ({}))
-            addMessage('assistant', `❌ Error al crear evento: ${errData.detail || 'Error de permisos o parámetros inválidos.'}`)
+            addMessage('assistant', `❌ Error al crear evento: ${errData.detail || 'Error de parámetros.'}`)
           }
         } else {
           addMessage('assistant', 'Creación de evento cancelada.')
@@ -284,7 +312,9 @@ export default function CopilotWidget() {
           })
           
           if (res.ok) {
-            addMessage('assistant', `🎉 ¡Éxito! El empleado "${empData.full_name}" ha sido agregado con éxito al sistema en estado Activo.`)
+            addMessage('assistant', `🎉 ¡Éxito! El empleado "${empData.full_name}" ha sido agregado con éxito al sistema.`, null, [
+              { target: '/empleados', label: '👥 Ver Lista de Empleados' }
+            ])
           } else {
             const errData = await res.json().catch(() => ({}))
             addMessage('assistant', `❌ Error al registrar empleado: ${errData.detail || 'Falta de permisos o correo duplicado.'}`)
@@ -312,13 +342,13 @@ export default function CopilotWidget() {
 
       {/* Ventana del chat */}
       {isOpen && (
-        <div className="copilot-window">
+        <div className="copilot-window" style={{ width: '420px', maxWidth: '95vw', height: '540px' }}>
           <div className="copilot-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Bot size={20} />
               <div>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>Copiloto IA</span>
-                <span className="copilot-badge">{user?.role_name || 'Personal'}</span>
+                <span className="copilot-badge">{user?.role_name || user?.role || 'Personal'}</span>
               </div>
             </div>
             <button className="btn btn-ghost btn-sm" style={{ padding: 4, color: 'white', border: 'none' }} onClick={() => setIsOpen(false)}>
@@ -329,10 +359,47 @@ export default function CopilotWidget() {
           <div className="copilot-messages">
             {messages.map(msg => (
               <div key={msg.id} className={`copilot-msg ${msg.sender}`} style={{ whiteSpace: 'pre-line' }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                  {msg.sender === 'assistant' ? <Bot size={13} style={{ marginTop: 2, color: 'var(--color-primary)' }} /> : <User size={13} style={{ marginTop: 2 }} />}
-                  <div>{msg.text}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  {msg.sender === 'assistant' ? (
+                    <Bot size={15} style={{ marginTop: 2, color: 'var(--color-primary-light)', flexShrink: 0 }} />
+                  ) : (
+                    <User size={15} style={{ marginTop: 2, flexShrink: 0 }} />
+                  )}
+                  <div style={{ flex: 1 }}>{msg.text}</div>
                 </div>
+
+                {/* Botones de Acción Interactiva */}
+                {msg.actions && msg.actions.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    {msg.actions.map((act, aIdx) => (
+                      <button
+                        key={aIdx}
+                        onClick={() => handleActionClick(act.target)}
+                        style={{
+                          background: 'rgba(150, 21, 0, 0.25)',
+                          border: '1px solid rgba(150, 21, 0, 0.4)',
+                          borderRadius: 6,
+                          color: '#fff',
+                          padding: '5px 10px',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(150, 21, 0, 0.45)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(150, 21, 0, 0.25)'}
+                      >
+                        <span>{act.label}</span>
+                        <ArrowRight size={11} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Sugerencias de preguntas */}
                 {msg.suggestions && (
                   <div className="copilot-suggestions">
                     {msg.suggestions.map((sug, sIdx) => (
@@ -346,8 +413,8 @@ export default function CopilotWidget() {
             ))}
             {loading && (
               <div className="copilot-msg assistant" style={{ fontStyle: 'italic', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Bot size={13} style={{ color: 'var(--color-primary)' }} />
-                <span>Pensando...</span>
+                <Bot size={14} style={{ color: 'var(--color-primary-light)' }} />
+                <span>Consultando manuales y preparando respuesta...</span>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -363,7 +430,7 @@ export default function CopilotWidget() {
             <input
               type="text"
               className="copilot-input"
-              placeholder="Pregúntame algo o escribe un comando..."
+              placeholder="Pregúntame sobre el manual o ejecuta una acción..."
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={loading}
@@ -373,6 +440,17 @@ export default function CopilotWidget() {
             </button>
           </form>
         </div>
+      )}
+
+      {/* Modal para registrar novedad desde el copiloto */}
+      {modalNovedadOpen && (
+        <RegistrarNovedadModal
+          onClose={() => setModalNovedadOpen(false)}
+          onSuccess={(msg) => {
+            setModalNovedadOpen(false)
+            addMessage('assistant', `✅ Novedad registrada con éxito: ${msg || 'Operación completada'}.`)
+          }}
+        />
       )}
     </>
   )
