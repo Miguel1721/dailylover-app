@@ -404,6 +404,9 @@ async def auto_refresh_priority_matches(db: AsyncSession):
               AND om.is_priority = false;
         """))
         await db.commit()
+
+        # 3. Sincronización automática de multi-citas (Slot 2/3 para clientes elegibles)
+        await sync_all_eligible_next_slots(db)
     except Exception as e:
         logger.warning(f"Error actualizando prioridades automáticas por inactividad >15d: {e}")
 
@@ -1953,6 +1956,9 @@ async def update_match_service_status(
         WHERE id = :id AND status NOT IN ('CITA REALIZADA', 'CITA COMPLETADA')
     """), {"id": match_id, "st": op_status})
 
+    if op_status in ("CITA REALIZADA", "CITA COMPLETADA"):
+        await check_and_create_next_slot_if_eligible(db, match_id)
+
     # 3. Add traceability in person_history
     exist_m = await db.execute(text("SELECT person_a, person_b FROM operational_matches WHERE id = :id"), {"id": match_id})
     m_row = exist_m.fetchone()
@@ -3180,6 +3186,7 @@ async def update_calendar_date(
                 SET status = 'CITA REALIZADA', updated_at = NOW()
                 WHERE id = :mid
             """), {"mid": cal_row.match_id})
+            await check_and_create_next_slot_if_eligible(db, cal_row.match_id)
         elif payload.reschedule is True:
             await db.execute(text("""
                 UPDATE operational_matches
@@ -3398,6 +3405,7 @@ async def record_calendar_feedback(
             SET status = 'CITA COMPLETADA', updated_at = NOW()
             WHERE id = :mid
         """), {"mid": cal_row.match_id})
+        await check_and_create_next_slot_if_eligible(db, cal_row.match_id)
 
     # Historial de ambas personas
     for person_name, person_fb in [
@@ -4106,6 +4114,170 @@ def normalize_psychologist(raw_psyc: Optional[str]) -> str:
         return p
         
     return ""
+
+
+
+# ─── MULTI-CITA AUTOMÁTICA (2DA CITA TRAS CITA REALIZADA) ────────────────────
+
+async def check_and_create_next_slot_if_eligible(db: AsyncSession, match_id: int) -> Optional[int]:
+    """
+    Regla canónica de Multi-Cita (2 citas / VIP / Premium):
+    Cuando un match se completa (CITA REALIZADA / CITA COMPLETADA):
+    1. Obtiene la información de Persona A y su plan contratado.
+    2. Determina cuántas citas incluye su plan (ej. Estándar 65k (2 citas) -> 2 citas).
+    3. Cuenta cuántas citas realizadas tiene acumuladas Persona A.
+    4. Si citas_realizadas < total_citas_del_plan:
+       - Verifica que NO exista ya una fila activa/abierta para Persona A (para no duplicar).
+       - Si no existe fila abierta, genera el siguiente slot (ej. Slot 2) asignado a su psicóloga,
+         con status = 'Listo para match', person_b = NULL.
+       - Registra trazabilidad en person_history.
+    Retorna el ID del nuevo slot creado si aplica, o None.
+    """
+    try:
+        m_res = await db.execute(text("""
+            SELECT m.id, m.person_a, m.psychologist_name, m.city, m.pref, m.plan_tier,
+                   m.person_a_crm_id, m.user_id_a, m.slot_number,
+                   p.plan_tier AS profile_plan, p.responsable AS profile_responsable,
+                   u.crm_id AS user_crm_id
+            FROM operational_matches m
+            LEFT JOIN users u ON (m.user_id_a IS NOT NULL AND u.id = m.user_id_a)
+            LEFT JOIN profiles p ON (m.user_id_a IS NOT NULL AND p.user_id = m.user_id_a)
+            WHERE m.id = :id
+        """), {"id": match_id})
+        m_row = m_res.fetchone()
+        if not m_row or not m_row.person_a or not m_row.person_a.strip():
+            return None
+
+        p_name = m_row.person_a.strip()
+
+        # Determinar plan y total de slots
+        raw_plan = m_row.profile_plan or m_row.plan_tier or ""
+        norm_plan = normalize_plan(raw_plan)
+        total_slots = get_slots_by_plan(norm_plan or raw_plan) or 2
+
+        # Si el plan es de 1 sola cita, no hay más slots que generar
+        if total_slots <= 1:
+            return None
+
+        # Contar cuántas citas realizadas tiene esta persona
+        completed_res = await db.execute(text("""
+            SELECT COUNT(DISTINCT m.id)
+            FROM operational_matches m
+            LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+            WHERE LOWER(TRIM(m.person_a)) = LOWER(TRIM(:pa))
+              AND (
+                  UPPER(m.status) IN ('CITA REALIZADA', 'CITA COMPLETADA', 'MATCH DONE')
+                  OR sd.had_date = true
+              )
+        """), {"pa": p_name})
+        completed_count = completed_res.scalar() or 0
+
+        # Si ya completó todas las citas de su plan, no requiere más slots
+        if completed_count >= total_slots:
+            return None
+
+        # Verificar si ya existe un slot abierto o en proceso para Persona A
+        open_res = await db.execute(text("""
+            SELECT id, slot_number, status
+            FROM operational_matches
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))
+              AND UPPER(status) NOT IN ('CITA REALIZADA', 'CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'NOT APPROVED')
+              AND id != :mid
+            LIMIT 1
+        """), {"pa": p_name, "mid": match_id})
+        open_row = open_res.fetchone()
+        if open_row:
+            # Ya tiene un slot abierto o en gestión en la mesa de la psicóloga
+            return None
+
+        # Calcular número de siguiente slot
+        max_slot_res = await db.execute(text("""
+            SELECT COALESCE(MAX(slot_number), 0) + 1
+            FROM operational_matches
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))
+        """), {"pa": p_name})
+        next_slot = max_slot_res.scalar() or (completed_count + 1)
+
+        psyc_val = normalize_psychologist(m_row.profile_responsable or m_row.psychologist_name or "General") or m_row.psychologist_name
+        crm_id_val = m_row.person_a_crm_id or m_row.user_crm_id or ""
+        obs = f"Slot {next_slot}/{total_slots} — Habilitado automáticamente para 2da cita tras completar Cita {completed_count}."
+
+        ins_res = await db.execute(text("""
+            INSERT INTO operational_matches (
+                city, pref, plan_tier, person_a, psychologist_name, slot_number,
+                is_priority, status, status_a, observations, person_a_crm_id, user_id_a,
+                created_at, updated_at
+            ) VALUES (
+                :city, :pref, :plan, :pa, :psyc, :slot,
+                true, 'Listo para match', 'Listo para match', :obs, :cid, :uid,
+                NOW(), NOW()
+            )
+            RETURNING id
+        """), {
+            "city": normalize_city(m_row.city) or "Bogotá",
+            "pref": normalize_pref(m_row.pref) or "hetero",
+            "plan": norm_plan or "Estándar 65k (2 citas)",
+            "pa": p_name,
+            "psyc": psyc_val,
+            "slot": next_slot,
+            "obs": obs,
+            "cid": crm_id_val,
+            "uid": m_row.user_id_a
+        })
+        new_slot_id = ins_res.scalar()
+
+        await db.execute(text("""
+            INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+            VALUES (:n, :mid, 'NEXT_SLOT_AUTOMATED', :d, NOW())
+        """), {
+            "n": p_name,
+            "mid": new_slot_id,
+            "d": f"Generado automáticamente Slot {next_slot}/{total_slots} en la mesa de {psyc_val} tras completar Cita {completed_count}."
+        })
+
+        return new_slot_id
+    except Exception as e:
+        logger.error(f"Error en check_and_create_next_slot_if_eligible para match {match_id}: {e}")
+        return None
+
+
+async def sync_all_eligible_next_slots(db: AsyncSession) -> Dict[str, Any]:
+    """
+    Escanea la base de datos buscando clientes con planes multi-cita (ej. 2 citas, VIP, Premium)
+    que tienen al menos 1 cita completada, pero no tienen el siguiente slot creado en operational_matches.
+    """
+    res = await db.execute(text("""
+        SELECT DISTINCT ON (LOWER(TRIM(m.person_a)))
+            m.id, m.person_a, m.psychologist_name, m.city, m.pref, m.plan_tier,
+            m.person_a_crm_id, m.user_id_a, m.slot_number
+        FROM operational_matches m
+        LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+        WHERE (UPPER(m.status) IN ('CITA REALIZADA', 'CITA COMPLETADA', 'MATCH DONE') OR sd.had_date = true)
+          AND m.person_a IS NOT NULL AND TRIM(m.person_a) != ''
+        ORDER BY LOWER(TRIM(m.person_a)), m.id DESC
+    """))
+    completed_matches = res.fetchall()
+
+    created_slots = []
+    for row in completed_matches:
+        new_id = await check_and_create_next_slot_if_eligible(db, row.id)
+        if new_id:
+            created_slots.append({"person_a": row.person_a, "match_id": new_id})
+
+    if created_slots:
+        await db.commit()
+
+    return {"status": "success", "created_count": len(created_slots), "created": created_slots}
+
+
+
+@router.post("/sync-next-slots")
+async def trigger_sync_next_slots(db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint manual o por cron para sincronizar y crear slots pendientes de segunda cita para todos los clientes elegibles.
+    """
+    res = await sync_all_eligible_next_slots(db)
+    return res
 
 
 @router.get("/resolve-profile")
