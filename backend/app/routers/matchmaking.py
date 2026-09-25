@@ -2959,12 +2959,12 @@ async def get_calendar_dates(
         params["city"] = f"%{city.strip()}%"
 
     if date_from:
-        query += " AND s.created_at >= :d_from"
-        params["d_from"] = date_from
+        query += " AND s.created_at >= CAST(:d_from AS TIMESTAMP)"
+        params["d_from"] = f"{date_from} 00:00:00" if len(date_from) == 10 else date_from
 
     if date_to:
-        query += " AND s.created_at <= :d_to"
-        params["d_to"] = f"{date_to} 23:59:59"
+        query += " AND s.created_at <= CAST(:d_to AS TIMESTAMP)"
+        params["d_to"] = f"{date_to} 23:59:59" if len(date_to) == 10 else date_to
 
     if search:
         query += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch OR s.city ILIKE :srch)"

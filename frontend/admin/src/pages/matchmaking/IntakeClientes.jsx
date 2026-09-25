@@ -188,7 +188,16 @@ export default function IntakeClientes() {
         }))
         setResolveHint(`✅ Perfil extraído automáticamente: ${data.name}${data.crm_id ? ` (CRM #${data.crm_id})` : ''}`)
       } else {
-        setResolveHint('⚠️ No se encontraron datos previos para este enlace en el CRM.')
+        const mCid = cleanVal.match(/(?:client|clients|profile|profiles|user|users|view)(?:\/[a-z_]+)*[/=#!]+(\d+)/i) || cleanVal.match(/\/(\d{3,})(?:\/[a-z_]+)*\/?$/i) || cleanVal.match(/^(\d{3,})$/)
+        const cidFound = data?.crm_id || (mCid ? mCid[1] : '')
+        setFormData(prev => ({
+          ...prev,
+          crm_id: cidFound,
+          profile_url: cleanVal,
+          plan_tier: prev.plan_tier || 'Estándar 65k (2 citas)',
+          city: prev.city || 'Bogotá'
+        }))
+        setResolveHint(`⚠️ Este perfil ${cidFound ? `(CRM #${cidFound})` : ''} aún no ha sido sincronizado a la base de datos. Por favor escribe su nombre abajo para darlo de alta de inmediato:`)
       }
     } catch (err) {
       setResolveHint('')
@@ -199,8 +208,8 @@ export default function IntakeClientes() {
 
   const handleCreateClient = async (e) => {
     e.preventDefault()
-    if (!formData.profile_url.trim() && !formData.person_a.trim()) {
-      alert('Por favor pega la URL del perfil en SmartMatchApp')
+    if (!formData.person_a || !formData.person_a.trim()) {
+      alert('Por favor ingresa el nombre del cliente para registrar su perfil.')
       return
     }
     setSubmitting(true)
@@ -1030,65 +1039,139 @@ export default function IntakeClientes() {
                 </select>
               </div>
 
-              {/* Resumen de Datos Extraídos Automáticamente (Incluyendo Nombre) */}
-              {(formData.person_a || formData.city || formData.plan_tier || formData.quick_notes || formData.age || formData.crm_id) && (
+              {/* Resumen de Datos Extraídos Automáticamente o Ingreso Manual */}
+              {(formData.profile_url || formData.crm_id || formData.person_a) && (
                 <div style={{
-                  background: 'rgba(16, 185, 129, 0.07)',
-                  border: '1px solid rgba(16, 185, 129, 0.28)',
+                  background: formData.person_a ? 'rgba(16, 185, 129, 0.07)' : 'rgba(245, 158, 11, 0.08)',
+                  border: formData.person_a ? '1px solid rgba(16, 185, 129, 0.28)' : '1px solid rgba(245, 158, 11, 0.25)',
                   borderRadius: 10,
-                  padding: '12px 16px',
+                  padding: '14px 16px',
                   marginBottom: 16,
                   fontSize: 12
                 }}>
-                  <div style={{ fontWeight: 800, color: '#10B981', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>✓ Datos Extraídos Automáticamente del CRM</span>
+                  <div style={{ fontWeight: 800, color: formData.person_a ? '#10B981' : '#F59E0B', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>{formData.person_a ? '✓ Datos del Cliente' : '✏️ Ingresar Datos del Cliente (No estaba en DB)'}</span>
                     {formData.crm_id && (
-                      <span style={{ background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: 12, fontSize: 11 }}>
+                      <span style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: 12, fontSize: 11, color: 'var(--text-primary)' }}>
                         CRM #{formData.crm_id}
                       </span>
                     )}
                   </div>
 
-                  {/* Nombre extraído (editable inline solo si desean ajustarlo) */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 600 }}>👤 Nombre:</span>
+                  {/* Nombre del Cliente */}
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: 'block', color: 'var(--text-primary)', fontWeight: 700, marginBottom: 4 }}>
+                      👤 Nombre y Apellido del Cliente *
+                    </label>
                     <input
                       type="text"
+                      required
+                      placeholder="Escribe el nombre del cliente (ej: Juan Pérez)"
                       value={formData.person_a}
                       onChange={e => setFormData(prev => ({ ...prev, person_a: e.target.value }))}
                       style={{
-                        flex: 1,
-                        padding: '5px 10px',
+                        width: '100%',
+                        padding: '8px 12px',
                         borderRadius: 6,
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        background: 'rgba(0,0,0,0.25)',
-                        color: '#fff',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-base)',
+                        color: 'var(--text-primary)',
                         fontWeight: 700,
-                        fontSize: 13
+                        fontSize: 13,
+                        outline: 'none',
+                        boxSizing: 'border-box'
                       }}
                     />
                   </div>
 
-                  <div style={{ color: 'var(--text-secondary)', display: 'flex', flexWrap: 'wrap', gap: '8px 14px' }}>
-                    {formData.age && <span>🎂 Edad: <b style={{ color: 'var(--text-primary)' }}>{formData.age} años</b></span>}
-                    {formData.city && <span>📍 Ciudad: <b style={{ color: 'var(--text-primary)' }}>{formData.city}</b></span>}
-                    {formData.pref && <span>🧭 Orientación: <b style={{ color: 'var(--text-primary)' }}>{formData.pref}</b></span>}
-                    {formData.phone && <span>📞 Tel: <b style={{ color: 'var(--text-primary)' }}>{formData.phone}</b></span>}
-                    {formData.plan_tier && <span>💎 Plan: <b style={{ color: 'var(--text-primary)' }}>{formData.plan_tier}</b></span>}
+                  {/* Campos adicionales: Ciudad, Plan, Teléfono */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ display: 'block', color: 'var(--text-secondary)', marginBottom: 4, fontWeight: 600 }}>📍 Ciudad</label>
+                      <input
+                        type="text"
+                        placeholder="Bogotá, Medellín..."
+                        value={formData.city}
+                        onChange={e => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-base)',
+                          color: 'var(--text-primary)',
+                          fontSize: 12,
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', color: 'var(--text-secondary)', marginBottom: 4, fontWeight: 600 }}>💎 Plan</label>
+                      <select
+                        value={formData.plan_tier}
+                        onChange={e => setFormData(prev => ({ ...prev, plan_tier: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-base)',
+                          color: 'var(--text-primary)',
+                          fontSize: 12,
+                          boxSizing: 'border-box'
+                        }}
+                      >
+                        <option value="Estándar 65k (2 citas)">Estándar 65k (2 citas)</option>
+                        <option value="Estándar Plus 98k (2 citas)">Estándar Plus 98k (2 citas)</option>
+                        <option value="VIP 195k (2 citas)">VIP 195k (2 citas)</option>
+                        <option value="Plan VIP 650k (3 citas)">Plan VIP 650k (3 citas)</option>
+                        <option value="Básico 40k (1 cita)">Básico 40k (1 cita)</option>
+                        <option value="Premium (2 citas)">Premium (2 citas)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', color: 'var(--text-secondary)', marginBottom: 4, fontWeight: 600 }}>📞 Teléfono</label>
+                      <input
+                        type="text"
+                        placeholder="+57300..."
+                        value={formData.phone}
+                        onChange={e => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 6,
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-base)',
+                          color: 'var(--text-primary)',
+                          fontSize: 12,
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
                   </div>
 
-                  {formData.quick_notes && (
-                    <div style={{
-                      marginTop: 8,
-                      paddingTop: 8,
-                      borderTop: '1px solid rgba(255,255,255,0.08)',
-                      color: 'var(--text-secondary)',
-                      fontSize: 11.5,
-                      lineHeight: 1.4
-                    }}>
-                      <b style={{ color: 'var(--text-primary)' }}>📝 Resumen / Notas Clínicas:</b> {formData.quick_notes}
-                    </div>
-                  )}
+                  {/* Notas Clínicas */}
+                  <div>
+                    <label style={{ display: 'block', color: 'var(--text-secondary)', marginBottom: 4, fontWeight: 600 }}>📝 Notas Clínicas / Observaciones</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Preferencias, notas de la entrevista..."
+                      value={formData.quick_notes}
+                      onChange={e => setFormData(prev => ({ ...prev, quick_notes: e.target.value }))}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-base)',
+                        color: 'var(--text-primary)',
+                        fontSize: 12,
+                        outline: 'none',
+                        resize: 'vertical',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 
