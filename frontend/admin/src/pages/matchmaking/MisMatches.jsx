@@ -4368,9 +4368,17 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         const pA = compData?.profile_a || {}
         const pB = compData?.profile_b || {}
         const ai = compData?.ai_evaluation || {}
+        const canon = compData?.canonical_analysis || {}
         const issues = compData?.issues || []
         const warnings = compData?.warnings || []
-        const isIncompatible = !compData?.compatible || issues.length > 0 || ai.veredicto === 'NO RECOMENDADO'
+        const coincidencias = canon.coincidencias_verificadas || ai.coincidencias || []
+        const discrepancias = canon.discrepancias_reales || warnings
+        const pendientes = canon.pendientes_para_entrevista || ai.pendientes_entrevista || []
+        const coveragePct = canon.coverage_pct ?? ai.coverage_pct ?? 65
+        const afinidadScore = canon.score_factual ?? ai.ai_score ?? (issues.length > 0 ? 20 : 65)
+        const veredicto = canon.veredicto || ai.veredicto || (issues.length > 0 ? 'NO RECOMENDADO' : 'VIABLE')
+        const sintesis = canon.sintesis_clinica || ai.analisis || ''
+        const isIncompatible = !compData?.compatible || issues.length > 0 || veredicto === 'NO RECOMENDADO'
 
         return (
           <div
@@ -4388,8 +4396,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 border: `1.5px solid ${isIncompatible ? '#EF4444' : '#F59E0B'}`,
                 borderRadius: 14,
                 width: '100%',
-                maxWidth: 820,
-                maxHeight: '90vh',
+                maxWidth: 840,
+                maxHeight: '92vh',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
@@ -4410,10 +4418,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{
-                    width: 40, height: 40, borderRadius: 10,
+                    width: 42, height: 42, borderRadius: 10,
                     background: isIncompatible ? 'rgba(239, 68, 68, 0.22)' : 'rgba(245, 158, 11, 0.22)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 20
+                    fontSize: 22
                   }}>
                     {isIncompatible ? '🚨' : '🧠'}
                   </div>
@@ -4422,17 +4430,23 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
                         {isIncompatible
                           ? 'Incompatibilidad / Dealbreaker Detectado entre Perfiles'
-                          : 'Análisis Clínico 360° & Quick Notes IA'}
+                          : 'Evaluación de Afinidad Factual 360°'}
                       </h3>
-                      {ai.ai_score !== undefined && (
-                        <span style={{
-                          padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 800,
-                          background: ai.ai_score >= 70 ? 'rgba(16, 185, 129, 0.2)' : ai.ai_score >= 45 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.25)',
-                          color: ai.ai_score >= 70 ? '#10B981' : ai.ai_score >= 45 ? '#F59E0B' : '#EF4444'
-                        }}>
-                          Afinidad IA: {ai.ai_score}% • {ai.veredicto || (isIncompatible ? 'NO RECOMENDADO' : 'REVISIÓN')}
-                        </span>
-                      )}
+                      <span style={{
+                        padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 800,
+                        background: afinidadScore >= 70 ? 'rgba(16, 185, 129, 0.2)' : afinidadScore >= 45 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.25)',
+                        color: afinidadScore >= 70 ? '#10B981' : afinidadScore >= 45 ? '#F59E0B' : '#EF4444'
+                      }}>
+                        Afinidad Factual: {afinidadScore}% • {veredicto}
+                      </span>
+                      <span style={{
+                        padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+                        background: 'rgba(99, 91, 255, 0.15)',
+                        color: '#A594FD',
+                        border: '1px solid rgba(99, 91, 255, 0.3)'
+                      }}>
+                        📊 Ficha Evaluada: {coveragePct}%
+                      </span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
                       <strong>{pA.name || matchRow?.person_a}</strong> (Psic. {pA.psychologist || matchRow?.psychologist_name || '—'})
@@ -4450,9 +4464,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               </div>
 
               {/* Body */}
-              <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* 1. Motivos de Incompatibilidad / Alertas */}
-                {(issues.length > 0 || warnings.length > 0) && (
+              <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {/* 1. Motivos de Incompatibilidad / Alertas Reales */}
+                {(issues.length > 0 || discrepancias.length > 0) && (
                   <div style={{
                     background: issues.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.08)',
                     border: `1px solid ${issues.length > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.35)'}`,
@@ -4460,37 +4474,75 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                     padding: '12px 16px'
                   }}>
                     <div style={{ fontSize: 12.5, fontWeight: 800, color: issues.length > 0 ? '#F87171' : '#FBBF24', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      ⚠️ ¿En qué son incompatibles o qué alertas se detectaron?
+                      ⚠️ {issues.length > 0 ? 'Bloqueos e Incompatibilidades Reales' : 'Discrepancias y Reservas Clínicas Detectadas'}
                     </div>
                     <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-primary)' }}>
                       {issues.map((iss, idx) => (
                         <li key={`iss-${idx}`} style={{ color: '#FCA5A5', fontWeight: 700 }}>{iss}</li>
                       ))}
-                      {warnings.map((w, idx) => (
+                      {discrepancias.map((w, idx) => (
                         <li key={`warn-${idx}`} style={{ color: '#FDE68A', fontWeight: 600 }}>{w}</li>
                       ))}
                     </ul>
                   </div>
                 )}
 
-                {/* 2. Análisis Clínico IA de Quick Notes */}
-                {ai.analisis && (
+                {/* 2. Coincidencias Verificadas (Solo datos confirmados) */}
+                {coincidencias.length > 0 && (
                   <div style={{
-                    background: 'rgba(99, 91, 255, 0.08)',
-                    border: '1px solid rgba(99, 91, 255, 0.3)',
+                    background: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
                     borderRadius: 10,
                     padding: '12px 16px'
                   }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#A594FD', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      ✨ Análisis Clínico IA (Quick Notes & Ficha 360°)
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#34D399', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      ✅ Coincidencias y Afinidades Verificadas (Solo datos confirmados)
                     </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--text-primary)', whiteSpace: 'pre-line' }}>
-                      {ai.analisis}
+                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#D1FAE5' }}>
+                      {coincidencias.map((c, idx) => (
+                        <li key={`coinc-${idx}`} style={{ fontWeight: 600 }}>{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 3. Pendiente por Validar en Entrevista */}
+                {pendientes.length > 0 && (
+                  <div style={{
+                    background: 'rgba(99, 102, 241, 0.09)',
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#818CF8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      ❓ Pendiente por Validar en Entrevista (Datos no registrados en ficha)
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#E0E7FF' }}>
+                      {pendientes.map((p, idx) => (
+                        <li key={`pend-${idx}`} style={{ fontWeight: 600 }}>{p}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* 4. Síntesis Clínica Enjaulada */}
+                {sintesis && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, rgba(150, 21, 0, 0.15) 0%, rgba(26, 18, 20, 0.8) 100%)',
+                    border: '1px solid rgba(184, 50, 79, 0.4)',
+                    borderRadius: 10,
+                    padding: '12px 16px'
+                  }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ff7ac6', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      ✨ Síntesis Clínica Enjaulada (Cero Alucinación)
+                    </div>
+                    <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-line' }}>
+                      {sintesis}
                     </div>
                   </div>
                 )}
 
-                {/* 3. Comparativa Lado a Lado: Persona A vs Persona B + Quick Notes */}
+                {/* 5. Comparativa Lado a Lado: Persona A vs Persona B + Quick Notes */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   {[{ label: 'PERSONA A (CLIENTE)', data: pA, fallbackName: matchRow?.person_a }, { label: 'PERSONA B (CANDIDATO PROPUESTO)', data: pB, fallbackName: matchRow?.person_b }].map((side, idx) => (
                     <div

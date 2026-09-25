@@ -4140,6 +4140,398 @@ async def resolve_profile(
     }
 
 
+# ==============================================================================
+# CANONICAL FACTUAL PROFILE ENGINE (CERO ALUCINACIÓN - DATOS CONFIRMADOS)
+# ==============================================================================
+
+def build_canonical_profile(
+    user_id: int,
+    name: str,
+    crm_id: Optional[str],
+    raw_wh: Dict[str, Any],
+    p_row: Optional[Any],
+    ext_row: Optional[Any]
+) -> Dict[str, Any]:
+    def _choice_str(val) -> Optional[str]:
+        if isinstance(val, dict):
+            s = str(val.get("choice_label") or val.get("name") or val.get("label") or "").strip()
+            return s if s else None
+        if isinstance(val, list):
+            items = [_choice_str(x) for x in val if _choice_str(x)]
+            return ", ".join(items) if items else None
+        s = str(val or "").strip()
+        return s if s else None
+
+    def _choice_list(val) -> List[str]:
+        if isinstance(val, list):
+            out = []
+            for x in val:
+                s = _choice_str(x)
+                if s:
+                    out.append(s)
+            return out
+        s = _choice_str(val)
+        return [s] if s else []
+
+    # Extraer edad
+    age = None
+    if raw_wh.get("prof_194"):
+        try:
+            b_year = int(str(raw_wh["prof_194"])[:4])
+            from datetime import datetime as _dt
+            age = _dt.now().year - b_year
+        except Exception:
+            pass
+    if not age and raw_wh.get("prof_247"):
+        try:
+            age = int(float(str(raw_wh["prof_247"])))
+        except Exception:
+            pass
+    if not age and p_row and getattr(p_row, 'age', None):
+        try:
+            age = int(p_row.age)
+        except Exception:
+            pass
+
+    # Ciudad
+    city = None
+    if raw_wh.get("prof_191") and isinstance(raw_wh["prof_191"], dict):
+        city = _choice_str(raw_wh["prof_191"].get("city") or raw_wh["prof_191"].get("state"))
+    if not city and p_row and getattr(p_row, 'city', None):
+        city = normalize_city(p_row.city)
+
+    # Estatura en cm
+    estatura_cm = None
+    raw_h = raw_wh.get("prof_203") or (getattr(p_row, 'estatura', None) if p_row else None)
+    if raw_h:
+        try:
+            h_int = int(float(str(raw_h).replace("cm", "").strip()))
+            if 1200 <= h_int <= 2300:
+                estatura_cm = h_int // 10
+            elif 120 <= h_int <= 230:
+                estatura_cm = h_int
+        except Exception:
+            pass
+
+    # Género y Orientación
+    genero = _choice_str(raw_wh.get("prof_192")) or (getattr(p_row, 'gender', None) if p_row else None)
+    orientacion = None
+    pref_65 = raw_wh.get("pref_65")
+    if isinstance(pref_65, list) and len(pref_65) > 0:
+        orientacion = _choice_str(pref_65[0])
+    if not orientacion and raw_wh.get("prof_193"):
+        orientacion = _choice_str(raw_wh.get("prof_193"))
+    if not orientacion and p_row and getattr(p_row, 'orientation', None):
+        orientacion = p_row.orientation
+
+    # Profesión y Educación
+    profesion = str(raw_wh.get("prof_199") or (getattr(p_row, 'occupation', None) if p_row else "") or "").strip() or None
+    grado_edu = _choice_str(raw_wh.get("prof_198")) or (getattr(p_row, 'education', None) if p_row else None)
+
+    # Estilo de vida
+    hijos_actuales = _choice_str(raw_wh.get("prof_201"))
+    deseo_hijos = _choice_str(raw_wh.get("prof_202"))
+    fumador = _choice_str(raw_wh.get("prof_208"))
+    deporte_nivel = _choice_str(raw_wh.get("prof_216"))
+    valores = _choice_list(raw_wh.get("prof_228"))
+    hobbies = _choice_list(raw_wh.get("prof_246"))
+    if raw_wh.get("prof_215"):
+        c_extra = str(raw_wh["prof_215"]).strip()
+        if c_extra and c_extra not in hobbies:
+            hobbies.append(c_extra)
+
+    # Si hay lifestyle en p_row, enriquecer lo que falte
+    p_ls = (p_row.lifestyle if p_row and isinstance(getattr(p_row, 'lifestyle', None), dict) else {}) or {}
+    if not hijos_actuales and p_ls.get("has_children"):
+        hijos_actuales = str(p_ls.get("has_children"))
+    if not deseo_hijos and p_ls.get("wants_children"):
+        deseo_hijos = str(p_ls.get("wants_children"))
+    if not fumador and p_ls.get("smoker"):
+        fumador = str(p_ls.get("smoker"))
+    if not deporte_nivel and p_ls.get("fitness_level"):
+        deporte_nivel = str(p_ls.get("fitness_level"))
+    if not valores and p_ls.get("values"):
+        valores = [str(x) for x in p_ls.get("values") if str(x).strip()]
+
+    # Psicología y Lenguaje del amor
+    lenguaje_amor = _choice_str(raw_wh.get("prof_220")) or (getattr(p_row, 'love_language', None) if p_row else None)
+    estilo_apego = None
+    if ext_row and getattr(ext_row, 'attachment_style', None) and ext_row.attachment_style.strip():
+        estilo_apego = ext_row.attachment_style.strip()
+    if not estilo_apego and p_row and isinstance(getattr(p_row, 'apego', None), dict) and p_row.apego.get("style"):
+        estilo_apego = str(p_row.apego.get("style")).strip()
+
+    # Preferencias de búsqueda
+    edad_min = None
+    edad_max = None
+    p_sp = (p_row.search_preferences if p_row and isinstance(getattr(p_row, 'search_preferences', None), dict) else {}) or {}
+    for k in ["min_age", "AgeMin"]:
+        if p_sp.get(k):
+            try:
+                edad_min = int(float(str(p_sp[k]).strip()))
+                break
+            except Exception:
+                pass
+    for k in ["max_age", "AgeMax"]:
+        if p_sp.get(k):
+            try:
+                edad_max = int(float(str(p_sp[k]).strip()))
+                break
+            except Exception:
+                pass
+
+    estatura_max_pref = None
+    if raw_wh.get("pref_70") and isinstance(raw_wh["pref_70"], dict):
+        end_val = raw_wh["pref_70"].get("end")
+        if end_val:
+            estatura_max_pref = int(end_val) // 10 if int(end_val) >= 1000 else int(end_val)
+    elif p_sp.get("preferred_height"):
+        m_h = re.search(r'(\d{3})', str(p_sp["preferred_height"]))
+        if m_h:
+            estatura_max_pref = int(m_h.group(1))
+
+    genero_buscado = _choice_str(raw_wh.get("pref_54")) or p_sp.get("preferred_gender")
+    no_negociables = _choice_list(raw_wh.get("pref_66")) or p_sp.get("non_negotiables") or []
+    busca_pareja_deportiva = any("deport" in str(p_sp.get(k, "")).lower() for k in ("MustHaveValuesTop3", "Green Flags", "PreferredVibe"))
+
+    # Notas clínicas de entrevista
+    quick_notes = (getattr(p_row, 'bio_notes', None) if p_row else "") or ""
+    bio_essay = str(raw_wh.get("pref_64") or "").strip()
+    if bio_essay and bio_essay not in quick_notes:
+        quick_notes = f"{quick_notes}\n{bio_essay}".strip()
+
+    # Identificar qué dimensiones están VERIFICADAS vs cuáles son FALTANTES
+    clinical_dimensions = {
+        "edad": age,
+        "ciudad": city,
+        "estatura_cm": estatura_cm,
+        "genero": genero,
+        "orientacion": orientacion,
+        "profesion": profesion,
+        "hijos_actuales": hijos_actuales,
+        "deseo_hijos": deseo_hijos,
+        "deporte_nivel": deporte_nivel,
+        "lenguaje_amor": lenguaje_amor,
+        "valores": valores if len(valores) > 0 else None,
+        "hobbies": hobbies if len(hobbies) > 0 else None,
+        "estilo_apego": estilo_apego,
+        "rango_edad_buscado": f"{edad_min}-{edad_max}" if (edad_min or edad_max) else None,
+        "no_negociables": no_negociables if len(no_negociables) > 0 else None,
+    }
+
+    verified_data = {k: v for k, v in clinical_dimensions.items() if v is not None}
+    missing_data = [k for k, v in clinical_dimensions.items() if v is None]
+    completeness_pct = round((len(verified_data) / len(clinical_dimensions)) * 100)
+
+    return {
+        "user_id": user_id,
+        "name": name,
+        "crm_id": crm_id,
+        "completeness_pct": completeness_pct,
+        "verified_data": verified_data,
+        "missing_data": missing_data,
+        "preferences": {
+            "edad_min": edad_min,
+            "edad_max": edad_max,
+            "estatura_max_cm": estatura_max_pref,
+            "genero_buscado": genero_buscado,
+            "busca_pareja_deportiva": busca_pareja_deportiva,
+            "no_negociables": no_negociables
+        },
+        "raw_clinical_notes": quick_notes[:2500] if quick_notes else None
+    }
+
+
+def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict[str, Any]:
+    v_a = p_a["verified_data"]
+    v_b = p_b["verified_data"]
+    pref_a = p_a["preferences"]
+    pref_b = p_b["preferences"]
+
+    bloqueos = []
+    coincidencias = []
+    discrepancias = []
+    pendientes_entrevista = []
+
+    # 1. Filtros Bloqueantes
+    gen_a = str(v_a.get("genero") or "").lower()
+    gen_b = str(v_b.get("genero") or "").lower()
+    ori_a = str(v_a.get("orientacion") or "").lower()
+    ori_b = str(v_b.get("orientacion") or "").lower()
+
+    if "hetero" in ori_a and "hetero" in ori_b and gen_a and gen_b and gen_a == gen_b:
+        bloqueos.append(f"Incompatibilidad de género para pareja heterosexual: Ambos perfiles tienen género '{v_a.get('genero')}'.")
+
+    # 2. Ciudad
+    if v_a.get("ciudad") and v_b.get("ciudad"):
+        if v_a["ciudad"].lower() == v_b["ciudad"].lower():
+            coincidencias.append(f"Ubicación: Ambos residen en {v_a['ciudad']}.")
+        else:
+            discrepancias.append(f"Ciudades distintas: {p_a['name']} está en {v_a['ciudad']} y {p_b['name']} en {v_b['ciudad']}.")
+    else:
+        pendientes_entrevista.append("Ciudad de residencia no confirmada en uno de los perfiles.")
+
+    # 3. Rango de Edad
+    age_a = v_a.get("edad")
+    age_b = v_b.get("edad")
+    if age_a and pref_b.get("edad_max") and age_a > pref_b["edad_max"]:
+        discrepancias.append(
+            f"Fuera de rango de edad: {p_a['name']} tiene {age_a} años y el tope máximo de {p_b['name']} es {pref_b['edad_max']} años."
+        )
+    if age_b and pref_a.get("edad_max") and age_b > pref_a["edad_max"]:
+        discrepancias.append(
+            f"Fuera de rango de edad: {p_b['name']} tiene {age_b} años y el tope máximo de {p_a['name']} es {pref_a['edad_max']} años."
+        )
+    if age_a and age_b and not (pref_b.get("edad_max") and age_a > pref_b["edad_max"]) and not (pref_a.get("edad_max") and age_b > pref_a["edad_max"]):
+        coincidencias.append(f"Edades afines: {age_a} años ({p_a['name']}) y {age_b} años ({p_b['name']}).")
+    if not age_a or not age_b:
+        pendientes_entrevista.append("Edad no confirmada en uno de los perfiles.")
+
+    # 4. Deseo de Hijos
+    hijos_a = v_a.get("deseo_hijos")
+    hijos_b = v_b.get("deseo_hijos")
+    if hijos_a and hijos_b:
+        ha_low = str(hijos_a).lower()
+        hb_low = str(hijos_b).lower()
+        if ha_low == hb_low:
+            coincidencias.append(f"Alineación en proyecto de hijos: Ambos indican postura '{hijos_a}'.")
+        elif "no" in hb_low and ("tal vez" in ha_low or "si" in ha_low or "sí" in ha_low):
+            discrepancias.append(f"Diferencia en proyecto familiar: {p_b['name']} NO desea hijos, mientras que {p_a['name']} indica '{hijos_a}'.")
+        elif "no" in ha_low and ("tal vez" in hb_low or "si" in hb_low or "sí" in hb_low):
+            discrepancias.append(f"Diferencia en proyecto familiar: {p_a['name']} NO desea hijos, mientras que {p_b['name']} indica '{hijos_b}'.")
+    else:
+        faltante_quien = []
+        if not hijos_a: faltante_quien.append(p_a['name'])
+        if not hijos_b: faltante_quien.append(p_b['name'])
+        pendientes_entrevista.append(f"Preguntar en entrevista por deseo de hijos a: {', '.join(faltante_quien)}.")
+
+    # 5. Lenguaje del Amor
+    love_a = v_a.get("lenguaje_amor")
+    love_b = v_b.get("lenguaje_amor")
+    if love_a and love_b:
+        if love_a.lower() == love_b.lower():
+            coincidencias.append(f"Lenguaje del Amor idéntico: Ambos coinciden en '{love_a}'.")
+        else:
+            coincidencias.append(f"Lenguajes del amor complementarios: {love_a} ({p_a['name']}) y {love_b} ({p_b['name']}).")
+    else:
+        pendientes_entrevista.append("Lenguaje del amor no evaluado en ficha.")
+
+    # 6. Estilo de Apego
+    att_a = v_a.get("estilo_apego")
+    att_b = v_b.get("estilo_apego")
+    if att_a and att_b:
+        coincidencias.append(f"Dinámica de apego evaluada: {att_a} ({p_a['name']}) × {att_b} ({p_b['name']}).")
+    else:
+        pendientes_entrevista.append("Estilo de apego pendiente de evaluación clínica por psicóloga.")
+
+    # 7. Ritmo deportivo / Físico
+    fit_a = v_a.get("deporte_nivel")
+    fit_b = v_b.get("deporte_nivel")
+    if pref_b.get("busca_pareja_deportiva") and fit_a and any(w in str(fit_a).lower() for w in ("principiante", "sedentario", "no entrena")):
+        discrepancias.append(f"Brecha deportiva: {p_b['name']} busca pareja deportiva/alta energía y {p_a['name']} registra nivel {fit_a}.")
+    elif fit_a and fit_b:
+        coincidencias.append(f"Nivel de actividad deportiva registrado: {fit_a} y {fit_b}.")
+
+    # 8. Estatura
+    est_a = v_a.get("estatura_cm")
+    if est_a and pref_b.get("estatura_max_cm"):
+        if est_a <= pref_b["estatura_max_cm"]:
+            coincidencias.append(f"Estatura cumplida: {p_a['name']} mide {est_a} cm (rango preferido hasta {pref_b['estatura_max_cm']} cm).")
+        else:
+            discrepancias.append(f"Estatura fuera de preferencia: {p_a['name']} mide {est_a} cm (preferencia hasta {pref_b['estatura_max_cm']} cm).")
+
+    # Cobertura mutua de información
+    coverage_pct = round((p_a["completeness_pct"] + p_b["completeness_pct"]) / 2)
+
+    # Cálculo determinístico de afinidad factual
+    if bloqueos:
+        score = 0
+        veredicto = "NO RECOMENDADO"
+    elif len(discrepancias) >= 2:
+        score = min(62, 50 + len(coincidencias) * 3)
+        veredicto = "VIABLE CON RESERVAS"
+    elif len(discrepancias) == 1:
+        score = 68
+        veredicto = "VIABLE BUENO (CON OBSERVACIÓN)"
+    elif coverage_pct < 45:
+        score = 55
+        veredicto = "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)"
+    else:
+        score = min(88, 65 + len(coincidencias) * 5)
+        veredicto = "RECOMENDADO"
+
+    return {
+        "coverage_pct": coverage_pct,
+        "score_factual": score,
+        "veredicto": veredicto,
+        "bloqueos": bloqueos,
+        "coincidencias_verificadas": coincidencias,
+        "discrepancias_reales": discrepancias,
+        "pendientes_entrevista": pendientes_entrevista
+    }
+
+
+async def run_guarded_llm_synthesis(
+    p_a: Dict[str, Any],
+    p_b: Dict[str, Any],
+    comp: Dict[str, Any],
+    nvidia_key: str,
+    client_http: httpx.AsyncClient
+) -> str:
+    prompt = f"""Eres la psicóloga clínica auditora de Daily Lover.
+Tu labor es redactar un análisis clínico aterrizado EXCLUSIVAMENTE a los hechos verificados de esta pareja.
+
+REGLA INVIOLABLE DE CERO ALUCINACIÓN:
+- Solo puedes hablar de lo que está en 'DATOS CONFIRMADOS'.
+- Si un dato aparece en 'DATOS PENDIENTES / NO REGISTRADOS' (como apego, hijos o rumba), ESTÁ ESTRICTAMENTE PROHIBIDO que lo inventes o lo asumas.
+- Tu misión es explicar brevemente la química potencial de los datos confirmados y alertar sobre las discrepancias reales detectadas.
+
+==============================
+CLIENTE A: {p_a['name']} (Ficha al {p_a['completeness_pct']}%)
+- Datos Confirmados: {json.dumps(p_a['verified_data'], ensure_ascii=False)}
+- Notas de entrevista: {p_a['raw_clinical_notes'] or 'Sin notas registradas.'}
+
+CANDIDATO B: {p_b['name']} (Ficha al {p_b['completeness_pct']}%)
+- Datos Confirmados: {json.dumps(p_b['verified_data'], ensure_ascii=False)}
+- Notas de entrevista: {p_b['raw_clinical_notes'] or 'Sin notas registradas.'}
+
+==============================
+RESULTADOS DE LA COMPARACIÓN FACTUAL:
+- Coincidencias confirmadas: {json.dumps(comp['coincidencias_verificadas'], ensure_ascii=False)}
+- Discrepancias reales: {json.dumps(comp['discrepancias_reales'], ensure_ascii=False)}
+- Datos ausentes pendientes de entrevista: {json.dumps(comp['pendientes_entrevista'], ensure_ascii=False)}
+
+Redacta en exactamente 2 párrafos concisos:
+1. Párrafo 1: Afinidades reales basadas solo en los datos confirmados (profesión, lenguaje del amor, valores o gustos verificados).
+2. Párrafo 2: Reservas y puntos que la psicóloga DEBE validar en entrevista debido a las discrepancias o vacíos de ficha.
+No añadas saludos ni despedidas."""
+
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {nvidia_key}"}
+    payload = {
+        "model": "meta/llama-3.2-11b-vision-instruct",
+        "messages": [
+            {"role": "system", "content": "Eres una psicóloga clínica estricta que jamás inventa datos no documentados."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1,
+        "max_tokens": 400
+    }
+
+    try:
+        r = await client_http.post(url, json=payload, headers=headers, timeout=12.0)
+        if r.status_code == 200:
+            return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        pass
+    
+    # Fallback determinístico sin LLM
+    coinc = " • ".join(comp['coincidencias_verificadas'][:3]) if comp['coincidencias_verificadas'] else "Afinidad general según ficha."
+    discr = " • ".join(comp['discrepancias_reales']) if comp['discrepancias_reales'] else "Sin discrepancias críticas detectadas."
+    pends = " • ".join(comp['pendientes_entrevista'][:3]) if comp['pendientes_entrevista'] else "Fichas completas."
+    return f"Afinidades confirmadas: {coinc}\n\nObservaciones clínicas y reservas: {discr}. Pendiente validar en entrevista: {pends}."
+
+
 @router.post("/check-compatibility")
 async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -4158,7 +4550,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             res = await db.execute(text("""
                 SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
                        p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
-                       p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360
+                       p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360, p.canonical_profile
                 FROM users u LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE u.crm_id = :cid ORDER BY u.id DESC LIMIT 1
             """), {"cid": str(clean_cid)})
@@ -4177,7 +4569,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                 res = await db.execute(text("""
                     SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
                            p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
-                           p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360
+                           p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360, p.canonical_profile
                     FROM users u LEFT JOIN profiles p ON p.user_id = u.id
                     WHERE u.crm_id = :cid ORDER BY u.id DESC LIMIT 1
                 """), {"cid": str(clean_cid)})
@@ -4186,7 +4578,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             res = await db.execute(text("""
                 SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
                        p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
-                       p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360
+                       p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360, p.canonical_profile
                 FROM users u LEFT JOIN profiles p ON p.user_id = u.id
                 WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
                 ORDER BY (u.crm_id IS NOT NULL AND u.crm_id != '') DESC, u.id DESC LIMIT 1
@@ -4197,7 +4589,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                 res2 = await db.execute(text("""
                     SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
                            p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
-                           p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360
+                           p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360, p.canonical_profile
                     FROM users u LEFT JOIN profiles p ON p.user_id = u.id
                     WHERE u.id = :uid LIMIT 1
                 """), {"uid": row_p.user_id})
@@ -4473,45 +4865,6 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         if a_wants_sporty and fit_b.lower() in ("principiante", "no entrena", "sedentario"):
             warnings.append(f"Brecha en ritmo deportivo: {name_a} prioriza explícitamente una pareja 'deportiva', mientras que {name_b} registra nivel físico '{fit_b}'.")
 
-    # Ejecutar Evaluación IA de Quick Notes & Dealbreakers 360°
-    ai_evaluation = None
-    try:
-        is_hard_db, hard_reason = check_deterministic_hard_dealbreakers(meta_a, meta_b)
-        if is_hard_db and hard_reason and hard_reason not in issues and hard_reason not in warnings:
-            warnings.append(hard_reason)
-        nvidia_key = os.getenv("NVIDIA_API_KEY", "").strip()
-        async with httpx.AsyncClient(timeout=18.0) as client_http:
-            ai_evaluation = await evaluate_candidate_quick_notes_ai(
-                meta_a, meta_b, nvidia_key, client_http, bypass_hard_filter=True
-            )
-            if ai_evaluation:
-                for db_item in (ai_evaluation.get("deal_breakers") or []):
-                    if db_item and db_item not in warnings and db_item not in issues:
-                        warnings.append(f"🧠 Reserva Clínica / IA: {db_item}")
-                for rf_item in (ai_evaluation.get("red_flags_seguridad") or []):
-                    if rf_item and rf_item not in issues:
-                        issues.append(f"🚨 Alerta Clínica / Seguridad: {rf_item}")
-
-                # Coherencia determinística entre Score/Veredicto y Warnings/Issues
-                if issues:
-                    ai_evaluation["ai_score"] = min(int(ai_evaluation.get("ai_score") or 20), 25)
-                    ai_evaluation["veredicto"] = "NO RECOMENDADO"
-                elif len(warnings) > 0:
-                    cur_sc = int(ai_evaluation.get("ai_score") or 62)
-                    if cur_sc > 64:
-                        ai_evaluation["ai_score"] = 62
-                    if str(ai_evaluation.get("veredicto") or "").upper() in ("RECOMENDADO", "VIABLE BUENO"):
-                        ai_evaluation["veredicto"] = "VIABLE CON RESERVAS"
-                    # Sincronizar warnings reales dentro de deal_breakers del objeto IA para coherencia total en UI
-                    combined_dbs = list(ai_evaluation.get("deal_breakers") or [])
-                    for w_str in warnings:
-                        clean_w = w_str.replace("🧠 Reserva Clínica / IA: ", "").strip()
-                        if clean_w and not any(clean_w[:30].lower() in existing.lower() for existing in combined_dbs):
-                            combined_dbs.insert(0, clean_w)
-                    ai_evaluation["deal_breakers"] = combined_dbs[:4]
-    except Exception:
-        ai_evaluation = None
-
     # ── 3. CHEQUEO DE CUPO DE CITAS DE PERSONA B (PLAN TIER vs CITAS REGISTRADAS) ──
     quota_info = None
     if name_b:
@@ -4567,12 +4920,136 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                 "completed_dates": total_dates_b
             }
 
+    # ── 4. MOTOR FACTUAL CANÓNICO & SÍNTESIS ENJAULADA (CERO ALUCINACIÓN) ──
+    canon_a = None
+    canon_b = None
+    comp_result = None
+    guarded_synthesis = None
+
+    try:
+        # A: Cargar webhook raw o perfil canónico existente
+        raw_wh_a = {}
+        if meta_a.get("crm_id"):
+            wh_a_res = await db.execute(text("SELECT payload FROM webhook_events_raw WHERE payload::text LIKE :p ORDER BY id ASC LIMIT 3"), {"p": f"%{meta_a['crm_id']}%"})
+            for rw in wh_a_res.fetchall():
+                out = rw[0] if isinstance(rw[0], dict) else {}
+                p = out.get("payload") if isinstance(out.get("payload"), dict) else out
+                raw_wh_a.update(p)
+
+        ext_a_row = None
+        if meta_a.get("user_id"):
+            ext_a_res = await db.execute(text("SELECT attachment_style, love_language_given, flags_notes FROM client_extended_profile WHERE user_id = :uid LIMIT 1"), {"uid": meta_a["user_id"]})
+            ext_a_row = ext_a_res.fetchone()
+
+        canon_a = build_canonical_profile(
+            meta_a.get("user_id") or 0,
+            name_a,
+            meta_a.get("crm_id"),
+            raw_wh_a,
+            prof_a,
+            ext_a_row
+        )
+
+        # B: Cargar webhook raw o perfil canónico existente
+        raw_wh_b = {}
+        if meta_b.get("crm_id"):
+            wh_b_res = await db.execute(text("SELECT payload FROM webhook_events_raw WHERE payload::text LIKE :p ORDER BY id ASC LIMIT 3"), {"p": f"%{meta_b['crm_id']}%"})
+            for rw in wh_b_res.fetchall():
+                out = rw[0] if isinstance(rw[0], dict) else {}
+                p = out.get("payload") if isinstance(out.get("payload"), dict) else out
+                raw_wh_b.update(p)
+
+        ext_b_row = None
+        if meta_b.get("user_id"):
+            ext_b_res = await db.execute(text("SELECT attachment_style, love_language_given, flags_notes FROM client_extended_profile WHERE user_id = :uid LIMIT 1"), {"uid": meta_b["user_id"]})
+            ext_b_row = ext_b_res.fetchone()
+
+        canon_b = build_canonical_profile(
+            meta_b.get("user_id") or 0,
+            name_b,
+            meta_b.get("crm_id"),
+            raw_wh_b,
+            prof_b,
+            ext_b_row
+        )
+
+        # Persistir perfil canónico en profiles para enriquecimiento continuo y caché ultrarrápida
+        try:
+            if meta_a.get("user_id") and canon_a:
+                await db.execute(text("UPDATE profiles SET canonical_profile = :c WHERE user_id = :uid"), {"c": json.dumps(canon_a), "uid": meta_a["user_id"]})
+            if meta_b.get("user_id") and canon_b:
+                await db.execute(text("UPDATE profiles SET canonical_profile = :c WHERE user_id = :uid"), {"c": json.dumps(canon_b), "uid": meta_b["user_id"]})
+            await db.commit()
+        except Exception:
+            pass
+
+        # Comparación determinística canónica
+        comp_result = compare_canonical_profiles(canon_a, canon_b)
+
+        # Integrar bloqueos factuales a issues
+        for blk in comp_result["bloqueos"]:
+            if blk not in issues:
+                issues.append(blk)
+
+        # Integrar discrepancias factuales a warnings
+        for disc in comp_result["discrepancias_reales"]:
+            if disc not in warnings:
+                warnings.append(disc)
+
+        # Síntesis LLM enjaulada a datos confirmados
+        nvidia_key = os.getenv("NVIDIA_API_KEY", "").strip()
+        if nvidia_key:
+            async with httpx.AsyncClient(timeout=14.0) as client_http:
+                guarded_synthesis = await run_guarded_llm_synthesis(canon_a, canon_b, comp_result, nvidia_key, client_http)
+    except Exception as e_f:
+        print(f"Error en motor factual canónico: {e_f}")
+
+    if not comp_result:
+        coverage_val = 60
+        score_val = 20 if issues else (62 if warnings else 75)
+        veredicto_val = "NO RECOMENDADO" if issues else ("VIABLE CON RESERVAS" if warnings else "RECOMENDADO")
+        coinc_val = ["Compatibilidad general según ficha registrada."]
+        disc_val = warnings[:]
+        pends_val = ["Validar historial completo y expectativas en entrevista."]
+    else:
+        coverage_val = comp_result["coverage_pct"]
+        score_val = comp_result["score_factual"]
+        veredicto_val = comp_result["veredicto"]
+        coinc_val = comp_result["coincidencias_verificadas"]
+        disc_val = comp_result["discrepancias_reales"]
+        pends_val = comp_result["pendientes_entrevista"]
+
+    ai_evaluation = {
+        "ai_score": score_val,
+        "veredicto": veredicto_val,
+        "analisis": guarded_synthesis or (
+            f"Afinidades verificadas: {' • '.join(coinc_val[:3])}\n\n"
+            f"Reservas clínicas: {' • '.join(disc_val) if disc_val else 'Ninguna discrepancia crítica.'}. "
+            f"Pendientes para entrevista: {' • '.join(pends_val[:3])}"
+        ),
+        "deal_breakers": disc_val,
+        "pendientes_entrevista": pends_val,
+        "coincidencias": coinc_val,
+        "coverage_pct": coverage_val
+    }
+
     return {
-        "compatible": len(issues) == 0 and (not ai_evaluation or ai_evaluation.get("veredicto") != "NO RECOMENDADO"),
+        "compatible": len(issues) == 0 and veredicto_val != "NO RECOMENDADO",
         "issues": issues,
         "warnings": warnings,
         "quota_info": quota_info,
         "ai_evaluation": ai_evaluation,
+        "canonical_analysis": {
+            "coverage_pct": coverage_val,
+            "score_factual": score_val,
+            "veredicto": veredicto_val,
+            "coincidencias_verificadas": coinc_val,
+            "discrepancias_reales": disc_val,
+            "pendientes_para_entrevista": pends_val,
+            "sintesis_clinica": guarded_synthesis or ai_evaluation["analisis"],
+            "client_canonical": canon_a,
+            "candidate_canonical": canon_b
+        },
         "profile_a": {
             "name": meta_a["name"],
             "crm_id": meta_a["crm_id"],
