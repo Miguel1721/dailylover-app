@@ -9,7 +9,9 @@ from app.services.octagonal_persona_synthesizer import OctagonalPersonaSynthesiz
 from app.services.octagonal_match_evaluator import OctagonalMatchEvaluator
 from app.routers.matchmaking import (
     check_safety_red_flags,
-    check_deterministic_hard_dealbreakers
+    check_deterministic_hard_dealbreakers,
+    build_canonical_profile,
+    compare_canonical_profiles
 )
 
 class TestGoldenOctagonalSuite(unittest.TestCase):
@@ -332,6 +334,180 @@ class TestGoldenOctagonalSuite(unittest.TestCase):
         self.assertGreaterEqual(res["score_global"], 80)
         self.assertEqual(res["veredicto"], "RECOMENDADO ALTO")
         self.assertEqual(len(res["deal_breakers"]), 0)
+
+    # =========================================================================
+    # BLOQUE 9: MOTOR FACTUAL CANÓNICO Y ANTI-ALUCINACIÓN (GT-41 a GT-46)
+    # =========================================================================
+    def test_gt41_julieth_daniel_age_sport_gap(self):
+        """GT-41: Julieth (34a) x Daniel (tope 33a, deporte constante vs principiante)."""
+        p_julieth = {
+            "name": "Julieth Angulo Jara",
+            "completeness_pct": 80,
+            "verified_data": {
+                "edad": 34, "ciudad": "Bogotá", "genero": "Mujer", "orientacion": "Heterosexual",
+                "profesion": "Arquitecta", "hijos_actuales": "No", "deseo_hijos": "Sí",
+                "deporte_nivel": "Principiante", "lenguaje_amor": "Tiempo de calidad", "estatura_cm": 155
+            },
+            "preferences": {}
+        }
+        p_daniel = {
+            "name": "Daniel Acosta",
+            "completeness_pct": 74,
+            "verified_data": {
+                "edad": 30, "ciudad": "Bogotá", "genero": "Hombre", "orientacion": "Heterosexual",
+                "profesion": "Ingeniero ambiental", "hijos_actuales": "No", "deseo_hijos": None,
+                "deporte_nivel": "Constante", "lenguaje_amor": "Tiempo de calidad", "estatura_cm": 175
+            },
+            "preferences": {"edad_max": 33, "busca_pareja_deportiva": True, "estatura_max_cm": 170}
+        }
+        res = compare_canonical_profiles(p_julieth, p_daniel)
+        self.assertEqual(res["veredicto"], "VIABLE CON RESERVAS")
+        self.assertLessEqual(res["score_factual"], 62)
+        disc_text = " ".join(res["discrepancias_reales"])
+        self.assertIn("Fuera de rango de edad", disc_text)
+        self.assertIn("Brecha deportiva", disc_text)
+        coin_text = " ".join(res["coincidencias_verificadas"])
+        self.assertIn("Tiempo de calidad", coin_text)
+        pend_text = " ".join(res["pendientes_entrevista"])
+        self.assertIn("Daniel Acosta", pend_text)
+
+    def test_gt42_daniela_hernando_high_affinity(self):
+        """GT-42: Daniela Ordoñez x Hernando 31 (ambos en Bogotá, sin discrepancias críticas)."""
+        p_daniela = {
+            "name": "Daniela Ordoñez",
+            "completeness_pct": 80,
+            "verified_data": {
+                "edad": 27, "ciudad": "Bogotá", "genero": "Mujer", "orientacion": "Heterosexual",
+                "profesion": "Consultora en Health-Tech", "hijos_actuales": "Sí", "deseo_hijos": "Tal vez",
+                "deporte_nivel": "Constante", "lenguaje_amor": "Actos de servicio", "estilo_apego": "Ansioso"
+            },
+            "preferences": {}
+        }
+        p_hernando = {
+            "name": "Hernando 31",
+            "completeness_pct": 80,
+            "verified_data": {
+                "edad": 30, "ciudad": "Bogotá", "genero": "Hombre", "orientacion": "Heterosexual",
+                "profesion": "Nutricionista infantil", "hijos_actuales": "No", "deseo_hijos": "Yes",
+                "deporte_nivel": "Fitness lover", "lenguaje_amor": "Physical touch", "estilo_apego": None
+            },
+            "preferences": {}
+        }
+        res = compare_canonical_profiles(p_daniela, p_hernando)
+        self.assertEqual(res["veredicto"], "RECOMENDADO")
+        self.assertGreaterEqual(res["score_factual"], 80)
+        self.assertEqual(len(res["discrepancias_reales"]), 0)
+
+    def test_gt43_enrique_mariapaula_children_city_clash(self):
+        """GT-43: Enrique Triana (Bogotá, NO hijos) x Maria Paula Perdomo (Cali, SÍ hijos)."""
+        p_enrique = {
+            "name": "Enrique Triana",
+            "completeness_pct": 80,
+            "verified_data": {
+                "edad": 31, "ciudad": "Bogotá", "genero": "Hombre", "orientacion": "Heterosexual",
+                "profesion": "Analista back office", "hijos_actuales": "No", "deseo_hijos": "No",
+                "deporte_nivel": "Principiante", "lenguaje_amor": "Tiempo de calidad", "estatura_cm": 172
+            },
+            "preferences": {}
+        }
+        p_mariapaula = {
+            "name": "Maria Paula Perdomo Giraldo",
+            "completeness_pct": 80,
+            "verified_data": {
+                "edad": 30, "ciudad": "Cali", "genero": "Mujer", "orientacion": "Heterosexual",
+                "profesion": "Empleada", "hijos_actuales": "No", "deseo_hijos": "Sí",
+                "deporte_nivel": "Constante", "lenguaje_amor": "Contacto físico", "estilo_apego": None
+            },
+            "preferences": {"estatura_max_cm": 170}
+        }
+        res = compare_canonical_profiles(p_enrique, p_mariapaula)
+        disc_text = " ".join(res["discrepancias_reales"])
+        self.assertIn("proyecto familiar", disc_text)
+        self.assertIn("Ciudades distintas", disc_text)
+        self.assertEqual(res["veredicto"], "VIABLE CON RESERVAS")
+        self.assertLessEqual(res["score_factual"], 62)
+
+    def test_gt44_karen_juan_incomplete_profile_and_children_clash(self):
+        """GT-44: Karen Arias (Financiera, SÍ hijos, ciudad null) x Juan Hosman (NO hijos)."""
+        p_karen = {
+            "name": "Karen Arias",
+            "completeness_pct": 55,
+            "verified_data": {
+                "edad": 29, "ciudad": None, "genero": "Mujer", "orientacion": "Heterosexual",
+                "profesion": "Financiera", "hijos_actuales": "Sí", "deseo_hijos": "Sí",
+                "deporte_nivel": "No entrena", "lenguaje_amor": "Actos de servicio", "estilo_apego": None
+            },
+            "preferences": {}
+        }
+        p_juan = {
+            "name": "Juan Hosman",
+            "completeness_pct": 80,
+            "verified_data": {
+                "edad": 37, "ciudad": "Bogotá", "genero": "Hombre", "orientacion": "Heterosexual",
+                "profesion": "Analista back office", "hijos_actuales": "No", "deseo_hijos": "No",
+                "deporte_nivel": "Principiante", "lenguaje_amor": "Tiempo de calidad", "estilo_apego": None
+            },
+            "preferences": {}
+        }
+        res = compare_canonical_profiles(p_karen, p_juan)
+        disc_text = " ".join(res["discrepancias_reales"])
+        self.assertIn("proyecto familiar", disc_text)
+        pend_text = " ".join(res["pendientes_entrevista"])
+        self.assertIn("Ciudad de residencia no confirmada", pend_text)
+
+    def test_gt45_luna_ricardo_age_gap(self):
+        """GT-45: Luna Lily García (37a, tope 45) x Ricardo Colon (55a, Medellín)."""
+        p_luna = {
+            "name": "Luna Lily García Piedra",
+            "completeness_pct": 75,
+            "verified_data": {
+                "edad": 37, "ciudad": "Medellín", "genero": "Mujer", "orientacion": "Heterosexual",
+                "profesion": "Diseñadora", "hijos_actuales": "No", "deseo_hijos": "No",
+                "lenguaje_amor": "Tiempo de calidad"
+            },
+            "preferences": {"edad_max": 45}
+        }
+        p_ricardo = {
+            "name": "Ricardo Colon",
+            "completeness_pct": 50,
+            "verified_data": {
+                "edad": 55, "ciudad": "Medellín", "genero": "Hombre", "orientacion": "Heterosexual",
+                "profesion": "Empresario", "hijos_actuales": "Sí", "deseo_hijos": "No",
+                "lenguaje_amor": "Actos de servicio"
+            },
+            "preferences": {}
+        }
+        res = compare_canonical_profiles(p_luna, p_ricardo)
+        disc_text = " ".join(res["discrepancias_reales"])
+        self.assertIn("Fuera de rango de edad", disc_text)
+
+    def test_gt46_canonical_extraction_strict_nulls(self):
+        """GT-46: Extracción Canónica estricta con NULLs explícitos cuando no hay datos."""
+        raw_empty = {
+            "prof_192": None, "prof_194": None, "prof_201": "No especificado",
+            "prof_202": None, "prof_220": None
+        }
+        canon = build_canonical_profile(
+            user_id=99999, name="Cliente Vacío", crm_id="99999",
+            raw_wh=raw_empty, p_row=None, ext_row=None
+        )
+        v = canon["verified_data"]
+        self.assertNotIn("ciudad", v)
+        self.assertIn("ciudad", canon["missing_data"])
+        self.assertNotIn("estilo_apego", v)
+        self.assertIn("estilo_apego", canon["missing_data"])
+        self.assertNotIn("deseo_hijos", v)
+        self.assertIn("deseo_hijos", canon["missing_data"])
+        self.assertLessEqual(canon["completeness_pct"], 35)
+
+        p_otro = {
+            "name": "Otro Cliente", "completeness_pct": 20,
+            "verified_data": {"genero": "Hombre", "orientacion": "Heterosexual"}, "preferences": {}
+        }
+        res = compare_canonical_profiles(canon, p_otro)
+        self.assertEqual(res["veredicto"], "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)")
+        self.assertEqual(res["score_factual"], 55)
+
 
 if __name__ == "__main__":
     unittest.main()

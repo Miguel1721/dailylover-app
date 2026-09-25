@@ -1,6 +1,6 @@
 {
-  "description": "Golden Test Suite - 25 Casos de Control Fijos para Validación y Detección de Regresiones en Matchmaking",
-  "version": "1.0",
+  "description": "Golden Test Suite - 31 Casos de Control Fijos para Validación y Detección de Regresiones en Matchmaking",
+  "version": "2.0",
   "test_cases": [
     {
       "id": "GT-01",
@@ -206,6 +206,62 @@
       "name": "Carlos Arturo Vargas Nocua (ID 11480)",
       "description": "Caso histórico con 120 candidatos incompatibles; debe proteger los criterios sin alucinar matches.",
       "expected_matches_count": 0
+    },
+    {
+      "id": "GT-26",
+      "category": "MOTOR_FACTUAL_BRECHA_EDAD_Y_DEPORTE",
+      "name": "Julieth Angulo Jara vs Daniel Acosta",
+      "description": "Julieth (34a) vs Daniel (tope 33a, deporte constante vs principiante). Discrepancia real en edad y deporte; afines en lenguaje del amor ('Tiempo de calidad'); pendientes para entrevista: preguntar deseo de hijos a Daniel y validar apego; cero alucinación.",
+      "expected_verdict": "VIABLE CON RESERVAS",
+      "expected_max_score": 62,
+      "expected_discrepancies": ["Fuera de rango de edad", "Brecha deportiva"],
+      "expected_matches": ["Tiempo de calidad", "Estatura cumplida"],
+      "expected_pending": ["Daniel Acosta", "apego"]
+    },
+    {
+      "id": "GT-27",
+      "category": "MOTOR_FACTUAL_AFINIDAD_ALTA_BOGOTA",
+      "name": "Daniela Ordoñez vs Hernando 31",
+      "description": "Ambos en Bogotá (27a vs 30a), alta cobertura de ficha (80%), sin discrepancias críticas. Lenguajes complementarios, afines en edad y ciudad.",
+      "expected_verdict": "RECOMENDADO",
+      "expected_min_score": 80,
+      "expected_discrepancies_count": 0,
+      "expected_matches": ["Bogotá", "Edades afines"]
+    },
+    {
+      "id": "GT-28",
+      "category": "MOTOR_FACTUAL_CHOQUE_HIJOS_Y_CIUDADES",
+      "name": "Enrique Triana vs Maria Paula Perdomo Giraldo",
+      "description": "Enrique (Bogotá, NO hijos) vs Maria Paula (Cali, SÍ hijos). Detección matemática obligatoria del choque irreconciliable en proyecto familiar y ciudades distintas.",
+      "expected_verdict": "VIABLE CON RESERVAS",
+      "expected_max_score": 62,
+      "expected_discrepancies": ["proyecto familiar", "Ciudades distintas"]
+    },
+    {
+      "id": "GT-29",
+      "category": "MOTOR_FACTUAL_FICHA_INCOMPLETA_DISCREPANCIA_HIJOS",
+      "name": "Karen Arias vs Juan Hosman",
+      "description": "Karen (29a, Financiera, SÍ hijos, ciudad null) vs Juan Hosman (37a, NO hijos). Choque en deseo de hijos; ciudad ausente y apego no evaluado en entrevista.",
+      "expected_verdict_in": ["VIABLE BUENO (CON OBSERVACIÓN)", "VIABLE CON RESERVAS"],
+      "expected_discrepancies": ["proyecto familiar"],
+      "expected_pending": ["Ciudad de residencia no confirmada", "apego"]
+    },
+    {
+      "id": "GT-30",
+      "category": "MOTOR_FACTUAL_BRECHA_ETARIA_MEDELLIN",
+      "name": "Luna Lily García Piedra vs Ricardo Colon",
+      "description": "Luna Lily (37a, Medellín, tope 45) vs Ricardo Colon (55a, Medellín). Brecha etaria de 18 años con tope de edad superado.",
+      "expected_discrepancies": ["Fuera de rango de edad"],
+      "expected_matches": ["Medellín"]
+    },
+    {
+      "id": "GT-31",
+      "category": "MOTOR_FACTUAL_CERO_SUPUESTOS_EXTRACCION",
+      "name": "Pasaporte Canónico Cero Alucinación (Null Safety)",
+      "description": "Validación de Fase 1 y Fase 3. Cuando un perfil no tiene datos o dice 'No especificado', build_canonical_profile guarda rigurosamente null en verified_data y cataloga en missing_data.",
+      "expected_strict_missing": ["ciudad", "estilo_apego", "deseo_hijos"],
+      "expected_verdict": "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)",
+      "expected_score": 55
     }
   ]
 }
