@@ -188,7 +188,7 @@ export default function AprobadosMaria() {
   const handleSaveSchedule = async (data) => {
     if (!scheduleModalMatch) return
     try {
-      const res = await fetch(`${API}/api/v1/matchmaking/matches/${scheduleModalMatch.id}/schedule-date`, {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${scheduleModalMatch.id}/schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -197,7 +197,7 @@ export default function AprobadosMaria() {
         body: JSON.stringify(data)
       })
       if (res.ok) {
-        setNotification(`🎉 Cita agendada exitosamente para ${scheduleModalMatch.person_a} y ${scheduleModalMatch.person_b} en ${data.restaurant_name || 'Restaurante'}.`)
+        setNotification(`🎉 Cita agendada exitosamente para ${scheduleModalMatch.person_a} y ${scheduleModalMatch.person_b} en ${data.venue || data.restaurant_name || 'Restaurante'}.`)
         setTimeout(() => setNotification(''), 6000)
         setScheduleModalMatch(null)
         fetchServiceQueue()
@@ -1015,7 +1015,13 @@ export default function AprobadosMaria() {
         <RestaurantFilterModal
           match={scheduleModalMatch}
           onClose={() => setScheduleModalMatch(null)}
-          onSave={handleSaveSchedule}
+          onConfirm={async (fullDateTime, finalVenueName, details) => {
+            await handleSaveSchedule({
+              scheduled_date: fullDateTime,
+              venue: finalVenueName,
+              city: details?.city || scheduleModalMatch.city || 'Bogotá'
+            })
+          }}
         />
       )}
     </div>

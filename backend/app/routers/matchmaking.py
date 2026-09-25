@@ -255,6 +255,7 @@ class UpdateMatchRequest(BaseModel):
     status_a: Optional[str] = None
     status_b: Optional[str] = None
     observations: Optional[str] = None
+    service_status: Optional[str] = None
 
 class CheckCompatibilityRequest(BaseModel):
     match_id: Optional[int] = None
@@ -1852,6 +1853,46 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
     }
 
 
+class ServiceStatusPayload(BaseModel):
+    status: Optional[str] = None
+    stage: Optional[str] = None
+    service_status: Optional[str] = None
+
+@router.patch("/matches/{match_id}/service-status")
+async def update_match_service_status(
+    match_id: int,
+    payload: ServiceStatusPayload,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Actualiza el estado de servicio CS en match_confirmations y sincroniza la trazabilidad.
+    """
+    new_stage = (payload.status or payload.stage or payload.service_status or "").strip().lower()
+    if not new_stage:
+        raise HTTPException(status_code=400, detail="Estado requerido")
+
+    # 1. Update or insert in match_confirmations
+    exist_conf = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+    conf_row = exist_conf.fetchone()
+    if conf_row:
+        await db.execute(text("UPDATE match_confirmations SET stage = :st, updated_at = NOW() WHERE id = :id"), {"id": conf_row.id, "st": new_stage})
+    else:
+        await db.execute(text("INSERT INTO match_confirmations (match_id, stage, created_at, updated_at) VALUES (:mid, :st, NOW(), NOW())"), {"mid": match_id, "st": new_stage})
+
+    # 2. Update operational_matches updated_at
+    await db.execute(text("UPDATE operational_matches SET updated_at = NOW() WHERE id = :id"), {"id": match_id})
+
+    # 3. Add traceability in person_history
+    exist_m = await db.execute(text("SELECT person_a, person_b FROM operational_matches WHERE id = :id"), {"id": match_id})
+    m_row = exist_m.fetchone()
+    if m_row and m_row.person_a:
+        det = f"Estado de servicio CS actualizado a: '{new_stage}'"
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'CS_STATUS_CHANGED', :d, NOW())"), {"n": m_row.person_a, "mid": match_id, "d": det})
+
+    await db.commit()
+    return {"status": "success", "match_id": match_id, "stage": new_stage}
+
+
 # ─── 2. PANTALLA 2: COLA DE APROBACIÓN (MARÍA) ──────────────────────────────
 
 @router.get("/approval-queue")
@@ -1940,6 +1981,7 @@ async def get_approval_queue(
 
 
 @router.post("/matches/{match_id}/approve")
+@router.post("/matches/{match_id}/approve-by-maria")
 async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_db)):
     """
     ACCIÓN ÚNICA DE MARÍA (SPEC v2):
@@ -2063,6 +2105,55 @@ async def refund_match_by_maria(
 
     await db.commit()
     return {"status": "success", "match_id": match_id, "message": f"Match {match_id} marcado como REFUND por María y enrutado a Lina."}
+
+
+class RejectByMariaRequest(BaseModel):
+    rejection_reason: Optional[str] = None
+    reason: Optional[str] = None
+
+@router.post("/matches/{match_id}/reject-by-maria")
+@router.post("/matches/{match_id}/reject")
+async def reject_match_by_maria(
+    match_id: int,
+    payload: Optional[RejectByMariaRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    ACCIÓN DE RECHAZO / DEVOLUCIÓN DE MARÍA:
+    1. Devuelve el match a la psicóloga asignada marcando status = 'NOT APPROVED'.
+    2. Libera el bloqueo de María para que la psicóloga pueda proponer un nuevo candidato B.
+    3. Registra en person_history.
+    """
+    exist_res = await db.execute(text("""
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, observations
+        FROM operational_matches WHERE id = :id
+    """), {"id": match_id})
+    match_row = exist_res.fetchone()
+    if not match_row:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    reason = ""
+    if payload:
+        reason = (payload.rejection_reason or payload.reason or "").strip()
+    if not reason:
+        reason = "No cumple criterios clínicos de María"
+
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = 'NOT APPROVED',
+            approved_by_maria = false,
+            observations = :obs,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {"id": match_id, "obs": f"[DEVUELTO MARÍA] {reason}"})
+
+    det = f"Match devuelto por María a {match_row.psychologist_name}. Motivo: {reason}."
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_REJECTED', :d, NOW())"), {"n": match_row.person_a, "mid": match_id, "d": det})
+    if match_row.person_b:
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_REJECTED', :d, NOW())"), {"n": match_row.person_b, "mid": match_id, "d": det})
+
+    await db.commit()
+    return {"status": "success", "match_id": match_id, "message": f"Match devuelto exitosamente a {match_row.psychologist_name}."}
 
 
 @router.post("/refunds/manual")
@@ -5243,6 +5334,7 @@ class ScheduleMatchRequest(BaseModel):
 
 
 @router.post("/matches/{match_id}/schedule")
+@router.post("/matches/{match_id}/schedule-date")
 async def schedule_match(
     match_id: int,
     payload: ScheduleMatchRequest,
@@ -5399,6 +5491,7 @@ async def get_matches_scheduled(
 
 
 @router.get("/matches/cross-approvals")
+@router.get("/cross-approvals")
 async def get_cross_approvals(
     psychologist: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
