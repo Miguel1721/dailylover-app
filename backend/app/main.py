@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from app.config import get_settings, Settings
@@ -43,6 +44,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Enable GZip compression (reduces multi-megabyte JSON responses like my-matches from 6MB to ~400KB)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 ATRASADOS_ALLOWED_PREFIXES = (
     "/api/v1/auth/me",
@@ -176,6 +180,13 @@ async def startup_seed():
             """))
             await db.execute(text("""
                 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS photo_url VARCHAR(500);
+            """))
+            await db.execute(text("""
+                ALTER TABLE operational_matches 
+                ADD COLUMN IF NOT EXISTS compatibility_score INTEGER,
+                ADD COLUMN IF NOT EXISTS compatibility_verdict TEXT,
+                ADD COLUMN IF NOT EXISTS compatibility_analysis JSONB,
+                ADD COLUMN IF NOT EXISTS compatibility_evaluated_at TIMESTAMP;
             """))
             await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS client_extended_profile (

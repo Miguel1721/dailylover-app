@@ -257,6 +257,8 @@ class UpdateMatchRequest(BaseModel):
     observations: Optional[str] = None
 
 class CheckCompatibilityRequest(BaseModel):
+    match_id: Optional[int] = None
+    force_refresh: Optional[bool] = False
     person_a_crm_id: Optional[str] = None
     person_a_name: Optional[str] = None
     person_b_crm_id: Optional[str] = None
@@ -429,6 +431,8 @@ async def get_my_matches(
             m.city, m.pref, m.plan_tier, m.status, m.status_a, m.status_b, m.approved_by_maria, m.approved_at,
             m.observations, m.slot_number, m.is_priority, m.sheet_row_index, m.created_at, m.updated_at,
             m.person_a_crm_id, m.person_b_crm_id,
+            m.compatibility_score, m.compatibility_verdict, m.compatibility_evaluated_at,
+            (m.compatibility_analysis IS NOT NULL) AS has_cached_analysis,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS ua_crm_id,
             COALESCE(m.person_b_crm_id, uB.crm_id, '') AS ub_crm_id,
             uA.phone AS person_a_phone, uA.email AS person_a_email,
@@ -445,36 +449,28 @@ async def get_my_matches(
             COALESCE(csn.open_novedades_count, 0) AS cs_novedades_count,
             COALESCE(NULLIF(TRIM(pB.responsable), ''), NULLIF(TRIM(mOwnerB.psychologist_name), ''), '') AS psyc_of_b
         FROM operational_matches m
+        LEFT JOIN users uA ON uA.id = m.user_id_a
+        LEFT JOIN users uB ON uB.id = m.user_id_b
+        LEFT JOIN profiles p ON p.user_id = m.user_id_a
+        LEFT JOIN profiles pB ON pB.user_id = m.user_id_b
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, crm_id, phone, email
-            FROM users
-            ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
-        ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) id, name, crm_id, phone, email
-            FROM users
-            ORDER BY LOWER(TRIM(name)), (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
-        ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(person_a))) LOWER(TRIM(person_a)) AS pa_clean, psychologist_name
+            SELECT DISTINCT ON (user_id_a) user_id_a, psychologist_name
             FROM operational_matches
-            WHERE person_a IS NOT NULL AND psychologist_name IS NOT NULL
-            ORDER BY LOWER(TRIM(person_a)), id DESC
-        ) mOwnerB ON mOwnerB.pa_clean = LOWER(TRIM(m.person_b))
-        LEFT JOIN profiles p ON p.user_id = uA.id
+            WHERE user_id_a IS NOT NULL AND psychologist_name IS NOT NULL
+            ORDER BY user_id_a, id DESC
+        ) mOwnerB ON (m.user_id_b IS NOT NULL AND mOwnerB.user_id_a = m.user_id_b)
         LEFT JOIN (
             SELECT DISTINCT ON (user_id) user_id, payment_date, plan_tier
             FROM stripe_payments
             WHERE payment_status = 'succeeded'
             ORDER BY user_id, payment_date DESC
-        ) sp ON sp.user_id = uA.id
+        ) sp ON (m.user_id_a IS NOT NULL AND sp.user_id = m.user_id_a)
         LEFT JOIN (
             SELECT DISTINCT ON (LOWER(TRIM(customer_name))) customer_name, payment_date, plan_tier
             FROM stripe_payments
             WHERE payment_status = 'succeeded' AND customer_name IS NOT NULL AND LENGTH(customer_name) > 4
             ORDER BY LOWER(TRIM(customer_name)), payment_date DESC
-        ) sp_name ON LOWER(TRIM(sp_name.customer_name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN profiles pB ON pB.user_id = uB.id
+        ) sp_name ON (m.user_id_a IS NULL AND LOWER(TRIM(sp_name.customer_name)) = LOWER(TRIM(m.person_a)))
         LEFT JOIN (
             SELECT DISTINCT ON (match_id) match_id, date_time, venue, city, had_date, reschedule, reservation_name, feedback_ella, feedback_el
             FROM scheduled_dates
@@ -620,6 +616,10 @@ async def get_my_matches(
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
             "psychologist_b": p_b_psyc,
+            "compatibility_score": d.get("compatibility_score"),
+            "compatibility_verdict": d.get("compatibility_verdict"),
+            "compatibility_evaluated_at": d.get("compatibility_evaluated_at").isoformat() if d.get("compatibility_evaluated_at") else None,
+            "has_cached_analysis": bool(d.get("has_cached_analysis")),
             "is_priority": bool(d.get("is_priority")),
             "sheet_row_index": d.get("sheet_row_index"),
             "cs_novedades_count": int(d.get("cs_novedades_count") or 0),
@@ -1640,6 +1640,10 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
         if not pb_clean:
             updates.append("person_b = ''")
             updates.append("person_b_crm_id = ''")
+            updates.append("compatibility_score = NULL")
+            updates.append("compatibility_verdict = NULL")
+            updates.append("compatibility_analysis = NULL")
+            updates.append("compatibility_evaluated_at = NULL")
         elif pb_clean:
             extracted_cid = _extract_crm_id_from_url(pb_clean) or (payload.person_b_crm_id or "").strip() or None
 
@@ -1684,6 +1688,12 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
                         status_code=400,
                         detail="URL o Enlace de SmartMatchApp Obligatorio: Debe ingresar el enlace de SmartMatchApp (ej: https://dailylover.smartmatchapp.com/#!/client/...) o CRM ID para Persona B. El sistema bloquea nombres en texto plano sin enlace."
                     )
+
+            if (match_row.person_b or "").strip().lower() != effective_b.strip().lower():
+                updates.append("compatibility_score = NULL")
+                updates.append("compatibility_verdict = NULL")
+                updates.append("compatibility_analysis = NULL")
+                updates.append("compatibility_evaluated_at = NULL")
 
             updates.append("person_b = :pb")
             params["pb"] = effective_b
@@ -4540,7 +4550,42 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
     2. Compatibilidad de orientación/preferencia sexual y género.
     3. Compatibilidad de ciudad, rango de edad, estatura, hijos, tabaco, estilo de vida.
     4. Análisis IA de Quick Notes y Ficha Clínica 360° (Dealbreakers y afinidad).
+    5. Caché instantánea: si ya fue evaluada en operational_matches y los datos no cambian, responde en 0ms.
     """
+    # ── VERIFICACIÓN DE CACHÉ EN operational_matches ──
+    target_match_id = payload.match_id
+    if not target_match_id and payload.person_a_name and payload.person_b_name:
+        try:
+            m_find = await db.execute(text("""
+                SELECT id FROM operational_matches
+                WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b))
+                ORDER BY id DESC LIMIT 1
+            """), {"a": payload.person_a_name.strip(), "b": payload.person_b_name.strip()})
+            mf = m_find.fetchone()
+            if mf:
+                target_match_id = mf.id
+        except Exception:
+            pass
+
+    if target_match_id and not payload.force_refresh:
+        try:
+            c_res = await db.execute(text("""
+                SELECT person_b, person_b_crm_id, compatibility_score, compatibility_verdict, compatibility_analysis, compatibility_evaluated_at
+                FROM operational_matches
+                WHERE id = :mid
+            """), {"mid": target_match_id})
+            c_row = c_res.fetchone()
+            if c_row and c_row.compatibility_analysis:
+                c_pb = (c_row.person_b or "").strip().lower()
+                p_pb = (payload.person_b_name or "").strip().lower()
+                if not p_pb or p_pb == c_pb or (c_row.person_b_crm_id and payload.person_b_crm_id and str(c_row.person_b_crm_id) == str(payload.person_b_crm_id)):
+                    cached_dict = dict(c_row.compatibility_analysis)
+                    cached_dict["is_cached"] = True
+                    cached_dict["evaluated_at"] = c_row.compatibility_evaluated_at.isoformat() if c_row.compatibility_evaluated_at else None
+                    return cached_dict
+        except Exception as e_cache_chk:
+            print(f"Error checking compatibility cache: {e_cache_chk}")
+
     issues = []
 
     async def _fetch_full_prof(cid_val: Optional[str], name_val: Optional[str]):
@@ -5033,7 +5078,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         "coverage_pct": coverage_val
     }
 
-    return {
+    response_payload = {
         "compatible": len(issues) == 0 and veredicto_val != "NO RECOMENDADO",
         "issues": issues,
         "warnings": warnings,
@@ -5081,8 +5126,31 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         "city_a": meta_a["city"],
         "city_b": meta_b["city"],
         "pref_a": meta_a["orientation"],
-        "pref_b": meta_b["orientation"]
+        "pref_b": meta_b["orientation"],
+        "is_cached": False
     }
+
+    # Persistir en operational_matches para caché instantánea en futuras aperturas
+    if target_match_id:
+        try:
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET compatibility_score = :sc,
+                    compatibility_verdict = :vd,
+                    compatibility_analysis = :analysis,
+                    compatibility_evaluated_at = NOW()
+                WHERE id = :mid
+            """), {
+                "mid": target_match_id,
+                "sc": score_val,
+                "vd": veredicto_val,
+                "analysis": json.dumps(response_payload, default=str)
+            })
+            await db.commit()
+        except Exception as e_save_cache:
+            print(f"Error persisting compatibility cache: {e_save_cache}")
+
+    return response_payload
 
 
 # ─── 10. ENDPOINTS DE VISTA DUAL DE MATCHES (ZONA INFERIOR & ZONA SUPERIOR) ──

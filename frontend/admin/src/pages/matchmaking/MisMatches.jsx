@@ -1470,6 +1470,11 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     : STATUS_GROUPS
   
   const getInitialPsyc = () => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search)
+      const urlPsyc = urlParams.get('psychologist') || urlParams.get('psyc')
+      if (urlPsyc) return urlPsyc
+    }
     if (isOfficialMatches || isAdmin) return 'all'
     const name = user?.name || ''
     const email = user?.email || ''
@@ -1493,7 +1498,13 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const [cityFilter, setCityFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
   const [approvedFilter, setApprovedFilter] = useState(isOfficialMatches ? '1' : 'all')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('search') || params.get('q') || ''
+    }
+    return ''
+  })
   const [matches, setMatches] = useState([])
   const [loading, setLoading] = useState(false)
   const [savingId, setSavingId] = useState(null)
@@ -1537,9 +1548,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     const q = params.get('search') || params.get('q')
     const filter = params.get('filter') || params.get('tab')
     const psyc = params.get('psychologist') || params.get('psyc')
-    if (q) setSearchTerm(q)
-    if (filter === 'prioritarios') setQuickFilter('prioritarios')
-    if (psyc) setSelectedPsyc(psyc)
+    if (q !== null && q !== searchTerm) setSearchTerm(q)
+    if (filter && filter !== quickFilter) setQuickFilter(filter)
+    if (psyc && psyc !== selectedPsyc) setSelectedPsyc(psyc)
   }, [location.search])
 
   // Asistente Clínico & Sugerencias IA Modal: { clientName, crmId, matchRow, tab: 'sugerencias' | 'objetivos' | 'percepcion' }
@@ -1551,7 +1562,14 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   // Modos de visualización ergonómica (Sheets vs Cómodo)
   const [density, setDensity] = useState(() => localStorage.getItem('matches_density') || 'comfortable')
-  const [quickFilter, setQuickFilter] = useState(isOfficialMatches ? 'aprobados' : 'all') // 'all' | 'prioritarios' | 'sin_b' | 'listos' | 'pausa' | 'aprobados'
+  const [quickFilter, setQuickFilter] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const f = params.get('filter') || params.get('tab')
+      if (f) return f
+    }
+    return isOfficialMatches ? 'aprobados' : 'all'
+  }) // 'all' | 'prioritarios' | 'sin_b' | 'listos' | 'pausa' | 'aprobados'
   const [syncStatus, setSyncStatus] = useState('synced') // 'synced' | 'saving' | 'error'
 
   const toggleDensity = () => {
@@ -1704,10 +1722,31 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
   const aprobadosCount = matches.filter(m => m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')).length
 
+  const [isLight, setIsLight] = useState(() => {
+    if (typeof document !== 'undefined') {
+      return document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light'
+    }
+    return false
+  })
+
+  useEffect(() => {
+    const checkTheme = () => {
+      setIsLight(document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light')
+    }
+    checkTheme()
+    const observer = new MutationObserver(checkTheme)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    window.addEventListener('storage', checkTheme)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('storage', checkTheme)
+    }
+  }, [])
+
   const [compatibilityModalData, setCompatibilityModalData] = useState(null)
   const [loadingCompatId, setLoadingCompatId] = useState(null)
 
-  const runCompatibilityCheck = async (matchRow, pbName, pbCrmId, pbUrl = '', forceOpenModal = false) => {
+  const runCompatibilityCheck = async (matchRow, pbName, pbCrmId, pbUrl = '', forceOpenModal = false, forceRefresh = false) => {
     if (!matchRow?.person_a || (!pbName && !pbCrmId && !pbUrl)) return
     setLoadingCompatId(matchRow.id)
     try {
@@ -1715,6 +1754,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
+          match_id: matchRow.id,
+          force_refresh: forceRefresh,
           person_a_name: matchRow.person_a,
           person_a_crm_id: String(matchRow.person_a_crm_id || ''),
           person_b_name: pbName || '',
@@ -1728,14 +1769,18 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         const resolvedNameBFromCheck = compData?.profile_b?.name || pbName || ''
         const resolvedCidBFromCheck = compData?.profile_b?.crm_id || pbCrmId || ''
 
-        if (resolvedPsycBFromCheck || resolvedNameBFromCheck) {
-          setMatches(prev => prev.map(m => m.id === matchRow.id ? {
-            ...m,
-            person_b: resolvedNameBFromCheck || m.person_b,
-            person_b_crm_id: resolvedCidBFromCheck || m.person_b_crm_id,
-            psychologist_b: resolvedPsycBFromCheck || m.psychologist_b || ''
-          } : m))
-        }
+        const compScore = compData?.canonical_analysis?.score_factual ?? compData?.ai_evaluation?.ai_score
+        const compVerdict = compData?.canonical_analysis?.veredicto ?? compData?.ai_evaluation?.veredicto
+
+        setMatches(prev => prev.map(m => m.id === matchRow.id ? {
+          ...m,
+          person_b: resolvedNameBFromCheck || m.person_b,
+          person_b_crm_id: resolvedCidBFromCheck || m.person_b_crm_id,
+          psychologist_b: resolvedPsycBFromCheck || m.psychologist_b || '',
+          compatibility_score: compScore !== undefined ? compScore : m.compatibility_score,
+          compatibility_verdict: compVerdict || m.compatibility_verdict,
+          has_cached_analysis: true
+        } : m))
 
         const hasBlockingIssues = !compData.compatible || (compData.issues && compData.issues.length > 0)
         const hasWarnings = compData.warnings && compData.warnings.length > 0
@@ -1748,7 +1793,13 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         if (forceOpenModal || hasBlockingIssues || hasWarnings || hasAiDealbreakers) {
           setCompatibilityModalData({
             matchId: matchRow.id,
-            matchRow,
+            matchRow: {
+              ...matchRow,
+              person_b: resolvedNameBFromCheck || matchRow.person_b,
+              person_b_crm_id: resolvedCidBFromCheck || matchRow.person_b_crm_id,
+              compatibility_score: compScore !== undefined ? compScore : matchRow.compatibility_score,
+              compatibility_verdict: compVerdict || matchRow.compatibility_verdict
+            },
             compData
           })
         }
@@ -3453,27 +3504,65 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                                   🔗 #{m.person_b_crm_id} <ExternalLink size={10} />
                                 </a>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => runCompatibilityCheck(m, m.person_b, m.person_b_crm_id, '', true)}
-                                disabled={loadingCompatId === m.id}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  fontSize: 10.5,
-                                  fontWeight: 700,
-                                  color: '#A594FD',
-                                  background: 'rgba(99, 91, 255, 0.14)',
-                                  border: '1px solid rgba(99, 91, 255, 0.35)',
-                                  padding: '2px 8px',
-                                  borderRadius: 5,
-                                  cursor: 'pointer'
-                                }}
-                                title="Ver análisis clínico de compatibilidad, Dealbreakers y Quick Notes IA"
-                              >
-                                {loadingCompatId === m.id ? '⏳ Analizando...' : '🧠 Compatibilidad & Quick Notes IA'}
-                              </button>
+                              {(() => {
+                                const hasScore = m.compatibility_score !== undefined && m.compatibility_score !== null
+                                const score = m.compatibility_score
+                                const verdict = m.compatibility_verdict || ''
+
+                                let btnBg, btnBorder, btnColor, btnText
+                                if (loadingCompatId === m.id) {
+                                  btnBg = isLight ? '#F1F5F9' : 'rgba(255,255,255,0.08)'
+                                  btnBorder = isLight ? '1px solid #CBD5E1' : '1px solid rgba(255,255,255,0.15)'
+                                  btnColor = isLight ? '#475569' : '#CBD5E1'
+                                  btnText = '⏳ Analizando...'
+                                } else if (hasScore) {
+                                  if (score >= 70) {
+                                    btnBg = isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.16)'
+                                    btnBorder = isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.4)'
+                                    btnColor = isLight ? '#065F46' : '#34D399'
+                                  } else if (score >= 45) {
+                                    btnBg = isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.16)'
+                                    btnBorder = isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.4)'
+                                    btnColor = isLight ? '#92400E' : '#FBBF24'
+                                  } else {
+                                    btnBg = isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.16)'
+                                    btnBorder = isLight ? '1px solid #FCA5A5' : '1px solid rgba(239, 68, 68, 0.4)'
+                                    btnColor = isLight ? '#991B1B' : '#F87171'
+                                  }
+                                  const shortVerdict = verdict.length > 20 ? verdict.substring(0, 18) + '...' : verdict
+                                  btnText = `🧠 ${score}% • ${shortVerdict || 'Evaluado'}`
+                                } else {
+                                  btnBg = isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.14)'
+                                  btnBorder = isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.35)'
+                                  btnColor = isLight ? '#4338CA' : '#A594FD'
+                                  btnText = '🧠 Compatibilidad & Quick Notes IA'
+                                }
+
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => runCompatibilityCheck(m, m.person_b, m.person_b_crm_id, '', true)}
+                                    disabled={loadingCompatId === m.id}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 4,
+                                      fontSize: 10.5,
+                                      fontWeight: 700,
+                                      color: btnColor,
+                                      background: btnBg,
+                                      border: btnBorder,
+                                      padding: '2px 8px',
+                                      borderRadius: 5,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.15s ease'
+                                    }}
+                                    title={hasScore ? `Compatibilidad guardada: ${score}% (${verdict}). Clic para abrir análisis instantáneo.` : "Ver análisis clínico de compatibilidad, Dealbreakers y Quick Notes IA"}
+                                  >
+                                    {btnText}
+                                  </button>
+                                )
+                              })()}
                             </div>
                           )}
                         </div>
@@ -4379,6 +4468,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         const veredicto = canon.veredicto || ai.veredicto || (issues.length > 0 ? 'NO RECOMENDADO' : 'VIABLE')
         const sintesis = canon.sintesis_clinica || ai.analisis || ''
         const isIncompatible = !compData?.compatible || issues.length > 0 || veredicto === 'NO RECOMENDADO'
+        const isCached = Boolean(compData?.is_cached)
 
         return (
           <div
@@ -4392,8 +4482,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             <div
               onClick={e => e.stopPropagation()}
               style={{
-                background: 'var(--bg-card, #1A1214)',
-                border: `1.5px solid ${isIncompatible ? '#EF4444' : '#F59E0B'}`,
+                background: isLight ? '#FFFFFF' : 'var(--bg-card, #1A1214)',
+                border: isLight
+                  ? (isIncompatible ? '1.5px solid #EF4444' : '1.5px solid #F59E0B')
+                  : `1.5px solid ${isIncompatible ? '#EF4444' : '#F59E0B'}`,
                 borderRadius: 14,
                 width: '100%',
                 maxWidth: 840,
@@ -4401,16 +4493,20 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                boxShadow: '0 18px 48px rgba(0,0,0,0.75)'
+                boxShadow: isLight ? '0 24px 64px rgba(0,0,0,0.18)' : '0 18px 48px rgba(0,0,0,0.75)'
               }}
             >
               {/* Header */}
               <div style={{
                 padding: '16px 22px',
-                borderBottom: '1px solid var(--border-color)',
-                background: isIncompatible
-                  ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(26, 18, 20, 0.95) 100%)'
-                  : 'linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(26, 18, 20, 0.95) 100%)',
+                borderBottom: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                background: isLight
+                  ? (isIncompatible
+                      ? 'linear-gradient(135deg, #FEF2F2 0%, #FFFFFF 100%)'
+                      : 'linear-gradient(135deg, #FFFBEB 0%, #FFFFFF 100%)')
+                  : (isIncompatible
+                      ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(26, 18, 20, 0.95) 100%)'
+                      : 'linear-gradient(135deg, rgba(245, 158, 11, 0.16) 0%, rgba(26, 18, 20, 0.95) 100%)'),
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -4419,7 +4515,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div style={{
                     width: 42, height: 42, borderRadius: 10,
-                    background: isIncompatible ? 'rgba(239, 68, 68, 0.22)' : 'rgba(245, 158, 11, 0.22)',
+                    background: isLight
+                      ? (isIncompatible ? '#FEE2E2' : '#FEF3C7')
+                      : (isIncompatible ? 'rgba(239, 68, 68, 0.22)' : 'rgba(245, 158, 11, 0.22)'),
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 22
                   }}>
@@ -4427,37 +4525,59 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                   </div>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
+                      <h3 style={{
+                        margin: 0,
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: isLight ? (isIncompatible ? '#991B1B' : '#92400E') : 'var(--text-primary)'
+                      }}>
                         {isIncompatible
                           ? 'Incompatibilidad / Dealbreaker Detectado entre Perfiles'
                           : 'Evaluación de Afinidad Factual 360°'}
                       </h3>
                       <span style={{
                         padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 800,
-                        background: afinidadScore >= 70 ? 'rgba(16, 185, 129, 0.2)' : afinidadScore >= 45 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.25)',
-                        color: afinidadScore >= 70 ? '#10B981' : afinidadScore >= 45 ? '#F59E0B' : '#EF4444'
+                        background: isLight
+                          ? (afinidadScore >= 70 ? '#ECFDF5' : afinidadScore >= 45 ? '#FFFBEB' : '#FEF2F2')
+                          : (afinidadScore >= 70 ? 'rgba(16, 185, 129, 0.2)' : afinidadScore >= 45 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(239, 68, 68, 0.25)'),
+                        color: isLight
+                          ? (afinidadScore >= 70 ? '#065F46' : afinidadScore >= 45 ? '#92400E' : '#991B1B')
+                          : (afinidadScore >= 70 ? '#10B981' : afinidadScore >= 45 ? '#F59E0B' : '#EF4444'),
+                        border: isLight
+                          ? (afinidadScore >= 70 ? '1px solid #A7F3D0' : afinidadScore >= 45 ? '1px solid #FCD34D' : '1px solid #FCA5A5')
+                          : 'none'
                       }}>
                         Afinidad Factual: {afinidadScore}% • {veredicto}
                       </span>
                       <span style={{
                         padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
-                        background: 'rgba(99, 91, 255, 0.15)',
-                        color: '#A594FD',
-                        border: '1px solid rgba(99, 91, 255, 0.3)'
+                        background: isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.15)',
+                        color: isLight ? '#3730A3' : '#A594FD',
+                        border: isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.3)'
                       }}>
                         📊 Ficha Evaluada: {coveragePct}%
                       </span>
+                      {isCached && (
+                        <span style={{
+                          padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                          background: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.08)',
+                          color: isLight ? '#475569' : '#CBD5E1',
+                          border: isLight ? '1px solid #CBD5E1' : '1px solid rgba(255, 255, 255, 0.15)'
+                        }}>
+                          ⚡ Guardado en BD
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                    <div style={{ fontSize: 12, color: isLight ? '#475569' : 'var(--text-secondary)', marginTop: 3 }}>
                       <strong>{pA.name || matchRow?.person_a}</strong> (Psic. {pA.psychologist || matchRow?.psychologist_name || '—'})
                       {' × '}
-                      <strong>{pB.name || matchRow?.person_b}</strong> (Psic. B: <strong style={{ color: '#ff7ac6' }}>{pB.psychologist || 'Sin asignar'}</strong>)
+                      <strong>{pB.name || matchRow?.person_b}</strong> (Psic. B: <strong style={{ color: isLight ? '#B8324F' : '#ff7ac6' }}>{pB.psychologist || 'Sin asignar'}</strong>)
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={() => setCompatibilityModalData(null)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 4 }}
+                  style={{ background: 'none', border: 'none', color: isLight ? '#64748B' : 'var(--text-secondary)', cursor: 'pointer', padding: 4 }}
                 >
                   <X size={20} />
                 </button>
@@ -4468,20 +4588,33 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 {/* 1. Motivos de Incompatibilidad / Alertas Reales */}
                 {(issues.length > 0 || discrepancias.length > 0) && (
                   <div style={{
-                    background: issues.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.08)',
-                    border: `1px solid ${issues.length > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.35)'}`,
+                    background: isLight
+                      ? (issues.length > 0 ? '#FEF2F2' : '#FFFBEB')
+                      : (issues.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.08)'),
+                    border: isLight
+                      ? (issues.length > 0 ? '1px solid #FCA5A5' : '1px solid #FCD34D')
+                      : `1px solid ${issues.length > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(245, 158, 11, 0.35)'}`,
                     borderRadius: 10,
                     padding: '12px 16px'
                   }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: issues.length > 0 ? '#F87171' : '#FBBF24', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <div style={{
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      color: isLight
+                        ? (issues.length > 0 ? '#991B1B' : '#92400E')
+                        : (issues.length > 0 ? '#F87171' : '#FBBF24'),
+                      marginBottom: 8,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.04em'
+                    }}>
                       ⚠️ {issues.length > 0 ? 'Bloqueos e Incompatibilidades Reales' : 'Discrepancias y Reservas Clínicas Detectadas'}
                     </div>
-                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text-primary)' }}>
+                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
                       {issues.map((iss, idx) => (
-                        <li key={`iss-${idx}`} style={{ color: '#FCA5A5', fontWeight: 700 }}>{iss}</li>
+                        <li key={`iss-${idx}`} style={{ color: isLight ? '#991B1B' : '#FCA5A5', fontWeight: 700 }}>{iss}</li>
                       ))}
                       {discrepancias.map((w, idx) => (
-                        <li key={`warn-${idx}`} style={{ color: '#FDE68A', fontWeight: 600 }}>{w}</li>
+                        <li key={`warn-${idx}`} style={{ color: isLight ? '#92400E' : '#FDE68A', fontWeight: 600 }}>{w}</li>
                       ))}
                     </ul>
                   </div>
@@ -4490,15 +4623,15 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 {/* 2. Coincidencias Verificadas (Solo datos confirmados) */}
                 {coincidencias.length > 0 && (
                   <div style={{
-                    background: 'rgba(16, 185, 129, 0.08)',
-                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    background: isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.08)',
+                    border: isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.35)',
                     borderRadius: 10,
                     padding: '12px 16px'
                   }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#34D399', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: isLight ? '#065F46' : '#34D399', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       ✅ Coincidencias y Afinidades Verificadas (Solo datos confirmados)
                     </div>
-                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#D1FAE5' }}>
+                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: isLight ? '#065F46' : '#D1FAE5' }}>
                       {coincidencias.map((c, idx) => (
                         <li key={`coinc-${idx}`} style={{ fontWeight: 600 }}>{c}</li>
                       ))}
@@ -4509,15 +4642,15 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 {/* 3. Pendiente por Validar en Entrevista */}
                 {pendientes.length > 0 && (
                   <div style={{
-                    background: 'rgba(99, 102, 241, 0.09)',
-                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    background: isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.09)',
+                    border: isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 102, 241, 0.35)',
                     borderRadius: 10,
                     padding: '12px 16px'
                   }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#818CF8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: isLight ? '#3730A3' : '#818CF8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       ❓ Pendiente por Validar en Entrevista (Datos no registrados en ficha)
                     </div>
-                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: '#E0E7FF' }}>
+                    <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 5, fontSize: 13, color: isLight ? '#312E81' : '#E0E7FF' }}>
                       {pendientes.map((p, idx) => (
                         <li key={`pend-${idx}`} style={{ fontWeight: 600 }}>{p}</li>
                       ))}
@@ -4528,15 +4661,17 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                 {/* 4. Síntesis Clínica Enjaulada */}
                 {sintesis && (
                   <div style={{
-                    background: 'linear-gradient(135deg, rgba(150, 21, 0, 0.15) 0%, rgba(26, 18, 20, 0.8) 100%)',
-                    border: '1px solid rgba(184, 50, 79, 0.4)',
+                    background: isLight
+                      ? 'linear-gradient(135deg, #FFF1F2 0%, #FFFFFF 100%)'
+                      : 'linear-gradient(135deg, rgba(150, 21, 0, 0.15) 0%, rgba(26, 18, 20, 0.8) 100%)',
+                    border: isLight ? '1px solid rgba(150, 21, 0, 0.2)' : '1px solid rgba(184, 50, 79, 0.4)',
                     borderRadius: 10,
                     padding: '12px 16px'
                   }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ff7ac6', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: isLight ? '#961500' : '#ff7ac6', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                       ✨ Síntesis Clínica Enjaulada (Cero Alucinación)
                     </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-line' }}>
+                    <div style={{ fontSize: 13, lineHeight: 1.6, color: isLight ? '#1F1012' : 'var(--text-primary)', whiteSpace: 'pre-line' }}>
                       {sintesis}
                     </div>
                   </div>
@@ -4548,8 +4683,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                     <div
                       key={idx}
                       style={{
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid var(--border-color)',
+                        background: isLight ? '#F8FAFC' : 'rgba(255,255,255,0.03)',
+                        border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
                         borderRadius: 10,
                         padding: '12px 14px',
                         display: 'flex',
@@ -4558,7 +4693,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: isLight ? '#64748B' : 'var(--text-muted)', letterSpacing: '0.05em' }}>
                           {side.label}
                         </span>
                         {side.data.crm_id && (
@@ -4572,32 +4707,32 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                           </a>
                         )}
                       </div>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: isLight ? '#0F172A' : 'var(--text-primary)' }}>
                         {side.data.name || side.fallbackName || '—'}
                       </div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11.5 }}>
-                        <span style={{ background: 'rgba(184, 50, 79, 0.14)', color: '#ff7ac6', padding: '2px 7px', borderRadius: 5, fontWeight: 700 }}>
+                        <span style={{ background: 'rgba(184, 50, 79, 0.14)', color: isLight ? '#B8324F' : '#ff7ac6', padding: '2px 7px', borderRadius: 5, fontWeight: 700 }}>
                           Psicóloga: {side.data.psychologist || (idx === 0 ? matchRow?.psychologist_name : 'Sin asignar')}
                         </span>
-                        {side.data.age && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>{side.data.age} años</span>}
-                        {side.data.city && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>📍 {side.data.city}</span>}
-                        {side.data.orientation && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>💘 {side.data.orientation}</span>}
-                        {side.data.plan_tier && <span style={{ background: 'rgba(255,255,255,0.07)', padding: '2px 7px', borderRadius: 5 }}>🏷️ {side.data.plan_tier}</span>}
+                        {side.data.age && <span style={{ background: isLight ? '#F1F5F9' : 'rgba(255,255,255,0.07)', color: isLight ? '#1E293B' : 'inherit', border: isLight ? '1px solid #E2E8F0' : 'none', padding: '2px 7px', borderRadius: 5 }}>{side.data.age} años</span>}
+                        {side.data.city && <span style={{ background: isLight ? '#F1F5F9' : 'rgba(255,255,255,0.07)', color: isLight ? '#1E293B' : 'inherit', border: isLight ? '1px solid #E2E8F0' : 'none', padding: '2px 7px', borderRadius: 5 }}>📍 {side.data.city}</span>}
+                        {side.data.orientation && <span style={{ background: isLight ? '#F1F5F9' : 'rgba(255,255,255,0.07)', color: isLight ? '#1E293B' : 'inherit', border: isLight ? '1px solid #E2E8F0' : 'none', padding: '2px 7px', borderRadius: 5 }}>💘 {side.data.orientation}</span>}
+                        {side.data.plan_tier && <span style={{ background: isLight ? '#F1F5F9' : 'rgba(255,255,255,0.07)', color: isLight ? '#1E293B' : 'inherit', border: isLight ? '1px solid #E2E8F0' : 'none', padding: '2px 7px', borderRadius: 5 }}>🏷️ {side.data.plan_tier}</span>}
                       </div>
                       <div style={{
                         marginTop: 4,
                         padding: '8px 10px',
-                        background: 'rgba(0,0,0,0.28)',
+                        background: isLight ? '#FFFFFF' : 'rgba(0,0,0,0.28)',
                         borderRadius: 8,
-                        border: '1px solid rgba(255,255,255,0.06)',
+                        border: isLight ? '1px solid #CBD5E1' : '1px solid rgba(255,255,255,0.06)',
                         fontSize: 12,
-                        color: 'var(--text-secondary)',
+                        color: isLight ? '#334155' : 'var(--text-secondary)',
                         maxHeight: 140,
                         overflowY: 'auto',
                         whiteSpace: 'pre-line',
                         lineHeight: 1.45
                       }}>
-                        <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, color: isLight ? '#64748B' : 'var(--text-muted)', marginBottom: 4 }}>
                           📋 QUICK NOTES & OBSERVACIONES CLÍNICAS:
                         </div>
                         {side.data.quick_notes || 'Sin Quick Notes registradas en ficha.'}
@@ -4610,32 +4745,56 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               {/* Footer Actions */}
               <div style={{
                 padding: '14px 22px',
-                borderTop: '1px solid var(--border-color)',
-                background: 'rgba(0,0,0,0.25)',
+                borderTop: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
+                background: isLight ? '#F8FAFC' : 'rgba(0,0,0,0.25)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: 12
               }}>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setCompatibilityModalData(null)
-                    await handleUpdateField(matchId, 'person_b', '', matchRow, true)
-                  }}
-                  style={{
-                    padding: '9px 16px',
-                    borderRadius: 8,
-                    border: '1px solid rgba(239, 68, 68, 0.5)',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    color: '#FCA5A5',
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  🗑️ Descartar y Quitar Persona B
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setCompatibilityModalData(null)
+                      await handleUpdateField(matchId, 'person_b', '', matchRow, true)
+                    }}
+                    style={{
+                      padding: '9px 16px',
+                      borderRadius: 8,
+                      border: isLight ? '1px solid #FCA5A5' : '1px solid rgba(239, 68, 68, 0.5)',
+                      background: isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.15)',
+                      color: isLight ? '#991B1B' : '#FCA5A5',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑️ Descartar y Quitar Persona B
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runCompatibilityCheck(matchRow, pB.name || matchRow?.person_b, pB.crm_id || matchRow?.person_b_crm_id, '', true, true)}
+                    disabled={loadingCompatId === matchId}
+                    style={{
+                      padding: '9px 15px',
+                      borderRadius: 8,
+                      border: isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.4)',
+                      background: isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.15)',
+                      color: isLight ? '#3730A3' : '#A594FD',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                    title="Forzar re-ejecución del motor factual y LLM"
+                  >
+                    <RefreshCw size={13} className={loadingCompatId === matchId ? 'spin' : ''} />
+                    {loadingCompatId === matchId ? 'Re-analizando...' : '🔄 Re-analizar con IA'}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setCompatibilityModalData(null)}
