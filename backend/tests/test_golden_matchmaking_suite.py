@@ -528,6 +528,42 @@ class TestGoldenMatchmakingSuite(unittest.TestCase):
         self.assertEqual(res["veredicto"], "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)")
         self.assertEqual(res["score_factual"], 55)
 
+    def test_gt32_asymmetric_completeness_loophole_closed(self):
+        """GT-32: Pareja asimétrica (100% vs 0% o <40%) no debe promediar hacia un falso RECOMENDADO."""
+        p_full = {
+            "name": "Cliente Completo",
+            "completeness_pct": 100,
+            "verified_data": {
+                "edad": 30, "ciudad": "Bogotá", "genero": "Hombre", "orientacion": "Heterosexual",
+                "profesion": "Ingeniero", "hijos_actuales": "No", "deseo_hijos": "Sí",
+                "deporte_nivel": "Constante", "lenguaje_amor": "Tiempo de calidad"
+            },
+            "preferences": {}
+        }
+        p_empty = {
+            "name": "Cliente Vacío",
+            "completeness_pct": 0,
+            "verified_data": {},
+            "preferences": {}
+        }
+        res = compare_canonical_profiles(p_full, p_empty)
+        # Promedio daría 50% (>= 45%), pero la regla min_individual_coverage (< 40%) lo intercepta
+        self.assertEqual(res["coverage_pct"], 50)
+        self.assertEqual(res["min_individual_coverage"], 0)
+        self.assertEqual(res["veredicto"], "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)")
+        self.assertEqual(res["score_factual"], 55)
+
+        # Probar también con 35% (< 40%) frente a 100% (promedio 68%)
+        p_parcial = {
+            "name": "Cliente Parcial",
+            "completeness_pct": 35,
+            "verified_data": {"genero": "Mujer", "orientacion": "Heterosexual"},
+            "preferences": {}
+        }
+        res_parcial = compare_canonical_profiles(p_full, p_parcial)
+        self.assertEqual(res_parcial["veredicto"], "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)")
+        self.assertEqual(res_parcial["score_factual"], 55)
+
 
 if __name__ == "__main__":
     unittest.main()

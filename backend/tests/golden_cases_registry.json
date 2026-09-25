@@ -1,6 +1,6 @@
 {
-  "description": "Golden Test Suite - 31 Casos de Control Fijos para Validación y Detección de Regresiones en Matchmaking",
-  "version": "2.0",
+  "description": "Golden Test Suite - 32 Casos de Control Fijos para Validación y Detección de Regresiones en Matchmaking",
+  "version": "2.1",
   "test_cases": [
     {
       "id": "GT-01",
@@ -262,6 +262,15 @@
       "expected_strict_missing": ["ciudad", "estilo_apego", "deseo_hijos"],
       "expected_verdict": "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)",
       "expected_score": 55
+    },
+    {
+      "id": "GT-32",
+      "category": "MOTOR_FACTUAL_BLINDAJE_COMPLETITUD_ASIMETRICA",
+      "name": "Blindaje de Ficha Asimétrica (100% vs 0% o <40%)",
+      "description": "Una persona con ficha completa (100%) evaluada frente a una persona con ficha vacía (0% o <40%) produce un promedio de 50% (por encima del 45%). La regla dura de completitud individual (<40%) debe interceptar el caso forzando DATOS INSUFICIENTES (ENTREVISTA PENDIENTE) con score 55, impidiendo falsos RECOMENDADO.",
+      "expected_verdict": "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)",
+      "expected_score": 55,
+      "expected_min_individual_coverage": 0
     }
   ]
 }

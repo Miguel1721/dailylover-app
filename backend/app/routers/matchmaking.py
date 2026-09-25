@@ -4452,6 +4452,7 @@ def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict
 
     # Cobertura mutua de información
     coverage_pct = round((p_a["completeness_pct"] + p_b["completeness_pct"]) / 2)
+    min_individual_coverage = min(p_a.get("completeness_pct", 0), p_b.get("completeness_pct", 0))
 
     # Cálculo determinístico de afinidad factual
     if bloqueos:
@@ -4463,7 +4464,7 @@ def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict
     elif len(discrepancias) == 1:
         score = 68
         veredicto = "VIABLE BUENO (CON OBSERVACIÓN)"
-    elif coverage_pct < 45:
+    elif coverage_pct < 45 or min_individual_coverage < 40:
         score = 55
         veredicto = "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)"
     else:
@@ -4472,6 +4473,7 @@ def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict
 
     return {
         "coverage_pct": coverage_pct,
+        "min_individual_coverage": min_individual_coverage,
         "score_factual": score,
         "veredicto": veredicto,
         "bloqueos": bloqueos,
