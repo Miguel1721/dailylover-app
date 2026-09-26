@@ -9994,7 +9994,19 @@ async def find_candidate_matches_engine(
 
         cand_inferred_gender = r.gender or infer_gender_from_name_and_bio(cand_name, r.bio_notes or "")
         if not cand_inferred_gender or cand_inferred_gender == "No especificado":
-            cand_inferred_gender = "Hombre" if is_client_female else "Mujer"
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": cand_age,
+                "occupation": cand_occ,
+                "reasons": [
+                    f"Género no determinado para {cand_name}: no es posible determinar con certeza su género "
+                    "a partir de su ficha o nombre. Por favor registre el género manualmente en la ficha de "
+                    "SmartMatchApp (CRM) para habilitar a este candidato en el matchmaking y evitar asignaciones erróneas."
+                ],
+                "warnings": []
+            })
+            continue
 
         cand_payload = {
             "user_id": r.id,
