@@ -615,6 +615,7 @@ function HomeRoute() {
 }
 
 function AppContent() {
+  const navigate = useNavigate()
   const { token, user, isOriginalAdmin, previewRole, setPreviewRole, loading } = useAuth()
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark')
   const [showNequiModal, setShowNequiModal] = useState(false)

@@ -2501,6 +2501,8 @@ async def get_refund_categories():
 async def get_refunds_queue(
     status: Optional[str] = Query("REFUND"),
     search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -2509,7 +2511,17 @@ async def get_refunds_queue(
     Incluye datos de pago e identificador de Stripe para procesar devoluciones automáticas.
     """
     target_status = "REFUND DONE" if status and status.upper() == "REFUND DONE" else "REFUND"
-    query = """
+    where_clause = "WHERE m.status = :st"
+    params = {"st": target_status}
+
+    if search:
+        where_clause += " AND (m.person_a ILIKE :srch OR m.psychologist_name ILIKE :srch OR m.observations ILIKE :srch OR m.city ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    count_query = f"SELECT COUNT(*) FROM operational_matches m {where_clause}"
+    total_count = (await db.execute(text(count_query), params)).scalar() or 0
+
+    query = f"""
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier,
             m.status, m.observations, m.created_at, m.updated_at,
@@ -2524,16 +2536,12 @@ async def get_refunds_queue(
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN profiles pA ON pA.user_id = uA.id
         LEFT JOIN stripe_payments sp ON sp.stripe_payment_intent_id = COALESCE(m.stripe_payment_intent_id, pA.stripe_payment_intent_id)
-        WHERE m.status = :st
+        {where_clause}
+        ORDER BY m.updated_at DESC
+        LIMIT :limit OFFSET :offset
     """
-    params = {"st": target_status}
-
-    if search:
-        query += " AND (m.person_a ILIKE :srch OR m.psychologist_name ILIKE :srch OR m.observations ILIKE :srch OR m.city ILIKE :srch)"
-        params["srch"] = f"%{search.strip()}%"
-
-    query += " ORDER BY m.updated_at DESC"
-    res = await db.execute(text(query), params)
+    query_params = {**params, "limit": limit, "offset": offset}
+    res = await db.execute(text(query), query_params)
     rows = res.fetchall()
 
     refunds = []
@@ -2557,7 +2565,7 @@ async def get_refunds_queue(
             "refund_amount": float(d.get("refund_amount")) if d.get("refund_amount") is not None else None
         })
 
-    return {"refunds": refunds, "total": len(refunds)}
+    return {"refunds": refunds, "total": total_count}
 
 
 class StripeProcessRefundRequest(BaseModel):
@@ -2855,12 +2863,49 @@ async def get_confirmations(
     confirmation_a: Optional[str] = Query(None),
     confirmation_b: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna la lista unificada de matches de Servicio al Cliente con soporte para multifiltros y búsqueda global.
     """
-    query = """
+    where_sql = "WHERE 1=1"
+    params = {}
+
+    if stage and stage.lower() not in ("all", "todos", "todas"):
+        where_sql += " AND c.stage = :st"
+        params["st"] = stage.strip()
+
+    if psychologist and psychologist.lower() not in ("all", "todas"):
+        where_sql += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
+        params["psyc"] = psychologist.strip()
+
+    if city and city.lower() not in ("all", "todas"):
+        where_sql += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+
+    if confirmation_a and confirmation_a.lower() not in ("all", "todas", "todos"):
+        where_sql += " AND c.person_a_confirmation = :conf_a"
+        params["conf_a"] = confirmation_a.strip()
+
+    if confirmation_b and confirmation_b.lower() not in ("all", "todas", "todos"):
+        where_sql += " AND c.person_b_confirmation = :conf_b"
+        params["conf_b"] = confirmation_b.strip()
+
+    if search:
+        where_sql += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.psychologist_name ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    count_query = f"""
+        SELECT COUNT(*)
+        FROM match_confirmations c
+        JOIN operational_matches m ON m.id = c.match_id
+        {where_sql}
+    """
+    total_count = (await db.execute(text(count_query), params)).scalar() or 0
+
+    query = f"""
         SELECT 
             c.id AS confirmation_id, c.match_id, c.person_a_confirmation, c.person_b_confirmation,
             c.stage, c.pause_reason, c.created_at AS date_approved, c.updated_at,
@@ -2872,37 +2917,13 @@ async def get_confirmations(
         JOIN operational_matches m ON m.id = c.match_id
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE 1=1
+        {where_sql}
+        ORDER BY c.updated_at DESC, c.id DESC
+        LIMIT :limit OFFSET :offset
     """
-    params = {}
 
-    if stage and stage.lower() not in ("all", "todos", "todas"):
-        query += " AND c.stage = :st"
-        params["st"] = stage.strip()
-
-    if psychologist and psychologist.lower() not in ("all", "todas"):
-        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
-        params["psyc"] = psychologist.strip()
-
-    if city and city.lower() not in ("all", "todas"):
-        query += " AND m.city ILIKE :city"
-        params["city"] = f"%{city.strip()}%"
-
-    if confirmation_a and confirmation_a.lower() not in ("all", "todas", "todos"):
-        query += " AND c.person_a_confirmation = :conf_a"
-        params["conf_a"] = confirmation_a.strip()
-
-    if confirmation_b and confirmation_b.lower() not in ("all", "todas", "todos"):
-        query += " AND c.person_b_confirmation = :conf_b"
-        params["conf_b"] = confirmation_b.strip()
-
-    if search:
-        query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.psychologist_name ILIKE :srch)"
-        params["srch"] = f"%{search.strip()}%"
-
-    query += " ORDER BY c.updated_at DESC, c.id DESC"
-
-    result = await db.execute(text(query), params)
+    query_params = {**params, "limit": limit, "offset": offset}
+    result = await db.execute(text(query), query_params)
     rows = result.fetchall()
 
     confirmations = []
@@ -2928,7 +2949,7 @@ async def get_confirmations(
             "fecha_aprobado": d.get("date_approved").strftime("%Y-%m-%d %H:%M") if d.get("date_approved") else ""
         })
 
-    return {"confirmations": confirmations, "stage": stage, "total": len(confirmations)}
+    return {"confirmations": confirmations, "stage": stage, "total": total_count}
 
 
 @router.patch("/confirmations/{confirmation_id}")
@@ -6254,13 +6275,35 @@ async def get_matches_scheduled(
     search: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     timeframe: Optional[str] = Query("all"),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna los matches agendados y confirmados (Zona Superior de MATCHES),
     con clasificación de citas pasadas, de hoy y futuras.
     """
-    query = """
+    where_sql = """
+        WHERE (c.scheduled_date IS NOT NULL
+           OR c.stage IN ('cita confirmada', 'DATE PROGRAMADO', 'cita realizada', 'match', 'MATCH DONE'))
+    """
+    params = {}
+    if city and city.lower() not in ("all", "todas"):
+        where_sql += " AND m.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+    if search:
+        where_sql += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR c.venue_name ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    count_query = f"""
+        SELECT COUNT(*)
+        FROM match_confirmations c
+        JOIN operational_matches m ON m.id = c.match_id
+        {where_sql}
+    """
+    total_count = (await db.execute(text(count_query), params)).scalar() or 0
+
+    query = f"""
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier,
             c.scheduled_date, c.venue_name, c.stage, c.observations AS cs_notes,
@@ -6269,19 +6312,12 @@ async def get_matches_scheduled(
         JOIN operational_matches m ON m.id = c.match_id
         LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
         LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE c.scheduled_date IS NOT NULL
-           OR c.stage IN ('cita confirmada', 'DATE PROGRAMADO', 'cita realizada', 'match', 'MATCH DONE')
+        {where_sql}
+        ORDER BY c.scheduled_date ASC, c.id DESC
+        LIMIT :limit OFFSET :offset
     """
-    params = {}
-    if city and city.lower() not in ("all", "todas"):
-        query += " AND m.city ILIKE :city"
-        params["city"] = f"%{city.strip()}%"
-    if search:
-        query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR c.venue_name ILIKE :srch)"
-        params["srch"] = f"%{search.strip()}%"
-
-    query += " ORDER BY c.scheduled_date ASC, c.id DESC"
-    res = await db.execute(text(query), params)
+    query_params = {**params, "limit": limit, "offset": offset}
+    res = await db.execute(text(query), query_params)
     rows = res.fetchall()
 
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -6313,7 +6349,7 @@ async def get_matches_scheduled(
             "cs_notes": d.get("cs_notes") or ""
         })
 
-    return {"matches": scheduled, "total": len(scheduled)}
+    return {"matches": scheduled, "total": total_count}
 
 
 @router.get("/matches/cross-approvals")
@@ -6514,12 +6550,34 @@ async def get_accepted_dates(
     venue: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna la lista de 'Citas Aceptadas' (piloto en paralelo con MATCHES).
     """
-    query = """
+    where_sql = "WHERE 1=1"
+    params = {}
+    if city and city.lower() not in ("all", "todas"):
+        where_sql += " AND s.city ILIKE :city"
+        params["city"] = f"%{city.strip()}%"
+    if venue and venue.lower() not in ("all", "todos"):
+        where_sql += " AND s.venue ILIKE :ven"
+        params["ven"] = f"%{venue.strip()}%"
+    if search:
+        where_sql += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    count_query = f"""
+        SELECT COUNT(*)
+        FROM scheduled_dates s
+        LEFT JOIN operational_matches m ON m.id = s.match_id
+        {where_sql}
+    """
+    total_count = (await db.execute(text(count_query), params)).scalar() or 0
+
+    query = f"""
         SELECT 
             s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city,
             s.reservation_name, s.reservation_confirmed, s.had_date, s.feedback, s.reschedule,
@@ -6527,21 +6585,12 @@ async def get_accepted_dates(
             m.psychologist_name, m.status as match_status
         FROM scheduled_dates s
         LEFT JOIN operational_matches m ON m.id = s.match_id
-        WHERE 1=1
+        {where_sql}
+        ORDER BY s.updated_at DESC, s.id DESC
+        LIMIT :limit OFFSET :offset
     """
-    params = {}
-    if city and city.lower() not in ("all", "todas"):
-        query += " AND s.city ILIKE :city"
-        params["city"] = f"%{city.strip()}%"
-    if venue and venue.lower() not in ("all", "todos"):
-        query += " AND s.venue ILIKE :ven"
-        params["ven"] = f"%{venue.strip()}%"
-    if search:
-        query += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch)"
-        params["srch"] = f"%{search.strip()}%"
-
-    query += " ORDER BY s.updated_at DESC, s.id DESC"
-    res = await db.execute(text(query), params)
+    query_params = {**params, "limit": limit, "offset": offset}
+    res = await db.execute(text(query), query_params)
     rows = res.fetchall()
 
     items = []
@@ -6564,7 +6613,7 @@ async def get_accepted_dates(
 
     return {
         "dates": items,
-        "total": len(items)
+        "total": total_count
     }
 
 

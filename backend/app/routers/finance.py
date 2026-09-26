@@ -22,10 +22,15 @@ async def list_income(
     end_date: Optional[date] = Query(None),
     category: Optional[str] = Query(None),
     event_id: Optional[int] = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("ingresos", "view"))
 ):
-    """List income records with filters."""
+    """List income records with filters, default 90 days range and pagination."""
+    if start_date is None and end_date is None:
+        start_date = date.today() - timedelta(days=90)
+
     query = """
         SELECT ir.id, ir.event_id, ir.category, ir.description, ir.amount, ir.payment_method, ir.received_at, ir.created_at, ev.name as event_name
         FROM income_records ir
@@ -35,12 +40,15 @@ async def list_income(
           AND (CAST(:category AS VARCHAR) IS NULL OR ir.category = :category)
           AND (CAST(:event_id AS INTEGER) IS NULL OR ir.event_id = :event_id)
         ORDER BY ir.received_at DESC, ir.created_at DESC
+        LIMIT :limit OFFSET :offset
     """
     res = await db.execute(text(query), {
         "start_date": start_date,
         "end_date": end_date,
         "category": category,
-        "event_id": event_id
+        "event_id": event_id,
+        "limit": limit,
+        "offset": offset
     })
     return [
         IncomeOut(
@@ -101,10 +109,15 @@ async def list_expenses(
     end_date: Optional[date] = Query(None),
     category: Optional[str] = Query(None),
     event_id: Optional[int] = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("gastos", "view"))
 ):
-    """List expense records with filters."""
+    """List expense records with filters, default 90 days range and pagination."""
+    if start_date is None and end_date is None:
+        start_date = date.today() - timedelta(days=90)
+
     query = """
         SELECT er.id, er.event_id, er.category, er.description, er.amount, er.payment_method, er.paid_at, er.created_at, er.is_recurring, ev.name as event_name
         FROM expense_records er
@@ -114,12 +127,15 @@ async def list_expenses(
           AND (CAST(:category AS VARCHAR) IS NULL OR er.category = :category)
           AND (CAST(:event_id AS INTEGER) IS NULL OR er.event_id = :event_id)
         ORDER BY er.paid_at DESC, er.created_at DESC
+        LIMIT :limit OFFSET :offset
     """
     res = await db.execute(text(query), {
         "start_date": start_date,
         "end_date": end_date,
         "category": category,
-        "event_id": event_id
+        "event_id": event_id,
+        "limit": limit,
+        "offset": offset
     })
     return [
         ExpenseOut(

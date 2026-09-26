@@ -22,10 +22,15 @@ jobs:
       - name: 🌐 Agregar servidor a known_hosts
         run: ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: ⚙️ Build Admin Panel
+      - name: 🔍 Lint Admin Panel
         run: |
           cd frontend/admin
           npm ci
+          npm run lint
+
+      - name: ⚙️ Build Admin Panel
+        run: |
+          cd frontend/admin
           npm run build
 
       - name: 📱 Build App Cliente (PWA)

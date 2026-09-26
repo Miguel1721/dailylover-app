@@ -372,11 +372,13 @@ async def delete_admin_form_field(
 @router.get("/blind-date-responses", response_model=List[BlindDateResponseDetail])
 async def list_admin_responses(
     city: Optional[str] = None,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Listar respuestas de Blind Date con descifrado y Registro en Audit Log.
+    Listar respuestas de Blind Date con descifrado, paginación y Registro en Audit Log.
     """
     user_email = current_user.get("email", "admin@dailylover.com")
 
@@ -386,16 +388,16 @@ async def list_admin_responses(
         VALUES (:email, 'LIST_RESPONSES', CAST(:details AS jsonb));
     """), {
         "email": user_email,
-        "details": f'{{"city_filter": "{city or "all"}"}}'
+        "details": f'{{"city_filter": "{city or "all"}", "limit": {limit}, "offset": {offset}}}'
     })
     await db.commit()
 
     if city and city != "all":
-        sql = "SELECT * FROM blind_date_responses WHERE deleted_at IS NULL AND city_id = :city ORDER BY submitted_at DESC;"
-        result = await db.execute(text(sql), {"city": city})
+        sql = "SELECT * FROM blind_date_responses WHERE deleted_at IS NULL AND city_id = :city ORDER BY submitted_at DESC LIMIT :limit OFFSET :offset;"
+        result = await db.execute(text(sql), {"city": city, "limit": limit, "offset": offset})
     else:
-        sql = "SELECT * FROM blind_date_responses WHERE deleted_at IS NULL ORDER BY submitted_at DESC;"
-        result = await db.execute(text(sql))
+        sql = "SELECT * FROM blind_date_responses WHERE deleted_at IS NULL ORDER BY submitted_at DESC LIMIT :limit OFFSET :offset;"
+        result = await db.execute(text(sql), {"limit": limit, "offset": offset})
 
     rows = result.fetchall()
     responses = []

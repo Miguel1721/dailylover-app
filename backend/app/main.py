@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from app.config import get_settings, Settings
 from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking, scheduling, form_builder, work_time
 import structlog
@@ -99,6 +99,12 @@ async def add_security_headers(request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Cache immutable assets and uploaded media
+    path = request.url.path
+    if path.startswith("/admin/assets/") or path.startswith("/static/uploads/") or path.startswith("/app-preview/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+
     return response
 
 # ─── API ROUTES ───────────────────────────────────────────────────────────────
@@ -345,12 +351,22 @@ app.include_router(work_time.router)
 
 # ─── STATIC FILES (Admin Panel & App Preview) ─────────────────────────────────
 
+class CacheStaticFiles(StaticFiles):
+    def __init__(self, *args, cache_control="public, max-age=31536000, immutable", **kwargs):
+        self.cache_control = cache_control
+        super().__init__(*args, **kwargs)
+
+    def file_response(self, *args, **kwargs) -> Response:
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = self.cache_control
+        return resp
+
 ADMIN_STATIC = os.path.join(os.path.dirname(__file__), "static", "admin")
 APP_PREVIEW_STATIC = os.path.join(os.path.dirname(__file__), "static", "app-preview")
 UPLOADS_STATIC = os.path.join(os.path.dirname(__file__), "static", "uploads")
 IMAGES_STATIC = os.path.join(os.path.dirname(__file__), "static", "images")
 os.makedirs(UPLOADS_STATIC, exist_ok=True)
-app.mount("/static/uploads", StaticFiles(directory=UPLOADS_STATIC), name="static_uploads")
+app.mount("/static/uploads", CacheStaticFiles(directory=UPLOADS_STATIC), name="static_uploads")
 if os.path.isdir(IMAGES_STATIC):
     app.mount("/images", StaticFiles(directory=IMAGES_STATIC), name="static_images")
     app.mount("/admin/images", StaticFiles(directory=IMAGES_STATIC), name="admin_images")
@@ -371,8 +387,8 @@ async def serve_favicon():
     return Response(status_code=204)
 
 if os.path.isdir(ADMIN_STATIC):
-    # Mount static assets (JS, CSS, etc.)
-    app.mount("/admin/assets", StaticFiles(directory=os.path.join(ADMIN_STATIC, "assets")), name="admin_assets")
+    # Mount static assets (JS, CSS, etc.) with immutable long-term caching
+    app.mount("/admin/assets", CacheStaticFiles(directory=os.path.join(ADMIN_STATIC, "assets")), name="admin_assets")
 
     @app.get("/admin", include_in_schema=False)
     @app.get("/admin/", include_in_schema=False)
@@ -405,8 +421,8 @@ if os.path.isdir(ADMIN_STATIC):
         return {"error": "Admin panel not built yet. Run npm run build in frontend/admin/"}
 
 if os.path.isdir(APP_PREVIEW_STATIC):
-    # Mount static assets (JS, CSS, etc.)
-    app.mount("/app-preview/assets", StaticFiles(directory=os.path.join(APP_PREVIEW_STATIC, "assets")), name="app_preview_assets")
+    # Mount static assets (JS, CSS, etc.) with immutable long-term caching
+    app.mount("/app-preview/assets", CacheStaticFiles(directory=os.path.join(APP_PREVIEW_STATIC, "assets")), name="app_preview_assets")
 
     @app.get("/app-preview", include_in_schema=False)
     @app.get("/app-preview/", include_in_schema=False)

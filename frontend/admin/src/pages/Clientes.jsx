@@ -319,6 +319,8 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
               <img
                 src={cliente.photo_url}
                 alt={cliente.name}
+                loading="lazy"
+                decoding="async"
                 style={{ width: 60, height: 60, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--color-primary)' }}
               />
             ) : (
@@ -1451,6 +1453,8 @@ export default function Clientes() {
                         <img
                           src={u.photo_url}
                           alt={u.name}
+                          loading="lazy"
+                          decoding="async"
                           style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
                         />
                       ) : (
