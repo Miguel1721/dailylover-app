@@ -8319,7 +8319,7 @@ def evaluate_attachment_compatibility(style_a: str, style_b: str) -> dict:
     # Nunca asumir "seguro" cuando el estilo de apego de alguna de las dos personas no fue
     # evaluado por la psicóloga — eso infla artificialmente el score sin base clínica real.
     # Se reporta con score neutro (ni bonifica ni penaliza) y queda marcado como pendiente.
-    if not style_a or not style_b:
+    if not style_a or not style_b or str(style_a).strip().lower() in ("no especificado", "none") or str(style_b).strip().lower() in ("no especificado", "none"):
         return {
             "score": 0.50,
             "label": "Apego pendiente de evaluación clínica",
