@@ -9292,7 +9292,43 @@ async def find_candidate_matches_engine(
     Usado tanto por /interview-results como por los pipelines automáticos.
     """
     uid = client_summary.get("user_id")
-    client_city = (client_summary.get("city") if client_summary.get("city") else "Bogotá").strip()
+    client_city = (client_summary.get("city") or "").strip()
+
+    # REGLA ESTRICTA (ciudad): Prohibido asumir "Bogotá" ni ninguna otra ciudad por defecto si no
+    # se pudo determinar con certeza — la ciudad del cliente delimita todo el pool SQL de
+    # candidatos por zona geográfica, así que fabricarla desalinea el matching desde la raíz.
+    if not client_city or client_city.lower() in ["no especificado", "none", ""]:
+        msg_bloqueo_ciudad = (
+            f"Ciudad no determinada para {client_summary.get('name', 'el cliente')}: "
+            "no es posible determinar con certeza su ciudad de residencia a partir de su ficha. "
+            "Por favor registre la ciudad manualmente en la ficha de SmartMatchApp (CRM) "
+            "para habilitar el motor de matchmaking y evitar emparejamientos por zona incorrectos."
+        )
+        discarded_matches = [{
+            "user_id": client_summary.get("user_id"),
+            "name": client_summary.get("name"),
+            "reasons": [msg_bloqueo_ciudad]
+        }]
+        try:
+            client_p360 = ClinicalProfileExtractor.extract_full_profile_360(
+                client_summary.get("bio_notes", ""),
+                client_summary.get("lifestyle") or {},
+                client_summary.get("search_preferences") or {},
+                client_summary.get("apego") or {},
+                client_summary.get("name", ""),
+                client_summary.get("age"),
+                "No especificada",
+                client_summary.get("orientation") or "No especificado",
+                client_summary.get("estatura", ""),
+                client_summary.get("occupation", "")
+            )
+        except Exception:
+            client_p360 = {}
+        client_p360["ciudad_bloqueada"] = True
+        client_p360["motivo_bloqueo"] = msg_bloqueo_ciudad
+        client_p360["warning"] = msg_bloqueo_ciudad
+        return [], discarded_matches, client_p360
+
     raw_cg = (client_summary.get("gender") or "").strip()
     if not raw_cg or raw_cg.lower() in ["no especificado", "none", "", "genero no determinado", "género no determinado"]:
         raw_cg = infer_gender_from_name_and_bio(
@@ -9322,7 +9358,7 @@ async def find_candidate_matches_engine(
                 client_summary.get("apego") or {},
                 client_summary.get("name", ""),
                 client_summary.get("age"),
-                client_summary.get("city", "Bogotá"),
+                client_city,
                 "No especificado",
                 client_summary.get("estatura", ""),
                 client_summary.get("occupation", "")
@@ -9597,6 +9633,33 @@ async def find_candidate_matches_engine(
                 "warnings": []
             })
             continue
+
+        # Recuperación en vivo desde el histórico de webhooks del CRM: si a este candidato le
+        # faltan datos clave (ciudad, estatura, lifestyle, preferencias, lenguaje del amor) y
+        # tiene CRM ID, se intenta recuperar el dato real de SmartMatchApp antes de evaluarlo
+        # con información incompleta — el dato suele existir en el CRM, solo no se sincronizó.
+        if r.crm_id and (not r.city or not r.estatura or not r.lifestyle or not r.search_preferences or not r.love_language):
+            try:
+                await _sync_crm_id_from_webhooks(str(r.crm_id), db)
+                _refreshed = await db.execute(text("""
+                    SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
+                           p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
+                           p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+                           p.lifestyle, p.love_language,
+                           cep.social_group_score, cep.physical_activity_level, cep.education_level,
+                           cep.love_language_given, cep.love_language_received, cep.attachment_style,
+                           cep.non_negotiables, cep.synthesis_who_really_is
+                    FROM profiles p
+                    JOIN users u ON u.id = p.user_id
+                    LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
+                    WHERE u.id = :cid
+                    LIMIT 1
+                """), {"cid": r.id})
+                _refreshed_row = _refreshed.fetchone()
+                if _refreshed_row:
+                    r = _refreshed_row
+            except Exception as _e:
+                logger.warning(f"No se pudo sincronizar candidato CRM ID {r.crm_id} desde webhooks: {_e}")
 
         cand_bio_clean = (r.bio_notes or "").strip()
         cand_eval_age = int(r.age) if r.age else None
@@ -10378,6 +10441,32 @@ async def get_interview_results(
     """), {"uid": uid})
     prof_row = prof_res.fetchone()
 
+    # Si faltan campos clave del perfil (ciudad, estatura, lifestyle, preferencias, lenguaje del
+    # amor) y el cliente tiene CRM ID, recuperar los datos reales desde el histórico crudo de
+    # webhooks de SmartMatchApp ANTES de inferir o asumir cualquier valor por defecto. El dato
+    # suele existir en el CRM; lo que falla es que este perfil nunca se sincronizó con él.
+    _needs_wh_sync = (
+        not prof_row
+        or not prof_row.city
+        or not prof_row.estatura
+        or not prof_row.lifestyle
+        or not prof_row.search_preferences
+        or not prof_row.love_language
+    )
+    if _needs_wh_sync and getattr(user_row, "crm_id", None):
+        try:
+            await _sync_crm_id_from_webhooks(str(user_row.crm_id), db)
+            prof_res = await db.execute(text("""
+                SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.orientation, p.responsable,
+                       p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes, p.lifestyle
+                FROM profiles p
+                WHERE p.user_id = :uid
+                LIMIT 1
+            """), {"uid": uid})
+            prof_row = prof_res.fetchone() or prof_row
+        except Exception as _e:
+            logger.warning(f"No se pudo sincronizar CRM ID {user_row.crm_id} desde webhooks: {_e}")
+
     # 2. Perfil extendido (Formularios 1 y 2)
     ext_res = await db.execute(text("""
         SELECT * FROM client_extended_profile WHERE user_id = :uid
@@ -10385,9 +10474,12 @@ async def get_interview_results(
     ext_row = ext_res.fetchone()
     ext_data = dict(ext_row._mapping) if ext_row else {}
 
+    # REGLA ESTRICTA (ciudad): tras intentar la recuperación real desde el CRM, si la ciudad
+    # sigue sin poder determinarse, NO se asume "Bogotá" ni ninguna otra ciudad por defecto —
+    # se deja vacía y el motor de matching bloqueará el proceso pidiendo completar el dato.
     raw_cc = (prof_row.city if prof_row and prof_row.city else "").strip()
     if not raw_cc or raw_cc.lower() in ["no especificado", "none", ""]:
-        raw_cc = infer_city_from_text(prof_row.bio_notes if prof_row else "") or "Bogotá"
+        raw_cc = infer_city_from_text(prof_row.bio_notes if prof_row else "") or ""
     client_city = raw_cc
     raw_cg = (prof_row.gender if prof_row and prof_row.gender else "").strip()
     if not raw_cg or raw_cg.lower() in ["no especificado", "none", "", "genero no determinado", "género no determinado"]:
