@@ -80,8 +80,8 @@ export default function CustomerServiceDashboard() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      // 1. Citas del calendario real desde endpoint oficial
-      const resCitas = await fetch(`${API}/api/v1/matchmaking/calendar`, {
+      // 1. Citas del calendario real desde endpoint oficial (optimizado desde hoy hacia adelante)
+      const resCitas = await fetch(`${API}/api/v1/matchmaking/calendar?date_from=${todayStr}&sort_by=date_asc`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const dataCitas = resCitas.ok ? await resCitas.json() : {}

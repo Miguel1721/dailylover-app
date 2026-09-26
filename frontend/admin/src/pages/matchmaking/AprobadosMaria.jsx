@@ -52,7 +52,7 @@ export default function AprobadosMaria() {
   // 1. Cargar Cola de Revisión de María
   const fetchReviewQueue = useCallback(() => {
     setLoadingReview(true)
-    let url = `${API}/api/v1/matchmaking/approval-queue?`
+    let url = `${API}/api/v1/matchmaking/approval-queue?sort_by=oldest_first&`
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
@@ -76,7 +76,7 @@ export default function AprobadosMaria() {
   // 2. Cargar Cola de Servicio al Cliente (Aprobados por María)
   const fetchServiceQueue = useCallback(() => {
     setLoadingService(true)
-    let url = `${API}/api/v1/matchmaking/pending-service?`
+    let url = `${API}/api/v1/matchmaking/pending-service?sort_by=oldest_first&`
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`

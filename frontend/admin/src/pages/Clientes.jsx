@@ -1068,6 +1068,7 @@ export default function Clientes() {
   const [matchesFilter, setMatchesFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('active')
+  const [sortBy, setSortBy] = useState('oldest_first')
   const [darDeBajaTarget, setDarDeBajaTarget] = useState(null)
   const [quickCreateMode, setQuickCreateMode] = useState('vip')
   const [loading, setLoading] = useState(true)
@@ -1124,6 +1125,7 @@ export default function Clientes() {
     const params = new URLSearchParams({
       page,
       limit,
+      sort_by: sortBy,
       ...(search && { search }),
       ...(psychologistFilter !== 'all' && { responsable: psychologistFilter }),
       ...(notesFilter !== 'all' && { has_notes: notesFilter }),
@@ -1166,7 +1168,7 @@ export default function Clientes() {
         setTotal(0)
       })
       .finally(() => setLoading(false))
-  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, difficultFilter, statusFilter, token])
+  }, [page, search, psychologistFilter, notesFilter, cityFilter, matchesFilter, planFilter, difficultFilter, statusFilter, sortBy, token])
 
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
@@ -1390,6 +1392,16 @@ export default function Clientes() {
           >
             <option value="all">Todos los Casos</option>
             <option value="difficult_only">⚠️ Casos Complejos / Exigentes</option>
+          </select>
+
+          {/* Orden por fecha */}
+          <select
+            style={{ padding: '6px 10px', fontSize: 12, height: 36, width: 'fit-content', maxWidth: 'fit-content', background: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600 }}
+            value={sortBy}
+            onChange={e => { setSortBy(e.target.value); setPage(1) }}
+          >
+            <option value="oldest_first">⏳ Más antiguos primero</option>
+            <option value="recent_first">🕒 Más recientes primero</option>
           </select>
         </div>
 

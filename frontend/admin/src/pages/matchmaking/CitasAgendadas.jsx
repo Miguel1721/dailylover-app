@@ -14,13 +14,45 @@ import RestaurantFilterModal from '../../components/RestaurantFilterModal'
 import NoShowModal from '../../components/NoShowModal'
 import FeedbackModal from '../../components/FeedbackModal'
 
+const getTodayStr = () => {
+  const d = new Date()
+  return d.toISOString().slice(0, 10)
+}
+
+const getYesterdayStr = () => {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+const getTomorrowStr = () => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+const getThisWeekRange = () => {
+  const now = new Date()
+  const day = now.getDay()
+  const diffToMonday = (day === 0 ? -6 : 1) - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + diffToMonday)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  return {
+    from: monday.toISOString().slice(0, 10),
+    to: sunday.toISOString().slice(0, 10)
+  }
+}
+
 export default function CitasAgendadas() {
   const { token } = useAuth()
   const [calendarDates, setCalendarDates] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedCity, setSelectedCity] = useState('Todas')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [quickDateFilter, setQuickDateFilter] = useState('this_week')
+  const [dateFrom, setDateFrom] = useState(() => getThisWeekRange().from)
+  const [dateTo, setDateTo] = useState(() => getThisWeekRange().to)
   const [searchTerm, setSearchTerm] = useState('')
   const [savingId, setSavingId] = useState(null)
   const [copiedId, setCopiedId] = useState(null)
@@ -29,40 +61,8 @@ export default function CitasAgendadas() {
   const [noShowModalItem, setNoShowModalItem] = useState(null)
   const [feedbackModalItem, setFeedbackModalItem] = useState(null)
   const [waModalTarget, setWaModalTarget] = useState(null)
-  const [quickDateFilter, setQuickDateFilter] = useState('all')
   const [dispatchingFeedback, setDispatchingFeedback] = useState(false)
   const [singleSendingId, setSingleSendingId] = useState(null)
-
-  const getTodayStr = () => {
-    const d = new Date()
-    return d.toISOString().slice(0, 10)
-  }
-
-  const getYesterdayStr = () => {
-    const d = new Date()
-    d.setDate(d.getDate() - 1)
-    return d.toISOString().slice(0, 10)
-  }
-
-  const getTomorrowStr = () => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().slice(0, 10)
-  }
-
-  const getThisWeekRange = () => {
-    const now = new Date()
-    const day = now.getDay()
-    const diffToMonday = (day === 0 ? -6 : 1) - day
-    const monday = new Date(now)
-    monday.setDate(now.getDate() + diffToMonday)
-    const sunday = new Date(monday)
-    sunday.setDate(monday.getDate() + 6)
-    return {
-      from: monday.toISOString().slice(0, 10),
-      to: sunday.toISOString().slice(0, 10)
-    }
-  }
 
   const handleQuickDate = (type) => {
     setQuickDateFilter(type)
@@ -90,10 +90,11 @@ export default function CitasAgendadas() {
 
   const fetchCalendar = useCallback(() => {
     setLoading(true)
-    let url = `${API}/api/v1/matchmaking/calendar?`
+    let url = `${API}/api/v1/matchmaking/calendar?sort_by=date_asc&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (dateFrom) url += `date_from=${encodeURIComponent(dateFrom)}&`
     if (dateTo) url += `date_to=${encodeURIComponent(dateTo)}&`
+    if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }

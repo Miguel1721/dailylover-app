@@ -861,6 +861,7 @@ async def get_users(
     plan_tier: Optional[str] = Query(None),
     is_difficult: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("oldest_first"),
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_permission("clientes", "view"))
 ):
@@ -935,6 +936,7 @@ async def get_users(
         WHERE {where_str}
     """), params)).scalar() or 0
 
+    order_sql = "ORDER BY u.created_at ASC, u.id ASC" if sort_by in ("oldest_first", "asc") else "ORDER BY u.id DESC"
     rows = (await db.execute(text(f"""
         SELECT
             u.id, u.phone, u.name, u.created_at,
@@ -954,7 +956,7 @@ async def get_users(
         FROM users u
         LEFT JOIN profiles p ON p.user_id = u.id
         WHERE {where_str}
-        ORDER BY u.id DESC
+        {order_sql}
         LIMIT :limit OFFSET :offset
     """), params)).fetchall()
 

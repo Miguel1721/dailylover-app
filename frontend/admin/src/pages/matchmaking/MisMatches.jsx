@@ -1643,7 +1643,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   useEffect(() => {
     if (isOfficialMatches) {
       setApprovedFilter('yes')
-      setQuickFilter(prev => ['all', 'aprobados', 'vip', 'no_vip_agendar', 'pendientes_agendar', 'cita_programada', 'rechazados', 'pausa'].includes(prev) ? prev : 'aprobados')
+      setQuickFilter(prev => ['all', 'aprobados', 'vip', 'no_vip_agendar', 'pendientes_agendar', 'cita_programada', 'rechazados', 'pausa'].includes(prev) ? prev : 'no_vip_agendar')
     }
   }, [isOfficialMatches])
 
@@ -1662,8 +1662,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       const f = params.get('filter') || params.get('tab')
       if (f) return f
     }
-    return isOfficialMatches ? 'aprobados' : 'all'
+    return isOfficialMatches ? 'no_vip_agendar' : 'sin_b'
   })
+  const [serverCounts, setServerCounts] = useState(null)
   const [syncStatus, setSyncStatus] = useState('synced') // 'synced' | 'saving' | 'error'
 
   const toggleDensity = () => {
@@ -1700,7 +1701,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       .catch(e => console.error('Error fetching psychologists list:', e))
   }, [])
 
-  const [sortBy, setSortBy] = useState('recent_first')
+  const [sortBy, setSortBy] = useState('oldest_first')
   const [dateFilter, setDateFilter] = useState('all')
   const [approvalDateFilter, setApprovalDateFilter] = useState('')
 
@@ -1716,6 +1717,12 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     if (dateFilter && dateFilter !== 'all') url += `date_filter=${encodeURIComponent(dateFilter)}&`
     if (approvalDateFilter) url += `approved_date=${encodeURIComponent(approvalDateFilter)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
+    if (quickFilter && quickFilter !== 'all') {
+      url += `quick_filter=${encodeURIComponent(quickFilter)}&`
+    } else if (quickFilter === 'all') {
+      url += `all_matches=true&`
+    }
+    url += `page_size=300&`
 
     fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -1723,6 +1730,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       .then(r => r.json())
       .then(data => {
         setMatches(data.matches || [])
+        if (data.counts) {
+          setServerCounts(data.counts)
+        }
         if (data.cross_review_count !== undefined) {
           setCrossReviewCount(data.cross_review_count)
         }
@@ -1735,7 +1745,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         console.error('Error fetching matches:', err)
         setLoading(false)
       })
-  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, isOfficialMatches, sortBy, dateFilter, approvalDateFilter, searchTerm, token])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, isOfficialMatches, sortBy, dateFilter, approvalDateFilter, searchTerm, quickFilter, token])
 
   useEffect(() => {
     fetchMatches()
@@ -1867,10 +1877,10 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     return isStrictlyApprovedByMaria(m) && !checkHasScheduledVenueOrDate(m) && !checkIsRejectedMatch(m)
   })
 
-  const officialTotalCount = officialBaseMatches.length
-  const officialVipCount = officialBaseMatches.filter(m => checkIsVipMatch(m)).length
-  const officialNoVipAgendarCount = officialBaseMatches.filter(m => !checkIsVipMatch(m) && !checkIsPausedMatch(m)).length
-  const officialPausaCount = officialBaseMatches.filter(m => checkIsPausedMatch(m)).length
+  const officialTotalCount = serverCounts?.aprobados ?? officialBaseMatches.length
+  const officialVipCount = serverCounts?.vip ?? officialBaseMatches.filter(m => checkIsVipMatch(m)).length
+  const officialNoVipAgendarCount = serverCounts?.no_vip_agendar ?? officialBaseMatches.filter(m => !checkIsVipMatch(m) && !checkIsPausedMatch(m)).length
+  const officialPausaCount = serverCounts?.pausa ?? officialBaseMatches.filter(m => checkIsPausedMatch(m)).length
 
   const displayedMatches = (isOfficialMatches ? officialBaseMatches : ownershipFilteredMatches).filter(m => {
     if (!isOfficialMatches && approvalDateFilter) {
@@ -1896,13 +1906,13 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const paginatedMatches = displayedMatches.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   // Métricas para píldoras de acceso rápido (en vista de Psicóloga respetan Propios vs Heredados)
-  const totalCount = ownershipFilteredMatches.length
-  const prioritariosCount = ownershipFilteredMatches.filter(m => m.is_priority).length
+  const totalCount = serverCounts?.all ?? ownershipFilteredMatches.length
+  const prioritariosCount = serverCounts?.prioritarios ?? ownershipFilteredMatches.filter(m => m.is_priority).length
   const conNovedadCount = ownershipFilteredMatches.filter(m => Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)).length
-  const sinBCount = ownershipFilteredMatches.filter(m => !m.person_b || m.person_b.trim() === '').length
-  const listosCount = ownershipFilteredMatches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
-  const enPausaCount = ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
-  const aprobadosCount = ownershipFilteredMatches.filter(m => Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')).length
+  const sinBCount = serverCounts?.sin_b ?? ownershipFilteredMatches.filter(m => !m.person_b || m.person_b.trim() === '').length
+  const listosCount = serverCounts?.listos ?? ownershipFilteredMatches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
+  const enPausaCount = serverCounts?.pausa ?? ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
+  const aprobadosCount = serverCounts?.aprobados ?? ownershipFilteredMatches.filter(m => Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')).length
 
   const [isLight, setIsLight] = useState(() => {
     if (typeof document !== 'undefined') {
@@ -2980,6 +2990,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               outline: 'none'
             }}
           >
+            <option value="oldest_first">⏳ Más antiguos primero (Mayor espera)</option>
             <option value="recent_first">🕒 Más recientes primero (PROFILES arriba)</option>
             <option value="created_desc">📅 Por fecha de creación (Recientes)</option>
             <option value="sheet_order">📋 Orden Original Sheet</option>

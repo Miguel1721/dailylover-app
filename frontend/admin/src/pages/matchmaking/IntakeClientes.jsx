@@ -129,7 +129,7 @@ export default function IntakeClientes() {
   const [serverTotalPages, setServerTotalPages] = useState(1)
   const [currentPage, setCurrentPage] = useState(1)
   const [selectedDateFilter, setSelectedDateFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('recent_first')
+  const [sortBy, setSortBy] = useState('oldest_first')
   const pageSize = 50
 
   const fetchIntakeList = useCallback(() => {
@@ -614,9 +614,9 @@ export default function IntakeClientes() {
               outline: 'none'
             }}
           >
+            <option value="oldest_first">⏳ Más antiguos primero</option>
             <option value="recent_first">🕒 Más recientes primero (PROFILES)</option>
             <option value="sheet_order">📋 Orden Hoja (Sheet)</option>
-            <option value="created_asc">⏳ Más antiguos primero</option>
           </select>
         </div>
 

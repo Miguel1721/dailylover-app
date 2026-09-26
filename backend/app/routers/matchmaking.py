@@ -16,7 +16,10 @@ import re
 import json
 import asyncio
 import httpx
+import logging
 from urllib.parse import quote
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -444,9 +447,11 @@ async def get_my_matches(
     approved: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     view_mode: Optional[str] = Query("mine"),
-    sort_by: Optional[str] = Query("recent_first"),
+    sort_by: Optional[str] = Query("oldest_first"),
     date_filter: Optional[str] = Query(None),
     approved_date: Optional[str] = Query(None),
+    quick_filter: Optional[str] = Query(None),
+    all_matches: Optional[bool] = Query(False),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
@@ -584,12 +589,33 @@ async def get_my_matches(
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    if sort_by == "created_desc":
+    if quick_filter and quick_filter.lower() not in ("all", "todos"):
+        qf = quick_filter.strip().lower()
+        if qf in ("sin_b", "sin_candidato_b"):
+            query += " AND (m.person_b IS NULL OR TRIM(m.person_b) = '' OR LOWER(TRIM(m.person_b)) IN ('por definir', 'none', 'null', ''))"
+        elif qf == "listos":
+            query += " AND LOWER(COALESCE(m.status, '')) LIKE '%listo%' AND m.person_b IS NOT NULL AND TRIM(m.person_b) != ''"
+        elif qf == "prioritarios":
+            query += " AND m.is_priority = true"
+        elif qf == "novedades":
+            query += " AND COALESCE(csn.open_novedades_count, 0) > 0"
+        elif qf == "pausa":
+            query += " AND (UPPER(COALESCE(m.status, '')) LIKE '%PAUSA%' OR mc.stage IN ('en pausa', 'en_pausa') OR mc.person_a_confirmation IN ('De viaje', 'Pausa', 'Problema personal') OR mc.person_b_confirmation IN ('De viaje', 'Pausa', 'Problema personal'))"
+        elif qf == "aprobados":
+            query += " AND (m.approved_by_maria = true OR UPPER(COALESCE(m.status, '')) LIKE '%APROBADO%')"
+        elif qf == "no_vip_agendar":
+            query += " AND m.approved_by_maria = true AND (sd.venue IS NULL OR TRIM(sd.venue) = '' OR sd.venue ILIKE '%por definir%') AND (sd.date_time IS NULL OR TRIM(sd.date_time) = '' OR sd.date_time ILIKE '%por definir%') AND UPPER(COALESCE(m.plan_tier, '')) NOT LIKE '%VIP%'"
+        elif qf == "vip":
+            query += " AND m.approved_by_maria = true AND UPPER(COALESCE(m.plan_tier, '')) LIKE '%VIP%'"
+
+    if sort_by in ("oldest_first", "asc"):
+        query += " ORDER BY COALESCE(sp.payment_date, p.last_payment_date, m.created_at) ASC NULLS LAST, m.id ASC"
+    elif sort_by in ("recent_first", "created_desc", "desc"):
         query += " ORDER BY COALESCE(m.updated_at, m.created_at) DESC NULLS LAST, m.id DESC"
     elif sort_by == "sheet_order":
         query += " ORDER BY m.sheet_row_index ASC NULLS FIRST, m.id DESC"
     else:
-        query += " ORDER BY CASE WHEN m.sheet_row_index IS NULL THEN 0 ELSE 1 END ASC, CASE WHEN m.sheet_row_index IS NULL THEN m.id END DESC, m.sheet_row_index ASC, m.id DESC"
+        query += " ORDER BY COALESCE(sp.payment_date, p.last_payment_date, m.created_at) ASC NULLS LAST, m.id ASC"
 
     # Conteo de matches cruzados pendientes para esta psicóloga
     cross_count = 0
@@ -610,6 +636,71 @@ async def get_my_matches(
             cross_count = cross_res.scalar() or 0
         except Exception:
             cross_count = 0
+
+    # Conteo rápido para las píldoras de filtros
+    pills_counts = {
+        "all": 0, "sin_b": 0, "listos": 0, "prioritarios": 0,
+        "novedades": 0, "pausa": 0, "aprobados": 0,
+        "no_vip_agendar": 0, "vip": 0
+    }
+    try:
+        cnt_sql = """
+            SELECT 
+                COUNT(DISTINCT m.id) AS total_count,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.person_b IS NULL OR TRIM(m.person_b) = '' OR LOWER(TRIM(m.person_b)) IN ('por definir', 'none', 'null', '')) AS sin_b,
+                COUNT(DISTINCT m.id) FILTER (WHERE LOWER(COALESCE(m.status, '')) LIKE '%listo%' AND m.person_b IS NOT NULL AND TRIM(m.person_b) != '') AS listos,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.is_priority = true) AS prioritarios,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true OR UPPER(COALESCE(m.status, '')) LIKE '%APROBADO%') AS aprobados,
+                COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE '%PAUSA%' OR mc.stage IN ('en pausa', 'en_pausa')) AS pausa,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true AND (sd.venue IS NULL OR TRIM(sd.venue) = '' OR sd.venue ILIKE '%por definir%') AND UPPER(COALESCE(m.plan_tier, '')) NOT LIKE '%VIP%') AS no_vip_agendar,
+                COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true AND UPPER(COALESCE(m.plan_tier, '')) LIKE '%VIP%') AS vip
+            FROM operational_matches m
+            LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+            LEFT JOIN match_confirmations mc ON mc.match_id = m.id
+            WHERE (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
+        """
+        cnt_params = {}
+        if norm_psyc:
+            cond_s, cond_p = build_psychologist_sql_condition("m.psychologist_name", norm_psyc, "p_cnt", ownership_mode=ownership_mode or "all")
+            cnt_sql += f" AND {cond_s}"
+            cnt_params.update(cond_p)
+        if approved and approved.lower() in ("yes", "si", "sí", "true", "1", "aprobado"):
+            cnt_sql += " AND m.approved_by_maria = true AND m.person_b IS NOT NULL AND TRIM(m.person_b) != ''"
+        
+        c_res = await db.execute(text(cnt_sql), cnt_params)
+        c_row = c_res.fetchone()
+        if c_row:
+            cd = dict(c_row._mapping)
+            pills_counts = {
+                "all": cd.get("total_count") or 0,
+                "sin_b": cd.get("sin_b") or 0,
+                "listos": cd.get("listos") or 0,
+                "prioritarios": cd.get("prioritarios") or 0,
+                "pausa": cd.get("pausa") or 0,
+                "aprobados": cd.get("aprobados") or 0,
+                "no_vip_agendar": cd.get("no_vip_agendar") or 0,
+                "vip": cd.get("vip") or 0
+            }
+    except Exception as e:
+        logger.warning(f"Error computing pills counts: {e}")
+
+    # Determinar modo de paginación real
+    eff_page = page or 1
+    eff_page_size = page_size if page_size is not None else (None if all_matches else 50)
+    total_matches = None
+
+    if eff_page_size is not None:
+        try:
+            count_sql = f"SELECT COUNT(*) FROM ({query}) AS _subq"
+            count_res = await db.execute(text(count_sql), params)
+            total_matches = count_res.scalar() or 0
+        except Exception as e:
+            logger.warning(f"Error count in get_my_matches: {e}")
+            total_matches = 0
+
+        query += " LIMIT :page_limit OFFSET :page_offset"
+        params["page_limit"] = eff_page_size
+        params["page_offset"] = (eff_page - 1) * eff_page_size
 
     result = await db.execute(text(query), params)
     rows = result.fetchall()
@@ -781,25 +872,17 @@ async def get_my_matches(
     canonical_viewer = resolve_canonical_psychologist(norm_psyc) if norm_psyc else ""
     inherited_label = INHERITED_DISPLAY_LABELS.get(canonical_viewer)
 
-    total_matches = len(matches)
-    if page is not None and page_size is not None:
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        matches_slice = matches[start_idx:end_idx]
-        total_pages = max(1, (total_matches + page_size - 1) // page_size)
-        return {
-            "matches": matches_slice,
-            "total": total_matches,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "cross_review_count": cross_count,
-            "inherited_from_label": inherited_label
-        }
+    if total_matches is None:
+        total_matches = len(matches)
+    eff_pages = max(1, (total_matches + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
 
     return {
         "matches": matches,
         "total": total_matches,
+        "page": eff_page,
+        "page_size": eff_page_size or len(matches),
+        "total_pages": eff_pages,
+        "counts": pills_counts,
         "cross_review_count": cross_count,
         "inherited_from_label": inherited_label
     }
@@ -1560,7 +1643,7 @@ async def get_intake_list(
     plan_tier: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     date_filter: Optional[str] = Query(None),
-    sort_by: Optional[str] = Query("recent_first"),
+    sort_by: Optional[str] = Query("oldest_first"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
     db: AsyncSession = Depends(get_db)
@@ -1626,8 +1709,8 @@ async def get_intake_list(
     total_slots_created = stats_row.total_slots_created if stats_row else 0
 
     order_clause = "ORDER BY CASE WHEN MIN(m.sheet_row_index) IS NULL THEN 0 ELSE 1 END ASC, GREATEST(MAX(COALESCE(m.updated_at, m.created_at)), MAX(m.created_at)) DESC, MAX(m.id) DESC"
-    if sort_by == "created_asc":
-        order_clause = "ORDER BY MIN(m.created_at) ASC"
+    if sort_by in ("oldest_first", "created_asc", "asc"):
+        order_clause = "ORDER BY MIN(m.created_at) ASC, MAX(m.id) ASC"
     elif sort_by == "sheet_order":
         order_clause = "ORDER BY MIN(COALESCE(m.sheet_row_index, 0)) ASC, MAX(m.id) DESC"
 
@@ -2081,11 +2164,15 @@ async def get_approval_queue(
     city: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("oldest_first"),
+    all_items: Optional[bool] = Query(False),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna todos los matches en estado 'HECHO' que aún no han sido aprobados por María,
-    con soporte para multifiltros y CRM IDs.
+    ordenados de más antiguo a más reciente por defecto con paginación ultrarrápida.
     """
     query = """
         SELECT 
@@ -2134,7 +2221,27 @@ async def get_approval_queue(
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    query += " ORDER BY m.updated_at DESC"
+    if sort_by in ("oldest_first", "asc"):
+        query += " ORDER BY m.updated_at ASC, m.id ASC"
+    else:
+        query += " ORDER BY m.updated_at DESC, m.id DESC"
+
+    eff_page = page or 1
+    eff_page_size = page_size if page_size is not None else (None if all_items else 50)
+    total_items = None
+
+    if eff_page_size is not None:
+        try:
+            count_sql = f"SELECT COUNT(*) FROM ({query}) AS _subq"
+            count_res = await db.execute(text(count_sql), params)
+            total_items = count_res.scalar() or 0
+        except Exception as e:
+            logger.warning(f"Error count in get_approval_queue: {e}")
+            total_items = 0
+
+        query += " LIMIT :page_limit OFFSET :page_offset"
+        params["page_limit"] = eff_page_size
+        params["page_offset"] = (eff_page - 1) * eff_page_size
 
     result = await db.execute(text(query), params)
     rows = result.fetchall()
@@ -2157,7 +2264,17 @@ async def get_approval_queue(
             "plan_color": PLAN_COLORS.get(d.get("plan_tier"), "#F3F3F3")
         })
 
-    return {"queue": queue, "total": len(queue)}
+    if total_items is None:
+        total_items = len(queue)
+    total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
+
+    return {
+        "queue": queue,
+        "total": total_items,
+        "page": eff_page,
+        "page_size": eff_page_size or len(queue),
+        "total_pages": total_pages
+    }
 
 
 @router.post("/matches/{match_id}/approve")
@@ -3217,10 +3334,15 @@ async def get_calendar_dates(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("date_asc"),
+    all_dates: Optional[bool] = Query(False),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna la lista de citas agendadas con soporte para multifiltros, teléfonos y CRM IDs.
+    Retorna la lista de citas agendadas con soporte para multifiltros, teléfonos, CRM IDs,
+    orden cronológico ascendente por defecto y paginación ultrarrápida.
     """
     query = """
         SELECT 
@@ -3263,18 +3385,40 @@ async def get_calendar_dates(
         params["city"] = f"%{city.strip()}%"
 
     if date_from:
-        query += " AND s.created_at::date >= CAST(:d_from AS date)"
+        query += " AND (TO_CHAR(s.created_at, 'YYYY-MM-DD') >= :d_from OR (s.date_time ~ '^\\d{4}-\\d{2}-\\d{2}' AND substring(s.date_time, 1, 10) >= :d_from))"
         params["d_from"] = date_from.strip()[:10]
 
     if date_to:
-        query += " AND s.created_at::date <= CAST(:d_to AS date)"
+        query += " AND (TO_CHAR(s.created_at, 'YYYY-MM-DD') <= :d_to OR (s.date_time ~ '^\\d{4}-\\d{2}-\\d{2}' AND substring(s.date_time, 1, 10) <= :d_to))"
         params["d_to"] = date_to.strip()[:10]
 
     if search:
         query += " AND (s.person_a ILIKE :srch OR s.person_b ILIKE :srch OR s.venue ILIKE :srch OR s.city ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    query += " ORDER BY s.updated_at DESC, s.id DESC"
+    if sort_by in ("date_asc", "asc", "cronologico"):
+        query += " ORDER BY CASE WHEN s.date_time ~ '^\\d{4}-\\d{2}-\\d{2}' THEN s.date_time ELSE '9999-12-31' END ASC, s.created_at ASC, s.id ASC"
+    elif sort_by in ("recent_first", "updated_desc", "desc"):
+        query += " ORDER BY s.updated_at DESC, s.id DESC"
+    else:
+        query += " ORDER BY CASE WHEN s.date_time ~ '^\\d{4}-\\d{2}-\\d{2}' THEN s.date_time ELSE '9999-12-31' END ASC, s.created_at ASC, s.id ASC"
+
+    eff_page = page or 1
+    eff_page_size = page_size if page_size is not None else (None if all_dates else 50)
+    total_items = None
+
+    if eff_page_size is not None:
+        try:
+            count_sql = f"SELECT COUNT(*) FROM ({query}) AS _subq"
+            count_res = await db.execute(text(count_sql), params)
+            total_items = count_res.scalar() or 0
+        except Exception as e:
+            logger.warning(f"Error count in get_calendar_dates: {e}")
+            total_items = 0
+
+        query += " LIMIT :page_limit OFFSET :page_offset"
+        params["page_limit"] = eff_page_size
+        params["page_offset"] = (eff_page - 1) * eff_page_size
 
     res = await db.execute(text(query), params)
     rows = res.fetchall()
@@ -3346,7 +3490,17 @@ async def get_calendar_dates(
             "status_color": row_status_color
         })
 
-    return {"calendar": dates, "total": len(dates)}
+    if total_items is None:
+        total_items = len(dates)
+    total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
+
+    return {
+        "calendar": dates,
+        "total": total_items,
+        "page": eff_page,
+        "page_size": eff_page_size or len(dates),
+        "total_pages": total_pages
+    }
 
 
 @router.patch("/calendar/{calendar_id}")
@@ -5865,12 +6019,16 @@ async def get_matches_pending_service(
     approval_date: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query("oldest_first"),
+    all_items: Optional[bool] = Query(False),
+    page: Optional[int] = Query(None, ge=1),
+    page_size: Optional[int] = Query(None, ge=1, le=5000),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Retorna los matches aprobados por María que están en la Zona Inferior
     (esperando contacto de Servicio al Cliente, sin fecha agendada),
-    con soporte para filtro por fecha de aprobación de María.
+    ordenados de más antiguo a más reciente por defecto con paginación ultrarrápida.
     """
     query = """
         SELECT 
@@ -5912,7 +6070,28 @@ async def get_matches_pending_service(
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    query += " ORDER BY COALESCE(m.approved_at, m.updated_at) DESC"
+    if sort_by in ("oldest_first", "asc"):
+        query += " ORDER BY COALESCE(m.approved_at, m.updated_at) ASC, m.id ASC"
+    else:
+        query += " ORDER BY COALESCE(m.approved_at, m.updated_at) DESC, m.id DESC"
+
+    eff_page = page or 1
+    eff_page_size = page_size if page_size is not None else (None if all_items else 50)
+    total_items = None
+
+    if eff_page_size is not None:
+        try:
+            count_sql = f"SELECT COUNT(*) FROM ({query}) AS _subq"
+            count_res = await db.execute(text(count_sql), params)
+            total_items = count_res.scalar() or 0
+        except Exception as e:
+            logger.warning(f"Error count in get_matches_pending_service: {e}")
+            total_items = 0
+
+        query += " LIMIT :page_limit OFFSET :page_offset"
+        params["page_limit"] = eff_page_size
+        params["page_offset"] = (eff_page - 1) * eff_page_size
+
     res = await db.execute(text(query), params)
     rows = res.fetchall()
 
@@ -5937,6 +6116,8 @@ async def get_matches_pending_service(
             "person_b": d.get("person_b"),
             "phone_a": d.get("phone_a") or "",
             "phone_b": d.get("phone_b") or "",
+            "person_a_crm_id": d.get("person_a_crm_id") or "",
+            "person_b_crm_id": d.get("person_b_crm_id") or "",
             "psychologist_name": d.get("psychologist_name"),
             "city": normalize_city(d.get("city")),
             "plan_tier": normalize_plan(d.get("plan_tier")),
@@ -5952,7 +6133,17 @@ async def get_matches_pending_service(
             "has_compatibility_alert": has_comp_alert
         })
 
-    return {"matches": matches, "total": len(matches)}
+    if total_items is None:
+        total_items = len(matches)
+    total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
+
+    return {
+        "matches": matches,
+        "total": total_items,
+        "page": eff_page,
+        "page_size": eff_page_size or len(matches),
+        "total_pages": total_pages
+    }
 
 
 class ScheduleMatchRequest(BaseModel):
@@ -11831,7 +12022,7 @@ async def get_matches_atrasados(
         LEFT JOIN users uA ON (m.user_id_a IS NOT NULL AND uA.id = m.user_id_a)
         LEFT JOIN users uB ON (m.user_id_b IS NOT NULL AND uB.id = m.user_id_b)
         {where_str}
-        ORDER BY m.updated_at DESC, m.id DESC
+        ORDER BY m.updated_at ASC, m.id ASC
         LIMIT :lim OFFSET :off
     """
     params["lim"] = page_size
