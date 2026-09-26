@@ -1823,8 +1823,6 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
 }
 
 function MultiCandidateCompareModal({ client, candidates, onClose, onApprove, onToggleCandidate, onOpenChat }) {
-  if (!client || !candidates || candidates.length === 0) return null
-
   // Detección reactiva de modo claro (Light Mode)
   const [isLight, setIsLight] = useState(() => {
     if (typeof document !== 'undefined') {
@@ -1846,6 +1844,12 @@ function MultiCandidateCompareModal({ client, candidates, onClose, onApprove, on
       window.removeEventListener('storage', updateTheme)
     }
   }, [])
+
+  // El return condicional va DESPUÉS de declarar todos los hooks (nunca antes), para no violar
+  // las Rules of Hooks: si este componente renderiza alguna vez con datos y luego sin ellos (o
+  // viceversa), llamar hooks condicionalmente rompe el orden de hooks entre renders y React
+  // tira "Rendered more hooks than during the previous render", tumbando la pantalla.
+  if (!client || !candidates || candidates.length === 0) return null
 
   const t = isLight ? {
     overlayBg: 'rgba(0, 0, 0, 0.75)',
@@ -2335,8 +2339,6 @@ function MultiCandidateCompareModal({ client, candidates, onClose, onApprove, on
 }
 
 function MultiCandidateChatModal({ client, candidates, onClose, token }) {
-  if (!client || !candidates || candidates.length === 0) return null
-
   const [isLight, setIsLight] = useState(() => {
     if (typeof document !== 'undefined') {
       return document.body.classList.contains('light-mode') || localStorage.getItem('theme') === 'light'
@@ -2373,6 +2375,11 @@ function MultiCandidateChatModal({ client, candidates, onClose, token }) {
   useEffect(() => {
     scrollToBottom()
   }, [messages, loading])
+
+  // El return condicional va DESPUÉS de declarar todos los hooks (mismo motivo que en
+  // MultiCandidateCompareModal más arriba): llamar hooks condicionalmente rompe su orden entre
+  // renders y React tumba la pantalla con "Rendered more hooks than during the previous render".
+  if (!client || !candidates || candidates.length === 0) return null
 
   const QUICK_QUESTIONS_MULTI = [
     { icon: '🏃', label: 'Deporte & Hábitos', q: `¿Qué hábitos de deporte, gimnasio y actividad física tiene cada una y cuál es más compatible con ${client.name}?` },
@@ -2809,8 +2816,6 @@ function MultiCandidateChatModal({ client, candidates, onClose, token }) {
 }
 
 function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
-  if (!candidate || !client) return null
-
   const [activeTab, setActiveTab] = useState('comparativa') // 'comparativa' | 'dictamen'
 
   // Detección reactiva de modo claro (Light Mode)
@@ -2835,36 +2840,8 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
     }
   }, [])
 
-  const analysis = candidate.match_analysis || {}
-  const pros = analysis.pros || []
-  const contras = analysis.contras || []
-  const keyQuestions = analysis.key_questions || []
-
-  // Datos comparativos reales de ambos perfiles
-  const comparison = candidate.comparison || {}
-  const clientNotes = client.bio_notes || comparison.client_notes || client.synthesis_who_really_is || 'Sin notas clínicas registradas'
-  const candidateNotes = candidate.bio_notes || comparison.candidate_notes || candidate.synthesis || 'Sin notas clínicas registradas'
-
-  // Síntesis ejecutiva de 3 viñetas generada por IA
-  const clientSummary = candidate.ai_client_summary || comparison.client_summary || null
-  const candSummary = candidate.ai_candidate_summary || comparison.candidate_summary || null
   const [showFullNotesA, setShowFullNotesA] = useState(false)
   const [showFullNotesB, setShowFullNotesB] = useState(false)
-
-  const clientNonNeg = comparison.client_non_neg || client.non_negotiables || []
-  const candNonNeg = comparison.candidate_non_neg || candidate.non_negotiables || []
-
-  const clientRedFlags = comparison.client_red_flags || client.search_preferences?.red_flags || []
-  const candRedFlags = comparison.candidate_red_flags || candidate.red_flags || []
-
-  const clientAgePref = comparison.client_age_pref || (client.search_preferences?.min_age ? `${client.search_preferences.min_age} a ${client.search_preferences.max_age} años` : '20 a 26 años')
-  const candAgePref = comparison.candidate_age_pref || (candidate.search_preferences?.min_age ? `${candidate.search_preferences.min_age} a ${candidate.search_preferences.max_age} años` : 'No especificado')
-
-  const clientHeightPref = comparison.client_height_pref || client.search_preferences?.preferred_height || 'Hasta 170 cm'
-  const candHeightPref = comparison.candidate_height_pref || candidate.search_preferences?.preferred_height || 'No especificado'
-
-  const hasBothSg = client.social_group_score != null && candidate.social_group_score != null
-  const sgDiff = hasBothSg ? Math.abs(client.social_group_score - candidate.social_group_score).toFixed(1) : null
 
   // Mini Copiloto Clínico (Chatbot Exclusivo de Pareja)
   const [chatOpen, setChatOpen] = useState(true)
@@ -2884,6 +2861,40 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
       scrollToChatBottom()
     }
   }, [chatMessages, chatOpen])
+
+  // El return condicional va DESPUÉS de declarar todos los hooks (mismo motivo que en los otros
+  // modales de este archivo): llamar hooks condicionalmente rompe su orden entre renders y React
+  // tumba la pantalla con "Rendered more hooks than during the previous render".
+  if (!candidate || !client) return null
+
+  const analysis = candidate.match_analysis || {}
+  const pros = analysis.pros || []
+  const contras = analysis.contras || []
+  const keyQuestions = analysis.key_questions || []
+
+  // Datos comparativos reales de ambos perfiles
+  const comparison = candidate.comparison || {}
+  const clientNotes = client.bio_notes || comparison.client_notes || client.synthesis_who_really_is || 'Sin notas clínicas registradas'
+  const candidateNotes = candidate.bio_notes || comparison.candidate_notes || candidate.synthesis || 'Sin notas clínicas registradas'
+
+  // Síntesis ejecutiva de 3 viñetas generada por IA
+  const clientSummary = candidate.ai_client_summary || comparison.client_summary || null
+  const candSummary = candidate.ai_candidate_summary || comparison.candidate_summary || null
+
+  const clientNonNeg = comparison.client_non_neg || client.non_negotiables || []
+  const candNonNeg = comparison.candidate_non_neg || candidate.non_negotiables || []
+
+  const clientRedFlags = comparison.client_red_flags || client.search_preferences?.red_flags || []
+  const candRedFlags = comparison.candidate_red_flags || candidate.red_flags || []
+
+  const clientAgePref = comparison.client_age_pref || (client.search_preferences?.min_age ? `${client.search_preferences.min_age} a ${client.search_preferences.max_age} años` : '20 a 26 años')
+  const candAgePref = comparison.candidate_age_pref || (candidate.search_preferences?.min_age ? `${candidate.search_preferences.min_age} a ${candidate.search_preferences.max_age} años` : 'No especificado')
+
+  const clientHeightPref = comparison.client_height_pref || client.search_preferences?.preferred_height || 'Hasta 170 cm'
+  const candHeightPref = comparison.candidate_height_pref || candidate.search_preferences?.preferred_height || 'No especificado'
+
+  const hasBothSg = client.social_group_score != null && candidate.social_group_score != null
+  const sgDiff = hasBothSg ? Math.abs(client.social_group_score - candidate.social_group_score).toFixed(1) : null
 
   const QUICK_QUESTIONS = [
     { icon: '🐶', label: 'Mascotas', q: '¿Cómo están en el tema de mascotas y convivencia con animales?' },
