@@ -19,16 +19,22 @@ const MOTIVACION_BADGES = {
 
 const PSYCHOLOGISTS = [
   { id: 'all', label: 'Todas las Psicólogas' },
-  { id: 'Ana', label: '👩‍⚕️ Ana' },
   { id: 'Silvana', label: '👩‍⚕️ Silvi / Silvana' },
-  { id: 'Manu', label: '👩‍⚕️ Manu' },
-  { id: 'Aleja', label: '👩‍⚕️ Aleja' },
   { id: 'Jenn', label: '👩‍⚕️ Jenn' },
-  { id: 'Sofi', label: '👩‍⚕️ Sofi' },
+  { id: 'Ana', label: '👩‍⚕️ Ana' },
   { id: 'Steff', label: '👩‍⚕️ Steffy' },
-  { id: 'Pia', label: '👩‍⚕️ Pia' },
   { id: 'Isa', label: '👩‍⚕️ Isa' },
+  { id: 'Pia', label: '👩‍⚕️ Pia' },
   { id: 'Mape', label: '👩‍⚕️ Mape / María Paula' }
+]
+
+const OFFICIAL_REFUND_CATEGORIES = [
+  { value: 'Demora en proceso / Tiempos de espera', label: '⏳ Demora en proceso / Tiempos de espera' },
+  { value: 'Inconformidad con perfiles presentados', label: '💔 Inconformidad con perfiles presentados' },
+  { value: 'Ya tiene pareja / Conoció a alguien', label: '❤️ Ya tiene pareja / Conoció a alguien' },
+  { value: 'Motivos personales / Viaje / Tiempo', label: '✈️ Motivos personales / Viaje / Tiempo' },
+  { value: 'Cambio de expectativas / No desea continuar', label: '🔄 Cambio de expectativas / No desea continuar' },
+  { value: 'Error de cobro / Duplicado', label: '💳 Error de cobro / Duplicado' }
 ]
 
 // Planes de membresía
@@ -168,6 +174,67 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
   const [newPsyc, setNewPsyc] = useState('AUTO')
   const [reassignReason, setReassignReason] = useState('')
   const [reassignMsg, setReassignMsg] = useState(null)
+
+  const [showRefundModal, setShowRefundModal] = useState(false)
+  const [refundForm, setRefundForm] = useState({
+    name: cliente.name || '',
+    psychologist: ((cliente.profile?.responsable || cliente.responsable || 'SILVI').replace('MATCHES ', '').toUpperCase()),
+    plan_tier: cliente.profile?.plan_tier || cliente.plan_tier || '',
+    category: 'Demora en proceso / Tiempos de espera',
+    reason: ''
+  })
+  const [submittingRefund, setSubmittingRefund] = useState(false)
+  const [refundBanner, setRefundBanner] = useState('')
+
+  const handleOpenRefundModal = () => {
+    const tc = fullProfile || cliente
+    const tp = tc.profile || {}
+    const rawPsyc = (tp.responsable || tc.responsable || 'SILVI').replace('MATCHES ', '').trim().toUpperCase()
+    setRefundForm({
+      name: tc.name || '',
+      psychologist: ['SILVI', 'JENN', 'ANA', 'STEFFY', 'ISA', 'PIA', 'MAPE D'].includes(rawPsyc) ? rawPsyc : 'SILVI',
+      plan_tier: tp.plan_tier || tc.plan_tier || '',
+      category: 'Demora en proceso / Tiempos de espera',
+      reason: ''
+    })
+    setShowRefundModal(true)
+  }
+
+  const handleSubmitRefund = async (e) => {
+    e.preventDefault()
+    if (!refundForm.name.trim()) return
+    setSubmittingRefund(true)
+    try {
+      const fullReason = refundForm.reason.trim()
+        ? `[${refundForm.category}] ${refundForm.reason.trim()}`
+        : `[${refundForm.category}]`
+      const res = await fetch(`${API}/api/v1/matchmaking/refunds/manual`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: refundForm.name.trim(),
+          psychologist: refundForm.psychologist,
+          plan_tier: refundForm.plan_tier,
+          reason: fullReason
+        })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setShowRefundModal(false)
+        setRefundBanner(`✅ Solicitud de Refund creada para ${refundForm.name}. Quedó pendiente de aprobación administrativa en Control de Refunds.`)
+        setTimeout(() => setRefundBanner(''), 6000)
+      } else {
+        alert(data.detail || 'Error al registrar solicitud de refund')
+      }
+    } catch {
+      alert('Error de conexión al registrar refund')
+    } finally {
+      setSubmittingRefund(false)
+    }
+  }
 
   const handleReassign = () => {
     const targetId = fullProfile?.id || cliente?.id
@@ -316,7 +383,27 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(245, 158, 11, 0.15)',
+                color: '#F59E0B',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
+                fontWeight: 700,
+                padding: '5px 12px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              onClick={handleOpenRefundModal}
+              title="Solicitar Refund para este cliente (idéntico al de Psicólogas)"
+            >
+              💰 Solicitar Refund
+            </button>
             {targetClient.status === 'baja' ? (
               <button
                 className="btn btn-sm"
@@ -338,6 +425,21 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
             <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: 16, padding: '4px 10px' }}>✕</button>
           </div>
         </div>
+
+        {refundBanner && (
+          <div style={{
+            background: 'rgba(16, 185, 129, 0.15)',
+            border: '1px solid #10B981',
+            color: '#10B981',
+            borderRadius: 10,
+            padding: '10px 14px',
+            marginBottom: 12,
+            fontSize: 12.5,
+            fontWeight: 700
+          }}>
+            {refundBanner}
+          </div>
+        )}
 
         {/* Banner de Baja si aplica */}
         {targetClient.status === 'baja' && (
@@ -434,9 +536,12 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
               >
                 <option value="AUTO">⚡ Auto (Siguiente con menor carga)</option>
                 <option value="Silvi">Silvi</option>
+                <option value="Jenn">Jenn</option>
+                <option value="Ana">Ana</option>
                 <option value="Steffy">Steffy</option>
-                <option value="Manu">Manu</option>
-                <option value="María Paula">María Paula (MAPE)</option>
+                <option value="Isa">Isa</option>
+                <option value="Pia">Pia</option>
+                <option value="María Paula">María Paula (MAPE D)</option>
               </select>
             </div>
 
@@ -797,6 +902,153 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
           <span>Registrado: {new Date(cliente.created_at).toLocaleDateString('es-CO')}</span>
         </div>
       </div>
+
+      {showRefundModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowRefundModal(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1500,
+            padding: 16
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid rgba(245, 158, 11, 0.45)',
+              borderRadius: 16,
+              width: '100%',
+              maxWidth: 500,
+              padding: 24,
+              boxShadow: '0 24px 60px rgba(0,0,0,0.75)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: 8 }}>
+                💰 Solicitar Refund (Devolución)
+              </h3>
+              <button
+                onClick={() => setShowRefundModal(false)}
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: 15 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.4 }}>
+              La solicitud quedará en estado <strong>Pendiente de Aprobación</strong> en la bandeja de <strong>Control de Refunds</strong>.
+            </p>
+
+            <form onSubmit={handleSubmitRefund} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                  Nombre del Cliente *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={refundForm.name}
+                  onChange={e => setRefundForm({ ...refundForm, name: e.target.value })}
+                  style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Psicóloga Responsable
+                  </label>
+                  <select
+                    value={refundForm.psychologist}
+                    onChange={e => setRefundForm({ ...refundForm, psychologist: e.target.value })}
+                    style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13 }}
+                  >
+                    {['SILVI', 'JENN', 'ANA', 'STEFFY', 'ISA', 'PIA', 'MAPE D'].map(ps => (
+                      <option key={ps} value={ps}>{ps}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Plan Contratado
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 150k, 195k..."
+                    value={refundForm.plan_tier}
+                    onChange={e => setRefundForm({ ...refundForm, plan_tier: e.target.value })}
+                    style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                  Categoría Oficial del Refund *
+                </label>
+                <select
+                  value={refundForm.category}
+                  onChange={e => setRefundForm({ ...refundForm, category: e.target.value })}
+                  style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13 }}
+                >
+                  {OFFICIAL_REFUND_CATEGORIES.map(cat => (
+                    <option key={cat.value} value={cat.value}>{cat.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                  Detalle / Observaciones para Administración *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Explica el motivo detallado de la solicitud de devolución..."
+                  value={refundForm.reason}
+                  onChange={e => setRefundForm({ ...refundForm, reason: e.target.value })}
+                  style={{ width: '100%', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '8px 12px', color: 'var(--text-primary)', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowRefundModal(false)}
+                  className="btn btn-ghost btn-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRefund}
+                  style={{
+                    background: '#F59E0B',
+                    color: '#111',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {submittingRefund ? 'Enviando...' : '💰 Registrar Solicitud de Refund'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
     </div>
   )

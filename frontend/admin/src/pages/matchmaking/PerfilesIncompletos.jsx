@@ -12,7 +12,7 @@ const API = (typeof window !== 'undefined' && (window.location.origin.includes('
   : 'https://daily-lover.agentesia.cloud'
 
 const PSYCHOLOGISTS = [
-  'STEFF', 'MAPE', 'SILVI', 'ANA', 'JENN', 'ALEJA', 'MANU', 'LAU', 'SOFI', 'PIA'
+  'SILVI', 'JENN', 'ANA', 'STEFF', 'ISA', 'PIA', 'MAPE'
 ]
 
 export default function PerfilesIncompletos() {

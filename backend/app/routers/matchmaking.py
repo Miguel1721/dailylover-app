@@ -35,7 +35,10 @@ from app.services.clinical_profile_extractor import (
 from app.services.psychologist_helper import (
     build_psychologist_sql_condition,
     get_psychologist_aliases,
-    PSYCHOLOGIST_ALIASES
+    PSYCHOLOGIST_ALIASES,
+    classify_psychologist_ownership,
+    INHERITED_DISPLAY_LABELS,
+    resolve_canonical_psychologist
 )
 
 router = APIRouter(prefix="/api/v1/matchmaking", tags=["Matchmaking Operational"])
@@ -107,10 +110,13 @@ STATUS_COLORS = {
     "RECHAZADO": "#F4CCCC",
     "RECHAZADA": "#F4CCCC",
     "RECHAZADO POR CLIENTE": "#F4CCCC",
+    "RECHAZADO POR PERSONA A": "#F4CCCC",
+    "RECHAZADO POR PERSONA B": "#F4CCCC",
+    "RECHAZADO AMBOS": "#F4CCCC",
 }
 
 ALLOWED_STATUSES = [
-    "HECHO", "HECHO POR MAPE", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
+    "APROBADO", "HECHO", "HECHO POR MAPE", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
     "REFUND", "REFUND DONE", "REFUND APROBADO", "REFUND RECHAZADO", "REFUND PENDIENTE", "REFUND PROCESADO",
     "DESCALIFICADO", "NO HAY GENTE", "ESPERA O REFUND", "REVISAR",
     "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
@@ -119,8 +125,15 @@ ALLOWED_STATUSES = [
     "CITA PROGRAMADA", "CITA REALIZADA", "CITA RESERVADA", "AGENDADA", "CONFIRMADA",
     "AGENDANDO", "POR CONFIRMAR", "REPROGRAMAR",
     "RECHAZADA POR PSICÓLOGA B", "RECHAZADO POR PSICÓLOGA B",
-    "NO MATCH/CAMBIAR", "NO MATCH", "CAMBIAR", "RECHAZADO", "RECHAZADA", "RECHAZADO POR CLIENTE"
+    "NO MATCH/CAMBIAR", "NO MATCH", "CAMBIAR", "RECHAZADO", "RECHAZADA", "RECHAZADO POR CLIENTE",
+    "RECHAZADO POR PERSONA A", "RECHAZADO POR PERSONA B", "RECHAZADO AMBOS"
 ]
+
+def is_vip_plan(plan_str: Optional[str]) -> bool:
+    if not plan_str:
+        return False
+    p = str(plan_str).lower()
+    return any(k in p for k in ("vip", "195k", "experience"))
 
 def clean_plan_name(plan_str: Optional[str]) -> str:
     """
@@ -424,6 +437,7 @@ async def trigger_refresh_priorities(db: AsyncSession = Depends(get_db)):
 @router.get("/my-matches")
 async def get_my_matches(
     psychologist: Optional[str] = Query(None),
+    ownership_mode: Optional[str] = Query("all"),
     status_filter: Optional[str] = Query(None),
     city: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
@@ -439,7 +453,7 @@ async def get_my_matches(
 ):
     """
     Retorna la lista de matches operativos con soporte para multifiltros combinables, CRM IDs,
-    detección de prioridad y cruce de psicóloga en Persona B.
+    detección de prioridad, carteras propias vs heredadas y cruce de psicóloga en Persona B.
     view_mode="mine": Parejas donde la psicóloga es dueña de Persona A.
     view_mode="cross_review": Parejas propuestas por otras psicólogas para candidatos de esta psicóloga (Psicóloga B).
     """
@@ -457,8 +471,10 @@ async def get_my_matches(
             uB.phone AS person_b_phone, uB.email AS person_b_email,
             p.city AS profile_city, p.orientation AS profile_orientation, 
             p.gender AS profile_gender, p.plan_tier AS profile_plan_tier,
+            p.responsable AS profile_responsable,
             p.neighborhood AS person_a_neighborhood,
             pB.neighborhood AS person_b_neighborhood,
+            COALESCE(NULLIF(TRIM(pB.plan_tier), ''), NULLIF(TRIM(mOwnerB.plan_tier), ''), '') AS person_b_plan_tier,
             sd.venue AS scheduled_venue, sd.date_time AS scheduled_date_time, sd.city AS scheduled_city,
             sd.had_date, sd.reschedule, sd.reservation_name, sd.feedback_ella, sd.feedback_el,
             mc.person_a_confirmation, mc.person_b_confirmation, mc.stage AS confirmation_stage, mc.observations AS cs_observations,
@@ -472,7 +488,7 @@ async def get_my_matches(
         LEFT JOIN profiles p ON p.user_id = m.user_id_a
         LEFT JOIN profiles pB ON pB.user_id = m.user_id_b
         LEFT JOIN (
-            SELECT DISTINCT ON (user_id_a) user_id_a, psychologist_name
+            SELECT DISTINCT ON (user_id_a) user_id_a, psychologist_name, plan_tier
             FROM operational_matches
             WHERE user_id_a IS NOT NULL AND psychologist_name IS NOT NULL
             ORDER BY user_id_a, id DESC
@@ -522,10 +538,12 @@ async def get_my_matches(
                      AND UPPER(m.psychologist_name) NOT IN (SELECT unnest(string_to_array(:psyc_aliases, ',')))
                      AND (m.status IN ('HECHO', 'HECHO POR MAPE', 'REVISAR', 'PROPUESTO') OR m.status_b = 'REVISAR')
         """
-        params["psyc_aliases"] = ",".join(get_psychologist_aliases(norm_psyc or ""))
+        params["psyc_aliases"] = ",".join(get_psychologist_aliases(norm_psyc or "", ownership_mode="all"))
     else:
         if norm_psyc:
-            cond_sql, cond_params = build_psychologist_sql_condition("m.psychologist_name", norm_psyc, "psyc")
+            cond_sql, cond_params = build_psychologist_sql_condition(
+                "m.psychologist_name", norm_psyc, "psyc", ownership_mode="all"
+            )
             query += f" AND {cond_sql}"
             params.update(cond_params)
 
@@ -543,7 +561,7 @@ async def get_my_matches(
 
     if approved and approved.lower() not in ("all", "todos"):
         if approved.lower() in ("yes", "si", "sí", "true", "1", "aprobado"):
-            query += " AND m.approved_by_maria = true"
+            query += " AND m.approved_by_maria = true AND m.person_b IS NOT NULL AND TRIM(m.person_b) != '' AND UPPER(COALESCE(m.status, '')) NOT IN ('LISTO PARA MATCH', 'PENDIENTE', 'REVISAR', 'NOT APPROVED', 'PENDIENTE PLAN')"
         elif approved.lower() in ("no", "false", "0", "pendiente"):
             query += " AND m.approved_by_maria = false"
 
@@ -617,6 +635,23 @@ async def get_my_matches(
             if d.get("profile_plan_tier"):
                 final_plan = normalize_plan(d.get("profile_plan_tier"))
 
+        norm_plan_a = normalize_plan(final_plan)
+        norm_plan_b = normalize_plan(d.get("person_b_plan_tier")) if d.get("person_b_plan_tier") else ""
+        vip_a = is_vip_plan(norm_plan_a)
+        vip_b = is_vip_plan(norm_plan_b)
+        vip_match = vip_a or vip_b
+
+        ownership = classify_psychologist_ownership(
+            d.get("psychologist_name"),
+            norm_psyc,
+            fallback_responsable=d.get("profile_responsable")
+        )
+        mode_norm = (ownership_mode or "all").strip().lower()
+        if mode_norm in ("propios", "own", "propio") and ownership["is_inherited"]:
+            continue
+        if mode_norm in ("heredados", "inherited", "heredado") and not ownership["is_inherited"]:
+            continue
+
         p_b_psyc = normalize_psychologist(d.get("psyc_of_b")) or ""
         curr_psyc = normalize_psychologist(d.get("psychologist_name")) or d.get("psychologist_name")
         is_cross_locked = bool(p_b_psyc and p_b_psyc != curr_psyc and (d.get("status") in ("HECHO", "HECHO POR MAPE", "REVISAR", "PROPUESTO")))
@@ -626,7 +661,7 @@ async def get_my_matches(
         effective_date = stripe_date or slot_date
         has_stripe = bool(stripe_date)
         raw_stripe_plan = d.get("stripe_pay_plan")
-        stripe_plan = normalize_plan(raw_stripe_plan) if raw_stripe_plan else normalize_plan(final_plan)
+        stripe_plan = normalize_plan(raw_stripe_plan) if raw_stripe_plan else norm_plan_a
 
         # Determinación de estado sincronizado en tiempo real
         raw_status = (d.get("status") or "").strip()
@@ -635,24 +670,34 @@ async def get_my_matches(
         sched_dt = str(d.get("scheduled_date_time") or "").strip()
         has_sched_date = bool(sched_dt and "por definir" not in sched_dt.lower())
         conf_stage = (d.get("confirmation_stage") or "").strip().lower()
+        conf_a = (d.get("person_a_confirmation") or "Pendiente").strip()
+        conf_b = (d.get("person_b_confirmation") or "Pendiente").strip()
 
         effective_status = raw_status or "Listo para match"
-        if had_date or raw_status in ("CITA REALIZADA", "CITA COMPLETADA", "MATCH DONE"):
+        if (conf_a == "Rechazó" and conf_b == "Rechazó") or raw_status == "RECHAZADO AMBOS":
+            effective_status = "RECHAZADO AMBOS"
+        elif conf_a == "Rechazó" or raw_status == "RECHAZADO POR PERSONA A":
+            effective_status = "RECHAZADO POR PERSONA A"
+        elif conf_b == "Rechazó" or raw_status == "RECHAZADO POR PERSONA B":
+            effective_status = "RECHAZADO POR PERSONA B"
+        elif had_date or raw_status in ("CITA REALIZADA", "CITA COMPLETADA", "MATCH DONE"):
             effective_status = "CITA REALIZADA"
-        elif reschedule or raw_status == "REPROGRAMAR" or conf_stage == "reprogramar":
+        elif reschedule or raw_status == "REPROGRAMAR" or conf_stage == "reprogramar" or "Reprogramar" in (conf_a, conf_b):
             effective_status = "REPROGRAMAR"
+        elif any(c in ("De viaje", "Problema personal", "Viaje largo / indefinido") for c in (conf_a, conf_b)) or raw_status in ("EN PAUSA", "EN PAUSA INDEFINIDA") or conf_stage in ("en pausa", "en_pausa", "en_pausa_indefinida"):
+            effective_status = "EN PAUSA"
         elif has_sched_date or raw_status in ("CITA PROGRAMADA", "AGENDADA", "CITA CONFIRMADA", "CONFIRMADA") or conf_stage in ("agendada", "cita confirmada", "cita programada"):
             effective_status = "CITA PROGRAMADA"
         elif raw_status == "CITA RESERVADA":
             effective_status = "CITA RESERVADA"
         elif is_approved:
-            if conf_stage in ("agendando", "en gestion", "en gestión"):
+            if conf_a == "Aceptó" and conf_b == "Aceptó":
+                effective_status = "CONFIRMADA"
+            elif conf_stage in ("agendando", "en gestion", "en gestión"):
                 effective_status = "AGENDANDO"
             elif conf_stage in ("por confirmar", "por_confirmar"):
                 effective_status = "POR CONFIRMAR"
-            elif conf_stage in ("en pausa", "en_pausa"):
-                effective_status = "EN PAUSA"
-            elif raw_status and raw_status not in ("APROBADO", "HECHO", "Listo para match"):
+            elif raw_status and raw_status not in ("APROBADO", "HECHO", "HECHO POR MAPE", "Listo para match", "REVISAR", "Pendiente"):
                 effective_status = raw_status
             else:
                 effective_status = "APROBADO"
@@ -661,7 +706,11 @@ async def get_my_matches(
             "id": d.get("id"),
             "city": normalize_city(final_city),
             "pref": normalize_pref(final_pref),
-            "plan_tier": normalize_plan(final_plan),
+            "plan_tier": norm_plan_a,
+            "person_b_plan_tier": norm_plan_b,
+            "is_vip_a": vip_a,
+            "is_vip_b": vip_b,
+            "is_vip_match": vip_match,
             "person_a": pA_name,
             "person_a_crm_id": str(d.get("person_a_crm_id") or d.get("ua_crm_id") or "").strip() if str(d.get("person_a_crm_id") or d.get("ua_crm_id") or "").strip().lower() not in ("none", "null", "undefined") else "",
             "person_b": d.get("person_b") or "",
@@ -693,8 +742,8 @@ async def get_my_matches(
             "reservation_name": d.get("reservation_name") or "María Paula Salinas",
             "feedback_ella": d.get("feedback_ella") or "",
             "feedback_el": d.get("feedback_el") or "",
-            "person_a_confirmation": d.get("person_a_confirmation") or "Pendiente",
-            "person_b_confirmation": d.get("person_b_confirmation") or "Pendiente",
+            "person_a_confirmation": conf_a,
+            "person_b_confirmation": conf_b,
             "confirmation_stage": d.get("confirmation_stage") or "pendientes",
             "cs_observations": d.get("cs_observations") or "",
             "status": effective_status,
@@ -704,9 +753,14 @@ async def get_my_matches(
             "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
             "observations": d.get("observations") or "",
             "psychologist_name": curr_psyc,
+            "original_psychologist": ownership["original_canonical"],
+            "assigned_psychologist": ownership["assigned_psychologist"],
+            "is_inherited": ownership["is_inherited"],
+            "ownership_type": ownership["ownership_type"],
+            "inherited_from": ownership["inherited_from"],
             "slot_number": d.get("slot_number") or 1,
             "status_color": STATUS_COLORS.get(effective_status, "#FFF2CC"),
-            "plan_color": PLAN_COLORS.get(final_plan, "#F3F3F3"),
+            "plan_color": PLAN_COLORS.get(norm_plan_a, "#F3F3F3"),
             "pref_color": PREF_COLORS.get(final_pref, "#CFE2F3"),
             "is_locked": is_approved or is_cross_locked,
             "has_compatibility_alert": bool(
@@ -724,6 +778,9 @@ async def get_my_matches(
             )
         })
 
+    canonical_viewer = resolve_canonical_psychologist(norm_psyc) if norm_psyc else ""
+    inherited_label = INHERITED_DISPLAY_LABELS.get(canonical_viewer)
+
     total_matches = len(matches)
     if page is not None and page_size is not None:
         start_idx = (page - 1) * page_size
@@ -736,10 +793,16 @@ async def get_my_matches(
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
-            "cross_review_count": cross_count
+            "cross_review_count": cross_count,
+            "inherited_from_label": inherited_label
         }
 
-    return {"matches": matches, "total": total_matches, "cross_review_count": cross_count}
+    return {
+        "matches": matches,
+        "total": total_matches,
+        "cross_review_count": cross_count,
+        "inherited_from_label": inherited_label
+    }
 
 
 def _extract_crm_id_from_url(raw_str: str) -> Optional[str]:
@@ -1492,6 +1555,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 @router.get("/intake-list")
 async def get_intake_list(
     psychologist: Optional[str] = Query(None),
+    ownership_mode: Optional[str] = Query("all"),
     city: Optional[str] = Query(None),
     plan_tier: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
@@ -1503,7 +1567,7 @@ async def get_intake_list(
 ):
     """
     Retorna la lista agregada de perfiles en PROFILES con soporte para URL externa,
-    Quick Notes clínicas, ciudad, edad, plan, slots activos y paginación ultrarrápida.
+    Quick Notes clínicas, ciudad, edad, plan, slots activos, carteras propias vs heredadas y paginación ultrarrápida.
     """
     where_clauses = [
         "m.person_a IS NOT NULL AND TRIM(m.person_a) != ''",
@@ -1513,7 +1577,9 @@ async def get_intake_list(
     ]
     params: Dict[str, Any] = {}
     if psychologist and psychologist.lower() not in ('all', 'todas'):
-        cond_sql, cond_params = build_psychologist_sql_condition("m.psychologist_name", psychologist, "psyc")
+        cond_sql, cond_params = build_psychologist_sql_condition(
+            "m.psychologist_name", psychologist, "psyc", ownership_mode="all"
+        )
         where_clauses.append(cond_sql)
         params.update(cond_params)
     if city and city.lower() not in ('all', 'todas'):
@@ -1536,17 +1602,17 @@ async def get_intake_list(
 
     where_sql = " AND ".join(where_clauses)
 
-    # 1. Total clientes agregados para paginación
-    count_sql = f"""
-        SELECT COUNT(DISTINCT m.person_a)
-        FROM operational_matches m
-        WHERE {where_sql}
-    """
-    total_res = await db.execute(text(count_sql), params)
-    total_count = total_res.scalar() or 0
-
     # Estadísticas globales para las tarjetas de KPI
     global_stats_res = await db.execute(text("""
+        SELECT 
+            (SELECT COUNT(*) FROM profiles) as total_profiles_crm,
+            (SELECT COUNT(*) FROM operational_matches 
+             WHERE person_a IS NOT NULL AND TRIM(m_all.person_a) != '' 
+               AND m_all.person_a NOT ILIKE 'ZZZ%' 
+               AND m_all.person_a NOT ILIKE '%RESERVADO%' 
+               AND m_all.person_a NOT ILIKE '%DISPONIBLE%'
+             FROM operational_matches m_all) as total_slots_created
+    """).execution_options(autocommit=False)) if False else await db.execute(text("""
         SELECT 
             (SELECT COUNT(*) FROM profiles) as total_profiles_crm,
             (SELECT COUNT(*) FROM operational_matches 
@@ -1558,11 +1624,6 @@ async def get_intake_list(
     stats_row = global_stats_res.fetchone()
     total_profiles_crm = stats_row.total_profiles_crm if stats_row else 0
     total_slots_created = stats_row.total_slots_created if stats_row else 0
-
-    # 2. Consulta paginada optimizada con CTE y LATERAL JOIN
-    offset = (page - 1) * page_size
-    params["limit"] = page_size
-    params["offset"] = offset
 
     order_clause = "ORDER BY CASE WHEN MIN(m.sheet_row_index) IS NULL THEN 0 ELSE 1 END ASC, GREATEST(MAX(COALESCE(m.updated_at, m.created_at)), MAX(m.created_at)) DESC, MAX(m.id) DESC"
     if sort_by == "created_asc":
@@ -1588,7 +1649,6 @@ async def get_intake_list(
             WHERE {where_sql}
             GROUP BY m.person_a
             {order_clause}
-            LIMIT :limit OFFSET :offset
         )
         SELECT 
             cs.person_a,
@@ -1604,6 +1664,7 @@ async def get_intake_list(
             COALESCE(p.clinical_profile_360->>'profile_url', '') as profile_url,
             LEFT(COALESCE(NULLIF(TRIM(p.bio_notes), ''), NULLIF(TRIM(cs.obs_sample), ''), ''), 250) as quick_notes,
             p.age,
+            p.responsable as profile_responsable,
             u.phone,
             u.email
         FROM client_summary cs
@@ -1620,14 +1681,39 @@ async def get_intake_list(
     res = await db.execute(text(data_sql), params)
     rows = res.fetchall()
 
-    clients = []
+    all_clients = []
+    propios_count = 0
+    heredados_count = 0
+    mode_norm = (ownership_mode or "all").strip().lower()
+
     for r in rows:
         if not is_valid_person_name(r.person_a):
             continue
-        clients.append({
+        ownership = classify_psychologist_ownership(
+            r.psychologist_name,
+            psychologist,
+            fallback_responsable=r.profile_responsable
+        )
+        if ownership["is_inherited"]:
+            heredados_count += 1
+        else:
+            propios_count += 1
+
+        if mode_norm in ("propios", "own") and ownership["is_inherited"]:
+            continue
+        if mode_norm in ("heredados", "inherited") and not ownership["is_inherited"]:
+            continue
+
+        all_clients.append({
             "person_a": r.person_a,
             "crm_id": r.crm_id or "",
-            "psychologist_name": normalize_psychologist(r.psychologist_name) or r.psychologist_name,
+            "psychologist_name": ownership["assigned_psychologist"] or normalize_psychologist(r.psychologist_name) or r.psychologist_name,
+            "original_psychologist": ownership["original_canonical"],
+            "original_responsable": r.profile_responsable or "",
+            "assigned_psychologist": ownership["assigned_psychologist"],
+            "is_inherited": ownership["is_inherited"],
+            "ownership_type": ownership["ownership_type"],
+            "inherited_from": ownership["inherited_from"],
             "city": normalize_city(r.city),
             "age": r.age,
             "pref": normalize_pref(r.pref),
@@ -1644,16 +1730,28 @@ async def get_intake_list(
             "plan_color": PLAN_COLORS.get(r.plan_tier, "#B6D7A8")
         })
 
+    total_count = len(all_clients)
+    offset = (page - 1) * page_size
+    clients = all_clients[offset : offset + page_size]
+
+    canonical_viewer = resolve_canonical_psychologist(psychologist) if (psychologist and psychologist.lower() not in ('all', 'todas')) else ""
+    inherited_label = INHERITED_DISPLAY_LABELS.get(canonical_viewer)
+
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
 
     return {
         "clients": clients,
         "total": total_count,
+        "ownership_counts": {
+            "propios": propios_count,
+            "heredados": heredados_count
+        },
         "total_profiles_crm": total_profiles_crm,
         "total_slots_created": total_slots_created,
         "page": page,
         "page_size": page_size,
-        "total_pages": total_pages
+        "total_pages": total_pages,
+        "inherited_from_label": inherited_label
     }
 
 
@@ -1662,8 +1760,9 @@ async def get_intake_list(
 async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSession = Depends(get_db)):
     """
     Actualiza Persona B, Status y Observaciones.
-    REGLA: Si approved_by_maria = true, la fila está 100% bloqueada contra edición.
-    REGLA: El estado 'APROBADO' no es seleccionable.
+    REGLA: Si approved_by_maria = true, Persona B está 100% bloqueada contra edición,
+    pero la mesa oficial de MATCHES puede actualizar el estado post-aprobación (CITA PROGRAMADA, RECHAZADO POR PERSONA A/B, etc.).
+    REGLA: El estado 'APROBADO' no es seleccionable si aún no fue aprobado por María.
     """
     exist_res = await db.execute(text("SELECT id, person_a, person_b, approved_by_maria, status, status_a, status_b FROM operational_matches WHERE id = :id"), {"id": match_id})
     match_row = exist_res.fetchone()
@@ -1672,12 +1771,13 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
     if match_row.approved_by_maria:
-        raise HTTPException(
-            status_code=403,
-            detail="Fila bloqueada: este match ya fue aprobado por María y no puede ser modificado por la psicóloga."
-        )
+        if payload.person_b is not None and payload.person_b.strip() != (match_row.person_b or "").strip():
+            raise HTTPException(
+                status_code=403,
+                detail="Fila bloqueada: este match ya fue aprobado por María y no se puede cambiar el candidato Persona B."
+            )
 
-    if payload.status and payload.status.upper() == "APROBADO":
+    if payload.status and payload.status.upper() == "APROBADO" and not match_row.approved_by_maria:
         raise HTTPException(
             status_code=400,
             detail="El estado APROBADO solo puede ser asignado por María en la Cola de Aprobación."
@@ -2904,18 +3004,27 @@ async def update_match_schedule_details(
     """
     Actualiza los detalles de agendamiento y confirmación de la cita desde la mesa oficial de MATCHES.
     Sincroniza simultáneamente:
-    1. operational_matches (observations si aplica)
-    2. match_confirmations (person_a_confirmation, person_b_confirmation, observations, venue_name)
+    1. operational_matches (status según quién aceptó/rechazó, status_a, status_b)
+    2. match_confirmations (person_a_confirmation, person_b_confirmation, observations, venue_name, stage)
     3. scheduled_dates (si tiene date_time y venue definidos, crea o actualiza la cita para el calendario)
     """
-    res = await db.execute(text("SELECT id, person_a, person_b, city FROM operational_matches WHERE id = :mid"), {"mid": match_id})
+    res = await db.execute(text("""
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number,
+               person_a_crm_id, person_b_crm_id, status
+        FROM operational_matches
+        WHERE id = :mid
+    """), {"mid": match_id})
     match_row = res.fetchone()
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
     # 1. Actualizar o crear match_confirmations
-    mc_res = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+    mc_res = await db.execute(text("SELECT id, person_a_confirmation, person_b_confirmation, stage FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
     mc_row = mc_res.fetchone()
+
+    eff_ca = payload.person_a_confirmation if payload.person_a_confirmation is not None else (mc_row.person_a_confirmation if mc_row and mc_row.person_a_confirmation else "Pendiente")
+    eff_cb = payload.person_b_confirmation if payload.person_b_confirmation is not None else (mc_row.person_b_confirmation if mc_row and mc_row.person_b_confirmation else "Pendiente")
+
     if mc_row:
         updates = []
         params = {"id": mc_row.id}
@@ -2940,19 +3049,42 @@ async def update_match_schedule_details(
             VALUES (:mid, :ca, :cb, 'pendientes', :ven, :obs, NOW(), NOW())
         """), {
             "mid": match_id,
-            "ca": payload.person_a_confirmation or "Pendiente",
-            "cb": payload.person_b_confirmation or "Pendiente",
+            "ca": eff_ca,
+            "cb": eff_cb,
             "ven": payload.venue or "",
             "obs": payload.cs_observations or ""
         })
 
-    # 2. Si se especifica fecha/hora o venue, sincronizar con scheduled_dates
+    # 2. Si se especifica fecha/hora o venue, validar cupos por media hora y sincronizar con scheduled_dates
     v_date = payload.date_time
     v_venue = payload.venue
     v_city = payload.city or match_row.city or "Bogotá"
-    if v_date or v_venue:
-        sd_res = await db.execute(text("SELECT id FROM scheduled_dates WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
-        sd_row = sd_res.fetchone()
+    sd_res = await db.execute(text("SELECT id, date_time, venue, had_date, reschedule FROM scheduled_dates WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+    sd_row = sd_res.fetchone()
+
+    eff_date = v_date if v_date is not None else (sd_row.date_time if sd_row else "")
+    eff_venue = v_venue if v_venue is not None else (sd_row.venue if sd_row else "")
+    is_rejected = (eff_ca == "Rechazó" or eff_cb == "Rechazó")
+
+    # Validar cupos simultáneos para la misma fecha y media hora antes de guardar
+    if not is_rejected and (v_date is not None or v_venue is not None):
+        if eff_date and eff_venue and "por definir" not in str(eff_date).lower() and "por definir" not in str(eff_venue).lower():
+            slot_check = await check_restaurant_slot_availability(db, eff_venue, v_city, eff_date, exclude_match_id=match_id)
+            if slot_check and slot_check.get("is_full"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"⚠️ Sin cupos en {slot_check['restaurant_name']} para el {slot_check['date_ymd']} a las {slot_check['slot_display']}: "
+                        f"ya tiene {slot_check['occupied']}/{slot_check['max_slots']} cupos ocupados en esa media hora. "
+                        f"Por favor elige otra media hora o un restaurante diferente."
+                    )
+                )
+
+    if is_rejected:
+        # Si fue rechazado, liberar cualquier cita pendiente en scheduled_dates para no ocupar cupo
+        if sd_row and not sd_row.had_date:
+            await db.execute(text("DELETE FROM scheduled_dates WHERE id = :id"), {"id": sd_row.id})
+    elif v_date is not None or v_venue is not None:
         if sd_row:
             sd_updates = []
             sd_params = {"id": sd_row.id}
@@ -2982,8 +3114,98 @@ async def update_match_schedule_details(
                     "city": v_city
                 })
 
+    # 3. Sincronizar automáticamente el estado final de operational_matches según quién rechazó / aceptó
+    new_status = match_row.status or "APROBADO"
+    has_defined_schedule = bool(eff_date and "por definir" not in str(eff_date).lower() and eff_venue and "por definir" not in str(eff_venue).lower())
+
+    if eff_ca == "Rechazó" and eff_cb == "Rechazó":
+        new_status = "RECHAZADO AMBOS"
+    elif eff_ca == "Rechazó":
+        new_status = "RECHAZADO POR PERSONA A"
+    elif eff_cb == "Rechazó":
+        new_status = "RECHAZADO POR PERSONA B"
+    elif "Reprogramar" in (eff_ca, eff_cb):
+        new_status = "REPROGRAMAR"
+    elif any(c in ("De viaje", "Problema personal", "Viaje largo / indefinido") for c in (eff_ca, eff_cb)):
+        new_status = "EN PAUSA"
+    elif sd_row and sd_row.had_date:
+        new_status = "CITA REALIZADA"
+    elif has_defined_schedule:
+        new_status = "CITA PROGRAMADA"
+    elif eff_ca == "Aceptó" and eff_cb == "Aceptó":
+        new_status = "CONFIRMADA"
+    elif any(c in ("Aceptó", "Listo para escribir") for c in (eff_ca, eff_cb)):
+        new_status = "AGENDANDO"
+    elif new_status in ("RECHAZADO POR PERSONA A", "RECHAZADO POR PERSONA B", "RECHAZADO AMBOS", "EN PAUSA", "REPROGRAMAR"):
+        new_status = "APROBADO"
+
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET status = :st,
+            status_a = :ca,
+            status_b = :cb,
+            updated_at = NOW()
+        WHERE id = :mid
+    """), {
+        "st": new_status,
+        "ca": eff_ca,
+        "cb": eff_cb,
+        "mid": match_id
+    })
+
+    # 4. Si se rechazó el match, devolver automáticamente a la psicóloga respectiva creando su slot 'Listo para match'
+    returned_to_psychologist = False
+    if is_rejected and match_row.person_a:
+        open_slot_res = await db.execute(text("""
+            SELECT id FROM operational_matches
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pA))
+              AND (person_b IS NULL OR TRIM(person_b) = '' OR LOWER(TRIM(status)) = 'listo para match')
+              AND id != :mid
+            LIMIT 1
+        """), {"pA": match_row.person_a, "mid": match_id})
+        if not open_slot_res.fetchone():
+            next_slot = (getattr(match_row, "slot_number", 1) or 1) + 1
+            psyc_target = match_row.psychologist_name or "SILVI"
+            obs_retry = f"Reintento automático tras rechazo ({new_status}) con {match_row.person_b or 'Candidato B'}"
+            await db.execute(text("""
+                INSERT INTO operational_matches (
+                    person_a, person_a_crm_id, person_b, psychologist_name,
+                    city, plan_tier, pref, status, slot_number,
+                    approved_by_maria, observations, created_at, updated_at
+                ) VALUES (
+                    :pA, :crmA, '', :psyc,
+                    :city, :plan, :pref, 'Listo para match', :slot,
+                    false, :obs, NOW(), NOW()
+                )
+            """), {
+                "pA": match_row.person_a,
+                "crmA": match_row.person_a_crm_id or "",
+                "psyc": psyc_target,
+                "city": match_row.city or "Bogotá",
+                "plan": match_row.plan_tier or "",
+                "pref": match_row.pref or "hetero",
+                "slot": next_slot,
+                "obs": obs_retry
+            })
+            await db.execute(text("""
+                INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+                VALUES (:n, :mid, 'RETURNED_TO_PSYCHOLOGIST', :d, NOW())
+            """), {
+                "n": match_row.person_a,
+                "mid": match_id,
+                "d": f"Devuelto automáticamente a psicóloga ({psyc_target}) tras {new_status} con {match_row.person_b}."
+            })
+            returned_to_psychologist = True
+
     await db.commit()
-    return {"status": "success", "message": "Detalles de cita actualizados exitosamente"}
+    return {
+        "status": "success",
+        "message": "Detalles de cita actualizados exitosamente",
+        "new_match_status": new_status,
+        "person_a_confirmation": eff_ca,
+        "person_b_confirmation": eff_cb,
+        "returned_to_psychologist": returned_to_psychologist
+    }
 
 
 # ─── 4. PANTALLA 4: CALENDARIO DE CITAS & WHATSAPP ──────────────────────────
@@ -2998,7 +3220,7 @@ async def get_calendar_dates(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna la lista de citas agendadas con soporte para multifiltros y CRM IDs.
+    Retorna la lista de citas agendadas con soporte para multifiltros, teléfonos y CRM IDs.
     """
     query = """
         SELECT 
@@ -3006,20 +3228,22 @@ async def get_calendar_dates(
             s.reservation_name, s.reservation_confirmed, s.had_date, s.feedback, s.feedback_ella, s.feedback_el, s.reschedule, s.created_at, s.updated_at,
             s.feedback_email_sent_at, s.feedback_email_status, s.feedback_email_target,
             COALESCE(NULLIF(uA.crm_id, ''), NULLIF(m.person_a_crm_id, '')) AS ua_crm_id,
-            COALESCE(NULLIF(uB.crm_id, ''), NULLIF(m.person_b_crm_id, '')) AS ub_crm_id
+            COALESCE(NULLIF(uB.crm_id, ''), NULLIF(m.person_b_crm_id, '')) AS ub_crm_id,
+            COALESCE(NULLIF(uA.phone, ''), '') AS ua_phone,
+            COALESCE(NULLIF(uB.phone, ''), '') AS ub_phone
         FROM scheduled_dates s
         LEFT JOIN operational_matches m ON m.id = s.match_id
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
             FROM users
-            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
-            ORDER BY LOWER(TRIM(name)), id DESC
+            WHERE name IS NOT NULL AND TRIM(name) != ''
+            ORDER BY LOWER(TRIM(name)), (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END), id DESC
         ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(s.person_a))
         LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
             FROM users
-            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
-            ORDER BY LOWER(TRIM(name)), id DESC
+            WHERE name IS NOT NULL AND TRIM(name) != ''
+            ORDER BY LOWER(TRIM(name)), (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END), id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(s.person_b))
         WHERE s.date_time IS NOT NULL AND TRIM(s.date_time) != '' AND NOT s.date_time ILIKE '%Por definir%'
           AND s.venue IS NOT NULL AND TRIM(s.venue) != '' AND NOT s.venue ILIKE '%Por definir%'
@@ -3058,11 +3282,11 @@ async def get_calendar_dates(
     dates = []
     for r in rows:
         d = dict(r._mapping)
-        dt_val = d.get("date_time") or "Fecha por definir"
-        ven_val = d.get("venue") or "Lugar por definir"
+        dt_val = d.get("date_time") or "Por definir"
+        ven_val = d.get("venue") or "Por definir"
         res_name = d.get("reservation_name") or "María Paula Salinas"
         
-        # Plantillas de WhatsApp con textos exactos del SSOT
+        # Plantillas de WhatsApp canónicas (idénticas a Matches)
         msg_confirmacion = (
             f"Para confirmarte tu date! 💛 Fecha y hora: {dt_val} en {ven_val}\n"
             f"La reserva estará a nombre de {res_name}.\n"
@@ -3079,7 +3303,7 @@ async def get_calendar_dates(
         msg_hoy = (
             f"Para recordarte tu date de hoy! 💛 Fecha y hora: {dt_val} en {ven_val}\n"
             f"La reserva estará a nombre de {res_name}!! Por favor avisanos cuando vayas en camino para estar pendiente de ti! "
-            f"Recuerda que hay alguien que te esta esperando, y la puntualidas vale X2!! Disfrútalo muchísimo, es solo una cita!! "
+            f"Recuerda que hay alguien que te esta esperando, y la puntualidad vale X2!! Disfrútalo muchísimo, es solo una cita!! "
             f"Avísanos cuando vayas en camino para estar pendiente de tiii!"
         )
 
@@ -3095,8 +3319,10 @@ async def get_calendar_dates(
             "match_id": d.get("match_id"),
             "person_a": d.get("person_a"),
             "person_a_crm_id": str(d.get("ua_crm_id") or "").strip() if str(d.get("ua_crm_id") or "").strip().lower() not in ("none", "null") else "",
+            "person_a_phone": str(d.get("ua_phone") or "").strip(),
             "person_b": d.get("person_b"),
             "person_b_crm_id": str(d.get("ub_crm_id") or "").strip() if str(d.get("ub_crm_id") or "").strip().lower() not in ("none", "null") else "",
+            "person_b_phone": str(d.get("ub_phone") or "").strip(),
             "date_time": dt_val,
             "scheduled_date": dt_val,
             "venue": ven_val,
@@ -3114,6 +3340,9 @@ async def get_calendar_dates(
             "whatsapp_confirmacion": msg_confirmacion,
             "whatsapp_dia_antes": msg_dia_antes,
             "whatsapp_hoy": msg_hoy,
+            "msg_confirmation": msg_confirmacion,
+            "msg_day_before": msg_dia_antes,
+            "msg_day_of": msg_hoy,
             "status_color": row_status_color
         })
 
@@ -3755,16 +3984,37 @@ async def get_feedback_dispatch_status(db: AsyncSession = Depends(get_db)):
     }
 
 
+def resolve_active_psychologist(raw_name: Optional[str]) -> Optional[str]:
+    if not raw_name:
+        return None
+    p = raw_name.upper().strip()
+    if any(k in p for k in ("SILV", "SOFI")):
+        return "SILVI"
+    if any(k in p for k in ("JENN", "ALEJA")):
+        return "JENN"
+    if any(k in p for k in ("ANA", "MPS", "MARI")):
+        return "ANA"
+    if any(k in p for k in ("STEFF", "MANU")):
+        return "STEFFY"
+    if any(k in p for k in ("ISA", "LAU")):
+        return "ISA"
+    if "PIA" in p:
+        return "PIA"
+    if any(k in p for k in ("MAPE", "PAULA")):
+        return "MAPE D"
+    return None
+
+
 # ─── 5. HISTORIAL DE PERSONA & PSICÓLOGAS ACTIVAS ────────────────────────────
 
 @router.get("/psychologists")
 async def get_active_psychologists(db: AsyncSession = Depends(get_db)):
     """
-    Retorna la lista de psicólogas dinámicamente desde la base de datos (con conteos reales),
-    asegurando la presencia de las 10 psicólogas activas oficiales (JENN, ANA, SILVI, STEFFY, SOFI, MAPE D, ALEJA, MANU, PIA, ISA).
+    Retorna únicamente las 7 psicólogas activas oficiales (SILVI, JENN, ANA, STEFFY, ISA, PIA, MAPE D),
+    agregando dentro de cada una tanto sus casos propios como los heredados de psicólogas retiradas.
     """
-    OFFICIAL_PSYCHOLOGISTS = [
-        "MPS", "STEFFY", "SILVI", "ANA", "JENN", "PIA", "ISA", "ALEJA", "MANU", "SOFI", "MAPE D"
+    ACTIVE_OFFICIAL_PSYCHOLOGISTS = [
+        "SILVI", "JENN", "ANA", "STEFFY", "ISA", "PIA", "MAPE D"
     ]
     res = await db.execute(text("""
         SELECT UPPER(TRIM(psychologist_name)) as psyc_name, 
@@ -3773,33 +4023,29 @@ async def get_active_psychologists(db: AsyncSession = Depends(get_db)):
         FROM operational_matches
         WHERE psychologist_name IS NOT NULL AND TRIM(psychologist_name) != ''
         GROUP BY UPPER(TRIM(psychologist_name))
-        ORDER BY match_count DESC
     """))
     db_rows = res.fetchall()
-    counts = {r[0]: {"name": r[0], "match_count": r[1], "client_count": r[2]} for r in db_rows}
 
-    result = []
-    # 1. Official list first in canonical order
-    for name in OFFICIAL_PSYCHOLOGISTS:
-        key = name.upper()
-        match_c = counts.get(key, {}).get("match_count", 0)
-        client_c = counts.get(key, {}).get("client_count", 0)
-        result.append({
-            "name": name,
-            "match_count": match_c,
-            "client_count": client_c
-        })
+    aggregated = {
+        name: {"name": name, "match_count": 0, "client_count": 0, "own_count": 0, "inherited_count": 0}
+        for name in ACTIVE_OFFICIAL_PSYCHOLOGISTS
+    }
 
-    # 2. Any additional active names in DB
-    for key, val in counts.items():
-        if key not in [p.upper() for p in OFFICIAL_PSYCHOLOGISTS]:
-            result.append({
-                "name": val["name"],
-                "match_count": val["match_count"],
-                "client_count": val["client_count"]
-            })
+    for r in db_rows:
+        raw_name = r[0]
+        active_owner = resolve_active_psychologist(raw_name)
+        if active_owner in aggregated:
+            m_cnt = int(r[1] or 0)
+            c_cnt = int(r[2] or 0)
+            aggregated[active_owner]["match_count"] += m_cnt
+            aggregated[active_owner]["client_count"] += c_cnt
+            if raw_name != active_owner:
+                aggregated[active_owner]["inherited_count"] += m_cnt
+            else:
+                aggregated[active_owner]["own_count"] += m_cnt
 
-    return {"psychologists": result, "names": [p["name"] for p in result]}
+    result = [aggregated[name] for name in ACTIVE_OFFICIAL_PSYCHOLOGISTS]
+    return {"psychologists": result, "names": ACTIVE_OFFICIAL_PSYCHOLOGISTS}
 
 
 @router.get("/check-duplicate-match")
@@ -4340,7 +4586,7 @@ async def resolve_profile(
             """), {"uid": int(extracted_crm_id)})
             row = res.fetchone()
 
-    # Si no se encontró por ID o no era ID, buscar por nombre
+    # Si no se encontró por ID o no era ID, buscar por nombre (tolerante a tildes y priorizando perfil con crm_id/datos ricos)
     if not row:
         clean_name = re.sub(r'https?://\S+', '', raw_input).strip()
         if clean_name:
@@ -4350,9 +4596,14 @@ async def resolve_profile(
                        p.age, p.bio_notes, p.clinical_profile_360, p.search_preferences
                 FROM users u
                 LEFT JOIN profiles p ON p.user_id = u.id
-                WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
-                   OR u.name ILIKE :n_like
-                ORDER BY CASE WHEN LOWER(TRIM(u.name)) = LOWER(TRIM(:n)) THEN 1 ELSE 2 END
+                WHERE unaccent(LOWER(TRIM(u.name))) = unaccent(LOWER(TRIM(:n)))
+                   OR unaccent(u.name) ILIKE unaccent(:n_like)
+                ORDER BY
+                    CASE WHEN unaccent(LOWER(TRIM(u.name))) = unaccent(LOWER(TRIM(:n))) THEN 1 ELSE 2 END,
+                    (u.crm_id IS NOT NULL AND u.crm_id != '' AND u.crm_id != 'None') DESC,
+                    (p.estatura IS NOT NULL AND p.estatura != '') DESC,
+                    (p.age IS NOT NULL) DESC,
+                    u.id DESC
                 LIMIT 1
             """), {"n": clean_name, "n_like": f"%{clean_name}%"})
             row = res.fetchone()
@@ -4451,6 +4702,7 @@ async def resolve_profile(
     except Exception:
         pass
 
+    consolidated_quick_notes = "\n".join(notes_parts).strip()
     if not consolidated_quick_notes:
         try:
             obs_res = await db.execute(text("""
@@ -4535,9 +4787,14 @@ def build_canonical_profile(
     age = None
     if raw_wh.get("prof_194"):
         try:
-            b_year = int(str(raw_wh["prof_194"])[:4])
-            from datetime import datetime as _dt
-            age = _dt.now().year - b_year
+            from datetime import date as _dt_date
+            b_str = str(raw_wh["prof_194"])[:10]
+            parts = [int(x) for x in b_str.split("-")]
+            if len(parts) == 3:
+                today = _dt_date.today()
+                age = today.year - parts[0] - ((today.month, today.day) < (parts[1], parts[2]))
+            else:
+                age = _dt_date.today().year - int(b_str[:4])
         except Exception:
             pass
     if not age and raw_wh.get("prof_247"):
@@ -4558,16 +4815,18 @@ def build_canonical_profile(
     if not city and p_row and getattr(p_row, 'city', None):
         city = normalize_city(p_row.city)
 
-    # Estatura en cm
+    # Estatura en cm (soporta '160cm - 5\' 3"', '160 cm', '1600', '160')
     estatura_cm = None
     raw_h = raw_wh.get("prof_203") or (getattr(p_row, 'estatura', None) if p_row else None)
     if raw_h:
         try:
-            h_int = int(float(str(raw_h).replace("cm", "").strip()))
-            if 1200 <= h_int <= 2300:
-                estatura_cm = h_int // 10
-            elif 120 <= h_int <= 230:
-                estatura_cm = h_int
+            m_cm = re.search(r'(\d{3,4})', str(raw_h))
+            if m_cm:
+                h_int = int(m_cm.group(1))
+                if 1200 <= h_int <= 2300:
+                    estatura_cm = h_int // 10
+                elif 120 <= h_int <= 230:
+                    estatura_cm = h_int
         except Exception:
             pass
 
@@ -4577,12 +4836,21 @@ def build_canonical_profile(
     if bio_essay and bio_essay not in quick_notes:
         quick_notes = f"{quick_notes}\n{bio_essay}".strip()
 
-    # Género y Orientación con auto-corrección heurística
+    # Género y Orientación con normalización y auto-corrección heurística
     genero = _choice_str(raw_wh.get("prof_192")) or (getattr(p_row, 'gender', None) if p_row else None)
+    if genero:
+        gl = str(genero).strip().lower()
+        if gl in ("female", "mujer", "femenino", "f"):
+            genero = "Mujer"
+        elif gl in ("male", "hombre", "masculino", "m"):
+            genero = "Hombre"
+        elif gl in ("", "no especificado", "none", "null"):
+            genero = None
+
     inferred_can_g = infer_gender_from_name_and_bio(name, quick_notes)
     if inferred_can_g in ("Hombre", "Mujer"):
         first_tok = normalize_text_unaccent(name).split()[0] if name else ""
-        if not genero or str(genero).strip().lower() in ("", "no especificado", "none", "null"):
+        if not genero:
             genero = inferred_can_g
         elif str(genero).strip() != inferred_can_g:
             if (inferred_can_g == "Mujer" and first_tok in FEMALE_NAME_TOKENS) or (inferred_can_g == "Hombre" and first_tok in MALE_NAME_TOKENS):
@@ -4625,14 +4893,20 @@ def build_canonical_profile(
         deporte_nivel = str(p_ls.get("fitness_level"))
     if not valores and p_ls.get("values"):
         valores = [str(x) for x in p_ls.get("values") if str(x).strip()]
+    if not hobbies and p_ls.get("free_time"):
+        hobbies = [s.strip() for s in re.split(r'[;,]', str(p_ls.get("free_time"))) if s.strip()]
 
     # Psicología y Lenguaje del amor
     lenguaje_amor = _choice_str(raw_wh.get("prof_220")) or (getattr(p_row, 'love_language', None) if p_row else None)
     estilo_apego = None
     if ext_row and getattr(ext_row, 'attachment_style', None) and ext_row.attachment_style.strip():
         estilo_apego = ext_row.attachment_style.strip()
-    if not estilo_apego and p_row and isinstance(getattr(p_row, 'apego', None), dict) and p_row.apego.get("style"):
-        estilo_apego = str(p_row.apego.get("style")).strip()
+    if not estilo_apego and p_row and isinstance(getattr(p_row, 'apego', None), dict):
+        ap_val = p_row.apego.get("style") or p_row.apego.get("estilo")
+        if ap_val:
+            estilo_apego = str(ap_val).strip()
+    if not estilo_apego and p_ls.get("temperament"):
+        estilo_apego = str(p_ls.get("temperament")).strip()
 
     # Preferencias de búsqueda
     edad_min = None
@@ -4653,25 +4927,56 @@ def build_canonical_profile(
             except Exception:
                 pass
 
+    estatura_min_pref = None
     estatura_max_pref = None
-    if raw_wh.get("pref_70") and isinstance(raw_wh["pref_70"], dict):
-        end_val = raw_wh["pref_70"].get("end")
-        if end_val:
-            estatura_max_pref = int(end_val) // 10 if int(end_val) >= 1000 else int(end_val)
-    elif p_sp.get("preferred_height"):
-        m_h = re.search(r'(\d{3})', str(p_sp["preferred_height"]))
-        if m_h:
-            estatura_max_pref = int(m_h.group(1))
+    if p_sp.get("min_height_cm"):
+        try:
+            estatura_min_pref = int(float(str(p_sp["min_height_cm"])))
+        except Exception:
+            pass
+    if p_sp.get("max_height_cm"):
+        try:
+            estatura_max_pref = int(float(str(p_sp["max_height_cm"])))
+        except Exception:
+            pass
+
+    if not estatura_min_pref and not estatura_max_pref:
+        if raw_wh.get("pref_70") and isinstance(raw_wh["pref_70"], dict):
+            start_val = raw_wh["pref_70"].get("start")
+            end_val = raw_wh["pref_70"].get("end")
+            if start_val:
+                estatura_min_pref = int(start_val) // 10 if int(start_val) >= 1000 else int(start_val)
+            if end_val:
+                estatura_max_pref = int(end_val) // 10 if int(end_val) >= 1000 else int(end_val)
+        elif p_sp.get("preferred_height"):
+            ph_str = str(p_sp["preferred_height"]).strip()
+            parts = re.split(r'\s+(?:to|a)\s+', ph_str, flags=re.IGNORECASE)
+            if len(parts) == 2:
+                m1 = re.search(r'(\d{3})', parts[0])
+                m2 = re.search(r'(\d{3})', parts[1])
+                if m1 and 'any' not in parts[0].lower():
+                    estatura_min_pref = int(m1.group(1))
+                if m2 and 'any' not in parts[1].lower():
+                    estatura_max_pref = int(m2.group(1))
+            elif "hasta" in ph_str.lower():
+                m2 = re.search(r'(\d{3})', ph_str)
+                if m2:
+                    estatura_max_pref = int(m2.group(1))
+            elif "desde" in ph_str.lower():
+                m1 = re.search(r'(\d{3})', ph_str)
+                if m1:
+                    estatura_min_pref = int(m1.group(1))
 
     genero_buscado = _choice_str(raw_wh.get("pref_54")) or p_sp.get("preferred_gender")
+    if not genero and genero_buscado and orientacion and "hetero" in str(orientacion).lower():
+        gb_low = str(genero_buscado).lower()
+        if "hombre" in gb_low or "male" in gb_low:
+            genero = "Mujer"
+        elif "mujer" in gb_low or "female" in gb_low:
+            genero = "Hombre"
+
     no_negociables = _choice_list(raw_wh.get("pref_66")) or p_sp.get("non_negotiables") or []
     busca_pareja_deportiva = any("deport" in str(p_sp.get(k, "")).lower() for k in ("MustHaveValuesTop3", "Green Flags", "PreferredVibe"))
-
-    # Notas clínicas de entrevista
-    quick_notes = (getattr(p_row, 'bio_notes', None) if p_row else "") or ""
-    bio_essay = str(raw_wh.get("pref_64") or "").strip()
-    if bio_essay and bio_essay not in quick_notes:
-        quick_notes = f"{quick_notes}\n{bio_essay}".strip()
 
     # Identificar qué dimensiones están VERIFICADAS vs cuáles son FALTANTES
     clinical_dimensions = {
@@ -4706,6 +5011,7 @@ def build_canonical_profile(
         "preferences": {
             "edad_min": edad_min,
             "edad_max": edad_max,
+            "estatura_min_cm": estatura_min_pref,
             "estatura_max_cm": estatura_max_pref,
             "genero_buscado": genero_buscado,
             "busca_pareja_deportiva": busca_pareja_deportiva,
@@ -4807,11 +5113,23 @@ def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict
 
     # 8. Estatura
     est_a = v_a.get("estatura_cm")
-    if est_a and pref_b.get("estatura_max_cm"):
-        if est_a <= pref_b["estatura_max_cm"]:
-            coincidencias.append(f"Estatura cumplida: {p_a['name']} mide {est_a} cm (rango preferido hasta {pref_b['estatura_max_cm']} cm).")
+    est_b = v_b.get("estatura_cm")
+    if est_a and (pref_b.get("estatura_min_cm") or pref_b.get("estatura_max_cm")):
+        min_b = pref_b.get("estatura_min_cm")
+        max_b = pref_b.get("estatura_max_cm")
+        if min_b and est_a < min_b:
+            discrepancias.append(f"Estatura fuera de preferencia: {p_a['name']} mide {est_a} cm (preferencia desde {min_b} cm).")
+        elif max_b and est_a > max_b:
+            discrepancias.append(f"Estatura fuera de preferencia: {p_a['name']} mide {est_a} cm (preferencia hasta {max_b} cm).")
         else:
-            discrepancias.append(f"Estatura fuera de preferencia: {p_a['name']} mide {est_a} cm (preferencia hasta {pref_b['estatura_max_cm']} cm).")
+            coincidencias.append(f"Estatura cumplida: {p_a['name']} mide {est_a} cm (dentro del rango preferido por {p_b['name']}).")
+    if est_b and (pref_a.get("estatura_min_cm") or pref_a.get("estatura_max_cm")):
+        min_a = pref_a.get("estatura_min_cm")
+        max_a = pref_a.get("estatura_max_cm")
+        if min_a and est_b < min_a:
+            discrepancias.append(f"Estatura fuera de preferencia: {p_b['name']} mide {est_b} cm (preferencia desde {min_a} cm).")
+        elif max_a and est_b > max_a:
+            discrepancias.append(f"Estatura fuera de preferencia: {p_b['name']} mide {est_b} cm (preferencia hasta {max_a} cm).")
 
     # Cobertura mutua de información
     coverage_pct = round((p_a["completeness_pct"] + p_b["completeness_pct"]) / 2)
@@ -4990,9 +5308,16 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                        p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
                        p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360, p.canonical_profile
                 FROM users u LEFT JOIN profiles p ON p.user_id = u.id
-                WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
-                ORDER BY (u.crm_id IS NOT NULL AND u.crm_id != '') DESC, u.id DESC LIMIT 1
-            """), {"n": name_val.strip()})
+                WHERE unaccent(LOWER(TRIM(u.name))) = unaccent(LOWER(TRIM(:n)))
+                   OR unaccent(u.name) ILIKE unaccent(:n_like)
+                ORDER BY
+                    CASE WHEN unaccent(LOWER(TRIM(u.name))) = unaccent(LOWER(TRIM(:n))) THEN 1 ELSE 2 END,
+                    (u.crm_id IS NOT NULL AND u.crm_id != '' AND u.crm_id != 'None') DESC,
+                    (p.estatura IS NOT NULL AND p.estatura != '') DESC,
+                    (p.age IS NOT NULL) DESC,
+                    u.id DESC
+                LIMIT 1
+            """), {"n": name_val.strip(), "n_like": f"%{name_val.strip()}%"})
             row_p = res.fetchone()
             if row_p and row_p.crm_id and (not row_p.city or not row_p.estatura or not row_p.lifestyle):
                 await _sync_crm_id_from_webhooks(str(row_p.crm_id), db)
@@ -6173,65 +6498,563 @@ async def check_inactivity_alerts(
     }
 
 
-# ─── 13. CATÁLOGO Y FILTRADO MULTI-CONDICIÓN DE RESTAURANTES ────────────────
+# ─── 13. CATÁLOGO, HORARIOS, CUPOS POR MEDIA HORA Y FILTRADO DE RESTAURANTES ──
+
+CANONICAL_DAYS_ORDER = ["lun", "mar", "mie", "jue", "vie", "sab", "dom"]
+DAY_CODE_DISPLAY = {
+    "lun": "Lun", "mar": "Mar", "mie": "Mié", "jue": "Jue",
+    "vie": "Vie", "sab": "Sáb", "dom": "Dom"
+}
+SPANISH_MONTHS_MAP = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12
+}
+
+
+def _strip_accents_lower(val: Optional[str]) -> str:
+    if not val:
+        return ""
+    s = str(val).strip().lower()
+    for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ü", "u")):
+        s = s.replace(a, b)
+    return s
+
+
+def normalize_day_code(day_or_date: Optional[str]) -> Optional[str]:
+    if not day_or_date:
+        return None
+    raw = _strip_accents_lower(day_or_date)
+    if raw in ("all", "todos", "todas", ""):
+        return None
+    # Si viene una fecha YYYY-MM-DD
+    m_iso = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw)
+    if m_iso:
+        try:
+            dt_obj = datetime(int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3)))
+            return CANONICAL_DAYS_ORDER[dt_obj.weekday()]
+        except Exception:
+            pass
+    for d_key, aliases in (
+        ("lun", ("lun", "lunes")),
+        ("mar", ("mar", "martes")),
+        ("mie", ("mie", "miercoles")),
+        ("jue", ("jue", "jueves")),
+        ("vie", ("vie", "viernes")),
+        ("sab", ("sab", "sabado", "sabados")),
+        ("dom", ("dom", "domingo", "domingos")),
+    ):
+        if raw in aliases or any(raw.startswith(a) for a in aliases):
+            return d_key
+    return None
+
+
+def parse_time_to_24h_slot_and_float(time_str: Optional[str]):
+    """
+    Convierte una cadena de hora (ej. '7:00 PM', '19:30', '7:30pm', '6pm') en:
+    - slot_24h: string 'HH:MM' redondeado al bloque de 30 minutos (ej. '19:00', '19:30')
+    - hour_float: float en formato 24h (ej. 19.0, 19.5)
+    - slot_display: string legible en formato 12h (ej. '7:00 PM')
+    """
+    if not time_str:
+        return None, None, None
+    s = _strip_accents_lower(time_str)
+    if not s or "por definir" in s or s in ("all", "todas", "todos"):
+        return None, None, None
+
+    # Buscar patrón de hora con AM/PM o formato 24h (evitando confundir con año 2026)
+    # Primero remover fechas YYYY-MM-DD o DD/MM/YYYY para aislar la hora
+    s_clean = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", " ", s)
+    s_clean = re.sub(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", " ", s_clean)
+    s_clean = re.sub(
+        r"\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s+\d{1,2}\b",
+        " ",
+        s_clean,
+    )
+    s_clean = re.sub(
+        r"\b\d{1,2}\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b",
+        " ",
+        s_clean,
+    )
+
+    m = re.search(r"(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?", s_clean)
+    if not m:
+        return None, None, None
+
+    hh = int(m.group(1))
+    mm = int(m.group(2) or 0)
+    ap = (m.group(3) or "").replace(".", "")
+
+    if hh > 23 or mm > 59:
+        return None, None, None
+
+    if ap == "pm" and hh < 12:
+        hh += 12
+    elif ap == "am" and hh == 12:
+        hh = 0
+    elif not ap and 1 <= hh <= 10 and ("a las" in s or "cita" in s):
+        # Ej. 'a las 7' sin pm -> asumir PM en citas
+        hh += 12
+
+    # Snap al bloque de 30 minutos exacto (cada media hora la agenda solo sobre esa hora)
+    snapped_mm = 30 if mm >= 15 and mm < 45 else (0 if mm < 15 else 0)
+    if mm >= 45:
+        hh = (hh + 1) % 24
+        snapped_mm = 0
+
+    slot_24h = f"{hh:02d}:{snapped_mm:02d}"
+    hour_float = hh + (snapped_mm / 60.0)
+    disp_h = hh % 12 or 12
+    disp_ap = "PM" if hh >= 12 else "AM"
+    slot_display = f"{disp_h}:{snapped_mm:02d} {disp_ap}"
+    return slot_24h, hour_float, slot_display
+
+
+def parse_date_and_half_hour_slot(date_time_str: Optional[str]):
+    """
+    Extrae (date_ymd, slot_24h, hour_float, slot_display) de cualquier formato de scheduled_dates.date_time:
+    - '2026-09-25 7:00 PM'
+    - '2026-09-24 19:30:00'
+    - 'septiembre 27 a las 7pm'
+    - 'Octubre 2 a las 7pm'
+    """
+    if not date_time_str:
+        return None, None, None, None
+    raw = _strip_accents_lower(date_time_str)
+    if not raw or "por definir" in raw:
+        return None, None, None, None
+
+    date_ymd = None
+    m_iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", raw)
+    if m_iso:
+        date_ymd = f"{m_iso.group(1)}-{m_iso.group(2)}-{m_iso.group(3)}"
+    else:
+        m_dmy = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b", raw)
+        if m_dmy:
+            dd = int(m_dmy.group(1))
+            mm = int(m_dmy.group(2))
+            yy = int(m_dmy.group(3) or 2026)
+            if yy < 100:
+                yy += 2000
+            if 1 <= mm <= 12 and 1 <= dd <= 31:
+                date_ymd = f"{yy:04d}-{mm:02d}-{dd:02d}"
+        else:
+            m_es1 = re.search(
+                r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s+(\d{1,2})\b",
+                raw,
+            )
+            m_es2 = re.search(
+                r"\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b",
+                raw,
+            )
+            if m_es1:
+                mon = SPANISH_MONTHS_MAP.get(m_es1.group(1), 1)
+                dd = int(m_es1.group(2))
+                date_ymd = f"2026-{mon:02d}-{dd:02d}"
+            elif m_es2:
+                dd = int(m_es2.group(1))
+                mon = SPANISH_MONTHS_MAP.get(m_es2.group(2), 1)
+                date_ymd = f"2026-{mon:02d}-{dd:02d}"
+
+    slot_24h, hour_float, slot_display = parse_time_to_24h_slot_and_float(date_time_str)
+    return date_ymd, slot_24h, hour_float, slot_display
+
+
+def normalize_venue_key(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    s = _strip_accents_lower(name)
+    # Quitar zonas entre paréntesis: 'Osaki (Norte)' -> 'osaki'
+    s = re.sub(r"\([^)]*\)", " ", s)
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def venue_matches_restaurant(venue_str: Optional[str], rest_name: Optional[str], venue_city: Optional[str] = None, rest_city: Optional[str] = None) -> bool:
+    vk = normalize_venue_key(venue_str)
+    rk = normalize_venue_key(rest_name)
+    if not vk or not rk:
+        return False
+    if venue_city and rest_city:
+        vc = _strip_accents_lower(venue_city)
+        rc = _strip_accents_lower(rest_city)
+        if vc and rc and vc not in ("todas", "all") and vc != rc:
+            return False
+    if vk == rk:
+        return True
+    # Coincidencia por palabra completa (ej. 'osaki norte' coincide con 'osaki', 'veccina 85' con 'veccina')
+    if re.search(rf"\b{re.escape(rk)}\b", vk) or re.search(rf"\b{re.escape(vk)}\b", rk):
+        return True
+    return False
+
+
+def _expand_days_in_clause(clause_norm: str) -> set:
+    days_found = set()
+    if "todos los dias" in clause_norm or "todos" in clause_norm:
+        return set(CANONICAL_DAYS_ORDER)
+
+    # Rangos tipo lun-mie, jue-sab, lun-sab, mar-dom, lunes a viernes, etc.
+    day_token_map = {
+        "lunes": "lun", "lun": "lun",
+        "martes": "mar", "mar": "mar",
+        "miercoles": "mie", "mie": "mie",
+        "jueves": "jue", "jue": "jue",
+        "viernes": "vie", "vie": "vie",
+        "sabados": "sab", "sabado": "sab", "sab": "sab",
+        "domingos": "dom", "domingo": "dom", "dom": "dom",
+    }
+    range_pattern = r"\b(lunes|lun|martes|mar|miercoles|mie|jueves|jue|viernes|vie|sabados|sabado|sab|domingos|domingo|dom)\s*(?:-|a|al)\s*(lunes|lun|martes|mar|miercoles|mie|jueves|jue|viernes|vie|sabados|sabado|sab|domingos|domingo|dom)\b"
+    for m in re.finditer(range_pattern, clause_norm):
+        d1 = day_token_map.get(m.group(1))
+        d2 = day_token_map.get(m.group(2))
+        if d1 in CANONICAL_DAYS_ORDER and d2 in CANONICAL_DAYS_ORDER:
+            i1 = CANONICAL_DAYS_ORDER.index(d1)
+            i2 = CANONICAL_DAYS_ORDER.index(d2)
+            if i1 <= i2:
+                days_found.update(CANONICAL_DAYS_ORDER[i1 : i2 + 1])
+            else:
+                days_found.update(CANONICAL_DAYS_ORDER[i1:] + CANONICAL_DAYS_ORDER[: i2 + 1])
+
+    # Días individuales mencionados
+    for tok, canonical in day_token_map.items():
+        if re.search(rf"\b{tok}\b", clause_norm):
+            days_found.add(canonical)
+
+    return days_found
+
+
+def _extract_intervals_from_clause(clause_norm: str) -> list:
+    intervals = []
+    # Buscar rangos horarios: ej. '12:30-3:00pm', '7:00-11:00pm', '8:00am-6:00pm', '12pm-5pm'
+    pat = r"(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s*(?:-|a|hasta|–)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?"
+    for m in re.finditer(pat, clause_norm):
+        h1 = int(m.group(1))
+        m1 = int(m.group(2) or 0)
+        ap1 = (m.group(3) or "").replace(".", "")
+        h2 = int(m.group(4))
+        m2 = int(m.group(5) or 0)
+        ap2 = (m.group(6) or "").replace(".", "")
+
+        if h1 > 24 or h2 > 24:
+            continue
+
+        # Calcular hora de cierre primero (en horarios de restaurante sin am/pm, el cierre < 12 es PM)
+        if ap2 == "pm" and h2 < 12:
+            h2 += 12
+        elif ap2 == "am" and h2 == 12:
+            h2 = 24
+        elif ap2 == "am" and h2 < 6:
+            h2 += 24
+        elif not ap2 and h2 < 12:
+            h2 += 12
+
+        e_val = h2 + (m2 / 60.0)
+
+        # Calcular hora de apertura
+        if ap1 == "pm" and h1 < 12:
+            h1 += 12
+        elif ap1 == "am" and h1 == 12:
+            h1 = 0
+        elif not ap1:
+            if h1 == 12:
+                h1 = 12
+            elif 1 <= h1 <= 4:
+                h1 += 12
+            elif h1 in (5, 6, 7) and (e_val >= 20.5 or len(intervals) > 0):
+                # Segundo turno de cena tipo '12:30-3:00pm y 7:00-11:00pm' o '6:30-11:00pm'
+                h1 += 12
+
+        s_val = h1 + (m1 / 60.0)
+        if e_val <= s_val:
+            e_val += 24.0
+
+        intervals.append((s_val, e_val))
+    return intervals
+
+
+def is_restaurant_open_at(
+    available_days: Optional[str],
+    hours_raw: Optional[str],
+    food_type: Optional[str],
+    day_key: Optional[str],
+    hour_float: Optional[float]
+) -> tuple[bool, str]:
+    """
+    Evalúa determinísticamente si un restaurante abre el día `day_key` ('lun'..'dom')
+    y si está abierto a la hora `hour_float` (ej. 19.0 para 7:00 PM).
+    Retorna (is_open: bool, reason: str).
+    """
+    avail_norm = _strip_accents_lower(available_days or "")
+    hours_norm = _strip_accents_lower(hours_raw or "")
+
+    # 1. Validar día disponible
+    if day_key:
+        if avail_norm and "todos" not in avail_norm:
+            if day_key not in avail_norm:
+                return False, f"Cerrado los {DAY_CODE_DISPLAY.get(day_key, day_key)}"
+
+        # Validar cierres explícitos en hours_raw
+        if day_key == "lun" and any(x in hours_norm for x in ("lunes cerrado", "lun cerrado", "cerrado lunes", "mar-dom", "martes, miercoles", "mie-sab")):
+            return False, "Cerrado los lunes"
+        if day_key == "mar" and any(x in hours_norm for x in ("martes cerrado", "mar cerrado", "mie-sab")):
+            return False, "Cerrado los martes"
+        if day_key == "dom" and (
+            any(x in hours_norm for x in ("dom cerrado", "domingo cerrado", "cerrado domingo"))
+            or ("lun-sab" in hours_norm and "dom" not in hours_norm)
+        ):
+            return False, "Cerrado los domingos"
+
+    # 2. Validar hora de apertura y cierre
+    if hour_float is not None and hours_norm:
+        # Separar en cláusulas por '·', ';', '|' o saltos de línea, y también antes de encabezados de día tras 'pm'/'am'/'cerrado'
+        normalized_sep = re.sub(
+            r"(pm|am|cerrado)\s+(?=(?:lunes|martes|miercoles|jueves|viernes|sabados|sabado|domingos|domingo|lun|mar|mie|jue|vie|sab|dom)\b)",
+            r"\1 · ",
+            hours_norm,
+        )
+        raw_clauses = [c.strip() for c in re.split(r"[·;|\n]+", normalized_sep) if c.strip()]
+
+        matching_intervals = []
+        closed_for_day = False
+
+        for clause in raw_clauses:
+            clause_days = _expand_days_in_clause(clause)
+            applies = (not clause_days) or (not day_key) or (day_key in clause_days)
+            if not applies:
+                continue
+            c_intervals = _extract_intervals_from_clause(clause)
+            if "cerrado" in clause and not c_intervals:
+                # Verificar si el 'cerrado' aplica específicamente a este día
+                if day_key and day_key in clause_days:
+                    closed_for_day = True
+            matching_intervals.extend(c_intervals)
+
+        if closed_for_day and not matching_intervals:
+            return False, f"Cerrado el día {DAY_CODE_DISPLAY.get(day_key, '')}"
+
+        if matching_intervals:
+            # La cita debe iniciar dentro de algún turno abierto y al menos 30 min antes del cierre (o < cierre)
+            is_open_in_shift = any(s_val <= hour_float < e_val for (s_val, e_val) in matching_intervals)
+            if not is_open_in_shift:
+                return False, f"Cerrado a esa hora ({hours_raw})"
+
+    return True, "Abierto"
+
+
+async def get_active_bookings_by_restaurant(db: AsyncSession, exclude_match_id: Optional[int] = None):
+    """
+    Consulta todas las citas activas en scheduled_dates (excluyendo reprogramaciones y matches rechazados)
+    y retorna la lista de reservas parseadas con (match_id, person_a, person_b, venue, city, date_ymd, slot_24h, slot_display, date_time_raw).
+    """
+    q = """
+        SELECT s.id, s.match_id, s.person_a, s.person_b, s.date_time, s.venue, s.city, s.had_date, s.reschedule,
+               COALESCE(m.status, '') AS match_status
+        FROM scheduled_dates s
+        LEFT JOIN operational_matches m ON m.id = s.match_id
+        WHERE s.venue IS NOT NULL AND TRIM(s.venue) != '' AND NOT s.venue ILIKE '%Por definir%'
+          AND s.date_time IS NOT NULL AND TRIM(s.date_time) != '' AND NOT s.date_time ILIKE '%Por definir%'
+          AND COALESCE(s.reschedule, false) = false
+          AND COALESCE(m.status, '') NOT ILIKE '%RECHAZAD%'
+          AND COALESCE(m.status, '') NOT ILIKE '%REPROGRAMAR%'
+    """
+    params = {}
+    if exclude_match_id is not None:
+        q += " AND (s.match_id IS NULL OR s.match_id != :ex_mid)"
+        params["ex_mid"] = exclude_match_id
+
+    res = await db.execute(text(q), params)
+    bookings = []
+    for r in res.fetchall():
+        d = dict(r._mapping)
+        date_ymd, slot_24h, hour_float, slot_display = parse_date_and_half_hour_slot(d.get("date_time"))
+        bookings.append({
+            "id": d.get("id"),
+            "match_id": d.get("match_id"),
+            "person_a": d.get("person_a"),
+            "person_b": d.get("person_b"),
+            "venue": d.get("venue"),
+            "city": d.get("city"),
+            "had_date": bool(d.get("had_date")),
+            "date_time_raw": d.get("date_time"),
+            "date_ymd": date_ymd,
+            "slot_24h": slot_24h,
+            "slot_display": slot_display or slot_24h or "",
+        })
+    return bookings
+
+
+async def check_restaurant_slot_availability(
+    db: AsyncSession,
+    venue_str: str,
+    city_str: str,
+    date_time_str: str,
+    exclude_match_id: Optional[int] = None
+) -> Optional[dict]:
+    """
+    Verifica si el restaurante seleccionado tiene cupos disponibles en la fecha y media hora exactas.
+    """
+    date_ymd, slot_24h, _, slot_display = parse_date_and_half_hour_slot(date_time_str)
+    if not date_ymd or not slot_24h:
+        return None
+
+    r_res = await db.execute(text("SELECT id, name, city, COALESCE(max_slots_per_time, 3) AS max_slots FROM restaurants WHERE COALESCE(is_active, true) = true"))
+    rest_rows = [dict(r._mapping) for r in r_res.fetchall()]
+    matched_rest = None
+    for r in rest_rows:
+        if venue_matches_restaurant(venue_str, r["name"], city_str, r["city"]):
+            matched_rest = r
+            break
+
+    if not matched_rest:
+        return None
+
+    all_bookings = await get_active_bookings_by_restaurant(db, exclude_match_id=exclude_match_id)
+    occupied = 0
+    for b in all_bookings:
+        if b["date_ymd"] == date_ymd and b["slot_24h"] == slot_24h:
+            if venue_matches_restaurant(b["venue"], matched_rest["name"], b["city"], matched_rest["city"]):
+                occupied += 1
+
+    max_slots = int(matched_rest.get("max_slots") or 3)
+    return {
+        "restaurant_id": matched_rest["id"],
+        "restaurant_name": matched_rest["name"],
+        "date_ymd": date_ymd,
+        "slot_24h": slot_24h,
+        "slot_display": slot_display or slot_24h,
+        "occupied": occupied,
+        "max_slots": max_slots,
+        "available": max(0, max_slots - occupied),
+        "is_full": occupied >= max_slots
+    }
+
 
 @router.get("/restaurants")
 async def get_restaurants(
     city: Optional[str] = Query(None, description="Ciudad del restaurante"),
     day: Optional[str] = Query(None, description="Día disponible (Lun, Mar, Mié, Jue, Vie, Sáb, Dom)"),
-    time: Optional[str] = Query(None, description="Hora de la cita (ej. 19:00)"),
+    date: Optional[str] = Query(None, description="Fecha exacta YYYY-MM-DD para validar día y cupos por hora"),
+    time: Optional[str] = Query(None, description="Hora de la cita cada media hora (ej. 7:00 PM o 19:00)"),
     budget_category: Optional[str] = Query(None, description="Categoría de presupuesto: Menos de 100k, 100k-200k, 200k-300k, Más de 300k"),
-    search: Optional[str] = Query(None, description="Búsqueda por nombre o tipo de comida"),
+    search: Optional[str] = Query(None, description="Búsqueda por nombre, zona o tipo de comida"),
+    include_inactive: bool = Query(False, description="Incluir restaurantes inactivos (vista catálogo admin)"),
+    include_full: bool = Query(False, description="Incluir restaurantes con cupos llenos en esa hora (vista catálogo admin)"),
+    exclude_match_id: Optional[int] = Query(None, description="ID de match a excluir del conteo de cupos al editar"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna restaurantes filtrados simultáneamente por las 4 condiciones canónicas:
-    1. Ciudad (lista)
-    2. Día disponible (Lun-Dom)
-    3. Hora de la cita
-    4. Categoría de Presupuesto (Menos de 100k, 100k-200k, 200k-300k, Más de 300k)
+    Retorna restaurantes filtrados simultáneamente por las 5 condiciones canónicas:
+    1. Ciudad
+    2. Día de apertura (derivado de `day` o `date`)
+    3. Hora de apertura/cierre (`time` evaluado contra `hours_raw` en ese día)
+    4. Categoría de Presupuesto (`Menos de 100k`, `100k-200k`, `200k-300k`, `Más de 300k`)
+    5. Cupos disponibles por media hora (`max_slots_per_time` vs citas agendadas en esa fecha y media hora exacta)
     """
+    # Extracción segura de parámetros tanto si viene de llamada HTTP como directa
+    city_val = str(city).strip() if (city and isinstance(city, str)) else None
+    day_val = str(day).strip() if (day and isinstance(day, str)) else None
+    date_val = str(date).strip() if (date and isinstance(date, str)) else None
+    time_val = str(time).strip() if (time and isinstance(time, str)) else None
+    bcat_val = str(budget_category).strip() if (budget_category and isinstance(budget_category, str)) else None
+    search_val = str(search).strip() if (search and isinstance(search, str)) else None
+    inc_inactive = bool(include_inactive) if isinstance(include_inactive, bool) else False
+    inc_full = bool(include_full) if isinstance(include_full, bool) else False
+    ex_mid = int(exclude_match_id) if (exclude_match_id is not None and isinstance(exclude_match_id, (int, str)) and str(exclude_match_id).isdigit()) else None
+
     query = "SELECT * FROM restaurants WHERE 1=1"
     params = {}
 
-    if city and city.lower() not in ("all", "todas", "todos"):
-        query += " AND LOWER(city) = LOWER(:city)"
-        params["city"] = city.strip()
+    if not inc_inactive:
+        query += " AND COALESCE(is_active, true) = true"
 
-    if budget_category and budget_category.lower() not in ("all", "todos", "todas"):
-        query += " AND LOWER(budget_category) = LOWER(:bcat)"
-        params["bcat"] = budget_category.strip()
+    if city_val and city_val.lower() not in ("all", "todas", "todos"):
+        query += " AND LOWER(TRIM(city)) = LOWER(TRIM(:city))"
+        params["city"] = city_val
 
-    if day and day.lower() not in ("all", "todos", "todas"):
-        clean_day = day.strip()
-        query += " AND (available_days ILIKE :day_like OR available_days ILIKE '%todos%')"
-        params["day_like"] = f"%{clean_day}%"
+    if bcat_val and bcat_val.lower() not in ("all", "todos", "todas"):
+        query += " AND LOWER(TRIM(budget_category)) = LOWER(TRIM(:bcat))"
+        params["bcat"] = bcat_val
 
-    if search:
-        query += " AND (name ILIKE :srch OR food_type ILIKE :srch OR zone ILIKE :srch)"
-        params["srch"] = f"%{search.strip()}%"
+    if search_val:
+        query += " AND (name ILIKE :srch OR food_type ILIKE :srch OR zone ILIKE :srch OR detailed_location ILIKE :srch)"
+        params["srch"] = f"%{search_val}%"
 
     query += " ORDER BY city ASC, price_num_cop ASC, name ASC"
 
     res = await db.execute(text(query), params)
     rows = res.fetchall()
 
+    # Normalizar día (desde `day` o `date`) y hora (`time`)
+    eff_day_key = normalize_day_code(day_val) or normalize_day_code(date_val)
+    eff_date_ymd = None
+    if date_val and re.match(r"^\d{4}-\d{2}-\d{2}$", date_val):
+        eff_date_ymd = date_val
+    slot_24h, hour_float, slot_display = parse_time_to_24h_slot_and_float(time_val)
+
+    # Cargar reservas activas para calcular cupos por media hora
+    all_bookings = await get_active_bookings_by_restaurant(db, exclude_match_id=ex_mid)
+
     restaurants = []
     for r in rows:
         d = dict(r._mapping)
+        r_name = d.get("name") or ""
+        r_city = d.get("city") or ""
+        avail_days = d.get("available_days") or ""
+        hours_raw = d.get("hours_raw") or ""
+        food_type = d.get("food_type") or ""
+        max_slots = int(d.get("max_slots_per_time") if d.get("max_slots_per_time") is not None else 3)
+
+        # Evaluar apertura por día y hora
+        is_open, open_reason = is_restaurant_open_at(avail_days, hours_raw, food_type, eff_day_key, hour_float)
+        if (eff_day_key or hour_float is not None) and not is_open:
+            continue
+
+        # Calcular cupos ocupados en esa fecha y media hora (y resumen por horas del día)
+        rest_bookings = [
+            b for b in all_bookings
+            if venue_matches_restaurant(b["venue"], r_name, b["city"], r_city)
+        ]
+        slots_by_time_on_date = {}
+        occupied_at_slot = 0
+        for b in rest_bookings:
+            if eff_date_ymd and b["date_ymd"] == eff_date_ymd and b["slot_24h"]:
+                slots_by_time_on_date[b["slot_24h"]] = slots_by_time_on_date.get(b["slot_24h"], 0) + 1
+                if slot_24h and b["slot_24h"] == slot_24h:
+                    occupied_at_slot += 1
+            elif not eff_date_ymd and slot_24h and b["slot_24h"] == slot_24h and not b["had_date"]:
+                # Si no se pasó fecha exacta, no bloquear por citas de otros días
+                pass
+
+        available_slots = max(0, max_slots - occupied_at_slot)
+        is_full_at_slot = bool(eff_date_ymd and slot_24h and occupied_at_slot >= max_slots)
+
+        if is_full_at_slot and not inc_full:
+            continue
+
         restaurants.append({
             "id": d.get("id"),
-            "name": d.get("name"),
-            "city": d.get("city"),
-            "food_type": d.get("food_type"),
-            "price_range_raw": d.get("price_range_raw"),
-            "price_num_cop": d.get("price_num_cop"),
-            "budget_category": d.get("budget_category"),
-            "available_days": d.get("available_days"),
-            "hours_raw": d.get("hours_raw"),
-            "zone": d.get("zone"),
-            "detailed_location": d.get("detailed_location"),
-            "accepts_reservations": d.get("accepts_reservations")
+            "name": r_name,
+            "city": r_city,
+            "food_type": food_type,
+            "price_range_raw": d.get("price_range_raw") or "",
+            "price_num_cop": d.get("price_num_cop") or 0,
+            "budget_category": d.get("budget_category") or "100k-200k",
+            "available_days": avail_days,
+            "hours_raw": hours_raw,
+            "zone": d.get("zone") or "",
+            "detailed_location": d.get("detailed_location") or "",
+            "accepts_reservations": d.get("accepts_reservations") or "Sí",
+            "max_slots_per_time": max_slots,
+            "is_active": bool(d.get("is_active", True)),
+            "contact_phone": d.get("contact_phone") or "",
+            "notes": d.get("notes") or "",
+            "occupied_slots": occupied_at_slot,
+            "available_slots": available_slots,
+            "is_full_at_slot": is_full_at_slot,
+            "slots_by_time_on_date": slots_by_time_on_date,
+            "total_active_bookings": len(rest_bookings),
+            "open_status": open_reason
         })
 
     return {
@@ -6239,10 +7062,164 @@ async def get_restaurants(
         "total": len(restaurants),
         "applied_filters": {
             "city": city,
-            "day": day,
-            "time": time,
+            "day": DAY_CODE_DISPLAY.get(eff_day_key, day),
+            "date": eff_date_ymd,
+            "time": slot_display or time,
+            "slot_24h": slot_24h,
             "budget_category": budget_category
         }
+    }
+
+
+class RestaurantUpsertRequest(BaseModel):
+    name: str
+    city: str = "Bogotá"
+    food_type: Optional[str] = ""
+    price_range_raw: Optional[str] = ""
+    price_num_cop: Optional[int] = 150000
+    budget_category: str = "100k-200k"
+    available_days: str = "Lun,Mar,Mié,Jue,Vie,Sáb,Dom"
+    hours_raw: Optional[str] = "Lun-Sáb 12:00-10:30pm · Dom 12:00-5:00pm"
+    zone: Optional[str] = ""
+    detailed_location: Optional[str] = ""
+    accepts_reservations: Optional[str] = "Sí"
+    max_slots_per_time: int = 3
+    is_active: bool = True
+    contact_phone: Optional[str] = ""
+    notes: Optional[str] = ""
+
+
+@router.post("/restaurants")
+async def create_restaurant(payload: RestaurantUpsertRequest, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(text("""
+        INSERT INTO restaurants (
+            name, city, food_type, price_range_raw, price_num_cop,
+            budget_category, available_days, hours_raw, zone,
+            detailed_location, accepts_reservations, max_slots_per_time,
+            is_active, contact_phone, notes, created_at, updated_at
+        ) VALUES (
+            :name, :city, :food_type, :price_range_raw, :price_num_cop,
+            :budget_category, :available_days, :hours_raw, :zone,
+            :detailed_location, :accepts_reservations, :max_slots_per_time,
+            :is_active, :contact_phone, :notes, NOW(), NOW()
+        ) RETURNING id
+    """), {
+        "name": payload.name.strip(),
+        "city": payload.city.strip(),
+        "food_type": (payload.food_type or "").strip(),
+        "price_range_raw": (payload.price_range_raw or "").strip(),
+        "price_num_cop": int(payload.price_num_cop or 0),
+        "budget_category": payload.budget_category.strip(),
+        "available_days": payload.available_days.strip(),
+        "hours_raw": (payload.hours_raw or "").strip(),
+        "zone": (payload.zone or "").strip(),
+        "detailed_location": (payload.detailed_location or "").strip(),
+        "accepts_reservations": (payload.accepts_reservations or "Sí").strip(),
+        "max_slots_per_time": max(1, int(payload.max_slots_per_time or 3)),
+        "is_active": bool(payload.is_active),
+        "contact_phone": (payload.contact_phone or "").strip(),
+        "notes": (payload.notes or "").strip(),
+    })
+    new_id = res.scalar()
+    await db.commit()
+    return {"status": "success", "id": new_id, "message": "Restaurante creado exitosamente"}
+
+
+@router.put("/restaurants/{restaurant_id}")
+async def update_restaurant(restaurant_id: int, payload: RestaurantUpsertRequest, db: AsyncSession = Depends(get_db)):
+    check = await db.execute(text("SELECT id FROM restaurants WHERE id = :id"), {"id": restaurant_id})
+    if not check.fetchone():
+        raise HTTPException(status_code=404, detail="Restaurante no encontrado")
+
+    await db.execute(text("""
+        UPDATE restaurants
+        SET name = :name,
+            city = :city,
+            food_type = :food_type,
+            price_range_raw = :price_range_raw,
+            price_num_cop = :price_num_cop,
+            budget_category = :budget_category,
+            available_days = :available_days,
+            hours_raw = :hours_raw,
+            zone = :zone,
+            detailed_location = :detailed_location,
+            accepts_reservations = :accepts_reservations,
+            max_slots_per_time = :max_slots_per_time,
+            is_active = :is_active,
+            contact_phone = :contact_phone,
+            notes = :notes,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {
+        "id": restaurant_id,
+        "name": payload.name.strip(),
+        "city": payload.city.strip(),
+        "food_type": (payload.food_type or "").strip(),
+        "price_range_raw": (payload.price_range_raw or "").strip(),
+        "price_num_cop": int(payload.price_num_cop or 0),
+        "budget_category": payload.budget_category.strip(),
+        "available_days": payload.available_days.strip(),
+        "hours_raw": (payload.hours_raw or "").strip(),
+        "zone": (payload.zone or "").strip(),
+        "detailed_location": (payload.detailed_location or "").strip(),
+        "accepts_reservations": (payload.accepts_reservations or "Sí").strip(),
+        "max_slots_per_time": max(1, int(payload.max_slots_per_time or 3)),
+        "is_active": bool(payload.is_active),
+        "contact_phone": (payload.contact_phone or "").strip(),
+        "notes": (payload.notes or "").strip(),
+    })
+    await db.commit()
+    return {"status": "success", "id": restaurant_id, "message": "Restaurante actualizado exitosamente"}
+
+
+@router.delete("/restaurants/{restaurant_id}")
+async def delete_restaurant(restaurant_id: int, db: AsyncSession = Depends(get_db)):
+    await db.execute(text("DELETE FROM restaurants WHERE id = :id"), {"id": restaurant_id})
+    await db.commit()
+    return {"status": "success", "id": restaurant_id}
+
+
+@router.get("/restaurants/{restaurant_id}/bookings")
+async def get_restaurant_bookings(restaurant_id: int, db: AsyncSession = Depends(get_db)):
+    r_res = await db.execute(text("SELECT * FROM restaurants WHERE id = :id"), {"id": restaurant_id})
+    r_row = r_res.fetchone()
+    if not r_row:
+        raise HTTPException(status_code=404, detail="Restaurante no encontrado")
+    r_dict = dict(r_row._mapping)
+    max_slots = int(r_dict.get("max_slots_per_time") or 3)
+
+    all_bookings = await get_active_bookings_by_restaurant(db)
+    matched = [
+        b for b in all_bookings
+        if venue_matches_restaurant(b["venue"], r_dict["name"], b["city"], r_dict["city"])
+    ]
+
+    # Agrupar por (date_ymd, slot_24h) para mostrar ocupación de cupos por cada media hora
+    slots_summary = {}
+    for b in matched:
+        key = f"{b['date_ymd'] or 'Sin fecha'}|{b['slot_24h'] or 'Sin hora'}"
+        if key not in slots_summary:
+            slots_summary[key] = {
+                "date_ymd": b["date_ymd"] or "Por definir",
+                "slot_24h": b["slot_24h"] or "",
+                "slot_display": b["slot_display"] or "Por definir",
+                "occupied": 0,
+                "max_slots": max_slots,
+                "couples": []
+            }
+        slots_summary[key]["occupied"] += 1
+        slots_summary[key]["couples"].append(f"{b['person_a']} & {b['person_b']}")
+
+    return {
+        "restaurant": {
+            "id": r_dict["id"],
+            "name": r_dict["name"],
+            "city": r_dict["city"],
+            "max_slots_per_time": max_slots
+        },
+        "bookings": matched,
+        "slots_summary": list(slots_summary.values()),
+        "total": len(matched)
     }
 
 
@@ -9964,6 +10941,7 @@ class ApprovePriorityMatchRequest(BaseModel):
 async def get_prioritarios(
     status: Optional[str] = Query(None),
     psychologist: Optional[str] = Query(None),
+    ownership_mode: Optional[str] = Query("all"),
     search: Optional[str] = Query(None),
     urgency: Optional[str] = Query(None),
     sync: bool = Query(False),
@@ -10061,9 +11039,12 @@ async def get_prioritarios(
             query += " AND status ILIKE :st"
             params["st"] = f"%{status}%"
 
-    if psychologist and psychologist.strip() and psychologist != "todas":
-        query += " AND assigned_psychologist ILIKE :psyc"
-        params["psyc"] = f"%{psychologist}%"
+    if psychologist and psychologist.strip() and psychologist.lower() not in ("todas", "all"):
+        cond_sql, cond_params = build_psychologist_sql_condition(
+            "assigned_psychologist", psychologist, "psyc", ownership_mode=ownership_mode or "all"
+        )
+        query += f" AND {cond_sql}"
+        params.update(cond_params)
 
     if urgency and urgency.strip() and urgency != "todas":
         query += " AND urgency_level = :urg"
@@ -10115,6 +11096,7 @@ async def get_prioritarios(
         else:
             urg = "MODERADA"
 
+        ownership = classify_psychologist_ownership(r.assigned_psychologist, psychologist)
         cases.append({
             "id": r.id,
             "user_id": r.user_id,
@@ -10129,6 +11111,10 @@ async def get_prioritarios(
             "candidate_crm_id": cand_cid_str if cand_cid_str.isdigit() else "",
             "candidate_crm_url": cand_crm_url,
             "assigned_psychologist": r.assigned_psychologist or "Sin asignar",
+            "original_psychologist": ownership["original_canonical"],
+            "is_inherited": ownership["is_inherited"],
+            "ownership_type": ownership["ownership_type"],
+            "inherited_from": ownership["inherited_from"],
             "matchmaker_comment": r.matchmaker_comment or "",
             "status": r.status or "Pendiente",
             "operational_match_id": r.operational_match_id,
@@ -10160,10 +11146,14 @@ async def get_prioritarios(
         "resueltos_totales": k_row.resueltos_totales if k_row else 0
     }
 
+    canonical_viewer = resolve_canonical_psychologist(psychologist) if (psychologist and psychologist.lower() not in ("all", "todas")) else ""
+    inherited_label = INHERITED_DISPLAY_LABELS.get(canonical_viewer)
+
     return {
         "kpis": kpis,
         "total_cases": len(cases),
-        "cases": cases
+        "cases": cases,
+        "inherited_from_label": inherited_label
     }
 
 
@@ -11652,6 +12642,7 @@ async def get_incomplete_profiles(
     missing_field: str = Query("all", description="all, age, city, gender, estatura, notes, search_prefs"),
     has_plan: Optional[bool] = Query(None, description="Filtrar solo clientes con plan contratado"),
     psychologist: Optional[str] = Query(None, description="Filtrar por psicóloga responsable"),
+    ownership_mode: Optional[str] = Query("all", description="all, propios, heredados"),
     search: Optional[str] = Query(None, description="Búsqueda por nombre, teléfono, email"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -11699,7 +12690,9 @@ async def get_incomplete_profiles(
         where_clauses.append("(p.plan_tier IS NULL OR p.plan_tier = '')")
 
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        cond_sql, cond_params = build_psychologist_sql_condition("p.responsable", psychologist, "psyc")
+        cond_sql, cond_params = build_psychologist_sql_condition(
+            "p.responsable", psychologist, "psyc", ownership_mode=ownership_mode or "all"
+        )
         where_clauses.append(cond_sql)
         params.update(cond_params)
 
@@ -11814,6 +12807,7 @@ async def get_incomplete_profiles(
         cid = str(r.crm_id or "").strip()
         crm_url = f"https://dailylover.smartmatchapp.com/#!/client/{cid}/" if (cid and cid.isdigit()) else f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(r.name or '')}"
 
+        ownership = classify_psychologist_ownership(r.responsable, psychologist)
         profiles_list.append({
             "user_id": r.id,
             "name": r.name or "Sin nombre",
@@ -11827,6 +12821,11 @@ async def get_incomplete_profiles(
             "estatura": r.estatura or "",
             "plan_tier": r.plan_tier or "Sin plan",
             "responsable": r.responsable or "Sin asignar",
+            "original_psychologist": ownership["original_canonical"],
+            "assigned_psychologist": ownership["assigned_psychologist"],
+            "is_inherited": ownership["is_inherited"],
+            "ownership_type": ownership["ownership_type"],
+            "inherited_from": ownership["inherited_from"],
             "missing_fields": missing,
             "completeness_pct": completeness_pct,
             "whatsapp_url": whatsapp_url,
@@ -11834,13 +12833,17 @@ async def get_incomplete_profiles(
             "bio_preview": (bio[:120] + "...") if len(bio) > 120 else bio
         })
 
+    canonical_viewer = resolve_canonical_psychologist(psychologist) if (psychologist and psychologist.lower() not in ("all", "todas")) else ""
+    inherited_label = INHERITED_DISPLAY_LABELS.get(canonical_viewer)
+
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     return {
         "total": total_count,
         "page": page,
         "page_size": page_size,
         "total_pages": total_pages,
-        "profiles": profiles_list
+        "profiles": profiles_list,
+        "inherited_from_label": inherited_label
     }
 
 

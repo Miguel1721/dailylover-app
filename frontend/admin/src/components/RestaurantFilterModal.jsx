@@ -81,14 +81,16 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
   const currentDayCode = getDayOfWeekCode(selectedDate)
   const currentDayFullName = getDayFullName(selectedDate)
 
-  // Fetch restaurantes con los 4 filtros combinados
+  // Fetch restaurantes con los 5 filtros combinados (Ciudad, Día, Fecha, Hora y Presupuesto + Cupos por media hora)
   const fetchRestaurants = useCallback(async () => {
     setLoading(true)
     let url = `${API}/api/v1/matchmaking/restaurants?`
     if (city && city !== 'all') url += `city=${encodeURIComponent(city)}&`
     if (currentDayCode) url += `day=${encodeURIComponent(currentDayCode)}&`
+    if (selectedDate) url += `date=${encodeURIComponent(selectedDate)}&`
     if (budgetCategory && budgetCategory !== 'all') url += `budget_category=${encodeURIComponent(budgetCategory)}&`
     if (selectedTime) url += `time=${encodeURIComponent(selectedTime)}&`
+    if (match?.id) url += `exclude_match_id=${encodeURIComponent(match.id)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
 
     try {
@@ -106,7 +108,7 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
     } finally {
       setLoading(false)
     }
-  }, [city, currentDayCode, budgetCategory, selectedTime, searchTerm, selectedRestaurant])
+  }, [city, currentDayCode, selectedDate, budgetCategory, selectedTime, match?.id, searchTerm, selectedRestaurant])
 
   useEffect(() => {
     fetchRestaurants()
@@ -334,7 +336,17 @@ export default function RestaurantFilterModal({ match, initialDate, initialVenue
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
                       <span>📍 {r.zone || r.city}</span>
-                      <span style={{ fontWeight: 600, color: '#4ADE80' }}>${Number(r.price_num_cop).toLocaleString('es-CO')}</span>
+                      <span style={{ fontWeight: 600, color: '#4ADE80' }}>{r.price_range_raw ? `$${r.price_range_raw}` : `$${Number(r.price_num_cop).toLocaleString('es-CO')}`}</span>
+                    </div>
+
+                    {r.hours_raw && (
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                        ⏰ {r.hours_raw}
+                      </div>
+                    )}
+
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: '#10B981', marginTop: 4 }}>
+                      👥 {r.available_slots ?? (r.max_slots_per_time || 3)}/{r.max_slots_per_time || 3} cupos libres ({selectedTime})
                     </div>
 
                     {r.detailed_location && (

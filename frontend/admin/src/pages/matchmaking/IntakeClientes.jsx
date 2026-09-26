@@ -11,8 +11,16 @@ import CrmPersonLink from '../../components/CrmPersonLink'
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const PSYCHOLOGIST_LIST = [
-  'SILVI', 'JENN', 'ANA', 'ALEJA', 'STEFFY', 'SOFI', 'MAPE D', 'MANU', 'PIA', 'ISA'
+  'SILVI', 'JENN', 'ANA', 'STEFFY', 'ISA', 'PIA', 'MAPE D'
 ]
+
+const INHERITED_PSYCHOLOGIST_LABELS = {
+  'SILVI': 'Sofi',
+  'JENN': 'Aleja',
+  'ISA': 'Lau',
+  'ANA': 'Maripaz / MariB / MariS',
+  'STEFFY': 'Manu',
+}
 
 const CITIES = [
   'Bogotá', 'Medellín', 'Cali', 'Barranquilla', 'Bucaramanga',
@@ -67,6 +75,8 @@ export default function IntakeClientes() {
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(false)
   const [selectedPsyc, setSelectedPsyc] = useState(initialPsyc)
+  const [ownershipFilter, setOwnershipFilter] = useState('all')
+  const [ownershipCounts, setOwnershipCounts] = useState({ propios: 0, heredados: 0 })
   const [selectedCity, setSelectedCity] = useState('all')
   const [selectedPlan, setSelectedPlan] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
@@ -126,6 +136,7 @@ export default function IntakeClientes() {
     setLoading(true)
     let url = `${API}/api/v1/matchmaking/intake-list?page=${currentPage}&page_size=${pageSize}&sort_by=${encodeURIComponent(sortBy)}&`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
+    if (ownershipFilter && ownershipFilter !== 'all') url += `ownership_mode=${encodeURIComponent(ownershipFilter)}&`
     if (selectedCity && selectedCity !== 'all') url += `city=${encodeURIComponent(selectedCity)}&`
     if (selectedPlan && selectedPlan !== 'all') url += `plan_tier=${encodeURIComponent(selectedPlan)}&`
     if (selectedDateFilter && selectedDateFilter !== 'all') url += `date_filter=${encodeURIComponent(selectedDateFilter)}&`
@@ -138,6 +149,7 @@ export default function IntakeClientes() {
       .then(data => {
         setClients(data.clients || [])
         setTotalCount(data.total || 0)
+        if (data.ownership_counts) setOwnershipCounts(data.ownership_counts)
         if (data.total_profiles_crm) setTotalProfilesCrm(data.total_profiles_crm)
         if (data.total_slots_created) setTotalSlotsAll(data.total_slots_created)
         setServerTotalPages(data.total_pages || 1)
@@ -147,7 +159,7 @@ export default function IntakeClientes() {
         console.error('Error fetching intake list:', err)
         setLoading(false)
       })
-  }, [selectedPsyc, selectedCity, selectedPlan, selectedDateFilter, sortBy, searchTerm, currentPage, token])
+  }, [selectedPsyc, ownershipFilter, selectedCity, selectedPlan, selectedDateFilter, sortBy, searchTerm, currentPage, token])
 
   useEffect(() => {
     fetchIntakeList()
@@ -155,7 +167,7 @@ export default function IntakeClientes() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [selectedPsyc, selectedCity, selectedPlan, selectedDateFilter, sortBy, searchTerm])
+  }, [selectedPsyc, ownershipFilter, selectedCity, selectedPlan, selectedDateFilter, sortBy, searchTerm])
 
   // Autocompletado inteligente al pegar URL de SmartMatchApp
   const handleResolveQuery = async (queryVal) => {
@@ -384,9 +396,9 @@ export default function IntakeClientes() {
       </div>
 
       {/* Selector de Psicólogas */}
-      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 10 }}>
         <button
-          onClick={() => setSelectedPsyc('all')}
+          onClick={() => { setSelectedPsyc('all'); setOwnershipFilter('all') }}
           style={{
             padding: '6px 14px',
             borderRadius: 20,
@@ -399,12 +411,12 @@ export default function IntakeClientes() {
             boxShadow: selectedPsyc === 'all' ? '0 2px 6px rgba(150,21,0,0.3)' : 'none'
           }}
         >
-          Todas ({clients.length})
+          Todas ({totalCount || clients.length})
         </button>
         {psycList.map(p => (
           <button
             key={p}
-            onClick={() => setSelectedPsyc(p)}
+            onClick={() => { setSelectedPsyc(p); setOwnershipFilter('all') }}
             style={{
               padding: '6px 14px',
               borderRadius: 20,
@@ -420,6 +432,68 @@ export default function IntakeClientes() {
             {p}
           </button>
         ))}
+      </div>
+
+      {/* Botones Rápidos: Propios vs Heredados (Matchmakers Retiradas) */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        marginBottom: 14,
+        background: 'rgba(255,255,255,0.02)',
+        padding: '8px 14px',
+        borderRadius: 10,
+        border: '1px solid var(--border-color)'
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Portafolio {selectedPsyc && selectedPsyc !== 'all' ? `de ${selectedPsyc}` : 'General'}:
+        </span>
+        <button
+          onClick={() => setOwnershipFilter('all')}
+          style={{
+            padding: '5px 12px',
+            borderRadius: 16,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer',
+            border: ownershipFilter === 'all' ? '1.5px solid #961500' : '1px solid var(--border-color)',
+            background: ownershipFilter === 'all' ? '#961500' : 'var(--bg-base)',
+            color: ownershipFilter === 'all' ? '#fff' : 'var(--text-secondary)'
+          }}
+        >
+          👥 Todos ({(ownershipCounts.propios || 0) + (ownershipCounts.heredados || 0) || totalCount})
+        </button>
+        <button
+          onClick={() => setOwnershipFilter(ownershipFilter === 'propios' ? 'all' : 'propios')}
+          style={{
+            padding: '5px 12px',
+            borderRadius: 16,
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            border: ownershipFilter === 'propios' ? '1.5px solid #10B981' : '1px solid rgba(16,185,129,0.4)',
+            background: ownershipFilter === 'propios' ? '#10B981' : 'rgba(16,185,129,0.08)',
+            color: ownershipFilter === 'propios' ? '#fff' : '#059669'
+          }}
+        >
+          👤 Propios ({ownershipCounts.propios || 0})
+        </button>
+        <button
+          onClick={() => setOwnershipFilter(ownershipFilter === 'heredados' ? 'all' : 'heredados')}
+          style={{
+            padding: '5px 12px',
+            borderRadius: 16,
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            border: ownershipFilter === 'heredados' ? '1.5px solid #F59E0B' : '1px solid rgba(245,158,11,0.45)',
+            background: ownershipFilter === 'heredados' ? '#F59E0B' : 'rgba(245,158,11,0.1)',
+            color: ownershipFilter === 'heredados' ? '#fff' : '#D97706'
+          }}
+        >
+          🔄 Heredados{selectedPsyc && INHERITED_PSYCHOLOGIST_LABELS[selectedPsyc] ? ` (${INHERITED_PSYCHOLOGIST_LABELS[selectedPsyc]})` : ''} ({ownershipCounts.heredados || 0})
+        </button>
       </div>
 
       {/* Barra de Búsqueda y Filtros */}
@@ -637,16 +711,44 @@ export default function IntakeClientes() {
                     )}
                   </td>
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{
-                      fontWeight: 700,
-                      color: '#961500',
-                      background: 'rgba(150, 21, 0, 0.12)',
-                      padding: '3px 8px',
-                      borderRadius: 4,
-                      fontSize: 11
-                    }}>
-                      {c.psychologist_name}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                      <span style={{
+                        fontWeight: 700,
+                        color: '#961500',
+                        background: 'rgba(150, 21, 0, 0.12)',
+                        padding: '3px 8px',
+                        borderRadius: 4,
+                        fontSize: 11
+                      }}>
+                        {c.psychologist_name}
+                      </span>
+                      {c.is_inherited ? (
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          color: '#D97706',
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          whiteSpace: 'nowrap'
+                        }}>
+                          🔄 Heredado ({c.inherited_from || c.original_responsable || 'Anterior'})
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: '#059669',
+                          background: 'rgba(16, 185, 129, 0.1)',
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          whiteSpace: 'nowrap'
+                        }}>
+                          👤 Propio
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontSize: 12 }}>
                     {c.city || '—'}{c.age ? ` (${c.age} años)` : ''}

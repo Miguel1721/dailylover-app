@@ -28,6 +28,7 @@ export default function CitasAgendadas() {
   const [rescheduleModalItem, setRescheduleModalItem] = useState(null)
   const [noShowModalItem, setNoShowModalItem] = useState(null)
   const [feedbackModalItem, setFeedbackModalItem] = useState(null)
+  const [waModalTarget, setWaModalTarget] = useState(null)
   const [quickDateFilter, setQuickDateFilter] = useState('all')
   const [dispatchingFeedback, setDispatchingFeedback] = useState(false)
   const [singleSendingId, setSingleSendingId] = useState(null)
@@ -122,10 +123,29 @@ export default function CitasAgendadas() {
     fetchCalendar()
   }, [fetchCalendar])
 
-  const copyToClipboard = (text, type, id) => {
+  const buildCanonicalWhatsAppMessage = (c, type) => {
+    const rest = (c.venue && !c.venue.toLowerCase().includes('por definir')) ? c.venue : 'el restaurante acordado'
+    const dt = (c.scheduled_date || c.date_time || 'fecha y hora acordada')
+    if (type === 'confirmacion') {
+      return c.whatsapp_confirmacion || c.msg_confirmation || `¡Hola! 🎉 Te confirmamos que tu cita Daily Lover ha quedado agendada en *${rest}* para el *${dt}*. La reserva está a nombre de ustedes. ¡Que disfruten muchísimo la velada!`
+    }
+    if (type === 'dia_antes') {
+      return c.whatsapp_dia_antes || c.msg_day_before || `¡Hola! 👋 Paso por aquí para recordarte que mañana es tu cita Daily Lover en *${rest}* (*${dt}*). Por favor confírmame tu asistencia para dejar todo listo con el restaurante. ✨`
+    }
+    return c.whatsapp_hoy || c.msg_day_of || `¡Hola! 🌟 ¡Llegó el día! Hoy tienes tu cita en *${rest}* (*${dt}*). Recuerda llegar puntual y disfrutar el momento. Cualquier novedad me cuentas por aquí. ❤️`
+  }
+
+  const copyToClipboard = (text, type, id, item = null, titleLabel = '') => {
     navigator.clipboard.writeText(text)
     setCopiedId(`${id}-${type}`)
     setSuccessBanner(`¡Mensaje de ${type.toUpperCase()} copiado al portapapeles!`)
+    if (item) {
+      setWaModalTarget({
+        title: titleLabel || `Plantilla WhatsApp — ${type}`,
+        text,
+        match: item
+      })
+    }
     setTimeout(() => {
       setCopiedId(null)
       setSuccessBanner('')
@@ -590,7 +610,13 @@ export default function CitasAgendadas() {
                     <td style={{ padding: '10px 8px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <button
-                          onClick={() => copyToClipboard(c.msg_confirmation || `Hola! Tu cita está confirmada para ${c.scheduled_date || c.date_time} en ${c.venue}.`, 'confirmación', c.calendar_id || c.id)}
+                          onClick={() => copyToClipboard(
+                            buildCanonicalWhatsAppMessage(c, 'confirmacion'),
+                            'confirmación',
+                            c.calendar_id || c.id,
+                            c,
+                            '📩 Confirmación de Cita'
+                          )}
                           style={{
                             background: copiedId === `${c.calendar_id || c.id}-confirmación` ? '#10B981' : 'var(--bg-base)',
                             color: copiedId === `${c.calendar_id || c.id}-confirmación` ? '#fff' : 'var(--text-primary)',
@@ -604,12 +630,18 @@ export default function CitasAgendadas() {
                             alignItems: 'center',
                             gap: 4
                           }}
-                          title="Copiar plantilla de confirmación"
+                          title="Copiar y abrir plantilla de confirmación"
                         >
-                          <Copy size={11} /> Confirmación
+                          📩 Confirmar
                         </button>
                         <button
-                          onClick={() => copyToClipboard(c.msg_day_before || `Hola! Recordatorio: Mañana tienes tu cita a las ${c.scheduled_date || c.date_time} en ${c.venue}.`, 'día antes', c.calendar_id || c.id)}
+                          onClick={() => copyToClipboard(
+                            buildCanonicalWhatsAppMessage(c, 'dia_antes'),
+                            'día antes',
+                            c.calendar_id || c.id,
+                            c,
+                            '⏰ Recordatorio Día Antes'
+                          )}
                           style={{
                             background: copiedId === `${c.calendar_id || c.id}-día antes` ? '#10B981' : 'var(--bg-base)',
                             color: copiedId === `${c.calendar_id || c.id}-día antes` ? '#fff' : 'var(--text-primary)',
@@ -623,12 +655,18 @@ export default function CitasAgendadas() {
                             alignItems: 'center',
                             gap: 4
                           }}
-                          title="Copiar recordatorio de 24h antes"
+                          title="Copiar y abrir recordatorio del día antes"
                         >
-                          <Copy size={11} /> Día Antes
+                          ⏰ Día Antes
                         </button>
                         <button
-                          onClick={() => copyToClipboard(c.msg_day_of || `Hola! Hoy es el día de tu cita a las ${c.scheduled_date || c.date_time} en ${c.venue}. Que disfrutes mucho!`, 'hoy', c.calendar_id || c.id)}
+                          onClick={() => copyToClipboard(
+                            buildCanonicalWhatsAppMessage(c, 'hoy'),
+                            'hoy',
+                            c.calendar_id || c.id,
+                            c,
+                            '🚀 Recordatorio Hoy (Día de la Cita)'
+                          )}
                           style={{
                             background: copiedId === `${c.calendar_id || c.id}-hoy` ? '#10B981' : 'var(--bg-base)',
                             color: copiedId === `${c.calendar_id || c.id}-hoy` ? '#fff' : 'var(--text-primary)',
@@ -642,9 +680,9 @@ export default function CitasAgendadas() {
                             alignItems: 'center',
                             gap: 4
                           }}
-                          title="Copiar recordatorio de hoy"
+                          title="Copiar y abrir recordatorio de hoy"
                         >
-                          <Copy size={11} /> Hoy
+                          🚀 Hoy
                         </button>
                       </div>
                     </td>
@@ -853,6 +891,163 @@ export default function CitasAgendadas() {
             fetchCalendar()
           }}
         />
+      )}
+
+      {waModalTarget && (
+        <div
+          className="modal-overlay"
+          onClick={() => setWaModalTarget(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: 16
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 16,
+              width: '100%',
+              maxWidth: 560,
+              padding: 24,
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {waModalTarget.title}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#10B981', fontWeight: 600 }}>
+                  ✅ Mensaje copiado al portapapeles. Puedes editarlo o enviarlo directo por WhatsApp:
+                </p>
+              </div>
+              <button
+                onClick={() => setWaModalTarget(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <textarea
+              rows={5}
+              value={waModalTarget.text || ''}
+              onChange={e => setWaModalTarget(prev => ({ ...prev, text: e.target.value }))}
+              style={{
+                width: '100%',
+                background: 'var(--bg-base)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 10,
+                padding: 12,
+                color: 'var(--text-primary)',
+                fontSize: 13,
+                lineHeight: 1.5,
+                marginBottom: 14
+              }}
+            />
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {waModalTarget.match?.person_a && (
+                  <button
+                    onClick={() => {
+                      const rawPhone = (waModalTarget.match.person_a_phone || '').replace(/\D/g, '')
+                      const cleanPhone = rawPhone ? (rawPhone.startsWith('57') ? rawPhone : `57${rawPhone}`) : ''
+                      const url = cleanPhone
+                        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(waModalTarget.text)}`
+                        : `https://wa.me/?text=${encodeURIComponent(waModalTarget.text)}`
+                      window.open(url, '_blank')
+                    }}
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10B981',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📱 WhatsApp a {waModalTarget.match.person_a}
+                  </button>
+                )}
+                {waModalTarget.match?.person_b && (
+                  <button
+                    onClick={() => {
+                      const rawPhone = (waModalTarget.match.person_b_phone || '').replace(/\D/g, '')
+                      const cleanPhone = rawPhone ? (rawPhone.startsWith('57') ? rawPhone : `57${rawPhone}`) : ''
+                      const url = cleanPhone
+                        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(waModalTarget.text)}`
+                        : `https://wa.me/?text=${encodeURIComponent(waModalTarget.text)}`
+                      window.open(url, '_blank')
+                    }}
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      color: '#10B981',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📱 WhatsApp a {waModalTarget.match.person_b}
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(waModalTarget.text || '')
+                    setSuccessBanner('¡Mensaje copiado nuevamente al portapapeles!')
+                    setTimeout(() => setSuccessBanner(''), 2500)
+                  }}
+                  style={{
+                    background: 'var(--color-primary)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                >
+                  <Copy size={13} /> Copiar Texto
+                </button>
+                <button
+                  onClick={() => setWaModalTarget(null)}
+                  style={{
+                    background: 'var(--bg-base)',
+                    color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

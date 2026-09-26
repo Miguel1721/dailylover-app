@@ -83,9 +83,9 @@ def infer_gender_from_name_and_bio(name: str, bio_notes: str = "") -> str:
 
     if bio_notes:
         norm_bio = normalize_text_unaccent(bio_notes)
-        if re.search(r'\b(una chica|la chica|una mujer|ella busca|ella es|chica querida|super parchada|soltera|graduada|abogada|ingeniera|psicologa|medica)\b', norm_bio):
+        if re.search(r'\b(es una chica|la chica|es una mujer|ella busca|ella es|chica querida|super parchada|soltera|graduada|divorciada|separada|viuda|abogada|ingeniera|psicologa|medica)\b', norm_bio):
             return "Mujer"
-        if re.search(r'\b(un chico|el chico|un hombre|el busca|el es|chico querido|super parchado|soltero|graduado|abogado|ingeniero|psicologo|medico)\b', norm_bio):
+        if re.search(r'\b(es un chico|el chico|es un hombre|el busca|el es|chico querido|super parchado|soltero|graduado|divorciado|separado|viudo|abogado|ingeniero|psicologo|medico)\b', norm_bio):
             return "Hombre"
 
     return "No especificado"

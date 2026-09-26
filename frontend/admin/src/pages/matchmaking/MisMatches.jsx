@@ -87,6 +87,19 @@ const STATUS_COLORS = {
   'Urgente': { bg: '#E06666', color: '#FFFFFF' },
   'EN ESPERA': { bg: '#D9D2E9', color: '#351C75' },
   'REQUEST PROFILE UPDATE': { bg: '#C9DAF8', color: '#1155CC' },
+  'RECHAZADO POR PERSONA A': { bg: '#FEE2E2', color: '#991B1B' },
+  'RECHAZADO POR PERSONA B': { bg: '#FEE2E2', color: '#991B1B' },
+  'RECHAZADO AMBOS': { bg: '#FECACA', color: '#7F1D1D' },
+  'RECHAZADO': { bg: '#FEE2E2', color: '#991B1B' },
+  'CANCELADA': { bg: '#FEE2E2', color: '#991B1B' },
+}
+
+export const INHERITED_PSYCHOLOGIST_LABELS = {
+  'SILVI': 'Sofi',
+  'JENN': 'Aleja',
+  'ISA': 'Lau',
+  'ANA': 'Maripaz / MariB / MariS',
+  'STEFFY': 'Manu',
 }
 
 export const OFFICIAL_REFUND_CATEGORIES = [
@@ -100,7 +113,7 @@ export const OFFICIAL_REFUND_CATEGORIES = [
 ]
 
 const PSYCHOLOGIST_LIST = [
-  'MPS', 'STEFFY', 'SILVI', 'ANA', 'JENN', 'PIA', 'ISA', 'ALEJA', 'MANU', 'SOFI', 'MAPE D'
+  'SILVI', 'JENN', 'ANA', 'STEFFY', 'ISA', 'PIA', 'MAPE D'
 ]
 
 function formatRelativeTime(dateStr) {
@@ -160,6 +173,10 @@ export const STATUS_GROUPS = [
       'AGENDANDO',
       'POR CONFIRMAR',
       'REPROGRAMAR',
+      'RECHAZADO POR PERSONA A',
+      'RECHAZADO POR PERSONA B',
+      'RECHAZADO AMBOS',
+      'CANCELADA',
       'CITA COMPLETADA',
       'MATCH DONE',
       'EN PAUSA',
@@ -743,7 +760,7 @@ function WhatsAppTemplateModal({ match, templateType, onClose, onCopy }) {
 
 // ─── MODAL DE FILTROS POR PERSONA Y ASIGNACIÓN DE RESTAURANTE ─────────────────
 function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClose, onSave }) {
-  const initialYMD = parseMatchDateToYMD(match?.scheduled_date_time) || ''
+  const initialYMD = parseMatchDateToYMD(match?.scheduled_date_time) || getColombiaTodayYMD()
   let initialTime = '7:00 PM'
   if (match?.scheduled_date_time) {
     const tMatch = match.scheduled_date_time.match(/(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?|\d{1,2}\s*(?:AM|PM|am|pm))/i)
@@ -760,37 +777,53 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
   const [csNotes, setCsNotes] = useState(match?.cs_observations || '')
 
   // Preferencias persona A
-  const [budgetA, setBudgetA] = useState('100k-200k')
+  const [budgetA, setBudgetA] = useState('200k-300k')
   const [zoneA, setZoneA] = useState(match?.person_a_neighborhood || '')
   const [foodA, setFoodA] = useState('')
 
   // Preferencias persona B
-  const [budgetB, setBudgetB] = useState('100k-200k')
+  const [budgetB, setBudgetB] = useState('200k-300k')
   const [zoneB, setZoneB] = useState(match?.person_b_neighborhood || '')
   const [foodB, setFoodB] = useState('')
 
-  // Restaurantes desde API
+  // Restaurantes desde API (unificado con budgetAgreed, día, fecha, hora y cupos)
   const [restaurants, setRestaurants] = useState([])
   const [loadingRest, setLoadingRest] = useState(false)
-  const [budgetFilter, setBudgetFilter] = useState('100k-200k')
+  const [budgetFilter, setBudgetFilter] = useState('200k-300k')
   const [searchRest, setSearchRest] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const getDayCodeFromYMD = (ymd) => {
+    if (!ymd) return ''
+    const parts = ymd.split('-')
+    if (parts.length !== 3) return ''
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+    const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+    return days[d.getDay()] || ''
+  }
+
+  const selectedDayCode = getDayCodeFromYMD(citaDate)
+
   useEffect(() => {
-    let url = `${API}/api/v1/matchmaking/restaurants?`
-    if (city && city !== 'all') url += `city=${encodeURIComponent(city)}&`
-    if (budgetFilter && budgetFilter !== 'all') url += `budget_category=${encodeURIComponent(budgetFilter)}&`
-    if (searchRest) url += `search=${encodeURIComponent(searchRest)}&`
+    const params = new URLSearchParams()
+    if (city && city !== 'all') params.set('city', city)
+    const activeBudget = budgetAgreed || budgetFilter
+    if (activeBudget && activeBudget !== 'all') params.set('budget_category', activeBudget)
+    if (selectedDayCode) params.set('day', selectedDayCode)
+    if (citaDate) params.set('date', citaDate)
+    if (citaTime && citaTime !== 'all') params.set('time', citaTime)
+    if (match?.id) params.set('exclude_match_id', String(match.id))
+    if (searchRest.trim()) params.set('search', searchRest.trim())
 
     setLoadingRest(true)
-    fetch(url)
+    fetch(`${API}/api/v1/matchmaking/restaurants?${params.toString()}`)
       .then(r => r.json())
       .then(d => {
         setRestaurants(d.restaurants || [])
         setLoadingRest(false)
       })
       .catch(() => setLoadingRest(false))
-  }, [city, budgetFilter, searchRest])
+  }, [city, budgetAgreed, budgetFilter, selectedDayCode, citaDate, citaTime, match?.id, searchRest])
 
   const handleSelectRest = (r) => {
     const vName = `${r.name} (${r.zone || r.city})`
@@ -819,7 +852,7 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
       })
       onClose()
     } catch (err) {
-      alert('Error al guardar la cita')
+      alert(err?.message || 'Error al guardar la cita')
     } finally {
       setSaving(false)
     }
@@ -1224,7 +1257,7 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
                   {/* HORA */}
                   <div>
                     <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                      HORA DE LA CITA *
+                      HORA DE LA CITA (CADA 30 MIN) *
                     </label>
                     <select
                       value={citaTime}
@@ -1235,6 +1268,22 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
                         color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 600, outline: 'none'
                       }}
                     >
+                      <option value="10:00 AM">10:00 AM</option>
+                      <option value="10:30 AM">10:30 AM</option>
+                      <option value="11:00 AM">11:00 AM</option>
+                      <option value="11:30 AM">11:30 AM</option>
+                      <option value="12:00 PM">12:00 PM</option>
+                      <option value="12:30 PM">12:30 PM</option>
+                      <option value="1:00 PM">1:00 PM</option>
+                      <option value="1:30 PM">1:30 PM</option>
+                      <option value="2:00 PM">2:00 PM</option>
+                      <option value="2:30 PM">2:30 PM</option>
+                      <option value="3:00 PM">3:00 PM</option>
+                      <option value="3:30 PM">3:30 PM</option>
+                      <option value="4:00 PM">4:00 PM</option>
+                      <option value="4:30 PM">4:30 PM</option>
+                      <option value="5:00 PM">5:00 PM</option>
+                      <option value="5:30 PM">5:30 PM</option>
                       <option value="6:00 PM">6:00 PM</option>
                       <option value="6:30 PM">6:30 PM</option>
                       <option value="7:00 PM">7:00 PM</option>
@@ -1242,6 +1291,7 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
                       <option value="8:00 PM">8:00 PM</option>
                       <option value="8:30 PM">8:30 PM</option>
                       <option value="9:00 PM">9:00 PM</option>
+                      <option value="9:30 PM">9:30 PM</option>
                     </select>
                   </div>
 
@@ -1280,6 +1330,7 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
                         color: 'var(--text-primary)', fontSize: 12.5, fontWeight: 600, outline: 'none'
                       }}
                     >
+                      <option value="all">Todos los presupuestos</option>
                       <option value="Menos de 100k">Menos de 100k</option>
                       <option value="100k-200k">100k - 200k</option>
                       <option value="200k-300k">200k - 300k</option>
@@ -1331,7 +1382,7 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
               {/* Buscador & Recomendador de Restaurantes desde Base de Datos */}
               <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                  🍽️ Recomendador de Restaurantes ({city} • {budgetFilter})
+                  🍽️ Recomendador de Restaurantes Abiertos y con Cupo ({city} • {budgetAgreed === 'all' ? 'Todos' : budgetAgreed} • {selectedDayCode || 'Día'} • {citaTime} • {restaurants.length} disp.)
                 </div>
                 <div style={{ position: 'relative', width: 260 }}>
                   <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
@@ -1350,18 +1401,20 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
               </div>
 
               {/* Lista de Restaurantes Disponibles */}
-              <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8 }}>
+              <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 8 }}>
                 {loadingRest ? (
                   <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                    Cargando restaurantes...
+                    Verificando horarios de apertura y cupos disponibles...
                   </div>
                 ) : restaurants.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                    No se encontraron restaurantes con este filtro. Escribe uno personalizado arriba.
+                    No hay restaurantes abiertos o con cupos libres para <strong>{city}</strong> el <strong>{selectedDayCode} {citaDate}</strong> a las <strong>{citaTime}</strong> en rango <strong>{budgetAgreed}</strong>.
                   </div>
                 ) : (
                   restaurants.map(r => {
                     const isSel = (venue || '').includes(r.name) || (customVenue || '').includes(r.name)
+                    const maxSlots = r.max_slots_per_time || 3
+                    const availSlots = r.available_slots ?? maxSlots
                     return (
                       <div
                         key={r.id}
@@ -1378,12 +1431,29 @@ function PersonRestaurantFilterModal({ match, initialTab = 'restaurants', onClos
                         }}
                       >
                         <div>
-                          <div style={{ fontWeight: 700, color: isSel ? '#10B981' : 'var(--text-primary)', fontSize: 12.5 }}>
-                            {r.name} {isSel && '✓'}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700, color: isSel ? '#10B981' : 'var(--text-primary)', fontSize: 12.5 }}>
+                              {r.name} {isSel && '✓'}
+                            </span>
+                            <span style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#10B981'
+                            }}>
+                              🟢 {availSlots}/{maxSlots} cupos ({citaTime})
+                            </span>
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {r.food_type || 'Restaurante'} • {r.zone || r.city} • {r.price_range_raw || r.budget_category}
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {r.food_type || 'Restaurante'} • {r.zone || r.city} • <strong>{r.budget_category}</strong> ({r.price_range_raw ? `$${r.price_range_raw}` : `$${Number(r.price_num_cop || 0).toLocaleString('es-CO')}`})
                           </div>
+                          {r.hours_raw && (
+                            <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 2 }}>
+                              ⏰ {r.hours_raw}
+                            </div>
+                          )}
                         </div>
 
                         <button
@@ -1511,7 +1581,9 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const [statusFilter, setStatusFilter] = useState('all')
   const [cityFilter, setCityFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
-  const [approvedFilter, setApprovedFilter] = useState(isOfficialMatches ? '1' : 'all')
+  const [approvedFilter, setApprovedFilter] = useState(isOfficialMatches ? 'yes' : 'all')
+  const [ownershipFilter, setOwnershipFilter] = useState('all') // 'all' | 'propios' | 'heredados'
+  const [inheritedFromLabel, setInheritedFromLabel] = useState(null)
   const [searchTerm, setSearchTerm] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
@@ -1567,6 +1639,14 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     if (psyc && psyc !== selectedPsyc) setSelectedPsyc(psyc)
   }, [location.search])
 
+  // Sincronizar approvedFilter y quickFilter cuando se navega entre Mesa Psicólogas y Mesa Oficial MATCHES
+  useEffect(() => {
+    if (isOfficialMatches) {
+      setApprovedFilter('yes')
+      setQuickFilter(prev => ['all', 'aprobados', 'vip', 'no_vip_agendar', 'pendientes_agendar', 'cita_programada', 'rechazados', 'pausa'].includes(prev) ? prev : 'aprobados')
+    }
+  }, [isOfficialMatches])
+
   // Asistente Clínico & Sugerencias IA Modal: { clientName, crmId, matchRow, tab: 'sugerencias' | 'objetivos' | 'percepcion' }
   const [aiModalTarget, setAiModalTarget] = useState(null)
 
@@ -1583,7 +1663,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       if (f) return f
     }
     return isOfficialMatches ? 'aprobados' : 'all'
-  }) // 'all' | 'prioritarios' | 'sin_b' | 'listos' | 'pausa' | 'aprobados'
+  })
   const [syncStatus, setSyncStatus] = useState('synced') // 'synced' | 'saving' | 'error'
 
   const toggleDensity = () => {
@@ -1626,12 +1706,13 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
   const fetchMatches = useCallback(() => {
     setLoading(true)
+    const effectiveApproved = isOfficialMatches ? 'yes' : approvedFilter
     let url = `${API}/api/v1/matchmaking/my-matches?view_mode=${viewMode}&sort_by=${encodeURIComponent(sortBy)}&`
     if (selectedPsyc && selectedPsyc !== 'all') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (statusFilter && statusFilter !== 'all') url += `status_filter=${encodeURIComponent(statusFilter)}&`
     if (cityFilter && cityFilter !== 'all') url += `city=${encodeURIComponent(cityFilter)}&`
     if (planFilter && planFilter !== 'all') url += `plan_tier=${encodeURIComponent(planFilter)}&`
-    if (approvedFilter && approvedFilter !== 'all') url += `approved=${encodeURIComponent(approvedFilter)}&`
+    if (effectiveApproved && effectiveApproved !== 'all') url += `approved=${encodeURIComponent(effectiveApproved)}&`
     if (dateFilter && dateFilter !== 'all') url += `date_filter=${encodeURIComponent(dateFilter)}&`
     if (approvalDateFilter) url += `approved_date=${encodeURIComponent(approvalDateFilter)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
@@ -1645,24 +1726,27 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         if (data.cross_review_count !== undefined) {
           setCrossReviewCount(data.cross_review_count)
         }
+        if (data.inherited_from_label !== undefined) {
+          setInheritedFromLabel(data.inherited_from_label)
+        }
         setLoading(false)
       })
       .catch(err => {
         console.error('Error fetching matches:', err)
         setLoading(false)
       })
-  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, sortBy, dateFilter, approvalDateFilter, searchTerm, token])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, isOfficialMatches, sortBy, dateFilter, approvalDateFilter, searchTerm, token])
 
   useEffect(() => {
     fetchMatches()
   }, [fetchMatches])
 
   const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = isCompact ? 75 : 50
+  const pageSize = 20
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, quickFilter])
+  }, [viewMode, selectedPsyc, statusFilter, cityFilter, planFilter, approvedFilter, searchTerm, quickFilter, ownershipFilter])
 
   const handleApproveCross = async (match) => {
     setSavingId(match.id)
@@ -1710,37 +1794,115 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     }
   }
 
-  const displayedMatches = matches.filter(m => {
+  // Helpers para clasificar filas de Parejas Oficiales Confirmadas (MATCHES)
+  const isStrictlyApprovedByMaria = (m) => {
+    const hasBothPersons = Boolean(m.person_a && m.person_a.trim() !== '' && m.person_b && m.person_b.trim() !== '')
+    const stUpper = (m.status || '').trim().toUpperCase()
+    const isPreApproval = ['LISTO PARA MATCH', 'PENDIENTE', 'REVISAR', 'NOT APPROVED', 'PENDIENTE PLAN', 'HECHO', 'HECHO POR MAPE', 'PROPUESTO'].includes(stUpper)
+    return hasBothPersons && Boolean(m.approved_by_maria) && !isPreApproval
+  }
+
+  const checkIsVipPerson = (planStr, flagBool) => {
+    if (flagBool) return true
+    const up = (planStr || '').toUpperCase()
+    return up.includes('VIP') || up.includes('195') || up.includes('295') || up.includes('EXPERIENCE') || up.includes('ORO')
+  }
+
+  const checkIsVipMatch = (m) => {
+    return Boolean(
+      m.is_vip_match ||
+      checkIsVipPerson(m.plan_tier, m.is_vip_a) ||
+      checkIsVipPerson(m.person_b_plan_tier, m.is_vip_b)
+    )
+  }
+
+  const checkIsRejectedMatch = (m) => {
+    const stUpper = (m.status || '').toUpperCase()
+    return (
+      m.person_a_confirmation === 'Rechazó' ||
+      m.person_b_confirmation === 'Rechazó' ||
+      stUpper.includes('RECHAZADO') ||
+      stUpper === 'CANCELADA'
+    )
+  }
+
+  const checkIsPausedMatch = (m) => {
+    const stUpper = (m.status || '').toUpperCase()
+    return (
+      ['De viaje', 'Pausa', 'Problema personal'].includes(m.person_a_confirmation) ||
+      ['De viaje', 'Pausa', 'Problema personal'].includes(m.person_b_confirmation) ||
+      stUpper.includes('PAUSA')
+    )
+  }
+
+  const checkHasScheduledVenueOrDate = (m) => {
+    const v = (m.scheduled_venue || '').trim()
+    const dt = (m.scheduled_date_time || '').trim()
+    const stUpper = (m.status || '').toUpperCase()
+    return Boolean(
+      v !== '' ||
+      (dt !== '' && !dt.toLowerCase().includes('por definir')) ||
+      ['CITA PROGRAMADA', 'CITA RESERVADA', 'AGENDADA', 'CONFIRMADA', 'CITA REALIZADA', 'CITA COMPLETADA', 'MATCH DONE'].includes(stUpper)
+    )
+  }
+
+  // Filtrado por Propios vs Heredados (para vista de Psicólogas)
+  const ownershipFilteredMatches = matches.filter(m => {
+    if (isOfficialMatches) return true
+    if (ownershipFilter === 'propios') return !m.is_inherited
+    if (ownershipFilter === 'heredados') return Boolean(m.is_inherited)
+    return true
+  })
+
+  const propiosCount = matches.filter(m => !m.is_inherited).length
+  const heredadosCount = matches.filter(m => Boolean(m.is_inherited)).length
+  const activeInheritedLabel = inheritedFromLabel || INHERITED_PSYCHOLOGIST_LABELS[selectedPsyc] || (heredadosCount > 0 ? 'Carteras Heredadas' : null)
+
+  // Conjunto base de parejas oficialmente aprobadas por María pendientes por restaurante (si tienen restaurante pasan a Citas Agendadas, si rechazan vuelven a su psicóloga)
+  const officialBaseMatches = matches.filter(m => {
     if (approvalDateFilter) {
       const mAppDate = (m.approved_at || m.date || m.fecha || '').slice(0, 10)
       if (mAppDate && mAppDate !== approvalDateFilter) return false
     }
+    return isStrictlyApprovedByMaria(m) && !checkHasScheduledVenueOrDate(m) && !checkIsRejectedMatch(m)
+  })
+
+  const officialTotalCount = officialBaseMatches.length
+  const officialVipCount = officialBaseMatches.filter(m => checkIsVipMatch(m)).length
+  const officialNoVipAgendarCount = officialBaseMatches.filter(m => !checkIsVipMatch(m) && !checkIsPausedMatch(m)).length
+  const officialPausaCount = officialBaseMatches.filter(m => checkIsPausedMatch(m)).length
+
+  const displayedMatches = (isOfficialMatches ? officialBaseMatches : ownershipFilteredMatches).filter(m => {
+    if (!isOfficialMatches && approvalDateFilter) {
+      const mAppDate = (m.approved_at || m.date || m.fecha || '').slice(0, 10)
+      if (mAppDate && mAppDate !== approvalDateFilter) return false
+    }
     if (isOfficialMatches) {
-      // En la pestaña oficial MATCHES (Sheets), solo existen parejas aprobadas donde AMBAS personas están confirmadas
-      const hasBothPersons = m.person_a && m.person_a.trim() !== '' && m.person_b && m.person_b.trim() !== ''
-      const isApproved = m.is_locked || m.approved_by_maria || (m.status || '').toUpperCase().includes('APROBADO')
-      return hasBothPersons && isApproved
+      if (quickFilter === 'vip') return checkIsVipMatch(m)
+      if (quickFilter === 'no_vip_agendar') return !checkIsVipMatch(m) && !checkIsPausedMatch(m)
+      if (quickFilter === 'pausa') return checkIsPausedMatch(m)
+      return true
     }
     if (quickFilter === 'prioritarios') return m.is_priority
     if (quickFilter === 'novedades') return Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)
     if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
     if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== ''
     if (quickFilter === 'pausa') return (m.status || '').toUpperCase().includes('PAUSA')
-    if (quickFilter === 'aprobados') return m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')
+    if (quickFilter === 'aprobados') return Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')
     return true
   })
 
   const totalPages = Math.ceil(displayedMatches.length / pageSize) || 1
   const paginatedMatches = displayedMatches.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
-  // Métricas para píldoras de acceso rápido
-  const totalCount = matches.length
-  const prioritariosCount = matches.filter(m => m.is_priority).length
-  const conNovedadCount = matches.filter(m => Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)).length
-  const sinBCount = matches.filter(m => !m.person_b || m.person_b.trim() === '').length
-  const listosCount = matches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
-  const enPausaCount = matches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
-  const aprobadosCount = matches.filter(m => m.is_locked || (m.status || '').toUpperCase().includes('APROBADO')).length
+  // Métricas para píldoras de acceso rápido (en vista de Psicóloga respetan Propios vs Heredados)
+  const totalCount = ownershipFilteredMatches.length
+  const prioritariosCount = ownershipFilteredMatches.filter(m => m.is_priority).length
+  const conNovedadCount = ownershipFilteredMatches.filter(m => Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)).length
+  const sinBCount = ownershipFilteredMatches.filter(m => !m.person_b || m.person_b.trim() === '').length
+  const listosCount = ownershipFilteredMatches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
+  const enPausaCount = ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
+  const aprobadosCount = ownershipFilteredMatches.filter(m => Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')).length
 
   const [isLight, setIsLight] = useState(() => {
     if (typeof document !== 'undefined') {
@@ -2061,17 +2223,41 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         body: JSON.stringify(updates)
       })
       if (res.ok) {
-        setMatches(prev => prev.map(m => m.id === matchId ? { ...m, ...updates } : m))
-        setFeedbackMsg('✓ Cita y restaurante actualizados correctamente')
+        let data = {}
+        try {
+          data = await res.json()
+        } catch (_) {}
+        setMatches(prev => prev.map(m => {
+          if (m.id !== matchId) return m
+          const next = { ...m, ...updates }
+          const confA = next.person_a_confirmation || 'Pendiente'
+          const confB = next.person_b_confirmation || 'Pendiente'
+          if (data.new_match_status) {
+            next.status = data.new_match_status
+          } else if (confA === 'Rechazó' && confB === 'Rechazó') {
+            next.status = 'RECHAZADO AMBOS'
+          } else if (confA === 'Rechazó') {
+            next.status = 'RECHAZADO POR PERSONA A'
+          } else if (confB === 'Rechazó') {
+            next.status = 'RECHAZADO POR PERSONA B'
+          } else if (['De viaje', 'Pausa', 'Problema personal'].includes(confA) || ['De viaje', 'Pausa', 'Problema personal'].includes(confB)) {
+            next.status = 'EN PAUSA'
+          }
+          return next
+        }))
+        setFeedbackMsg(data.returned_to_psychologist ? `✓ Match devuelto automáticamente a la psicóloga (${data.new_match_status})` : data.new_match_status ? `✓ Estado actualizado a: ${data.new_match_status}` : '✓ Confirmación y cita actualizadas correctamente')
         setSyncStatus('synced')
-        setTimeout(() => setFeedbackMsg(''), 2500)
+        setTimeout(() => setFeedbackMsg(''), 3500)
       } else {
+        const errData = await res.json().catch(() => ({}))
         setSyncStatus('error')
-        alert('Error al actualizar datos de cita')
+        const errMsg = errData.detail || 'Error al actualizar datos de cita'
+        alert(errMsg)
+        throw new Error(errMsg)
       }
     } catch (e) {
       setSyncStatus('error')
-      alert('Error de conexión al actualizar cita')
+      throw e
     } finally {
       setSavingId(null)
     }
@@ -2161,7 +2347,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           </h1>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
             {isOfficialMatches
-              ? 'Base oficial y consolidada de parejas aprobadas por María (Equivalente exacto a la pestaña MATCHES de Google Sheets).'
+              ? 'Parejas aprobadas por María pendientes por asignar restaurante (al asignar restaurante pasan a Citas Agendadas; si rechazan vuelven a su psicóloga).'
               : 'Mesa de trabajo operativa para que las psicólogas propongan a Persona B con asistente clínico y sugerencias IA.'}
           </p>
         </div>
@@ -2172,7 +2358,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               <CheckCircle size={14} /> {feedbackMsg}
             </span>
           )}
-          {(isOfficialMatches || isCs || isAdmin || isLina) && (
+          {!isOfficialMatches && (isPsychologistRole || isAdmin || isLina) && (
             <button
               onClick={handleOpenManualRefund}
               style={{
@@ -2258,64 +2444,166 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         </div>
       )}
 
-      {/* Selector de Modo: Mis Clientes vs Matches Cruzados (Psicóloga B) — Solo en mesa de trabajo */}
+      {/* Selector de Modo: Mis Clientes vs Matches Cruzados (Psicóloga B) + Cartera Propios vs Heredados */}
       {!isOfficialMatches && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 18, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
-          <button
-            onClick={() => { setViewMode('mine'); setQuickFilter('all'); setCurrentPage(1) }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 18px',
-              borderRadius: 8,
-              border: viewMode === 'mine' ? '1px solid #B8324F' : '1px solid var(--border-color)',
-              background: viewMode === 'mine' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
-              color: viewMode === 'mine' ? '#B8324F' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            <User size={16} />
-            Mis Clientes (Persona A)
-          </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18, borderBottom: '1px solid var(--border-color)', paddingBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => { setViewMode('mine'); setQuickFilter('all'); setCurrentPage(1) }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 18px',
+                borderRadius: 8,
+                border: viewMode === 'mine' ? '1px solid #B8324F' : '1px solid var(--border-color)',
+                background: viewMode === 'mine' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+                color: viewMode === 'mine' ? '#B8324F' : 'var(--text-secondary)',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <User size={16} />
+              Mis Clientes (Persona A)
+            </button>
 
-          <button
-            onClick={() => { setViewMode('cross_review'); setQuickFilter('all'); setCurrentPage(1) }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 18px',
-              borderRadius: 8,
-              border: viewMode === 'cross_review' ? '1px solid #B8324F' : '1px solid var(--border-color)',
-              background: viewMode === 'cross_review' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
-              color: viewMode === 'cross_review' ? '#B8324F' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              position: 'relative'
-            }}
-          >
-            <ShieldCheck size={16} />
-            Matches Cruzados por Revisar (Psicóloga B)
-            {crossReviewCount > 0 && (
+            <button
+              onClick={() => { setViewMode('cross_review'); setQuickFilter('all'); setCurrentPage(1) }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 18px',
+                borderRadius: 8,
+                border: viewMode === 'cross_review' ? '1px solid #B8324F' : '1px solid var(--border-color)',
+                background: viewMode === 'cross_review' ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+                color: viewMode === 'cross_review' ? '#B8324F' : 'var(--text-secondary)',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                position: 'relative'
+              }}
+            >
+              <ShieldCheck size={16} />
+              Matches Cruzados por Revisar (Psicóloga B)
+              {crossReviewCount > 0 && (
+                <span style={{
+                  background: '#B8324F',
+                  color: '#FFFFFF',
+                  borderRadius: 20,
+                  padding: '2px 7px',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  marginLeft: 4
+                }}>
+                  {crossReviewCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Botones Rápidos de Cartera: Propios vs Heredados */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'var(--bg-card)',
+            padding: '5px 10px',
+            borderRadius: 10,
+            border: '1px solid var(--border-color)'
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginRight: 2 }}>
+              Cartera:
+            </span>
+            <button
+              type="button"
+              onClick={() => { setOwnershipFilter('all'); setCurrentPage(1) }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '6px 12px',
+                borderRadius: 8,
+                border: ownershipFilter === 'all' ? '1.5px solid #B8324F' : '1px solid var(--border-color)',
+                background: ownershipFilter === 'all' ? '#B8324F' : 'var(--bg-base)',
+                color: ownershipFilter === 'all' ? '#FFFFFF' : 'var(--text-secondary)',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Ver todos los clientes (propios + heredados)"
+            >
+              👥 Todos ({matches.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOwnershipFilter(ownershipFilter === 'propios' ? 'all' : 'propios'); setCurrentPage(1) }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 13px',
+                borderRadius: 8,
+                border: ownershipFilter === 'propios' ? '1.5px solid #0284C7' : '1px solid var(--border-color)',
+                background: ownershipFilter === 'propios' ? '#0284C7' : 'var(--bg-base)',
+                color: ownershipFilter === 'propios' ? '#FFFFFF' : 'var(--text-primary)',
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: ownershipFilter === 'propios' ? '0 2px 8px rgba(2, 132, 199, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title="Ver únicamente los clientes propios de esta psicóloga"
+            >
+              👤 Propios
               <span style={{
-                background: '#B8324F',
-                color: '#FFFFFF',
-                borderRadius: 20,
-                padding: '2px 7px',
+                padding: '1px 6px',
+                borderRadius: 8,
                 fontSize: 11,
                 fontWeight: 800,
-                marginLeft: 4
+                background: ownershipFilter === 'propios' ? 'rgba(255,255,255,0.25)' : 'rgba(2, 132, 199, 0.15)',
+                color: ownershipFilter === 'propios' ? '#FFFFFF' : '#38BDF8'
               }}>
-                {crossReviewCount}
+                {propiosCount}
               </span>
-            )}
-          </button>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOwnershipFilter(ownershipFilter === 'heredados' ? 'all' : 'heredados'); setCurrentPage(1) }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 13px',
+                borderRadius: 8,
+                border: ownershipFilter === 'heredados' ? '1.5px solid #8B5CF6' : '1px solid var(--border-color)',
+                background: ownershipFilter === 'heredados' ? '#8B5CF6' : 'var(--bg-base)',
+                color: ownershipFilter === 'heredados' ? '#FFFFFF' : 'var(--text-primary)',
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: ownershipFilter === 'heredados' ? '0 2px 8px rgba(139, 92, 246, 0.35)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+              title={activeInheritedLabel ? `Ver clientes heredados de ${activeInheritedLabel}` : 'Ver clientes heredados de psicólogas retiradas'}
+            >
+              🔄 Heredados{activeInheritedLabel ? ` (${activeInheritedLabel})` : ''}
+              <span style={{
+                padding: '1px 6px',
+                borderRadius: 8,
+                fontSize: 11,
+                fontWeight: 800,
+                background: ownershipFilter === 'heredados' ? 'rgba(255,255,255,0.25)' : 'rgba(139, 92, 246, 0.18)',
+                color: ownershipFilter === 'heredados' ? '#FFFFFF' : '#A78BFA'
+              }}>
+                {heredadosCount}
+              </span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -2338,24 +2626,28 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           >
             Todas las Psicólogas
           </button>
-          {psycList.map(p => (
-            <button
-              key={p}
-              onClick={() => setSelectedPsyc(p)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 20,
-                border: 'none',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                background: selectedPsyc === p ? '#B8324F' : 'var(--bg-card)',
-                color: selectedPsyc === p ? '#FFFFFF' : 'var(--text-secondary)'
-              }}
-            >
-              {p}
-            </button>
-          ))}
+          {psycList.map(p => {
+            const inhLabel = INHERITED_PSYCHOLOGIST_LABELS[p]
+            return (
+              <button
+                key={p}
+                onClick={() => setSelectedPsyc(p)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  border: 'none',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: selectedPsyc === p ? '#B8324F' : 'var(--bg-card)',
+                  color: selectedPsyc === p ? '#FFFFFF' : 'var(--text-secondary)'
+                }}
+                title={inhLabel ? `${p} (Incluye cartera heredada de ${inhLabel})` : p}
+              >
+                {p}{inhLabel ? ` (+${inhLabel.split(' / ')[0]})` : ''}
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -2384,20 +2676,57 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         </div>
 
         {isOfficialMatches ? (
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '8px 16px',
-            borderRadius: 10,
-            background: '#B6D7A8',
-            color: '#274E13',
-            fontSize: 13,
-            fontWeight: 800,
-            border: '1px solid #6AA84F',
-            boxShadow: '0 2px 8px rgba(106, 168, 79, 0.2)'
-          }}>
-            🔒 Parejas Oficiales Confirmadas ({displayedMatches.length})
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {[
+              { id: 'aprobados', icon: '🔒', label: 'Parejas Oficiales Confirmadas', count: officialTotalCount, activeBg: '#16A34A', activeColor: '#FFFFFF', tooltip: 'Todas las parejas aprobadas por María pendientes de agendar restaurante' },
+              { id: 'no_vip_agendar', icon: '⚡', label: 'No-VIP — Agendar de una vez', count: officialNoVipAgendarCount, activeBg: '#0284C7', activeColor: '#FFFFFF', tooltip: 'Clientes No-VIP aprobados por María (cita a ciegas, listos para agendar directamente)' },
+              { id: 'vip', icon: '👑', label: 'Parejas con VIP (Ven Fotos / Aprueban)', count: officialVipCount, activeBg: '#D97706', activeColor: '#FFFFFF', tooltip: 'Al menos uno de los dos tiene Plan VIP (ven fotos/perfil antes de la cita y pueden aceptar o rechazar)' },
+              { id: 'pausa', icon: '✈️', label: 'Viaje / Pausa Personal', count: officialPausaCount, activeBg: '#EA580C', activeColor: '#FFFFFF', tooltip: 'Parejas en pausa por viaje o situación personal' },
+            ].map(pill => {
+              const isActive = quickFilter === pill.id || (pill.id === 'aprobados' && quickFilter === 'all')
+              return (
+                <button
+                  key={pill.id}
+                  onClick={() => setQuickFilter(pill.id)}
+                  title={pill.tooltip}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    border: isActive ? `1.5px solid ${pill.activeBg}` : '1px solid var(--border-color)',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    background: isActive ? pill.activeBg : 'var(--bg-card)',
+                    color: isActive ? pill.activeColor : 'var(--text-secondary)',
+                    boxShadow: isActive ? '0 4px 14px rgba(0,0,0,0.22)' : '0 1px 2px rgba(0,0,0,0.05)',
+                    transition: 'all 0.18s ease',
+                    transform: isActive ? 'translateY(-1px)' : 'none'
+                  }}
+                >
+                  <span style={{ fontSize: 14 }}>{pill.icon}</span>
+                  <span>{pill.label}</span>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: 20,
+                    height: 20,
+                    padding: '0 6px',
+                    borderRadius: 10,
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    background: isActive ? 'rgba(255,255,255,0.25)' : 'rgba(150, 21, 0, 0.08)',
+                    color: isActive ? '#FFFFFF' : 'var(--text-primary)',
+                    border: isActive ? '1px solid rgba(255,255,255,0.3)' : '1px solid var(--border-color)',
+                  }}>
+                    {pill.count}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         ) : (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2748,19 +3077,16 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         </button>
       </div>
 
-      {/* Main Table — Con Sticky Header y Contenedor Scrollable */}
+      {/* Main Table — Sin doble scroll (solo el scroll principal de la página, 20 personas por página) */}
       <div style={{
         background: 'var(--bg-card)',
         borderRadius: 10,
         border: '1px solid var(--border-color)',
         overflowX: 'auto',
-        maxHeight: 'calc(100vh - 220px)',
-        overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch',
         position: 'relative'
       }}>
         {viewMode === 'cross_review' ? (
-          <table style={{ width: '100%', minWidth: 1200, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
             <thead>
               <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '8px 10px' : '12px 12px', fontWeight: 700, width: 60 }}># ID</th>
@@ -2927,29 +3253,28 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             </tbody>
           </table>
         ) : isOfficialMatches ? (
-          <table style={{ width: '100%', minWidth: 1440, borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isCompact ? 12 : 13 }}>
             <thead>
               <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, width: 140 }}>ESTADO FINAL</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 310 }}>PERSONA A (CONTACTO & CONFIRMACIÓN)</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 310 }}>PERSONA B (CONTACTO & CONFIRMACIÓN)</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 250 }}>RESTAURANTE / CITA</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 240, textAlign: 'center' }}>PLANTILLAS WHATSAPP</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 14px', fontWeight: 800, minWidth: 180 }}>OBSERVACIONES CS</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 10px', fontWeight: 800, width: 165 }}>ESTADO FINAL</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 12px', fontWeight: 800 }}>PERSONA A (CONTACTO & CONFIRMACIÓN)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 12px', fontWeight: 800 }}>PERSONA B (CONTACTO & CONFIRMACIÓN)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 10px', fontWeight: 800, width: 205 }}>RESTAURANTE / CITA</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: '12px 12px', fontWeight: 800, width: 220 }}>OBSERVACIONES CS</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                    Cargando parejas oficiales aprobadas...
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    Cargando parejas oficiales aprobadas por María...
                   </td>
                 </tr>
               ) : paginatedMatches.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                     <ShieldCheck size={32} style={{ color: '#10B981', margin: '0 auto 8px', display: 'block' }} />
-                    No hay parejas aprobadas pendientes por coordinar restaurante.
+                    No hay parejas aprobadas por María pendientes por restaurante para este filtro.
                   </td>
                 </tr>
               ) : (
@@ -2960,58 +3285,112 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                   const waB = formatWhatsAppLink(phoneB)
                   const currentDateTime = m.scheduled_date_time || ''
                   const currentVenue = m.scheduled_venue || ''
-                  const waStatus = getWhatsAppButtonStatus(currentDateTime)
+
+                  const isVipA = checkIsVipPerson(m.plan_tier, m.is_vip_a)
+                  const isVipB = checkIsVipPerson(m.person_b_plan_tier, m.is_vip_b)
+
+                  // Estado efectivo sincronizado con rechazos de Persona A o Persona B
+                  let effectiveRowStatus = m.status || 'APROBADO'
+                  if (m.person_a_confirmation === 'Rechazó' && m.person_b_confirmation === 'Rechazó') {
+                    effectiveRowStatus = 'RECHAZADO AMBOS'
+                  } else if (m.person_a_confirmation === 'Rechazó') {
+                    effectiveRowStatus = 'RECHAZADO POR PERSONA A'
+                  } else if (m.person_b_confirmation === 'Rechazó') {
+                    effectiveRowStatus = 'RECHAZADO POR PERSONA B'
+                  } else if (['LISTO PARA MATCH', 'REVISAR', 'PENDIENTE', 'HECHO', 'HECHO POR MAPE'].includes((effectiveRowStatus || '').toUpperCase())) {
+                    effectiveRowStatus = 'APROBADO'
+                  }
+
+                  const isRejectedRow = effectiveRowStatus.includes('RECHAZADO') || effectiveRowStatus === 'CANCELADA'
 
                   return (
                     <tr
                       key={m.id}
                       style={{
                         borderBottom: '1px solid var(--border-color)',
-                        background: currentVenue ? 'rgba(16, 185, 129, 0.03)' : 'transparent',
+                        background: isRejectedRow ? 'rgba(239, 68, 68, 0.05)' : currentVenue ? 'rgba(16, 185, 129, 0.03)' : 'transparent',
                         transition: 'background 0.15s'
                       }}
                     >
                       {/* 1. ESTADO FINAL (A la izquierda de Persona A) */}
-                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                      <td style={{ padding: '10px 10px', verticalAlign: 'middle' }}>
                         <select
-                          value={m.status || 'APROBADO'}
+                          value={effectiveRowStatus}
                           onChange={e => handleUpdateField(m.id, 'status', e.target.value, m)}
                           style={{
                             padding: '5px 8px',
                             borderRadius: 6,
                             border: '1px solid var(--border-color)',
-                            background: STATUS_COLORS[m.status]?.bg || 'rgba(182, 215, 168, 0.2)',
-                            color: STATUS_COLORS[m.status]?.color || '#274E13',
-                            fontSize: 11.5,
+                            background: STATUS_COLORS[effectiveRowStatus]?.bg || 'rgba(182, 215, 168, 0.2)',
+                            color: STATUS_COLORS[effectiveRowStatus]?.color || '#274E13',
+                            fontSize: 11,
                             fontWeight: 800,
                             outline: 'none',
                             cursor: 'pointer',
                             width: '100%',
-                            maxWidth: 140
+                            maxWidth: 165
                           }}
                         >
                           <option value="APROBADO">APROBADO</option>
-                          <option value="AGENDADA">AGENDADA</option>
+                          <option value="AGENDANDO">AGENDANDO</option>
+                          <option value="POR CONFIRMAR">POR CONFIRMAR</option>
                           <option value="CONFIRMADA">CONFIRMADA</option>
-                          <option value="HECHO">HECHO</option>
+                          <option value="CITA PROGRAMADA">CITA PROGRAMADA</option>
+                          <option value="CITA RESERVADA">CITA RESERVADA</option>
+                          <option value="AGENDADA">AGENDADA</option>
+                          <option value="CITA REALIZADA">CITA REALIZADA</option>
                           <option value="CITA COMPLETADA">CITA COMPLETADA</option>
-                          <option value="Listo para match">Listo para match</option>
-                          <option value="REVISAR">REVISAR</option>
-                          <option value="EN PAUSA">EN PAUSA</option>
+                          <option value="RECHAZADO POR PERSONA A">❌ RECHAZADO POR PERSONA A</option>
+                          <option value="RECHAZADO POR PERSONA B">❌ RECHAZADO POR PERSONA B</option>
+                          <option value="RECHAZADO AMBOS">❌ RECHAZADO AMBOS</option>
+                          <option value="REPROGRAMAR">REPROGRAMAR</option>
+                          <option value="EN PAUSA">EN PAUSA (Viaje / Personal)</option>
                           <option value="CANCELADA">CANCELADA</option>
                           <option value="TROUBLEMAKER">TROUBLEMAKER</option>
-                          <option value="REFUND">🚨 REFUND (Solicitar)</option>
                         </select>
                       </td>
 
-                      {/* 2. PERSONA A (Contacto + Confirmación al lado derecho) */}
-                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      {/* 2. PERSONA A (Contacto + Badge VIP/No-VIP + Confirmación al lado derecho) */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                           <div>
-                            <div style={{ fontWeight: 700, fontSize: 13.5 }}>
-                              <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id || m.ua_crm_id} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                                <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id || m.ua_crm_id} />
+                              </div>
+                              {isVipA ? (
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    fontWeight: 800,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#FFE599',
+                                    color: '#7F6000',
+                                    border: '1px solid rgba(127, 96, 0, 0.3)'
+                                  }}
+                                  title="Cliente VIP: recibe fotos/perfil de la pareja antes de la cita y puede aprobar o rechazar"
+                                >
+                                  👑 VIP (Ve Fotos)
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    fontWeight: 700,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: 'rgba(2, 132, 199, 0.14)',
+                                    color: '#38BDF8',
+                                    border: '1px solid rgba(2, 132, 199, 0.3)'
+                                  }}
+                                  title={`Plan ${m.plan_tier || 'Estándar'} (No-VIP): cita a ciegas sin fotos previas — listo para agendar de una vez salvo viaje o imprevisto personal`}
+                                >
+                                  ⚡ No-VIP (Agendar ya)
+                                </span>
+                              )}
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                               {phoneA ? (
                                 <>
                                   <a
@@ -3077,14 +3456,14 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
                           {/* Confirmación Persona A al lado derecho */}
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                              Confirmación
+                            <span style={{ fontSize: 9, fontWeight: 700, color: isVipA ? '#FBBF24' : 'var(--text-muted)', textTransform: 'uppercase' }}>
+                              {isVipA ? '👑 Aprobación VIP' : '⚡ Estado Cita'}
                             </span>
                             <select
                               value={m.person_a_confirmation || 'Pendiente'}
                               onChange={e => handleUpdateScheduleDetails(m.id, { person_a_confirmation: e.target.value })}
                               style={{
-                                padding: '4px 8px',
+                                padding: '4px 7px',
                                 borderRadius: 5,
                                 border: '1px solid var(--border-color)',
                                 background: m.person_a_confirmation === 'Aceptó' ? 'rgba(16, 185, 129, 0.15)' : m.person_a_confirmation === 'Rechazó' ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-base)',
@@ -3095,25 +3474,58 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                                 cursor: 'pointer'
                               }}
                             >
-                              <option value="Pendiente">Pendiente</option>
-                              <option value="Aceptó">Aceptó ✓</option>
-                              <option value="Rechazó">Rechazó ✗</option>
+                              <option value="Pendiente">{isVipA ? 'Pendiente (Ver fotos)' : 'Listo p/ Agendar'}</option>
+                              <option value="Aceptó">{isVipA ? 'Aceptó Perfil ✓' : 'Aceptó / Agendado ✓'}</option>
+                              <option value="Rechazó">{isVipA ? 'Rechazó Perfil ✗' : 'Rechazó ✗'}</option>
+                              <option value="De viaje">De viaje ✈️</option>
+                              <option value="Pausa">Pausa / Personal ⚠️</option>
                               <option value="No contesta">No contesta</option>
-                              <option value="De viaje">De viaje</option>
-                              <option value="Pausa">Pausa</option>
                             </select>
                           </div>
                         </div>
                       </td>
 
-                      {/* 3. PERSONA B (Contacto + Confirmación al lado derecho) */}
-                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      {/* 3. PERSONA B (Contacto + Badge VIP/No-VIP + Confirmación al lado derecho) */}
+                      <td style={{ padding: '10px 12px', verticalAlign: 'middle' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                           <div>
-                            <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--color-primary)' }}>
-                              <CrmPersonLink name={m.person_b} crmId={m.person_b_crm_id || m.ub_crm_id} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--color-primary)' }}>
+                                <CrmPersonLink name={m.person_b} crmId={m.person_b_crm_id || m.ub_crm_id} />
+                              </div>
+                              {isVipB ? (
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    fontWeight: 800,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: '#FFE599',
+                                    color: '#7F6000',
+                                    border: '1px solid rgba(127, 96, 0, 0.3)'
+                                  }}
+                                  title="Cliente VIP: recibe fotos/perfil de la pareja antes de la cita y puede aprobar o rechazar"
+                                >
+                                  👑 VIP (Ve Fotos)
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    fontWeight: 700,
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: 'rgba(2, 132, 199, 0.14)',
+                                    color: '#38BDF8',
+                                    border: '1px solid rgba(2, 132, 199, 0.3)'
+                                  }}
+                                  title={`Plan ${m.person_b_plan_tier || 'Estándar'} (No-VIP): cita a ciegas sin fotos previas — listo para agendar de una vez salvo viaje o imprevisto personal`}
+                                >
+                                  ⚡ No-VIP (Agendar ya)
+                                </span>
+                              )}
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                               {phoneB ? (
                                 <>
                                   <a
@@ -3151,14 +3563,14 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
                           {/* Confirmación Persona B al lado derecho */}
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                              Confirmación
+                            <span style={{ fontSize: 9, fontWeight: 700, color: isVipB ? '#FBBF24' : 'var(--text-muted)', textTransform: 'uppercase' }}>
+                              {isVipB ? '👑 Aprobación VIP' : '⚡ Estado Cita'}
                             </span>
                             <select
                               value={m.person_b_confirmation || 'Pendiente'}
                               onChange={e => handleUpdateScheduleDetails(m.id, { person_b_confirmation: e.target.value })}
                               style={{
-                                padding: '4px 8px',
+                                padding: '4px 7px',
                                 borderRadius: 5,
                                 border: '1px solid var(--border-color)',
                                 background: m.person_b_confirmation === 'Aceptó' ? 'rgba(16, 185, 129, 0.15)' : m.person_b_confirmation === 'Rechazó' ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-base)',
@@ -3169,12 +3581,12 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                                 cursor: 'pointer'
                               }}
                             >
-                              <option value="Pendiente">Pendiente</option>
-                              <option value="Aceptó">Aceptó ✓</option>
-                              <option value="Rechazó">Rechazó ✗</option>
+                              <option value="Pendiente">{isVipB ? 'Pendiente (Ver fotos)' : 'Listo p/ Agendar'}</option>
+                              <option value="Aceptó">{isVipB ? 'Aceptó Perfil ✓' : 'Aceptó / Agendado ✓'}</option>
+                              <option value="Rechazó">{isVipB ? 'Rechazó Perfil ✗' : 'Rechazó ✗'}</option>
+                              <option value="De viaje">De viaje ✈️</option>
+                              <option value="Pausa">Pausa / Personal ⚠️</option>
                               <option value="No contesta">No contesta</option>
-                              <option value="De viaje">De viaje</option>
-                              <option value="Pausa">Pausa</option>
                             </select>
                           </div>
                         </div>
@@ -3236,90 +3648,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                         )}
                       </td>
 
-                      {/* 5. PLANTILLAS WHATSAPP (Activación secuencial por hora de Colombia) */}
-                      <td style={{ padding: '10px 12px', verticalAlign: 'middle', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', flexWrap: 'wrap' }}>
-                          {/* Botón 1: Confirmar (Siempre habilitado primero) */}
-                          <button
-                            onClick={() => setWaTemplateTarget({ match: m, templateType: 'confirmacion' })}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              padding: '5px 8px',
-                              borderRadius: 6,
-                              border: '1px solid #10B981',
-                              background: 'rgba(16, 185, 129, 0.12)',
-                              color: '#10B981',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease'
-                            }}
-                            title="Plantilla 1: Confirmación de Cita (Activa para enviar)"
-                          >
-                            📩 Confirmar
-                          </button>
-
-                          {/* Botón 2: Día Antes (Habilitado solo 1 día antes según hora Colombia) */}
-                          <button
-                            onClick={() => {
-                              if (waStatus.canDiaAntes) {
-                                setWaTemplateTarget({ match: m, templateType: 'dia_antes' })
-                              }
-                            }}
-                            disabled={!waStatus.canDiaAntes}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              padding: '5px 8px',
-                              borderRadius: 6,
-                              border: waStatus.canDiaAntes ? '1.5px solid #F59E0B' : '1px solid rgba(255,255,255,0.1)',
-                              background: waStatus.canDiaAntes ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.03)',
-                              color: waStatus.canDiaAntes ? '#F59E0B' : 'var(--text-muted)',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: waStatus.canDiaAntes ? 'pointer' : 'not-allowed',
-                              opacity: waStatus.canDiaAntes ? 1 : 0.38,
-                              transition: 'all 0.15s ease'
-                            }}
-                            title={waStatus.diaAntesReason}
-                          >
-                            ⏰ Día Antes
-                          </button>
-
-                          {/* Botón 3: Hoy (Habilitado solo el mismo día de la cita según hora Colombia) */}
-                          <button
-                            onClick={() => {
-                              if (waStatus.canHoy) {
-                                setWaTemplateTarget({ match: m, templateType: 'hoy' })
-                              }
-                            }}
-                            disabled={!waStatus.canHoy}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              padding: '5px 8px',
-                              borderRadius: 6,
-                              border: waStatus.canHoy ? '1.5px solid #3B82F6' : '1px solid rgba(255,255,255,0.1)',
-                              background: waStatus.canHoy ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.03)',
-                              color: waStatus.canHoy ? '#3B82F6' : 'var(--text-muted)',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: waStatus.canHoy ? 'pointer' : 'not-allowed',
-                              opacity: waStatus.canHoy ? 1 : 0.38,
-                              transition: 'all 0.15s ease'
-                            }}
-                            title={waStatus.hoyReason}
-                          >
-                            🚀 Hoy
-                          </button>
-                        </div>
-                      </td>
-
-                      {/* 6. OBSERVACIONES CS */}
+                      {/* 5. OBSERVACIONES CS */}
                       <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           <input
@@ -3346,27 +3675,6 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               boxSizing: 'border-box'
                             }}
                           />
-                          <button
-                            type="button"
-                            onClick={() => handleOpenRowRefund(m, 'A')}
-                            title="Registrar solicitud de refund para esta pareja (WhatsApp)"
-                            style={{
-                              background: 'rgba(235, 0, 141, 0.12)',
-                              border: '1px solid rgba(235, 0, 141, 0.35)',
-                              color: '#ff4081',
-                              padding: '5px 8px',
-                              borderRadius: 6,
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            <Wallet size={12} /> Refund
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -3376,16 +3684,16 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             </tbody>
           </table>
         ) : (
-          <table style={{ width: '100%', minWidth: isCompact ? 1050 : 1150, borderCollapse: 'collapse', fontSize: isCompact ? 13 : 14 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isCompact ? 13 : 14 }}>
             <thead>
               <tr style={{ color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 200 : 230, letterSpacing: '0.04em' }}>PERSONA A</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 290 : 360, letterSpacing: '0.04em' }}>PERSONA B (PROPUESTA)</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, minWidth: isCompact ? 120 : 140, letterSpacing: '0.04em' }}>PSICÓLOGA DE B</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, minWidth: isCompact ? 120 : 145, letterSpacing: '0.04em' }} title="Fecha de pago en Stripe o fecha de creación del slot">FECHA / PAGO</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 160 : 185, letterSpacing: '0.04em' }}>STATUS</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, letterSpacing: '0.04em' }}>PERSONA A</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, letterSpacing: '0.04em' }}>PERSONA B (PROPUESTA)</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, letterSpacing: '0.04em' }}>PSICÓLOGA DE B</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 12px' : '14px 14px', fontWeight: 800, letterSpacing: '0.04em' }} title="Fecha de pago en Stripe o fecha de creación del slot">FECHA / PAGO</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, letterSpacing: '0.04em' }}>STATUS</th>
                 <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 8px' : '14px 12px', fontWeight: 800, textAlign: 'center', width: 95, letterSpacing: '0.04em' }}>APROBADO</th>
-                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, minWidth: isCompact ? 240 : 340, letterSpacing: '0.04em' }}>OBSERVACIONES</th>
+                <th style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', borderBottom: '2px solid var(--border-color)', padding: isCompact ? '10px 14px' : '14px 18px', fontWeight: 800, letterSpacing: '0.04em' }}>OBSERVACIONES</th>
               </tr>
             </thead>
             <tbody>
@@ -3423,6 +3731,38 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                           <CrmPersonLink name={m.person_a} crmId={m.person_a_crm_id} />
+                          {m.is_inherited ? (
+                            <span
+                              style={{
+                                fontSize: isCompact ? 9 : 10,
+                                padding: isCompact ? '2px 6px' : '2px 7px',
+                                borderRadius: 4,
+                                background: 'rgba(139, 92, 246, 0.16)',
+                                border: '1px solid rgba(139, 92, 246, 0.45)',
+                                color: '#A78BFA',
+                                fontWeight: 800,
+                                letterSpacing: '0.02em'
+                              }}
+                              title={`Cliente heredado de ${m.inherited_from || 'psicóloga anterior'} -> asignado a ${m.assigned_psychologist || selectedPsyc}`}
+                            >
+                              🔄 Heredado{m.inherited_from ? ` (${m.inherited_from})` : ''}
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: isCompact ? 9 : 9.5,
+                                padding: '1px 5px',
+                                borderRadius: 4,
+                                background: 'rgba(2, 132, 199, 0.12)',
+                                border: '1px solid rgba(2, 132, 199, 0.3)',
+                                color: '#38BDF8',
+                                fontWeight: 700
+                              }}
+                              title={`Cliente propio de ${m.assigned_psychologist || m.psychologist_name}`}
+                            >
+                              👤 Propio
+                            </span>
+                          )}
                           {m.is_priority && (
                             <span style={{
                               fontSize: isCompact ? 9 : 10,
@@ -3833,11 +4173,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                         {!isLocked && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setRefundCategory(OFFICIAL_REFUND_CATEGORIES[0])
-                              setRefundReason('')
-                              setRefundModalTarget({ match: m, initialCategory: OFFICIAL_REFUND_CATEGORIES[0] })
-                            }}
+                            onClick={() => handleOpenRowRefund(m, 'A')}
                             title="Solicitar Refund / Descalificación a cola de Lina"
                             style={{
                               marginTop: 4,
@@ -3916,26 +4252,45 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         )}
       </div>
 
-      {/* Barra de Paginación */}
-      {totalPages > 1 && (
+      {/* Barra de Paginación (20 personas por página, sin doble scroll) */}
+      {displayedMatches.length > 0 && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
           marginTop: 14,
-          padding: '10px 16px',
+          padding: '12px 18px',
           background: 'var(--bg-card)',
-          borderRadius: 8,
+          borderRadius: 10,
           border: '1px solid var(--border-color)',
-          fontSize: 12,
+          fontSize: 12.5,
           color: 'var(--text-secondary)'
         }}>
           <div>
-            Mostrando <strong style={{ color: 'var(--text-primary)' }}>{((currentPage - 1) * pageSize) + 1}</strong> - <strong style={{ color: 'var(--text-primary)' }}>{Math.min(currentPage * pageSize, displayedMatches.length)}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{displayedMatches.length}</strong> {viewMode === 'cross_review' ? 'matches cruzados' : 'matches'}
+            Mostrando <strong style={{ color: 'var(--text-primary)' }}>{((currentPage - 1) * pageSize) + 1}</strong> - <strong style={{ color: 'var(--text-primary)' }}>{Math.min(currentPage * pageSize, displayedMatches.length)}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{displayedMatches.length}</strong> {viewMode === 'cross_review' ? 'matches cruzados' : isOfficialMatches ? 'parejas oficiales aprobadas' : 'personas'} <span style={{ color: 'var(--text-muted)', fontSize: 11.5 }}>({pageSize} por página)</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              onClick={() => { setCurrentPage(1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              disabled={currentPage === 1}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: currentPage === 1 ? 'rgba(255,255,255,0.03)' : 'var(--bg-base)',
+                color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              }}
+              title="Primera página"
+            >
+              « Primera
+            </button>
+            <button
+              onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               disabled={currentPage === 1}
               style={{
                 display: 'inline-flex',
@@ -3954,11 +4309,43 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             >
               <ChevronLeft size={14} /> Anterior
             </button>
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-              Página {currentPage} de {totalPages}
-            </span>
+
+            {(() => {
+              const pages = []
+              const maxVisible = 7
+              let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2))
+              let endPage = Math.min(totalPages, startPage + maxVisible - 1)
+              if (endPage - startPage + 1 < maxVisible) {
+                startPage = Math.max(1, endPage - maxVisible + 1)
+              }
+              for (let p = startPage; p <= endPage; p++) {
+                pages.push(p)
+              }
+              return pages.map(p => (
+                <button
+                  key={p}
+                  onClick={() => { setCurrentPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  style={{
+                    minWidth: 32,
+                    height: 30,
+                    padding: '0 8px',
+                    borderRadius: 6,
+                    border: currentPage === p ? '1.5px solid #B8324F' : '1px solid var(--border-color)',
+                    background: currentPage === p ? '#B8324F' : 'var(--bg-base)',
+                    color: currentPage === p ? '#FFFFFF' : 'var(--text-primary)',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {p}
+                </button>
+              ))
+            })()}
+
             <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               disabled={currentPage === totalPages}
               style={{
                 display: 'inline-flex',
@@ -3976,6 +4363,23 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               }}
             >
               Siguiente <ChevronRight size={14} />
+            </button>
+            <button
+              onClick={() => { setCurrentPage(totalPages); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1px solid var(--border-color)',
+                background: currentPage === totalPages ? 'rgba(255,255,255,0.03)' : 'var(--bg-base)',
+                color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-primary)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              }}
+              title="Última página"
+            >
+              Última »
             </button>
           </div>
         </div>
