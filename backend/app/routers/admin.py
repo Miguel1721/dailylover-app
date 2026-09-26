@@ -3189,7 +3189,9 @@ class QuickCreateClientRequest(BaseModel):
     phone: str
     city: Optional[str] = "Bogotá"
     gender: Optional[str] = None
-    orientation: Optional[str] = "hetero"
+    # Nunca fabricar la orientación de una persona nueva: si el operador no la especifica al
+    # crear el registro, debe quedar sin definir en vez de grabarse como "hetero" por defecto.
+    orientation: Optional[str] = None
     plan_tier: Optional[str] = "Estándar 65k (2 citas)"
     responsable: Optional[str] = "SIN_ASIGNAR"
     initial_notes: Optional[str] = None
@@ -3379,7 +3381,7 @@ async def quick_create_client(
         "uid": new_id,
         "city": city_clean,
         "gender": payload.gender or "No especificado",
-        "orientation": payload.orientation or "hetero",
+        "orientation": payload.orientation or None,
         "plan": plan_clean,
         "resp": resp_clean,
         "notes": notes_clean
@@ -3404,7 +3406,7 @@ async def quick_create_client(
             ) RETURNING id
         """), {
             "city": city_clean,
-            "pref": payload.orientation or "hetero",
+            "pref": payload.orientation or None,
             "plan": plan_clean,
             "pa": name_clean,
             "psyc": resp_clean,
@@ -3495,7 +3497,7 @@ async def register_client_novedad(
                     city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, created_at, updated_at
                 ) VALUES (
                     (SELECT COALESCE(city, 'Bogotá') FROM profiles WHERE user_id = :cid),
-                    (SELECT COALESCE(orientation, 'hetero') FROM profiles WHERE user_id = :cid),
+                    (SELECT orientation FROM profiles WHERE user_id = :cid),
                     (SELECT COALESCE(plan_tier, 'Cita Extra') FROM profiles WHERE user_id = :cid),
                     :pa, :psyc, 99, 'Listo para match', :obs, NOW(), NOW()
                 )

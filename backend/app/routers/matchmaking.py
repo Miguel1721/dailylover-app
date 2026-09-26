@@ -8296,10 +8296,14 @@ def parse_height_range(pref: Optional[str]):
     return min_h, max_h
 
 def parse_attachment_style(raw_apego: Any) -> str:
+    # Nunca fabricar "seguro" cuando el estilo de apego real no se pudo determinar — el llamador
+    # usa exactamente el valor "No especificado" para saber que debe tratarlo como pendiente de
+    # evaluación (score neutro) en vez de contarlo como un apego seguro real y no evaluado.
     if not raw_apego:
-        return "seguro"
+        return "No especificado"
     if isinstance(raw_apego, dict):
-        return str(raw_apego.get("style") or raw_apego.get("estilo") or "seguro").lower().strip()
+        style_val = str(raw_apego.get("style") or raw_apego.get("estilo") or "").lower().strip()
+        return style_val or "No especificado"
     s = str(raw_apego).lower().strip()
     if "ansios" in s:
         return "ansioso"
@@ -8309,10 +8313,20 @@ def parse_attachment_style(raw_apego: Any) -> str:
         return "desorganizado"
     if "segur" in s:
         return "seguro"
-    return "seguro"
+    return "No especificado"
 
 def evaluate_attachment_compatibility(style_a: str, style_b: str) -> dict:
-    a, b = (style_a or "seguro").lower(), (style_b or "seguro").lower()
+    # Nunca asumir "seguro" cuando el estilo de apego de alguna de las dos personas no fue
+    # evaluado por la psicóloga — eso infla artificialmente el score sin base clínica real.
+    # Se reporta con score neutro (ni bonifica ni penaliza) y queda marcado como pendiente.
+    if not style_a or not style_b:
+        return {
+            "score": 0.50,
+            "label": "Apego pendiente de evaluación clínica",
+            "type": "pending",
+            "clinical_note": "El estilo de apego de una o ambas personas aún no fue evaluado formalmente por la psicóloga; no se puede calificar esta dinámica todavía."
+        }
+    a, b = style_a.lower(), style_b.lower()
     if a == "seguro" and b == "seguro":
         return {
             "score": 1.0,

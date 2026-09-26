@@ -563,8 +563,11 @@ class ClinicalProfileExtractor:
                 lenguaje_amor = "Actos de servicio"
 
         return {
-            "estilo_apego": estilo_apego or "Seguro",
-            "lenguaje_amor": lenguaje_amor or "Tiempo de calidad",
+            # Nunca fabricar "Seguro" ni "Tiempo de calidad" cuando no se pudo extraer un estilo
+            # de apego o lenguaje del amor real de las notas — queda sin definir y el motor de
+            # matching lo trata como pendiente de evaluación (score neutro), no como un dato real.
+            "estilo_apego": estilo_apego or None,
+            "lenguaje_amor": lenguaje_amor or None,
             "busca_matrimonio": busca_matrimonio,
             "relacion_seria": relacion_seria,
         }
