@@ -1067,6 +1067,7 @@ export default function Clientes() {
   const [cityFilter, setCityFilter] = useState('all')
   const [matchesFilter, setMatchesFilter] = useState('all')
   const [planFilter, setPlanFilter] = useState('all')
+  const [difficultFilter, setDifficultFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('active')
   const [sortBy, setSortBy] = useState('oldest_first')
   const [darDeBajaTarget, setDarDeBajaTarget] = useState(null)
