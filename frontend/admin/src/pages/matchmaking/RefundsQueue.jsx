@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
-  Wallet, CheckCircle, Search, RefreshCw, AlertCircle, Clock, ExternalLink, MapPin, Zap, CreditCard
+  Wallet, CheckCircle, Search, RefreshCw, AlertCircle, Clock, ExternalLink, MapPin, Zap, CreditCard, Lock, KeyRound
 } from 'lucide-react'
 import CrmPersonLink from '../../components/CrmPersonLink'
 
@@ -39,6 +39,77 @@ export default function RefundsQueue() {
   const [stripeProcessing, setStripeProcessing] = useState(false)
   const [refundType, setRefundType] = useState('full') // 'full' | 'partial'
   const [partialPercentage, setPartialPercentage] = useState(50)
+  const [stripePin, setStripePin] = useState('')
+
+  // --- Clave personal de confirmación de reembolsos ---
+  const [hasPin, setHasPin] = useState(null) // null = aún no se sabe, true/false = estado real
+  const [showPinModal, setShowPinModal] = useState(false)
+  const [pinCurrent, setPinCurrent] = useState('')
+  const [pinNew, setPinNew] = useState('')
+  const [pinConfirm, setPinConfirm] = useState('')
+  const [pinSubmitting, setPinSubmitting] = useState(false)
+  const [pinError, setPinError] = useState(null)
+
+  const fetchPinStatus = async () => {
+    try {
+      const res = await fetch('/api/v1/auth/refund-pin-status', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setHasPin(!!data.has_pin)
+    } catch (err) {
+      // silencioso: no bloquea la carga de la cola si esto falla
+    }
+  }
+
+  useEffect(() => {
+    fetchPinStatus()
+  }, [])
+
+  const handleOpenPinModal = () => {
+    setPinCurrent('')
+    setPinNew('')
+    setPinConfirm('')
+    setPinError(null)
+    setShowPinModal(true)
+  }
+
+  const handleSavePin = async (e) => {
+    e.preventDefault()
+    setPinError(null)
+    if (pinNew !== pinConfirm) {
+      setPinError('La clave nueva y su confirmación no coinciden.')
+      return
+    }
+    if (!/^\d{4,6}$/.test(pinNew)) {
+      setPinError('La clave debe ser numérica, de 4 a 6 dígitos.')
+      return
+    }
+    setPinSubmitting(true)
+    try {
+      const res = await fetch('/api/v1/auth/refund-pin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          pin: pinNew,
+          current_pin: hasPin ? pinCurrent : undefined
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Error al guardar la clave')
+      setHasPin(true)
+      setShowPinModal(false)
+      alert(data.message || '✓ Clave de confirmación de reembolsos guardada.')
+    } catch (err) {
+      setPinError(err.message)
+    } finally {
+      setPinSubmitting(false)
+    }
+  }
 
   const handleOpenStripeModal = (item) => {
     setStripeRefundTarget(item)
@@ -47,11 +118,16 @@ export default function RefundsQueue() {
     setStripeAmount(item.stripe_amount ? String(item.stripe_amount) : '')
     setStripeReason('requested_by_customer')
     setStripeNotes('')
+    setStripePin('')
   }
 
   const handleExecuteStripeRefund = async (e) => {
     e.preventDefault()
     if (!stripeRefundTarget) return
+    if (!stripePin.trim()) {
+      alert('Ingresa tu clave personal de confirmación antes de enviar el reembolso a Stripe.')
+      return
+    }
 
     setStripeProcessing(true)
     try {
@@ -67,14 +143,16 @@ export default function RefundsQueue() {
           percentage: refundType === 'partial' ? partialPercentage : undefined,
           amount: stripeAmount ? parseFloat(stripeAmount) : undefined,
           reason: stripeReason,
-          notes: stripeNotes || undefined
+          notes: stripeNotes || undefined,
+          refund_pin: stripePin
         })
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Error al procesar el reembolso en Stripe')
-      
+
       alert(data.message || '✓ Reembolso procesado exitosamente en Stripe.')
       setStripeRefundTarget(null)
+      setStripePin('')
       fetchRefunds()
     } catch (err) {
       alert(`Error: ${err.message}`)
@@ -169,7 +247,27 @@ export default function RefundsQueue() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            onClick={handleOpenPinModal}
+            title="Configura la clave personal que se te pedirá antes de cada reembolso por Stripe"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 14px',
+              borderRadius: 6,
+              border: hasPin ? '1px solid var(--border-color)' : '1px solid #f59e0b',
+              background: hasPin ? 'var(--bg-card)' : 'rgba(245, 158, 11, 0.12)',
+              color: hasPin ? 'var(--text-primary)' : '#f59e0b',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <KeyRound size={14} /> {hasPin === false ? 'Configurar mi clave de reembolsos' : 'Mi clave de reembolsos'}
+          </button>
+
           <button
             onClick={() => setShowAddModal(true)}
             style={{
@@ -780,6 +878,36 @@ export default function RefundsQueue() {
                 />
               </div>
 
+              <div style={{ padding: '12px 14px', background: 'rgba(124, 58, 237, 0.08)', border: '1px solid rgba(124, 58, 237, 0.3)', borderRadius: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#c084fc' }}>
+                  <Lock size={13} /> Tu clave personal de confirmación *
+                </label>
+                {hasPin === false ? (
+                  <div style={{ fontSize: 12, color: '#f59e0b' }}>
+                    Aún no has configurado tu clave. <button
+                      type="button"
+                      onClick={() => { setStripeRefundTarget(null); handleOpenPinModal() }}
+                      style={{ background: 'none', border: 'none', color: '#f59e0b', textDecoration: 'underline', cursor: 'pointer', fontSize: 12, padding: 0 }}
+                    >Configúrala aquí</button> antes de continuar.
+                  </div>
+                ) : (
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    required
+                    autoComplete="off"
+                    placeholder="Ingresa tu clave (4-6 dígitos)"
+                    value={stripePin}
+                    onChange={e => setStripePin(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 6,
+                      background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)', fontSize: 14, letterSpacing: 2
+                    }}
+                  />
+                )}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
                 <button
                   type="button"
@@ -795,16 +923,135 @@ export default function RefundsQueue() {
 
                 <button
                   type="submit"
-                  disabled={stripeProcessing}
+                  disabled={stripeProcessing || hasPin === false}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6,
                     padding: '9px 18px', borderRadius: 6, border: 'none',
-                    background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700,
-                    cursor: 'pointer', boxShadow: '0 4px 12px rgba(124, 58, 237, 0.4)'
+                    background: (hasPin === false) ? 'var(--border-color)' : '#7c3aed',
+                    color: '#fff', fontSize: 13, fontWeight: 700,
+                    cursor: (hasPin === false) ? 'not-allowed' : 'pointer',
+                    boxShadow: (hasPin === false) ? 'none' : '0 4px 12px rgba(124, 58, 237, 0.4)'
                   }}
                 >
                   <Zap size={14} fill="#fff" />
                   {stripeProcessing ? 'Procesando en Stripe...' : 'Confirmar Reembolso Automático'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Configurar / Cambiar Clave Personal de Reembolsos */}
+      {showPinModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1100, padding: 16
+        }}>
+          <div style={{
+            background: 'var(--bg-card)',
+            borderRadius: 12,
+            border: '1px solid var(--border-color)',
+            width: '100%',
+            maxWidth: 420,
+            padding: 24,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+          }}>
+            <h2 style={{ fontSize: 17, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <KeyRound size={19} color="#7c3aed" /> {hasPin ? 'Cambiar mi clave de reembolsos' : 'Configurar mi clave de reembolsos'}
+            </h2>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
+              Esta clave personal se te pedirá cada vez que proceses un reembolso automático por Stripe. Es individual: nadie más la conoce ni puede verla.
+            </p>
+
+            <form onSubmit={handleSavePin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {hasPin && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                    Clave actual *
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    required
+                    autoComplete="off"
+                    value={pinCurrent}
+                    onChange={e => setPinCurrent(e.target.value)}
+                    style={{
+                      width: '100%', padding: '8px 12px', borderRadius: 6,
+                      background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                      color: 'var(--text-primary)', fontSize: 14, letterSpacing: 2
+                    }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  {hasPin ? 'Nueva clave (4-6 dígitos) *' : 'Clave nueva (4-6 dígitos) *'}
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  required
+                  autoComplete="off"
+                  value={pinNew}
+                  onChange={e => setPinNew(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 14, letterSpacing: 2
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
+                  Confirmar clave nueva *
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  required
+                  autoComplete="off"
+                  value={pinConfirm}
+                  onChange={e => setPinConfirm(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    color: 'var(--text-primary)', fontSize: 14, letterSpacing: 2
+                  }}
+                />
+              </div>
+
+              {pinError && (
+                <div style={{ fontSize: 12, color: '#f87171', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertCircle size={13} /> {pinError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(false)}
+                  disabled={pinSubmitting}
+                  style={{
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border-color)',
+                    background: 'var(--bg-base)', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={pinSubmitting}
+                  style={{
+                    padding: '8px 16px', borderRadius: 6, border: 'none',
+                    background: '#7c3aed', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  {pinSubmitting ? 'Guardando...' : 'Guardar clave'}
                 </button>
               </div>
             </form>

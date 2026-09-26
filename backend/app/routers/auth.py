@@ -6,6 +6,7 @@ from app.database import get_db
 from app.services.auth_service import verify_password, hash_password, create_access_token
 from app.core.permissions import get_current_user
 from datetime import datetime
+from typing import Optional
 import json
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
@@ -374,10 +375,71 @@ async def change_password(
     new_hash = hash_password(req.new_password)
     
     await db.execute(text("""
-        UPDATE user_accounts 
-        SET password_hash = :new_hash, must_change_password = false 
+        UPDATE user_accounts
+        SET password_hash = :new_hash, must_change_password = false
         WHERE id = :id
     """), {"new_hash": new_hash, "id": current_user["id"]})
     await db.commit()
-    
+
     return {"message": "Contraseña actualizada exitosamente"}
+
+
+class SetRefundPinRequest(BaseModel):
+    pin: str
+    current_pin: Optional[str] = None
+
+
+@router.get("/refund-pin-status")
+async def get_refund_pin_status(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Indica si el usuario logueado ya configuró su clave personal de confirmación
+    para procesar reembolsos por Stripe (nunca se devuelve la clave ni su hash).
+    """
+    res = await db.execute(text(
+        "SELECT refund_pin_hash FROM user_accounts WHERE id = :id"
+    ), {"id": current_user["id"]})
+    row = res.fetchone()
+    return {"has_pin": bool(row and row.refund_pin_hash)}
+
+
+@router.post("/refund-pin")
+async def set_refund_pin(
+    req: SetRefundPinRequest,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Configura o cambia la clave personal (PIN de 4-6 dígitos) que el usuario
+    logueado deberá ingresar antes de procesar cada reembolso por Stripe.
+    Si ya tenía una clave configurada, exige la clave actual para cambiarla.
+    """
+    clean_pin = (req.pin or "").strip()
+    if not clean_pin.isdigit() or not (4 <= len(clean_pin) <= 6):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La clave debe ser numérica, de 4 a 6 dígitos."
+        )
+
+    res = await db.execute(text(
+        "SELECT refund_pin_hash FROM user_accounts WHERE id = :id"
+    ), {"id": current_user["id"]})
+    row = res.fetchone()
+    existing_hash = row.refund_pin_hash if row else None
+
+    if existing_hash:
+        if not req.current_pin or not verify_password(req.current_pin, existing_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La clave actual es incorrecta."
+            )
+
+    new_hash = hash_password(clean_pin)
+    await db.execute(text("""
+        UPDATE user_accounts SET refund_pin_hash = :h WHERE id = :id
+    """), {"h": new_hash, "id": current_user["id"]})
+    await db.commit()
+
+    return {"message": "Clave de confirmación de reembolsos guardada exitosamente."}

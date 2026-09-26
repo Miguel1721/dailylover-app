@@ -273,6 +273,10 @@ async def startup_seed():
             await db.execute(text("ALTER TABLE operational_matches ADD COLUMN IF NOT EXISTS batch_tag TEXT"))
             await db.execute(text("CREATE INDEX IF NOT EXISTS idx_operational_matches_batch_tag ON operational_matches(batch_tag)"))
 
+            # PIN de confirmación personal para procesar reembolsos por Stripe (cada usuario
+            # configura el suyo; nunca se guarda en texto plano, solo su hash bcrypt).
+            await db.execute(text("ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS refund_pin_hash TEXT"))
+
             await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS august27_unmatched_clients (
                     id SERIAL PRIMARY KEY,

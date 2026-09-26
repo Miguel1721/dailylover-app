@@ -26,6 +26,7 @@ from sqlalchemy import text
 from app.database import get_db
 from app.config import get_settings
 from app.core.permissions import require_permission, get_current_user
+from app.services.auth_service import verify_password
 from app.services.clinical_profile_extractor import (
     ClinicalProfileExtractor,
     infer_gender_from_name_and_bio,
@@ -2575,12 +2576,14 @@ class StripeProcessRefundRequest(BaseModel):
     refund_type: Optional[str] = "full"  # "full" | "partial"
     reason: Optional[str] = "requested_by_customer"
     notes: Optional[str] = None
+    refund_pin: Optional[str] = None  # clave personal de confirmación (obligatoria)
 
 
 @router.post("/refunds/{match_id}/process-stripe")
 async def process_stripe_refund(
     match_id: int,
     req: Optional[StripeProcessRefundRequest] = None,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -2588,7 +2591,31 @@ async def process_stripe_refund(
     Ejecuta un reembolso automático (total o parcial) a través de la API de Stripe
     usando el Payment Intent (pi_...) asociado al cliente.
     Incluye modo de prueba seguro para simulación sin tocar dinero real.
+
+    Requiere que el usuario logueado confirme su clave personal de reembolsos
+    (refund_pin) antes de que la petición salga hacia Stripe — ver
+    /api/v1/auth/refund-pin para configurarla.
     """
+    # --- Verificación de clave personal de confirmación (obligatoria siempre) ---
+    pin_res = await db.execute(text(
+        "SELECT refund_pin_hash FROM user_accounts WHERE id = :id"
+    ), {"id": current_user["id"]})
+    pin_row = pin_res.fetchone()
+    existing_pin_hash = pin_row.refund_pin_hash if pin_row else None
+
+    if not existing_pin_hash:
+        raise HTTPException(
+            status_code=400,
+            detail="Aún no has configurado tu clave personal de confirmación de reembolsos. Configúrala en tu perfil antes de continuar."
+        )
+
+    submitted_pin = (req.refund_pin if req and req.refund_pin else "").strip()
+    if not submitted_pin or not verify_password(submitted_pin, existing_pin_hash):
+        raise HTTPException(
+            status_code=403,
+            detail="Clave de confirmación incorrecta. El reembolso no fue enviado a Stripe."
+        )
+
     settings = get_settings()
     stripe_key = settings.stripe_api_key or os.environ.get("STRIPE_API_KEY", "")
 
