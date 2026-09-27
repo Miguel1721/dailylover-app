@@ -300,6 +300,50 @@ def normalize_city(city_raw: str):
     return None
 
 
+PSYCHOLOGIST_ALIASES = {
+    'ANA': ['ANA', 'ANA TOLOSA', 'MATCHES ANA'],
+    'SILVI': ['SILVI', 'SILVA', 'SILVANA', 'SILVIA', 'MATCHES SILVI'],
+    'STEFFY': ['STEFFY', 'TEFFY', 'STEFF', 'STEPHANIE', 'MATCHES STEFFY'],
+    'JENN': ['JENN', 'JENNIFER', 'MATCHES JENN'],
+    'PIA': ['PIA', 'PÍA', 'MATCHES PIA'],
+    'ISA': ['ISA', 'ISA MARQUEZ', 'ISABELA MARQUEZ', 'ISABELLA', 'MATCHES ISA'],
+    'ALEJA': ['ALEJA', 'ALEJANDRA', 'MATCHES ALEJA', 'ALEJA - JENN'],
+    'MANU': ['MANU', 'MANUELA', 'MANU 1', 'MANU 2', 'MATCHES MANU'],
+    'SOFI': ['SOFI', 'SOFIA ARIAS', 'SOFÍA ARIAS', 'SOFI ARIAS', 'MATCHES SOFI'],
+    'MAPE D': ['MAPE D', 'MAPE', 'MARI DE LA E', 'MARI DE LA ESPRIELLA', 'MARIA PAULA', 'MARÍA PAULA', 'MARIA PAULA SALINAS', 'MATCHES MAPE D', 'MATCHES MAPE', 'MATCHES'],
+    'MPS': ['MPS', 'MARI SARMIENTO', 'MARI S', 'MARIS', 'MARI S Y MAPE', 'MARI B', 'MARIB', 'MARI PAZ', 'MARIPAZ', 'MARI PAZ Y MAPE', 'MATCHES MPS'],
+    'LAU': ['LAU', 'LAURA', 'MATCHES LAU']
+}
+
+RETIRED_TO_ACTIVE_PSYCHOLOGIST = {
+    'SOFI': 'SILVI',
+    'ALEJA': 'JENN',
+    'LAU': 'ISA',
+    'MPS': 'ANA',
+    'MANU': 'STEFFY',
+}
+
+
+def normalize_responsable(raw_resp: str, apply_inheritance: bool = True) -> str:
+    """
+    Normaliza el nombre/alias de la psicóloga y aplica la matriz de herencia canónica
+    (psychologist_helper.py: Silvi<-Sofi, Jenn<-Aleja, Isa<-Lau, Steffy<-Manu, Ana<-MPS)
+    para evitar que queden escritos nombres de psicólogas retiradas en profiles.responsable.
+    """
+    if not raw_resp:
+        return None
+    clean = str(raw_resp).strip().upper().replace("MATCHES ", "").strip()
+    canonical = clean
+    for canon, aliases in PSYCHOLOGIST_ALIASES.items():
+        if clean == canon or clean in aliases:
+            canonical = canon
+            break
+    if apply_inheritance:
+        return RETIRED_TO_ACTIVE_PSYCHOLOGIST.get(canonical, canonical)
+    return canonical
+
+
+
 
 STATUS_MAPPING = {
     "APROBADO": "APROBADO",
@@ -454,7 +498,7 @@ def fetch_excel_data(xlsx_path: str) -> dict:
         vip_info = vip_650_by_name.get(n_nm, {})
         
         plan_tier = "Plan 650k (MPS)" if vip_info else (plan_info.get("plan") or None)
-        responsable = vip_info.get("interviewer") if vip_info else (p["responsable"] or None)
+        responsable = normalize_responsable(vip_info.get("interviewer") if vip_info else (p["responsable"] or None))
         email = plan_info.get("email") or ""
         is_difficult = bool(diff_info)
         difficult_notes = diff_info.get("notes") or ""
@@ -799,7 +843,7 @@ def fetch_sheet_data(creds_path: str) -> dict:
         vip_info = vip_650_by_name.get(n_nm, {})
         
         plan_tier = "Plan 650k (MPS)" if vip_info else (plan_info.get("plan") or None)
-        responsable = vip_info.get("interviewer") if vip_info else (p["responsable"] or None)
+        responsable = normalize_responsable(vip_info.get("interviewer") if vip_info else (p["responsable"] or None))
         email = plan_info.get("email") or ""
         is_difficult = bool(diff_info)
         difficult_notes = diff_info.get("notes") or ""
@@ -1024,11 +1068,13 @@ async def run_sync():
     parser.add_argument("--file", type=str, default=None, help="Archivo JSON de payload o XLSX local")
     parser.add_argument("--xlsx", type=str, default=None, help="Ruta directa a archivo Excel (.xlsx)")
     parser.add_argument("--discrepancies-out", type=str, default=None, help="Ruta para exportar discrepancias a JSON")
+    parser.add_argument("--fuzzy-out", type=str, default=None, help="Ruta para exportar coincidencias fuzzy a JSON para revisión humana")
     args, _ = parser.parse_known_args()
     
     is_dry_run = args.dry_run
     custom_file = args.xlsx or args.file
     discrepancies_out_file = args.discrepancies_out or "/tmp/sync_discrepancies.json"
+    fuzzy_out_file = args.fuzzy_out or "/tmp/sync_fuzzy_matches.json"
 
     start_time = time.time()
     now_utc = datetime.now(timezone.utc).isoformat()
@@ -1112,6 +1158,7 @@ async def run_sync():
     users_unmatched_count = 0
     match_method_stats = {}
     unmatched_discrepancies = []
+    fuzzy_matches_log = []
 
     users_updated = 0
     users_inserted = 0  # REGLA ESTRICTA: Siempre 0 para prevenir duplicados
@@ -1149,7 +1196,7 @@ async def run_sync():
                 c_norm = c["norm_name"]
                 c_code = c.get("client_code") or ""
                 c_email = c.get("email") or ""
-                c_resp = c.get("responsable") or None
+                c_resp = normalize_responsable(c.get("responsable")) if c.get("responsable") else None
                 c_city = c.get("city") or None
                 c_plan = c.get("plan_tier") or None
                 c_diff = c.get("is_difficult", False)
@@ -1165,6 +1212,19 @@ async def run_sync():
                 if user_id:
                     users_matched_count += 1
                     match_method_stats[method] = match_method_stats.get(method, 0) + 1
+
+                    if method.startswith("fuzzy_"):
+                        fuzzy_matches_log.append({
+                            "sheet_name": c_name,
+                            "db_matched_name": matched_val,
+                            "matched_user_id": user_id,
+                            "similarity_score": float(method.replace("fuzzy_", "")),
+                            "sheet_email": c_email,
+                            "sheet_client_code": c_code,
+                            "sheet_responsable": c_resp,
+                            "sheet_city": c_city,
+                            "sheet_plan": c_plan
+                        })
 
                     # 1. Users: Solo llenar email o client_code si faltaban (COALESCE)
                     if c_email or c_code:
@@ -1498,6 +1558,18 @@ async def run_sync():
             except Exception as e_disc:
                 print(f"[WARN] No se pudo guardar JSON de discrepancias: {e_disc}")
 
+        # 4b. Guardar archivo de coincidencias difusas (fuzzy) para revisión humana
+        if fuzzy_matches_log:
+            try:
+                f_dir = os.path.dirname(fuzzy_out_file)
+                if f_dir and not os.path.exists(f_dir):
+                    os.makedirs(f_dir, exist_ok=True)
+                with open(fuzzy_out_file, "w", encoding="utf-8") as f:
+                    json.dump(fuzzy_matches_log, f, indent=2, ensure_ascii=False)
+                print(f"[AUDITORÍA] {len(fuzzy_matches_log)} coincidencias fuzzy exportadas a: {fuzzy_out_file}")
+            except Exception as e_fuzz:
+                print(f"[WARN] No se pudo guardar JSON de fuzzy matches: {e_fuzz}")
+
         # 5. Guardar archivo de estado para /api/v1/admin/diagnostics
         backup_size = 0
         if PRE_SYNC_BACKUP_FILE and os.path.isfile(PRE_SYNC_BACKUP_FILE):
@@ -1511,6 +1583,7 @@ async def run_sync():
             "records_summary": {
                 "users_matched": users_matched_count,
                 "users_unmatched": users_unmatched_count,
+                "fuzzy_matches_count": len(fuzzy_matches_log),
                 "match_methods": match_method_stats,
                 "users_new": users_inserted,
                 "users_updated": users_updated,
