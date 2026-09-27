@@ -226,32 +226,35 @@ function BuscarMatchPrioritarioModal({ caseItem, onClose, onAssigned }) {
                             )}
                           </div>
                           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            {cand.age} años • {cand.occupation || 'Profesional'} • {cand.city}
+                            {cand.age ? `${cand.age} años • ` : ''}{cand.occupation || 'Ocupación no especificada'} • {cand.city || 'Ciudad no especificada'}
                           </div>
                         </div>
                         <div style={{
-                          background: cand.compatibility_pct >= 90 ? 'rgba(76, 175, 80, 0.18)' : 'rgba(255, 193, 7, 0.18)',
-                          color: cand.compatibility_pct >= 90 ? '#4CAF50' : '#FFC107',
-                          border: `1px solid ${cand.compatibility_pct >= 90 ? 'rgba(76, 175, 80, 0.4)' : 'rgba(255, 193, 7, 0.4)'}`,
+                          background: cand.compatibility_pct == null ? 'rgba(148, 163, 184, 0.18)' : (cand.compatibility_pct >= 90 ? 'rgba(76, 175, 80, 0.18)' : 'rgba(255, 193, 7, 0.18)'),
+                          color: cand.compatibility_pct == null ? '#94A3B8' : (cand.compatibility_pct >= 90 ? '#4CAF50' : '#FFC107'),
+                          border: `1px solid ${cand.compatibility_pct == null ? 'rgba(148, 163, 184, 0.4)' : (cand.compatibility_pct >= 90 ? 'rgba(76, 175, 80, 0.4)' : 'rgba(255, 193, 7, 0.4)')}`,
                           padding: '3px 8px', borderRadius: 8, fontSize: 12, fontWeight: 700
                         }}>
-                          {cand.compatibility_pct}% match
+                          {cand.compatibility_pct != null ? `${cand.compatibility_pct}% match` : '⏳ Sin analizar'}
                         </div>
                       </div>
 
-                      {/* Dealbreakers & Compatibilidad mutua */}
+                      {/* Dealbreakers & Compatibilidad mutua — este listado es solo un filtro básico
+                          por género/ciudad/bio; el veredicto real de compatibilidad requiere "Analizar con IA". */}
                       <div style={{
                         fontSize: 11, padding: '4px 8px', borderRadius: 6, marginBottom: 8,
-                        background: cand.dealbreakers_clean ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 193, 7, 0.1)',
-                        color: cand.dealbreakers_clean ? '#81C784' : '#FFD54F'
+                        background: cand.dealbreakers_clean == null ? 'rgba(148, 163, 184, 0.1)' : (cand.dealbreakers_clean ? 'rgba(76, 175, 80, 0.1)' : 'rgba(255, 193, 7, 0.1)'),
+                        color: cand.dealbreakers_clean == null ? '#94A3B8' : (cand.dealbreakers_clean ? '#81C784' : '#FFD54F')
                       }}>
                         {cand.dealbreakers_check}
                       </div>
 
                       {/* Puntos fuertes */}
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        {cand.strengths?.[0] || 'Excelente afinidad en ritmo de vida y metas profesionales.'}
-                      </div>
+                      {cand.strengths?.[0] && (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          {cand.strengths[0]}
+                        </div>
+                      )}
 
                       {isSel && (
                         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--color-primary-light)', fontSize: 12, fontWeight: 600 }}>
@@ -296,7 +299,7 @@ function BuscarMatchPrioritarioModal({ caseItem, onClose, onAssigned }) {
                 <input 
                   type="text"
                   disabled
-                  value={selectedCand ? `${selectedCand.name} (${selectedCand.compatibility_pct || 90}% match)` : 'Ninguna'}
+                  value={selectedCand ? `${selectedCand.name}${selectedCand.compatibility_pct != null ? ` (${selectedCand.compatibility_pct}% match)` : ' (sin analizar)'}` : 'Ninguna'}
                   style={{
                     width: '100%', padding: '8px 12px', background: 'var(--bg-base)',
                     border: '1px solid var(--border-color)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, opacity: 0.8

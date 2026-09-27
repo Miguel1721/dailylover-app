@@ -491,20 +491,20 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
             </div>
             <div style={{ fontSize: 12, marginBottom: 8 }}>
               <b style={{ color: 'var(--text-primary)' }}>1. ¿Quién es realmente?</b>
-              <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                {client.synthesis_who_really_is || 'Profesional enfocado, con estilo de vida dinámico y visión de pareja estable.'}
+              <p style={{ margin: '2px 0 0', color: client.synthesis_who_really_is ? 'var(--text-secondary)' : '#f59e0b', fontStyle: client.synthesis_who_really_is ? 'normal' : 'italic', lineHeight: 1.4 }}>
+                {client.synthesis_who_really_is || '⏳ Pendiente de entrevista clínica — aún no hay síntesis real de la psicóloga.'}
               </p>
             </div>
             <div style={{ fontSize: 12, marginBottom: 8 }}>
               <b style={{ color: 'var(--text-primary)' }}>2. ¿Comportamiento en 1ra cita?</b>
-              <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                {client.synthesis_first_date_behavior || 'Puntual, conversador elocuente y empático.'}
+              <p style={{ margin: '2px 0 0', color: client.synthesis_first_date_behavior ? 'var(--text-secondary)' : '#f59e0b', fontStyle: client.synthesis_first_date_behavior ? 'normal' : 'italic', lineHeight: 1.4 }}>
+                {client.synthesis_first_date_behavior || '⏳ Pendiente — sin cita previa registrada por la psicóloga.'}
               </p>
             </div>
             <div style={{ fontSize: 12 }}>
               <b style={{ color: 'var(--text-primary)' }}>3. ¿Perfil para mejor match?</b>
-              <p style={{ margin: '2px 0 0', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                {client.synthesis_best_match_type || 'Persona profesional, con nivel sociocultural afín y que valore tiempo de calidad.'}
+              <p style={{ margin: '2px 0 0', color: client.synthesis_best_match_type ? 'var(--text-secondary)' : '#f59e0b', fontStyle: client.synthesis_best_match_type ? 'normal' : 'italic', lineHeight: 1.4 }}>
+                {client.synthesis_best_match_type || '⏳ Pendiente de evaluación clínica.'}
               </p>
             </div>
           </div>

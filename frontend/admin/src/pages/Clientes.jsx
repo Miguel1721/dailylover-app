@@ -586,18 +586,18 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
             }}>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>👩‍⚕️ PSICÓLOGA ASIGNADA:</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-primary)' }}>{(p.responsable || targetClient.responsable || 'SILVI').replace('MATCHES ', '')}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-primary)' }}>{(p.responsable || targetClient.responsable || 'Sin asignar').replace('MATCHES ', '')}</div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>📍 CIUDAD DE RESIDENCIA:</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.city || targetClient.city || 'Bogotá'}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.city || targetClient.city || '⏳ Ciudad pendiente'}</div>
               </div>
 
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎂 EDAD / GRUPO ETARIO:</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{p.age || targetClient.age || '28'} años</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{(p.age || targetClient.age) ? `${p.age || targetClient.age} años` : 'Edad pendiente'}</div>
               </div>
 
               <div>
@@ -618,28 +618,28 @@ function ClienteModal({ cliente, token, onClose, onDarDeBaja, onReactivate }) {
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>❤️ LENGUAJE DEL AMOR:</div>
                 <div style={{ fontSize: 13, color: '#FFC107', fontWeight: 600 }}>
-                  {formatClinicalValue(p.love_language || (typeof p.apego === 'object' && p.apego?.love_language) || targetClient.love_language, 'Palabras de afirmación / Tiempo de calidad')}
+                  {formatClinicalValue(p.love_language || (typeof p.apego === 'object' && p.apego?.love_language) || targetClient.love_language, '⏳ Pendiente de entrevista clínica')}
                 </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🧠 ESTILO DE APEGO:</div>
                 <div style={{ fontSize: 13, color: '#4CAF50', fontWeight: 600 }}>
-                  {formatClinicalValue(p.apego, 'Seguro / Constructivo')}
+                  {formatClinicalValue(p.apego, '⏳ Pendiente de evaluación clínica')}
                 </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>🎯 MOTIVACIÓN PRINCIPAL:</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {formatClinicalValue(p.motivacion, 'Conexión profunda & proyecto de vida')}
+                  {formatClinicalValue(p.motivacion, '⏳ Pendiente de entrevista clínica')}
                 </div>
               </div>
 
               <div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>⚡ ENERGÍA SOCIAL & ROL:</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {formatClinicalValue(p.energia_social, 'Ambivertido')} • {formatClinicalValue(p.rol_social, 'Equilibrado')}
+                  {formatClinicalValue(p.energia_social, '⏳ Pendiente')} • {formatClinicalValue(p.rol_social, '⏳ Pendiente')}
                 </div>
               </div>
 

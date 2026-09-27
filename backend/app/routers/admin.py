@@ -998,9 +998,11 @@ async def get_users(
             "total_matches": r.total_matches or 0,
             "profile": {
 
-
-                "city": r.city or "Bogotá",
-                "age": r.age or 28,
+                # IMPORTANTE: nunca fabricar un valor plausible cuando el dato real es NULL
+                # (ciudad, edad, apego, plan, motivación, etc.) — debe quedar None/vacío para
+                # que el frontend lo muestre como "Pendiente", nunca como un hecho inventado.
+                "city": r.city,
+                "age": r.age,
                 "occupation": r.occupation or "No especificada",
                 "education": r.education or "No especificada",
                 "religion": r.religion or "No especificada",
@@ -1008,11 +1010,11 @@ async def get_users(
                 "bio_notes": r.bio_notes or "",
                 "responsable": r.responsable or "",
                 "estatura": r.estatura or "No especificada",
-                "plan_tier": r.plan_tier or "Estándar",
-                "motivacion": r.motivacion or "Conexión profunda",
-                "apego": r.apego or "Seguro",
-                "rol_social": r.rol_social or "Equilibrado",
-                "energia_social": r.energia_social or "Ambivertido",
+                "plan_tier": r.plan_tier,
+                "motivacion": r.motivacion,
+                "apego": r.apego,
+                "rol_social": r.rol_social,
+                "energia_social": r.energia_social,
                 "ocean": ocean if (ocean and isinstance(ocean, dict) and len(ocean) > 0) else None,
                 "lifestyle": lifestyle if lifestyle else None,
                 "search_preferences": search_prefs if search_prefs else None,
@@ -1045,17 +1047,20 @@ async def get_users(
                     "phone": "Importado desde Excel",
                     "name": clean_name,
                     "created_at": datetime.now().isoformat(),
-                    "has_profile": True,
-                    "city": r.city or "Bogotá",
-                    "occupation": "Cliente Histórico Matchmaking",
+                    "has_profile": False,
+                    "city": r.city,
+                    "occupation": "Cliente Histórico Matchmaking (sin ficha clínica)",
                     "responsable": r.responsable or "",
-                    "motivacion": "conexion_profunda",
-                    "age": 28,
+                    "motivacion": None,
+                    "age": None,
                     "profile": {
-                        "ocean": {"apertura": 0.85, "responsabilidad": 0.8, "extroversion": 0.75, "amabilidad": 0.9, "neuroticismo": 0.2},
-                        "apego": "Seguro",
-                        "motivacion": "conexion_profunda",
-                        "city": r.city or "Bogotá"
+                        # Solo existe como fila de historical_matches (importación de Excel),
+                        # nunca tuvo entrevista clínica en esta plataforma — no hay base real
+                        # para OCEAN, apego ni motivación, así que no se inventan.
+                        "ocean": None,
+                        "apego": None,
+                        "motivacion": None,
+                        "city": r.city
                     }
                 })
 
@@ -1194,8 +1199,10 @@ async def analyze_user_matchmaking_viability(
     user_gender = (usr.gender or "").strip().lower()
     target_gender = "femenino" if user_gender in ["masculino", "hombre", "m"] else ("masculino" if user_gender in ["femenino", "mujer", "f"] else "todos")
 
-    user_city = (usr.city or "Bogotá").strip()
-    user_age = usr.age or 30
+    # IMPORTANTE: nunca fabricar "Bogotá" cuando la ciudad real es desconocida — el pool de
+    # candidatos y el diagnóstico clínico deben reflejar eso honestamente, no simular que el
+    # cliente vive en Bogotá (ya se refleja en missing_fields/"Ciudad" más arriba).
+    user_city = (usr.city or "").strip() or None
 
     # 3. VERIFICACIÓN DE EVALUACIÓN POST-CITA OBLIGATORIA
     pending_feedback_res = await db.execute(text("""
@@ -1231,43 +1238,51 @@ async def analyze_user_matchmaking_viability(
         WHERE u.id != :uid
     """
 
-    params = {"uid": user_id, "city": f"%{user_city}%"}
+    params = {"uid": user_id, "city": f"%{user_city}%" if user_city else None}
 
     if target_gender == "femenino":
         pool_query += " AND lower(COALESCE(p.gender, '')) IN ('femenino', 'mujer', 'f')"
     elif target_gender == "masculino":
         pool_query += " AND lower(COALESCE(p.gender, '')) IN ('masculino', 'hombre', 'm')"
 
-    # 4b. Análisis de tendencias del pool de candidatos en la misma ciudad
-    cands_traits_res = await db.execute(text(f"""
-        SELECT p.motivacion, p.apego, p.occupation, p.intereses
-        FROM users u
-        JOIN profiles p ON p.user_id = u.id
-        WHERE u.id != :uid
-          AND p.gender IS NOT NULL AND length(trim(p.gender)) > 0
-          AND p.city IS NOT NULL AND unaccent(lower(trim(p.city))) = unaccent(lower(trim(:city)))
-          AND lower(trim(p.gender)) IN ({ "'femenino', 'mujer', 'f'" if target_gender == "femenino" else "'masculino', 'hombre', 'm'" if target_gender == "masculino" else "'femenino', 'masculino'" })
-        LIMIT 30
-    """), {"uid": user_id, "city": user_city})
-    cands_traits = cands_traits_res.fetchall()
+    top_mot = None
+    top_ap = None
+    city_compatible_candidates = 0
 
-    common_motivations = {}
-    common_apego = {}
-    for r in cands_traits:
-        if r.motivacion:
-            mot = r.motivacion.replace('_', ' ').title()
-            common_motivations[mot] = common_motivations.get(mot, 0) + 1
-        if r.apego:
-            ap = r.apego.title()
-            common_apego[ap] = common_apego.get(ap, 0) + 1
+    # El análisis de pool/tendencias POR CIUDAD solo tiene sentido si conocemos la ciudad real
+    # del cliente. Si no la conocemos, no se fabrica "Bogotá" ni se calcula un pool falso.
+    if user_city:
+        # 4b. Análisis de tendencias del pool de candidatos en la misma ciudad
+        cands_traits_res = await db.execute(text(f"""
+            SELECT p.motivacion, p.apego, p.occupation, p.intereses
+            FROM users u
+            JOIN profiles p ON p.user_id = u.id
+            WHERE u.id != :uid
+              AND p.gender IS NOT NULL AND length(trim(p.gender)) > 0
+              AND p.city IS NOT NULL AND unaccent(lower(trim(p.city))) = unaccent(lower(trim(:city)))
+              AND lower(trim(p.gender)) IN ({ "'femenino', 'mujer', 'f'" if target_gender == "femenino" else "'masculino', 'hombre', 'm'" if target_gender == "masculino" else "'femenino', 'masculino'" })
+            LIMIT 30
+        """), {"uid": user_id, "city": user_city})
+        cands_traits = cands_traits_res.fetchall()
 
-    top_mot = max(common_motivations, key=common_motivations.get) if common_motivations else None
-    top_ap = max(common_apego, key=common_apego.get) if common_apego else None
+        common_motivations = {}
+        common_apego = {}
+        for r in cands_traits:
+            if r.motivacion:
+                mot = r.motivacion.replace('_', ' ').title()
+                common_motivations[mot] = common_motivations.get(mot, 0) + 1
+            if r.apego:
+                ap = r.apego.title()
+                common_apego[ap] = common_apego.get(ap, 0) + 1
+
+        top_mot = max(common_motivations, key=common_motivations.get) if common_motivations else None
+        top_ap = max(common_apego, key=common_apego.get) if common_apego else None
 
     total_target_gender = (await db.execute(text(pool_query), params)).scalar() or 0
 
-    pool_city_query = pool_query + " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
-    city_compatible_candidates = (await db.execute(text(pool_city_query), params)).scalar() or 0
+    if user_city:
+        pool_city_query = pool_query + " AND (unaccent(lower(COALESCE(p.city, ''))) ILIKE unaccent(lower(:city)) OR p.city IS NULL)"
+        city_compatible_candidates = (await db.execute(text(pool_city_query), params)).scalar() or 0
 
     # 5. Generar diagnóstico clínico y recomendación indagatoria para la psicóloga
     clinical_reasons = []
@@ -1283,8 +1298,11 @@ async def analyze_user_matchmaking_viability(
         if len(missing_fields) > 0:
             clinical_reasons.append(f"Ficha clínica incompleta ({completeness}% completado). Campos faltantes: {', '.join(missing_fields)}.")
             recommended_action = f"Completar la información clínica faltante ({', '.join(missing_fields)}) para ingresar al proceso de matching."
-        
-        if city_compatible_candidates == 0:
+
+        if not user_city:
+            clinical_reasons.append("No se puede calcular el pool de candidatos por ciudad: el cliente no tiene ciudad registrada en su ficha clínica.")
+            recommended_action = "Registrar la ciudad real del cliente en la ficha clínica para poder calcular candidatos compatibles por zona geográfica."
+        elif city_compatible_candidates == 0:
             clinical_reasons.append(f"Sin candidatos con perfil 100% completo del género {target_gender.capitalize()} en {user_city}.")
             recommended_action = f"Ampliar la prospección clínica en {user_city} o invitar a completar fichas pendientes."
         else:
@@ -1586,9 +1604,9 @@ async def get_psychologist_agenda(
         "name": r.name,
         "client_code": r.client_code or f"DL-{r.id:04d}",
         "phone": r.phone,
-        "city": r.city or "Bogotá",
+        "city": r.city,
         "age": r.age,
-        "plan_tier": r.plan_tier or "Sin Plan",
+        "plan_tier": r.plan_tier,
         "created_at": r.created_at.strftime("%d/%m/%Y") if hasattr(r.created_at, 'strftime') else (str(r.created_at)[:10] if r.created_at else "—"),
         "motivacion": r.motivacion
     } for r in clients_res.fetchall()]

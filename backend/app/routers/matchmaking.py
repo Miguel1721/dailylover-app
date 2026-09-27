@@ -3046,7 +3046,7 @@ async def update_confirmation(
                     "pB": row.person_b,
                     "dt": v_date,
                     "ven": v_venue,
-                    "city": row.city or "Bogotá"
+                    "city": row.city or None  # nunca fabricar ciudad al agendar cita
                 })
 
                 det = f"¡Ambos aceptaron y cita agendada! Match {row.person_a} x {row.person_b} en {v_venue} ({v_date})."
@@ -3223,7 +3223,7 @@ async def update_match_schedule_details(
     # 2. Si se especifica fecha/hora o venue, validar cupos por media hora y sincronizar con scheduled_dates
     v_date = payload.date_time
     v_venue = payload.venue
-    v_city = payload.city or match_row.city or "Bogotá"
+    v_city = payload.city or match_row.city or None  # nunca fabricar ciudad si no se conoce
     sd_res = await db.execute(text("SELECT id, date_time, venue, had_date, reschedule FROM scheduled_dates WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
     sd_row = sd_res.fetchone()
 
@@ -3346,9 +3346,11 @@ async def update_match_schedule_details(
                 "pA": match_row.person_a,
                 "crmA": match_row.person_a_crm_id or "",
                 "psyc": psyc_target,
-                "city": match_row.city or "Bogotá",
+                # No fabricar ciudad/orientación al reintentar el slot: si el match anterior
+                # ya tenía el dato NULL, debe seguir NULL (nunca inventar Bogotá/hetero).
+                "city": match_row.city or None,
                 "plan": match_row.plan_tier or "",
-                "pref": match_row.pref or "hetero",
+                "pref": match_row.pref or None,
                 "slot": next_slot,
                 "obs": obs_retry
             })
@@ -4665,9 +4667,11 @@ async def check_and_create_next_slot_if_eligible(db: AsyncSession, match_id: int
             )
             RETURNING id
         """), {
-            "city": normalize_city(m_row.city) or "Bogotá",
-            "pref": normalize_pref(m_row.pref) or "hetero",
-            "plan": norm_plan or "Estándar 65k (2 citas)",
+            # No fabricar ciudad/orientación/plan al habilitar el siguiente slot: si el dato
+            # real es desconocido debe seguir NULL, nunca un valor plausible inventado.
+            "city": normalize_city(m_row.city) or None,
+            "pref": normalize_pref(m_row.pref) or None,
+            "plan": norm_plan or None,
             "pa": p_name,
             "psyc": psyc_val,
             "slot": next_slot,
@@ -6220,7 +6224,7 @@ async def schedule_match(
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
-    city_val = payload.city or match_row.city or "Bogotá"
+    city_val = payload.city or match_row.city or None  # nunca fabricar ciudad si no se conoce
 
     # Upsert en scheduled_dates
     existing_cal = await db.execute(text("SELECT id FROM scheduled_dates WHERE match_id = :mid LIMIT 1"), {"mid": match_id})
@@ -6739,8 +6743,8 @@ async def check_inactivity_alerts(
             (city, pref, plan_tier, person_a, psychologist_name, slot_number, status, observations, person_a_crm_id, is_priority, created_at, updated_at)
             VALUES (:city, '', :plan, :person_a, :psyc, :slot, 'Listo para match', :obs, :cid, true, NOW(), NOW())
         """), {
-            "city": u.city or "Bogotá",
-            "plan": u.plan_tier or "Estándar",
+            "city": u.city or None,
+            "plan": u.plan_tier or None,
             "person_a": u_name,
             "psyc": psyc,
             "slot": next_slot,
@@ -8520,7 +8524,9 @@ def evaluate_bidirectional_match(
     city_alerts = []
     if cluster_a and cluster_b and cluster_a != cluster_b:
         city_ok = False
-        city_alerts.append(f"Residencia en ciudades diferentes ({city_a or 'Bogotá'} vs {city_b or 'Otra'})")
+        # city_a/city_b siempre son no vacíos aquí (cluster_a/cluster_b solo son verdaderos si get_metro_cluster
+        # recibió una ciudad real), pero se deja el fallback honesto por defensividad, nunca "Bogotá" inventada.
+        city_alerts.append(f"Residencia en ciudades diferentes ({city_a or 'Sin ciudad'} vs {city_b or 'Sin ciudad'})")
 
     return {
         "is_bidirectionally_compatible": age_ok and height_ok and city_ok,
@@ -9094,7 +9100,7 @@ Tu labor es contrastar en 360° los perfiles de ambas personas: sus notas clíni
 
 ==============================
 PERFIL CLIENTE (PERSONA A): {client_info.get('name')}
-- Demografía: Género: {client_info.get('gender') or 'No especificado'} | Edad: {client_info.get('age') or 'No especificada'} años | Ciudad: {client_info.get('city') or 'Bogotá'} | Estatura: {client_info.get('estatura') or 'No especificada'}
+- Demografía: Género: {client_info.get('gender') or 'No especificado'} | Edad: {client_info.get('age') or 'No especificada'} años | Ciudad: {client_info.get('city') or 'No especificada'} | Estatura: {client_info.get('estatura') or 'No especificada'}
 - Profesión: {client_info.get('occupation') or 'No especificada'} | Educación: {client_info.get('education') or 'No especificada'}
 - Dinámica Psicológica: Estilo de Apego: {c_att_str} | Lenguaje del Amor: {c_love_str} | Temperamento: {c_ls.get('temperament') or 'No especificado'}
 - Estilo de Vida: ¿Tiene hijos?: {c_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'No especificado'} | Nivel Deportivo: {c_ls.get('fitness_level') or 'No especificado'} | Tiempo Libre/Hobbies: {c_ls.get('free_time') or 'No especificado'} | Fuma: {c_ls.get('smoker') or 'No especificado'} | Bebe: {c_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {c_ls.get('has_pets') or 'No especificado'} | Rumba: {c_ls.get('rumba') or 'No especificado'} | Valores: {c_ls.get('values') or []}
@@ -9104,7 +9110,7 @@ PERFIL CLIENTE (PERSONA A): {client_info.get('name')}
 
 ==============================
 PERFIL CANDIDATO (PERSONA B): {cand_info.get('name')}
-- Demografía: Género: {cand_info.get('gender') or 'No especificado'} | Edad: {cand_info.get('age') or 'No especificada'} años | Ciudad: {cand_info.get('city') or 'Bogotá'} | Estatura: {cand_info.get('estatura') or 'No especificada'}
+- Demografía: Género: {cand_info.get('gender') or 'No especificado'} | Edad: {cand_info.get('age') or 'No especificada'} años | Ciudad: {cand_info.get('city') or 'No especificada'} | Estatura: {cand_info.get('estatura') or 'No especificada'}
 - Profesión: {cand_info.get('occupation') or 'No especificada'} | Educación: {cand_info.get('education') or 'No especificada'}
 - Dinámica Psicológica: Estilo de Apego: {cand_att_str} | Lenguaje del Amor: {cand_love_str} | Temperamento: {cand_ls.get('temperament') or 'No especificado'}
 - Estilo de Vida: ¿Tiene hijos?: {cand_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {cand_ls.get('wants_children') or 'No especificado'} | Nivel Deportivo: {cand_ls.get('fitness_level') or 'No especificado'} | Tiempo Libre/Hobbies: {cand_ls.get('free_time') or 'No especificado'} | Fuma: {cand_ls.get('smoker') or 'No especificado'} | Bebe: {cand_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {cand_ls.get('has_pets') or 'No especificado'} | Rumba: {cand_ls.get('rumba') or 'No especificado'} | Valores: {cand_ls.get('values') or []}
@@ -9269,13 +9275,14 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             else f"{name_a_clean} prioriza '{c_love}' y {name_b_clean} '{cand_love}'"
         )
         raw_analisis = (
-            f"Existe afinidad vincular y profesional relevante: {love_shared}, comparten valoración por la espiritualidad y el crecimiento personal, "
-            f"y sus profesiones son altamente complementarias ({occ_a_val or 'Profesional'} e {occ_b_val or 'Ingeniería'}). "
-            f"En lo físico/logístico, ambos residen en {client_info.get('city') or 'Bogotá'} y la estatura de {name_a_clean} ({est_a_val or '155 cm'}) cumple con el criterio de {name_b_clean} ({cand_sp.get('preferred_height') or 'Hasta 170 cm'}). "
-            f"Sin embargo, se clasifica como VIABLE CON RESERVAS por 3 puntos que las psicólogas deben validar antes de presentar: "
-            f"(1) Rango de edad ({name_a_clean} tiene {age_a_val} años frente al rango {cand_sp.get('min_age') or 26}–{cand_sp.get('max_age') or 33} años buscado por {name_b_clean}, quien tiene {age_b_val} años); "
-            f"(2) Proyecto familiar ({name_b_clean} registra que NO desea hijos, mientras que {name_a_clean} indica '{c_ls.get('wants_children') or 'Tal vez'}' y tiene 'Familia' como valor #1); y "
-            f"(3) Ritmo deportivo ({name_b_clean} exige pareja deportiva de alta energía/montaña/básquet y {name_a_clean} registra nivel '{c_ls.get('fitness_level') or 'Principiante'}' con intereses culturales/tranquilos)."
+            f"Existe afinidad vincular y profesional relevante: {love_shared}. "
+            f"Profesiones: {occ_a_val or 'no registrada en ficha'} e {occ_b_val or 'no registrada en ficha'}. "
+            f"En lo físico/logístico, {name_a_clean} reside en {client_info.get('city') or 'ciudad no registrada en ficha'} "
+            f"y su estatura ({est_a_val or 'no registrada'}) frente al criterio de {name_b_clean} ({cand_sp.get('preferred_height') or 'sin preferencia registrada'}) debe verificarse manualmente. "
+            f"Se clasifica como VIABLE CON RESERVAS — la información clínica de al menos una de las dos fichas está incompleta, así que las psicólogas deben validar antes de presentar: "
+            f"(1) Rango de edad ({name_a_clean} tiene {age_a_val or 'edad no registrada'} años frente al rango {cand_sp.get('min_age') or 'sin especificar'}–{cand_sp.get('max_age') or 'sin especificar'} años buscado por {name_b_clean}, quien tiene {age_b_val or 'edad no registrada'} años); "
+            f"(2) Proyecto familiar (¿{name_b_clean} desea hijos?: {cand_ls.get('wants_children') or 'no registrado'} — ¿{name_a_clean} desea hijos?: {c_ls.get('wants_children') or 'no registrado'}); y "
+            f"(3) Ritmo deportivo/estilo de vida ({name_b_clean}: {cand_ls.get('fitness_level') or 'no registrado'} — {name_a_clean}: {c_ls.get('fitness_level') or 'no registrado'})."
         )
     res_json["analisis"] = raw_analisis
 
@@ -9287,21 +9294,21 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
         grounded_strengths.append(f"Alineación axiológica: Ambos destacan la espiritualidad, la estabilidad y el crecimiento personal como pilares de vida.")
     if occ_a_val and occ_b_val:
         grounded_strengths.append(f"Afinidad intelectual y profesional: {occ_a_val} ({name_a_clean}) × {occ_b_val} ({name_b_clean}), además del gusto compartido por viajes y gastronomía.")
-    if est_a_val and cand_sp.get("preferred_height"):
-        grounded_strengths.append(f"Criterio físico y logístico cumplido: Ambos viven en {client_info.get('city') or 'Bogotá'} y la estatura de {name_a_clean} ({est_a_val}) está dentro del rango buscado por {name_b_clean} ({cand_sp.get('preferred_height')}).")
+    if est_a_val and cand_sp.get("preferred_height") and client_info.get('city') and cand_info.get('city') and client_info.get('city') == cand_info.get('city'):
+        grounded_strengths.append(f"Criterio físico y logístico cumplido: Ambos viven en {client_info.get('city')} y la estatura de {name_a_clean} ({est_a_val}) está dentro del rango buscado por {name_b_clean} ({cand_sp.get('preferred_height')}).")
     if grounded_strengths:
         res_json["puntos_fuertes"] = grounded_strengths
 
     # 3. Garantizar Síntesis Individual 100% fiel a los datos reales
     res_json["client_summary"] = {
-        "quien_es": f"{age_a_val or ''} años, {occ_a_val or 'Profesional'} ({client_info.get('education') or 'Profesional'}), {est_a_val or ''}, reside en {client_info.get('city') or 'Bogotá'}. Nivel deportivo: {c_ls.get('fitness_level') or 'Principiante'}. Hobbies: {c_ls.get('free_time') or 'Arte, lectura, cocina y viajes'}.",
-        "que_busca": f"Relación de equipo con comunicación honesta y respeto por el espacio personal. ¿Tiene hijos?: {c_ls.get('has_children') or 'No'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'Tal vez'}.",
-        "destaca": f"Lenguaje del amor: {c_love}. Valores nucleares: {', '.join(c_ls.get('values') or ['Familia', 'Lealtad', 'Honestidad'])}. Sensible, tranquila e independiente."
+        "quien_es": f"{age_a_val or 'Edad no registrada'} años, {occ_a_val or 'profesión no registrada'} ({client_info.get('education') or 'educación no registrada'}), {est_a_val or 'estatura no registrada'}, reside en {client_info.get('city') or 'ciudad no registrada en ficha'}. Nivel deportivo: {c_ls.get('fitness_level') or 'no registrado'}. Hobbies: {c_ls.get('free_time') or 'no registrados en ficha'}.",
+        "que_busca": f"Relación de equipo con comunicación honesta y respeto por el espacio personal. ¿Tiene hijos?: {c_ls.get('has_children') or 'no registrado'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'no registrado'}.",
+        "destaca": f"Lenguaje del amor: {c_love}. Valores nucleares: {', '.join(c_ls.get('values') or []) or 'no registrados en ficha'}."
     }
     res_json["candidate_summary"] = {
-        "quien_es": f"{age_b_val or ''} años, {occ_b_val or 'Profesional'}, reside en {cand_info.get('city') or 'Bogotá'}. Alta energía, entrena constante (2–3/sem), montaña, básquet, gym y dos empleos ambientales.",
-        "que_busca": f"Mujer de {cand_sp.get('min_age') or 26} a {cand_sp.get('max_age') or 33} años, estatura {cand_sp.get('preferred_height') or 'Hasta 170 cm'}, imprescindible: {cand_sp.get('MustHaveValuesTop3') or 'Académica, viajera y deportiva'}. ¿Quiere hijos?: {cand_ls.get('wants_children') or 'No'}.",
-        "destaca": f"Lenguaje del amor: {cand_love}. Valores: {', '.join(cand_ls.get('values') or ['Estabilidad', 'Espiritualidad', 'Aventura'])}. Red flags que rechaza: {', '.join(cand_sp.get('red_flags') or ['Drogas', 'Gritonas en peleas'])}."
+        "quien_es": f"{age_b_val or 'Edad no registrada'} años, {occ_b_val or 'profesión no registrada'}, reside en {cand_info.get('city') or 'ciudad no registrada en ficha'}. Nivel deportivo: {cand_ls.get('fitness_level') or 'no registrado'}. Hobbies: {cand_ls.get('free_time') or 'no registrados en ficha'}.",
+        "que_busca": f"Rango de edad buscado: {cand_sp.get('min_age') or 'sin especificar'} a {cand_sp.get('max_age') or 'sin especificar'} años, estatura {cand_sp.get('preferred_height') or 'sin preferencia registrada'}, imprescindible: {cand_sp.get('MustHaveValuesTop3') or 'no registrado en ficha'}. ¿Quiere hijos?: {cand_ls.get('wants_children') or 'no registrado'}.",
+        "destaca": f"Lenguaje del amor: {cand_love}. Valores: {', '.join(cand_ls.get('values') or []) or 'no registrados en ficha'}. Red flags que rechaza: {', '.join(cand_sp.get('red_flags') or []) or 'no registrados en ficha'}."
     }
 
     # 4. Limpiar deal_breakers alucinados (ej. "Julieth no quiere tener hijos")
@@ -11169,7 +11176,7 @@ async def get_supervision_maria(
         raw_o = r[1]
         raw_g = r[2]
 
-        c = normalize_city(raw_c) or "Bogotá"
+        c = normalize_city(raw_c) or "Sin ciudad registrada"  # no inflar el bucket de Bogotá con ciudades desconocidas
         o = (raw_o or "").strip().lower()
         g = (raw_g or "").strip().lower()
 
@@ -11488,8 +11495,8 @@ async def get_prioritarios(
             "client_name": r.client_name,
             "crm_id": cid_str if cid_str.isdigit() else "",
             "crm_url": client_crm_url,
-            "city": r.city or "Bogotá",
-            "plan_tier": r.plan_tier or "Estándar 65k (2 citas)",
+            "city": r.city or None,
+            "plan_tier": r.plan_tier or None,
             "cs_comment": r.cs_comment or "",
             "candidate_id": r.candidate_id,
             "candidate_name": r.candidate_name or "",
@@ -11575,8 +11582,8 @@ async def create_priority_case(
         "uid": uid,
         "cname": cname,
         "cid": cid,
-        "city": payload.city or "Bogotá",
-        "plan": payload.plan_tier or "Estándar 65k (2 citas)",
+        "city": payload.city or None,  # nunca fabricar ciudad de un caso prioritario
+        "plan": payload.plan_tier or None,
         "cs_comm": payload.cs_comment,
         "psyc": payload.assigned_psychologist or "Sin asignar",
         "urg": payload.urgency_level or "ALTA"
@@ -11675,31 +11682,38 @@ async def get_priority_candidates(
         LIMIT 4
     """), {
         "tgen": target_gen,
-        "city": f"%{case_row.city or 'Bogotá'}%"
+        # Si no se conoce la ciudad real del caso prioritario, no fabricar "Bogotá":
+        # usar "%" para no restringir artificialmente los candidatos a una ciudad inventada.
+        "city": f"%{case_row.city}%" if case_row.city else "%"
     })
     cands = []
     for cr in cand_res.fetchall():
         cid_str = str(cr.crm_id or "").strip()
+        cand_city = cr.city or case_row.city or None
+        # IMPORTANTE: esta lista es solo un filtro básico por género/ciudad/bio no vacía,
+        # NO ejecuta el motor real de compatibilidad ni "Analizar con IA". Nunca fabricar
+        # un porcentaje ni un veredicto de dealbreakers — deben quedar sin analizar hasta
+        # que el matchmaker use "Analizar con IA" para el análisis real.
         cands.append({
             "user_id": cr.id,
             "name": cr.name,
             "crm_id": cid_str if cid_str.isdigit() else "",
             "crm_url": f"https://dailylover.smartmatchapp.com/#!/client/{cid_str}/" if cid_str.isdigit() else f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(cr.name)}",
-            "city": cr.city or case_row.city or "Bogotá",
-            "age": cr.age or 31,
+            "city": cand_city,
+            "age": cr.age,
             "estatura": cr.estatura or "",
-            "occupation": cr.occupation or "Profesional",
-            "compatibility_pct": 89,
-            "dealbreakers_clean": True,
-            "dealbreakers_check": "✓ Candidato/a activo/a con alta afinidad sociocultural",
-            "strengths": [f"Residente en {cr.city or 'Bogotá'}", "Perfil verificado y activo en CRM"]
+            "occupation": cr.occupation or "",
+            "compatibility_pct": None,
+            "dealbreakers_clean": None,
+            "dealbreakers_check": "⏳ Sin analizar — usa 'Analizar con IA' para el análisis real de compatibilidad",
+            "strengths": ([f"Residente en {cand_city}"] if cand_city else []) + ["Perfil activo en CRM con ficha clínica registrada"]
         })
 
     return {
         "client": {
             "name": cname,
-            "city": case_row.city or "Bogotá",
-            "plan_tier": case_row.plan_tier or "Estándar"
+            "city": case_row.city or None,
+            "plan_tier": case_row.plan_tier or None
         },
         "suggested_matches": cands
     }
@@ -11797,8 +11811,18 @@ async def approve_priority_match(
     acrm = user_a.crm_id if user_a else case_row.crm_id
     bcrm = user_b.crm_id if user_b else case_row.candidate_crm_id
 
-    city_val = case_row.city or "Bogotá"
-    plan_val = case_row.plan_tier or "Estándar 65k (2 citas)"
+    # No fabricar ciudad/plan/orientación al aprobar un match prioritario — si el dato real
+    # es desconocido debe quedar NULL, nunca un valor plausible inventado (y 'hetero' jamás
+    # debe quedar hardcodeado: esto se aprobaba igual para parejas gay/lesbianas).
+    city_val = case_row.city or None
+    plan_val = case_row.plan_tier or None
+    pref_val = None
+    if aid:
+        pref_row = (await db.execute(text(
+            "SELECT orientation FROM profiles WHERE user_id = :uid LIMIT 1"
+        ), {"uid": aid})).fetchone()
+        if pref_row and pref_row.orientation:
+            pref_val = normalize_pref(pref_row.orientation) or pref_row.orientation
     obs = f"Match prioritario aprobado por {approver}. (CS: {case_row.cs_comment or 'Sin comentario'}) - MM: {case_row.matchmaker_comment or 'Propuesta aprobada'}"
 
     ins_res = await db.execute(text("""
@@ -11807,7 +11831,7 @@ async def approve_priority_match(
          psychologist_name, city, pref, plan_tier, status, approved_by_maria, approved_at,
          observations, is_priority, created_at, updated_at)
         VALUES
-        (:pa, :pb, :aid, :bid, :acrm, :bcrm, :psyc, :city, 'hetero', :plan, 'Listo para match', true, NOW(), :obs, true, NOW(), NOW())
+        (:pa, :pb, :aid, :bid, :acrm, :bcrm, :psyc, :city, :pref, :plan, 'Listo para match', true, NOW(), :obs, true, NOW(), NOW())
         RETURNING id
     """), {
         "pa": name_a,
@@ -11818,6 +11842,7 @@ async def approve_priority_match(
         "bcrm": bcrm,
         "psyc": psyc,
         "city": city_val,
+        "pref": pref_val,
         "plan": plan_val,
         "obs": obs
     })
@@ -11896,7 +11921,7 @@ async def get_recent_extended_clients(
             "phone": d.get("phone"),
             "client_code": d.get("client_code"),
             "crm_id": d.get("crm_id"),
-            "city": d.get("city") or "Bogotá",
+            "city": d.get("city") or None,
             "has_extended": True
         })
     return {"clients": clients}
@@ -12089,7 +12114,7 @@ async def get_agosto27_queue(
             "candidate_user_id": pr.candidate_user_id,
             "candidate_crm_id": pr.candidate_crm_id,
             "candidate_phone": pr.candidate_phone,
-            "candidate_city": pr.candidate_city or "Bogotá",
+            "candidate_city": pr.candidate_city or None,
             "candidate_occupation": pr.candidate_occupation,
             "candidate_plan_tier": pr.candidate_plan_tier,
             "punctuation": pr.punctuation,
@@ -12236,7 +12261,7 @@ async def get_matches_atrasados(
             "person_a": d.get("person_a"),
             "person_b": d.get("person_b"),
             "psychologist_name": d.get("psychologist_name"),
-            "city": d.get("city") or "Bogotá",
+            "city": d.get("city") or None,
             "plan_tier": d.get("plan_tier"),
             "pref": d.get("pref"),
             "status": d.get("status"),
@@ -12304,7 +12329,7 @@ def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) 
         return {}
 
     age = info.get("age") or "No especificada"
-    city = info.get("city") or "Bogotá"
+    city = info.get("city") or "No especificada"
     occ = info.get("occupation") or "No especificada"
     estatura = info.get("estatura") or "No especificada"
 
@@ -12800,7 +12825,7 @@ async def get_trouble_cases(
                 "id": r[0],
                 "client_name": r[1] or "",
                 "interviewed_by": r[2] or "",
-                "city": r[3] or "Bogotá",
+                "city": r[3] or "",
                 "plan": r[4] or "",
                 "reason": r[5] or "",
                 "status": r[6] or "DIFICIL",
@@ -12840,7 +12865,7 @@ async def get_trouble_cases(
                 "person_a": r[1] or "",
                 "person_b": r[2] or "",
                 "psychologist_name": r[3] or "",
-                "city": r[4] or "Bogotá",
+                "city": r[4] or "",
                 "slot_number": r[5],
                 "status": r[6] or "TROUBLE",
                 "observations": r[7] or "",
@@ -12905,7 +12930,7 @@ async def create_trouble_case(
         """), {
             "name": payload.person_a.strip(),
             "psyc": (payload.psychologist or user.get("name") or "").strip(),
-            "city": (payload.city or "Bogotá").strip(),
+            "city": (payload.city or "").strip() or None,  # nunca fabricar ciudad de un cliente difícil
             "reason": (payload.reason or "").strip(),
             "notes": (payload.notes or "").strip(),
             "cat": (payload.category or "Caso Especial").strip()
