@@ -9148,7 +9148,7 @@ async def evaluate_candidate_quick_notes_ai(
     Evalúa integralmente (360°) la compatibilidad de pareja mediante Tier 1 determinístico
     y Tier 2 con la API de NVIDIA leyendo la totalidad de notas clínicas y campos del CRM.
     """
-    cache_key = f"v4:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}"
+    cache_key = f"v5:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}"
     if cache_key in _AI_MATCH_CACHE:
         return _AI_MATCH_CACHE[cache_key]
 
@@ -9188,8 +9188,8 @@ async def evaluate_candidate_quick_notes_ai(
     c_ap = _to_d(client_info.get("apego"))
     cand_ap = _to_d(cand_info.get("apego"))
 
-    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:1200]
-    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:1200]
+    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:3500]
+    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:3500]
 
     c_att = client_info.get('attachment_style') or c_ap.get('style') or 'No especificado'
     c_att_src = client_info.get('attachment_source')
@@ -9217,7 +9217,7 @@ PERFIL CLIENTE (PERSONA A): {client_info.get('name')}
 - Dinámica Psicológica: Apego: {c_att_str} | Lenguaje del Amor: {c_love_str}
 - Estilo de Vida: Hijos: {c_ls.get('has_children') or 'No'} | Quiere hijos: {c_ls.get('wants_children') or 'No esp.'} | Deporte: {c_ls.get('fitness_level') or 'No esp.'} | Fuma: {c_ls.get('smoker') or 'No esp.'} | Valores: {c_ls.get('values') or []}
 - Qué busca: Rango edad: {c_sp.get('min_age') or 'No esp.'}-{c_sp.get('max_age') or 'No esp.'} | No Negociables: {c_sp.get('non_negotiables') or []} | Red Flags: {c_sp.get('red_flags') or []}
-- Notas Clínicas de la Psicóloga:
+- Notas Clínicas Exclusivas de {client_info.get('name')} (PERSONA A):
 {c_notes if c_notes else 'Sin notas clínicas registradas en ficha.'}
 
 ==============================
@@ -9227,19 +9227,20 @@ PERFIL CANDIDATO (PERSONA B): {cand_info.get('name')}
 - Dinámica Psicológica: Apego: {cand_att_str} | Lenguaje del Amor: {cand_love_str}
 - Estilo de Vida: Hijos: {cand_ls.get('has_children') or 'No'} | Quiere hijos: {cand_ls.get('wants_children') or 'No esp.'} | Deporte: {cand_ls.get('fitness_level') or 'No esp.'} | Fuma: {cand_ls.get('smoker') or 'No esp.'} | Valores: {cand_ls.get('values') or []}
 - Qué busca: Rango edad: {cand_sp.get('min_age') or 'No esp.'}-{cand_sp.get('max_age') or 'No esp.'} | No Negociables: {cand_sp.get('non_negotiables') or []} | Red Flags: {cand_sp.get('red_flags') or []}
-- Notas Clínicas de la Psicóloga:
+- Notas Clínicas Exclusivas de {cand_info.get('name')} (PERSONA B):
 {cand_notes if cand_notes else 'Sin notas clínicas registradas en ficha.'}
 
 --- REGLAS CLÍNICAS DE EVALUACIÓN ---
-0. RIGOR FACTUAL ESTRICTO:
+0. RIGOR FACTUAL ESTRICTO Y PROHIBICIÓN DE ATRIBUCIÓN CRUZADA (GROUNDING BILATERAL):
    - PROHIBIDO inventar estilo de apego: si dice "No especificado", indica que el apego formal no está registrado.
    - PROHIBIDO inventar o invertir deseo de hijos: respeta estrictamente "No", "Tal vez" y "Sí".
+   - PROHIBIDO cruzar o proyectar datos entre Persona A y Persona B: cada afirmación de interés, pasatiempo, hábito o estilo de vida compartido ("ambos", "comparten", "interés compartido") en "puntos_fuertes", "analisis" o "deal_breakers" DEBE estar respaldada por texto explícito en las notas de AMBAS personas ({client_info.get('name')} Y {cand_info.get('name')}). Nunca asumas que un interés mencionado solo en las notas de una persona (ej. lectura, libros, mascotas, vino, baile, correr) también aplica a la otra.
    - Discrepancias reales (edad fuera de rango, disparidad deportiva marcada, posturas opuestas ante hijos) DEBEN registrarse en "deal_breakers" y en "analisis".
 1. PROTOCOLO CRÍTICO DE SEGURIDAD (CERO TOLERANCIA):
    - Antecedentes de violencia física, agresión a exparejas, abuso psicológico severo o adicciones graves activas:
      1) Registrar en "red_flags_seguridad". 2) Asignar "veredicto": "NO RECOMENDADO". 3) Asignar "ai_score": 0. 4) En "analisis", iniciar con "🚨 DESCALIFICADO POR SEGURIDAD: [motivo]".
 2. ESPECIFICIDAD CLÍNICA DE PUNTOS FUERTES:
-   - Prioriza reciprocidad en Lenguaje del Amor y afinidad en valores específicos. Demografía al final. CERO frases genéricas vacías ("comparten valores", "relación seria").
+   - Prioriza reciprocidad en Lenguaje del Amor y afinidad en valores específicos verificados en AMBAS fichas. Demografía al final. CERO frases genéricas vacías ("comparten valores", "relación seria") y CERO intereses unilaterales disfrazados de compartidos.
 3. CONCORDANCIAS NEGATIVAS:
    - Si ambos coinciden en una postura de 'NO' (no hijos, no fuman, no rumba), es PUNTO FUERTE DE ALINEACIÓN, JAMÁS deal_breaker.
 4. RÚBRICA Y COHERENCIA DE PUNTAJE:
@@ -9249,10 +9250,10 @@ Responde ÚNICAMENTE un objeto JSON:
 {{
   "ai_score": <entero coherente con la rúbrica>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
-  "analisis": "<2-3 líneas de análisis clínico riguroso aterrizado a los datos reales de ambos>",
+  "analisis": "<2-3 líneas de análisis clínico riguroso aterrizado a los datos reales de ambos sin cruzar gustos unilaterales>",
   "red_flags_seguridad": [],
   "deal_breakers": ["<discrepancias reales o vacío>"],
-  "puntos_fuertes": ["<2 a 3 afinidades concretas verificadas>"]
+  "puntos_fuertes": ["<2 a 3 afinidades concretas verificadas explícitamente en AMBAS fichas>"]
 }}"""
 
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -9267,7 +9268,8 @@ Responde ÚNICAMENTE un objeto JSON:
 
     sys_msg = (
         "Eres un asistente de psicología clínica experto en matchmaking de Daily Lover. "
-        "Responde SIEMPRE en formato JSON estricto sin inventar datos que digan 'No especificado'."
+        "Responde SIEMPRE en formato JSON estricto sin inventar datos que digan 'No especificado' "
+        "y sin atribuir gustos o hábitos de una persona a la otra."
     )
 
     res_json = None
@@ -9310,21 +9312,128 @@ Responde ÚNICAMENTE un objeto JSON:
     if not res_json:
         return None
 
-    # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y PRESERVACIÓN CLÍNICA REAL ──
+    # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y GROUNDING CRUZADO ESTRICTO ──
     name_a_clean = client_info.get("name") or "Persona A"
     name_b_clean = cand_info.get("name") or "Persona B"
+    first_a = name_a_clean.split()[0].lower() if name_a_clean else "persona_a"
+    first_b = name_b_clean.split()[0].lower() if name_b_clean else "persona_b"
     age_a_val = client_info.get("age")
     age_b_val = cand_info.get("age")
     est_a_val = client_info.get("estatura") or ""
     occ_a_val = client_info.get("occupation") or ""
     occ_b_val = cand_info.get("occupation") or ""
 
-    # 1. Sanitizar alucinaciones puntuales SIN destruir el análisis clínico genuino del LLM
+    # Construir corpus verificable de cada persona para auditar atribuciones cruzadas (Recomendación #4)
+    corpus_a = " ".join([
+        c_notes,
+        str(occ_a_val),
+        str(c_love),
+        json.dumps(c_ls, ensure_ascii=False),
+        json.dumps(c_sp, ensure_ascii=False),
+    ]).lower()
+    corpus_b = " ".join([
+        cand_notes,
+        str(occ_b_val),
+        str(cand_love),
+        json.dumps(cand_ls, ensure_ascii=False),
+        json.dumps(cand_sp, ensure_ascii=False),
+    ]).lower()
+
+    _SPECIFIC_TOPIC_PATTERNS = [
+        ("lectura", r'\b(lectura|leer|lee\b|libro|libros|literatura|novelas?)\b'),
+        ("mascotas", r'\b(mascota|mascotas|perro|perros|perrito|gato|gatos|gatito)\b'),
+        ("vino", r'\b(vino|vinos|cata\s+de\s+vino|enolog)\b'),
+        ("correr", r'\b(correr|running|marat[oó]n|trotar|trota)\b'),
+        ("cocina", r'\b(cocinar|cocina|gastronom[ií]a|culinari)\b'),
+        ("baile", r'\b(bailar|baile|salsa|bachata)\b'),
+        ("cine", r'\b(cine|pel[ií]culas|series)\b'),
+        ("yoga", r'\b(yoga|meditaci[oó]n|meditar|mindfulness)\b'),
+        ("ciclismo", r'\b(bicicleta|ciclismo|bici|mtb)\b'),
+        ("natación", r'\b(nataci[oó]n|nadar|piscina)\b'),
+        ("pádel/tenis", r'\b(p[aá]del|tenis|squash)\b'),
+    ]
+    _SHARED_CLAIM_MARKERS = r'\b(ambos|ambas|comparten|compartid[oa]s?|mutu[oa]s?|coinciden|en\s+com[uú]n|los\s+dos|las\s+dos)\b'
+
+    def _has_unilateral_cross_attribution(text_item: str) -> bool:
+        """
+        Retorna True si `text_item` afirma que un interés/hábito específico es compartido por ambos
+        (o se lo atribuye a la persona en cuyo corpus NO existe) cuando no está respaldado en ambos corpus.
+        """
+        t_low = str(text_item or "").lower()
+        if not t_low:
+            return False
+        for _topic_name, pat in _SPECIFIC_TOPIC_PATTERNS:
+            if re.search(pat, t_low, re.IGNORECASE):
+                in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
+                in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
+                if not (in_a and in_b):
+                    # Si el punto o frase lo presenta como compartido, o está dentro de puntos_fuertes de pareja,
+                    # o menciona el nombre de quien NO lo tiene junto al tópico:
+                    is_shared_phrasing = bool(re.search(_SHARED_CLAIM_MARKERS, t_low, re.IGNORECASE))
+                    mentions_wrong_person = (not in_b and first_b in t_low) or (not in_a and first_a in t_low)
+                    if is_shared_phrasing or mentions_wrong_person or (not in_a and not in_b):
+                        return True
+        return False
+
+    def _sanitize_sentence_cross_attribution(paragraph: str) -> str:
+        """
+        Audita oración por oración un párrafo de análisis y corrige/elimina afirmaciones donde
+        un gusto unilateral (como lectura) fue atribuido como compartido o adjudicado a la otra persona.
+        """
+        if not paragraph:
+            return ""
+        sentences = re.split(r'(?<=[\.\!\?])\s+', paragraph.strip())
+        clean_sentences = []
+        for s in sentences:
+            s_low = s.lower()
+            modified_s = s
+            drop_sentence = False
+            for topic_label, pat in _SPECIFIC_TOPIC_PATTERNS:
+                if re.search(pat, s_low, re.IGNORECASE):
+                    in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
+                    in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
+                    if not (in_a and in_b):
+                        # Si la oración tiene múltiples cláusulas o atribuye el tópico como compartido:
+                        # intentar limpiar la mención del tópico espurio o descartar la oración si gira en torno a él
+                        cleaned_clause = re.sub(
+                            r'(?:[,;\s]+(?:y|e|as[ií]\s+como|adem[aá]s\s+de)\s+[^,\.;]*?' + pat + r'[^,\.;]*)',
+                            '',
+                            modified_s,
+                            flags=re.IGNORECASE
+                        )
+                        if cleaned_clause != modified_s and not re.search(pat, cleaned_clause, re.IGNORECASE):
+                            modified_s = cleaned_clause
+                        elif _has_unilateral_cross_attribution(modified_s):
+                            if in_a and not in_b:
+                                modified_s = re.sub(
+                                    r'[^,\.;]*?' + pat + r'[^,\.;]*',
+                                    f"el interés de {name_a_clean} por la {topic_label} (registrado en su perfil individual)",
+                                    modified_s,
+                                    count=1,
+                                    flags=re.IGNORECASE
+                                )
+                            elif in_b and not in_a:
+                                modified_s = re.sub(
+                                    r'[^,\.;]*?' + pat + r'[^,\.;]*',
+                                    f"el interés de {name_b_clean} por la {topic_label} (registrado en su perfil individual)",
+                                    modified_s,
+                                    count=1,
+                                    flags=re.IGNORECASE
+                                )
+                            else:
+                                drop_sentence = True
+            if not drop_sentence and modified_s.strip():
+                clean_sentences.append(modified_s.strip())
+        return " ".join(clean_sentences).strip()
+
+    # 1. Sanitizar alucinaciones puntuales y atribuciones cruzadas SIN destruir el análisis clínico genuino del LLM
     raw_analisis = str(res_json.get("analisis") or "").strip()
     if c_att == "No especificado" and cand_att == "No especificado":
         raw_analisis = re.sub(r'estilo de apego seguro', 'disposición relacional reflexiva (estilo de apego formal no especificado en ficha)', raw_analisis, flags=re.IGNORECASE)
     if str(c_ls.get("wants_children") or "").lower() == "tal vez":
         raw_analisis = re.sub(r'no quiere tener hijos', 'indica postura abierta/tal vez ante tener hijos', raw_analisis, flags=re.IGNORECASE)
+
+    raw_analisis = _sanitize_sentence_cross_attribution(raw_analisis)
 
     # Solo si el modelo no devolvió análisis o fue menor a 40 caracteres, construir fallback estructurado
     if not raw_analisis or len(raw_analisis) < 40:
@@ -9344,9 +9453,32 @@ Responde ÚNICAMENTE un objeto JSON:
         )
     res_json["analisis"] = raw_analisis
 
-    # 2. Preservar Puntos Fuertes genuinos del LLM; solo agregar complementos si faltan
+    # 2. Filtrar puntos_fuertes con atribución cruzada unilateral (ej. "interés compartido en la lectura" cuando solo uno lee)
     ai_pts = res_json.get("puntos_fuertes")
-    if not isinstance(ai_pts, list) or len(ai_pts) == 0:
+    verified_pts = []
+    if isinstance(ai_pts, list):
+        for pt in ai_pts:
+            pt_str = str(pt or "").strip()
+            if not pt_str:
+                continue
+            # En puntos_fuertes de compatibilidad de pareja, cualquier tópico específico debe existir en AMBOS
+            # o no presentarse como compartido/atribuido al otro:
+            unilateral_topic = False
+            for _topic_name, pat in _SPECIFIC_TOPIC_PATTERNS:
+                if re.search(pat, pt_str, re.IGNORECASE):
+                    in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
+                    in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
+                    if not (in_a and in_b):
+                        unilateral_topic = True
+                        logger.info(
+                            f"[AI GROUNDING FILTER] Removido punto fuerte unilateral ({_topic_name}, in_a={in_a}, in_b={in_b}) "
+                            f"entre {name_a_clean} y {name_b_clean}: '{pt_str}'"
+                        )
+                        break
+            if not unilateral_topic:
+                verified_pts.append(pt_str)
+
+    if not verified_pts:
         fallback_pts = []
         if c_love != "No especificado" and c_love.lower() == cand_love.lower():
             fallback_pts.append(f"Reciprocidad en Lenguaje del Amor: Ambos comparten '{c_love}' como lenguaje afectivo primario.")
@@ -9354,7 +9486,8 @@ Responde ÚNICAMENTE un objeto JSON:
             fallback_pts.append(f"Afinidad profesional: {occ_a_val} ({name_a_clean}) y {occ_b_val} ({name_b_clean}).")
         if client_info.get('city') and cand_info.get('city') and client_info.get('city') == cand_info.get('city'):
             fallback_pts.append(f"Ambos residen en la ciudad de {client_info.get('city')}.")
-        res_json["puntos_fuertes"] = fallback_pts
+        verified_pts = fallback_pts
+    res_json["puntos_fuertes"] = sort_synergies_by_clinical_priority(verified_pts)
 
     # 3. Preservar Síntesis Individual generada por la IA; solo usar fallback si el LLM no la entregó
     ai_c_sum = res_json.get("client_summary")
@@ -9373,12 +9506,16 @@ Responde ÚNICAMENTE un objeto JSON:
             "destaca": f"Lenguaje del amor: {cand_love}. Hábitos compatibles."
         }
 
-    # 4. Limpiar deal_breakers falsos
+    # 4. Limpiar deal_breakers falsos o con atribución cruzada unilateral
     cleaned_dbs = []
     for db_str in (res_json.get("deal_breakers") or []):
-        if "julieth no quiere tener hijos" in str(db_str).lower():
+        db_s = str(db_str or "").strip()
+        if not db_s or "julieth no quiere tener hijos" in db_s.lower():
             continue
-        cleaned_dbs.append(db_str)
+        if _has_unilateral_cross_attribution(db_s):
+            logger.info(f"[AI GROUNDING FILTER] Removido deal_breaker con atribución cruzada entre {name_a_clean} y {name_b_clean}: '{db_s}'")
+            continue
+        cleaned_dbs.append(db_s)
     res_json["deal_breakers"] = cleaned_dbs
 
     _AI_MATCH_CACHE[cache_key] = res_json
@@ -10051,7 +10188,13 @@ async def find_candidate_matches_engine(
                 "occupation": r.occupation,
                 "reasons": [discard_reason],
                 "warnings": [],
-                "clinical_profile_360": cand_profile_360
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "had_date_history",
+                    "rule": "had_date=true",
+                    "reasons": [discard_reason]
+                }
             })
             continue
 
@@ -10141,7 +10284,14 @@ async def find_candidate_matches_engine(
                 "age": cand_age,
                 "occupation": cand_occ,
                 "reasons": dealbreaker_360["reasons"],
-                "warnings": dealbreaker_360["warnings"]
+                "warnings": dealbreaker_360["warnings"],
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "dealbreakers_360",
+                    "rule": "evaluate_bidirectional_dealbreakers_360",
+                    "reasons": dealbreaker_360["reasons"],
+                    "warnings": dealbreaker_360["warnings"]
+                }
             })
             continue
 
@@ -10154,7 +10304,13 @@ async def find_candidate_matches_engine(
                 "age": cand_age,
                 "occupation": cand_occ,
                 "reasons": [f"Incompatibilidad de edad: {', '.join(bidi['age_alerts'])}"],
-                "warnings": []
+                "warnings": [],
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "bidirectional_age",
+                    "rule": "evaluate_bidirectional_match",
+                    "reasons": [f"Incompatibilidad de edad: {', '.join(bidi['age_alerts'])}"]
+                }
             })
             continue
 
@@ -10482,17 +10638,24 @@ async def find_candidate_matches_engine(
 
         cand_inferred_gender = r.gender or infer_gender_from_name_and_bio(cand_name, r.bio_notes or "")
         if not cand_inferred_gender or cand_inferred_gender == "No especificado":
+            _gender_reason = (
+                f"Género no determinado para {cand_name}: no es posible determinar con certeza su género "
+                "a partir de su ficha o nombre. Por favor registre el género manualmente en la ficha de "
+                "SmartMatchApp (CRM) para habilitar a este candidato en el matchmaking y evitar asignaciones erróneas."
+            )
             discarded_matches.append({
                 "candidate_user_id": r.id,
                 "candidate_name": cand_name,
                 "age": cand_age,
                 "occupation": cand_occ,
-                "reasons": [
-                    f"Género no determinado para {cand_name}: no es posible determinar con certeza su género "
-                    "a partir de su ficha o nombre. Por favor registre el género manualmente en la ficha de "
-                    "SmartMatchApp (CRM) para habilitar a este candidato en el matchmaking y evitar asignaciones erróneas."
-                ],
-                "warnings": []
+                "reasons": [_gender_reason],
+                "warnings": [],
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "gender_undetermined",
+                    "rule": "gender_required",
+                    "reasons": [_gender_reason]
+                }
             })
             continue
 
@@ -10547,6 +10710,27 @@ async def find_candidate_matches_engine(
             "red_flags": cand_sp.get("partner_red_flags") or cand_sp.get("red_flags") or [],
             "partner_red_flags": cand_sp.get("partner_red_flags") or cand_sp.get("red_flags") or [],
             "personal_red_flags": cand_sp.get("personal_red_flags") or [],
+            "decision_trace": {
+                "outcome": "included",
+                "passed_stages": [
+                    "had_date_history (sin cita física previa)",
+                    "dealbreakers_360 (compatible)",
+                    "bidirectional_age_height_city",
+                    "deterministic_tier1"
+                ],
+                "structural_score": match_pct,
+                "completeness_ratio": completeness_ratio,
+                "missing_fields": missing_fields,
+                "plan_quota": {
+                    "plan_tier": clean_plan_name(r.plan_tier),
+                    "plan_total_dates": cand_slots_total,
+                    "dates_used": raw_cand_used,
+                    "dates_remaining": saldo_citas_b,
+                    "opportunity_badge": opportunity_badge,
+                    "opportunity_reason": opportunity_reason
+                },
+                "clinical_warnings": dealbreaker_360.get("warnings", [])
+            },
             "comparison": {
                 "client_notes": client_summary.get("bio_notes", ""),
                 "candidate_notes": cand_bio_clean,
@@ -10581,7 +10765,13 @@ async def find_candidate_matches_engine(
                 "age": cand_age,
                 "occupation": cand_occ,
                 "reasons": [hard_reason],
-                "warnings": []
+                "warnings": [],
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "deterministic_tier1",
+                    "rule": "check_deterministic_hard_dealbreakers",
+                    "reasons": [hard_reason]
+                }
             })
             continue
 
@@ -10825,7 +11015,13 @@ async def find_candidate_matches_engine(
                     "age": cand.get("age"),
                     "occupation": cand.get("occupation"),
                     "reasons": cand.get("ai_red_flags_seguridad"),
-                    "warnings": ["DESCALIFICACIÓN POR RIESGO DE SEGURIDAD"]
+                    "warnings": ["DESCALIFICACIÓN POR RIESGO DE SEGURIDAD"],
+                    "decision_trace": {
+                        "outcome": "discarded",
+                        "stage": "ai_safety_tier3",
+                        "rule": "check_safety_red_flags",
+                        "reasons": cand.get("ai_red_flags_seguridad")
+                    }
                 })
             else:
                 safe_evaluated.append(cand)
@@ -10884,6 +11080,13 @@ async def find_candidate_matches_engine(
         )
         c["insufficient_data"] = is_insufficient
         c["match_category"] = "insufficient_data" if is_insufficient else "viable"
+        if isinstance(c.get("decision_trace"), dict):
+            c["decision_trace"]["ai_evaluation"] = {
+                "status": c.get("ai_status") or ("COMPLETED" if c.get("is_ai_evaluated") else "STRUCTURAL_ONLY"),
+                "ai_score": c.get("ai_score"),
+                "veredicto": c.get("ai_veredicto"),
+                "final_compatibility_pct": c.get("compatibility_pct"),
+            }
 
     if return_discarded:
         return suggested_matches, discarded_matches, client_profile_360
@@ -12776,6 +12979,85 @@ class ClinicalChatMultiRequest(BaseModel):
 
 
 
+def _extract_plan_and_dates_fields(info: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Extrae de forma segura y sin inventar defaults los datos estructurados de plan y citas
+    desde el diccionario del cliente/candidato enviado por el frontend.
+    """
+    if not info or not isinstance(info, dict):
+        return {
+            "plan_str": "No especificado",
+            "used_str": "No especificado",
+            "rem_str": "No especificado",
+            "rem_int": None,
+            "opp_badge": None,
+            "opp_reason": None,
+            "summary_line": "Plan: No especificado | Citas realizadas: No especificado | Citas disponibles (saldo): No especificado",
+        }
+
+    plan_raw = info.get("plan_tier")
+    plan_str = str(plan_raw).strip() if plan_raw not in (None, "", "None") else "No especificado"
+
+    total_val = info.get("plan_total_dates")
+    used_val = info.get("dates_used")
+    rem_val = info.get("dates_remaining") if info.get("dates_remaining") is not None else info.get("saldo_citas")
+
+    if used_val is not None and total_val is not None:
+        used_str = f"{used_val}/{total_val}"
+    elif used_val is not None:
+        used_str = str(used_val)
+    else:
+        used_str = "No especificado"
+
+    rem_int = None
+    if rem_val is not None:
+        try:
+            rem_int = int(rem_val)
+            rem_str = str(rem_int)
+        except (ValueError, TypeError):
+            rem_str = str(rem_val)
+    else:
+        rem_str = "No especificado"
+
+    opp_badge = info.get("opportunity_badge")
+    opp_reason = info.get("opportunity_reason")
+
+    summary_line = f"Plan: {plan_str} | Citas realizadas: {used_str} | Citas disponibles (saldo): {rem_str}"
+    if opp_reason:
+        summary_line += f" | Aviso de cupo: {opp_reason}"
+    elif opp_badge:
+        summary_line += f" | Aviso de cupo: {opp_badge}"
+
+    return {
+        "plan_str": plan_str,
+        "used_str": used_str,
+        "rem_str": rem_str,
+        "rem_int": rem_int,
+        "opp_badge": opp_badge,
+        "opp_reason": opp_reason,
+        "summary_line": summary_line,
+    }
+
+
+def _is_direct_plan_or_dates_question(question: str) -> bool:
+    """
+    Detecta preguntas del Copiloto Clínico que mapean 1:1 a los datos estructurados
+    de Plan y Citas Disponibles (ej. el chip '🎟️ Citas Disponibles').
+    """
+    q_low = (question or "").strip().lower()
+    if not q_low:
+        return False
+    direct_patterns = (
+        r'citas?\s+disponibles?',
+        r'saldo\s+de\s+citas?',
+        r'cu[aá]ntas\s+citas\s+(disponibles|tienen|tiene|le\s+quedan|les\s+quedan|usadas|realizadas)',
+        r'qu[eé]\s+plan\s+(tiene|tienen|contrat)',
+        r'plan\s+actual',
+        r'cupo\s+de\s+citas',
+    )
+    return any(re.search(p, q_low) for p in direct_patterns)
+
+
 def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) -> str:
     if not info:
         return f"- {name}: Sin información cargada en el perfil."
@@ -12794,6 +13076,7 @@ def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) 
     city = info.get("city") or "No especificada"
     occ = info.get("occupation") or "No especificada"
     estatura = info.get("estatura") or "No especificada"
+    plan_info = _extract_plan_and_dates_fields(info)
 
     # Inferencia de género si falta
     gender = (info.get("gender") or "").strip()
@@ -12859,6 +13142,7 @@ def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) 
     return f"""DATOS DE {name.upper()}:
 - Demografía: Género: {gender} | Orientación Sexual: {orient} | Edad: {age} | Ciudad: {city} | Estatura: {estatura}
 - Profesión: {occ}
+- Plan & Citas: {plan_info['summary_line']}
 - Dinámica Psicológica: Estilo de apego: {att_str} | Lenguaje del amor: {love_str} | Grupo Social: {sg_str} | Nivel deporte: {act_str}
 - Hábitos y Estilo de Vida: ¿Tiene hijos?: {has_kids} | ¿Quiere hijos?: {wants_kids} | Fuma: {smoker} | Bebe: {alcohol} | Mascotas: {pets} | Rumba: {rumba} | Valores: {values}
 - Preferencias de Pareja: Orientación: {orient} | No negociables: {non_neg} | Banderas rojas: {red_flags} | Qué busca: {what_searches}
@@ -12882,6 +13166,37 @@ async def clinical_chat_pair(
 
     if not question:
         raise HTTPException(status_code=400, detail="La pregunta no puede estar vacía.")
+
+    # Recomendación #3: Respuesta determinística directa para consultas 1:1 de Plan y Citas Disponibles
+    if _is_direct_plan_or_dates_question(question):
+        pa = _extract_plan_and_dates_fields(payload.person_a_info)
+        pb = _extract_plan_and_dates_fields(payload.person_b_info)
+        if pa["rem_int"] is not None or pb["rem_int"] is not None or pa["plan_str"] != "No especificado" or pb["plan_str"] != "No especificado":
+            if pa["rem_int"] is not None and pb["rem_int"] is not None:
+                if pa["rem_int"] > 0 and pb["rem_int"] > 0:
+                    concl = f"Ambos cuentan con saldo de citas disponible ({name_a}: {pa['rem_int']} disponible(s); {name_b}: {pb['rem_int']} disponible(s)) — viables para programar cita."
+                elif pb["rem_int"] <= 0 and pa["rem_int"] > 0:
+                    concl = pb["opp_reason"] or f"{name_b} ya completó las citas de su plan ({pb['used_str']}) — confirmar con CS si desea adquirir cita adicional antes de programar."
+                elif pa["rem_int"] <= 0 and pb["rem_int"] > 0:
+                    concl = pa["opp_reason"] or f"{name_a} ya completó las citas de su plan ({pa['used_str']}) — validar renovación o cita adicional con CS."
+                else:
+                    concl = f"Tanto {name_a} como {name_b} tienen 0 citas disponibles en su plan actual — requiere gestión de CS antes de agendar."
+            else:
+                concl = "Revisar saldo en CRM para quienes figuren con plan o citas no especificadas."
+
+            det_answer = (
+                f"• {name_a}: {pa['summary_line']}\n"
+                f"• {name_b}: {pb['summary_line']}\n"
+                f"• Conclusión: {concl}"
+            )
+            return {
+                "status": "success",
+                "answer": det_answer,
+                "model_used": "deterministic-crm-fields",
+                "response_time_ms": 1,
+                "person_a": name_a,
+                "person_b": name_b
+            }
 
     # Formatear contexto clínico de ambas partes
     formatted_a = _format_clinical_entity_for_chat(name_a, payload.person_a_info)
@@ -12912,18 +13227,18 @@ HISTORIAL DE LA CONVERSACIÓN:
 {history_context}
 
 --- REGLAS DE ORO CLÍNICAS (ESTRICTAS Y OBLIGATORIAS) ---
-1. LECTURA EXHAUSTIVA DE FICHA CLÍNICA, DEMOGRAFÍA Y NOTAS:
-   Lee con total atención los campos estructurados de cada persona (Demografía, Profesión, Dinámica Psicológica, Hábitos, Preferencias de Pareja) y todo el texto libre dentro de "Notas Clínicas de la Psicóloga (Entrevista)".
-   Allí están los datos de orientación sexual, género, edad, ciudad, profesión, pasatiempos, gustos de cine, anécdotas, religión, familia, política y estilo de vida.
-   Si preguntan sobre orientación sexual, género, edad, ciudad o profesión, responde directamente citando el dato presente en "Demografía" y "Preferencias de Pareja" (ej: "Heterosexual", "Hombre", "Mujer").
+1. LECTURA EXHAUSTIVA DE FICHA CLÍNICA, DEMOGRAFÍA, PLAN & CITAS Y NOTAS:
+   Lee con total atención los campos estructurados de cada persona (Demografía, Profesión, Plan & Citas, Dinámica Psicológica, Hábitos, Preferencias de Pareja) y todo el texto libre dentro de "Notas Clínicas de la Psicóloga (Entrevista)".
+   Allí están los datos de orientación sexual, género, edad, ciudad, profesión, plan contratado, citas realizadas, citas disponibles (saldo), pasatiempos, gustos de cine, anécdotas, religión, familia, política y estilo de vida.
+   Si preguntan sobre orientación sexual, género, edad, ciudad, profesión o plan y citas disponibles, responde directamente citando el dato presente en "Demografía", "Plan & Citas" y "Preferencias de Pareja".
    Si el texto de notas contiene cualquier mención sobre el tema preguntado, cita esa frase o hecho exacto.
-2. CERO ALUCINACIONES Y EXTRACCIÓN PURA (TEMPERATURA 0):
-   Solo afirma lo que esté sustentado en la ficha o texto. Si tras revisar minuciosamente la ficha y notas NO hay ninguna mención sobre ese tema para esa persona (ej: vehículos o deudas), responde exactamente: "⚠️ Sin información registrada en notas".
+2. CERO ALUCINACIONES, EXTRACCIÓN PURA Y PROHIBICIÓN DE ATRIBUCIÓN CRUZADA (TEMPERATURA 0):
+   Solo afirma lo que esté sustentado en la ficha o texto de CADA persona por separado. PROHIBIDO cruzar gustos o intereses (ej. lectura, mascotas, deportes) de {name_a} hacia {name_b} o viceversa: un interés solo es compartido si aparece explícitamente en los datos de AMBOS. Si tras revisar minuciosamente la ficha y notas NO hay ninguna mención sobre ese tema para esa persona, responde exactamente: "⚠️ Sin información registrada en notas".
    JAMÁS inventes, asumas, deduzcas ni extrapoles. Las psicólogas confían a ciegas en esta información; si no está en la ficha o notas, comunícalo sin rodeos.
 3. FORMATO CONCRETO PARA PSICÓLOGAS (SIN RODEOS NI FRASES DE CORTESÍA):
    Responde de forma esquemática y al grano con este formato:
-   • {name_a}: [Dato o frase exacta de sus notas o "⚠️ Sin información registrada en notas"]
-   • {name_b}: [Dato o frase exacta de sus notas o "⚠️ Sin información registrada en notas"]
+   • {name_a}: [Dato o frase exacta de su ficha/notas o "⚠️ Sin información registrada en notas"]
+   • {name_b}: [Dato o frase exacta de su ficha/notas o "⚠️ Sin información registrada en notas"]
    • Conclusión: [1 sola línea con el cruce objetivo: si coinciden, si hay choque/dealbreaker o si requiere validar en llamada]
 4. CONDICIONES Y DEALBREAKERS:
    Si preguntan si alguno exige una condición o dealbreaker (ej: si la persona debe vivir sola, no tener hijos, etc.), contrasta sus No Negociables y notas. Si no lo exige explícitamente, responde que no es una condición o dealbreaker para esa persona.
@@ -13052,6 +13367,40 @@ async def clinical_chat_multi(
     if not candidates:
         raise HTTPException(status_code=400, detail="Debe proporcionar al menos 1 candidata para contrastar.")
 
+    # Recomendación #3: Respuesta determinística directa para consultas 1:1 de Plan y Citas Disponibles
+    if _is_direct_plan_or_dates_question(question):
+        pa = _extract_plan_and_dates_fields(payload.client_info)
+        lines = [f"• {client_name}: {pa['summary_line']}"]
+        available_cands = []
+        exhausted_cands = []
+        for idx, c in enumerate(candidates[:5]):
+            c_name = (c.get("name") or f"Candidata {idx + 1}").strip()
+            pc = _extract_plan_and_dates_fields(c)
+            lines.append(f"• {c_name}: {pc['summary_line']}")
+            if pc["rem_int"] is not None:
+                if pc["rem_int"] > 0:
+                    available_cands.append(f"{c_name} ({pc['rem_int']} disp.)")
+                else:
+                    exhausted_cands.append(c_name)
+
+        verdict_parts = []
+        if available_cands:
+            verdict_parts.append(f"Con cupo inmediato disponible: {', '.join(available_cands)}.")
+        if exhausted_cands:
+            verdict_parts.append(f"Con cupo completado (requiere confirmar cita adicional con CS antes de aprobar): {', '.join(exhausted_cands)}.")
+        if not verdict_parts:
+            verdict_parts.append("Verificar saldo de citas en CRM para los perfiles sin plan especificado.")
+
+        lines.append(f"• Veredicto & Recomendación Clínica: {' '.join(verdict_parts)}")
+        return {
+            "status": "success",
+            "answer": "\n".join(lines),
+            "model_used": "deterministic-crm-fields",
+            "response_time_ms": 1,
+            "client_name": client_name,
+            "candidates_count": len(candidates)
+        }
+
     # Formatear contexto clínico del cliente
     formatted_client = _format_clinical_entity_for_chat(client_name, payload.client_info)
 
@@ -13093,17 +13442,17 @@ HISTORIAL DE LA CONVERSACIÓN:
 {history_context}
 
 --- REGLAS CLÍNICAS (ESTRICTAS - TEMPERATURA 0) ---
-1. LECTURA EXHAUSTIVA DE FICHA CLÍNICA, DEMOGRAFÍA Y NOTAS:
-   Inspecciona con detenimiento los campos estructurados (Demografía, Orientación Sexual, Profesión), notas clínicas de entrevista, hábitos, estilo de apego y dealbreakers de cada persona.
-   Si preguntan sobre orientación sexual, género, edad, ciudad o profesión, responde directamente citando los datos de la ficha técnica.
-2. CERO ALUCINACIONES:
-   Solo afirma lo sustentado en la ficha técnica o notas. Si para alguna persona no hay datos sobre ese tema, escribe: "⚠️ Sin información registrada en notas".
+1. LECTURA EXHAUSTIVA DE FICHA CLÍNICA, DEMOGRAFÍA, PLAN & CITAS Y NOTAS:
+   Inspecciona con detenimiento los campos estructurados (Demografía, Orientación Sexual, Profesión, Plan & Citas Disponibles), notas clínicas de entrevista, hábitos, estilo de apego y dealbreakers de cada persona.
+   Si preguntan sobre orientación sexual, género, edad, ciudad, profesión o plan y citas disponibles, responde directamente citando los datos de la ficha técnica.
+2. CERO ALUCINACIONES Y PROHIBICIÓN DE ATRIBUCIÓN CRUZADA:
+   Solo afirma lo sustentado en la ficha técnica o notas de CADA persona por separado. PROHIBIDO atribuir gustos o intereses de {client_name} a alguna candidata o viceversa. Si para alguna persona no hay datos sobre ese tema, escribe: "⚠️ Sin información registrada en notas".
 3. FORMATO ESQUEMÁTICO DIRECTO PARA PSICÓLOGAS:
    Responde con este formato exacto:
-   • {client_name}: [Dato de sus notas respecto a la pregunta]
+   • {client_name}: [Dato de su ficha/notas respecto a la pregunta]
 """
     for c_name in cand_names_list:
-        system_prompt += f"   • {c_name}: [Dato o extracto de sus notas respecto a la pregunta]\n"
+        system_prompt += f"   • {c_name}: [Dato o extracto de su ficha/notas respecto a la pregunta]\n"
     system_prompt += f"""   • Veredicto & Recomendación Clínica: [1-2 líneas concluyentes indicando cuál candidata muestra mayor afinidad con {client_name} en este aspecto, si alguna tiene fricción/dealbreaker o si amerita validar en llamada previa]"""
 
     settings = get_settings()

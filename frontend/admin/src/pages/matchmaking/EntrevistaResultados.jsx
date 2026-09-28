@@ -172,6 +172,40 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
     }
   }
 
+  // Estado y acción para notificar a CS sobre oportunidad de cita adicional / upsell (cuando Persona B completó su plan)
+  const [notifyingCsMap, setNotifyingCsMap] = useState({})
+  const [notifiedCsMap, setNotifiedCsMap] = useState({})
+
+  const handleNotifyCsUpsell = async (cand) => {
+    if (!cand) return
+    const key = cand.user_id || cand.crm_id || cand.name
+    if (notifyingCsMap[key] || notifiedCsMap[key]) return
+
+    setNotifyingCsMap(prev => ({ ...prev, [key]: true }))
+    try {
+      const res = await resilientFetch(`${API}/api/v1/matchmaking/notify-cs-upsell`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          person_b_name: cand.name,
+          person_b_crm_id: cand.crm_id && cand.crm_id !== 'None' ? String(cand.crm_id) : undefined,
+          person_a_name: data?.client?.name || clientName || 'Cliente en evaluación',
+          details: cand.opportunity_reason || `${cand.name} ya completó las citas de su plan (${cand.dates_used || 0}/${cand.plan_total_dates || 2}). Alta compatibilidad con ${data?.client?.name || clientName || 'el cliente'}; contactar para ofrecer cita adicional o renovación.`
+        })
+      })
+      const resData = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(resData.detail || 'No se pudo enviar la notificación a CS')
+      setNotifiedCsMap(prev => ({ ...prev, [key]: true }))
+    } catch (e) {
+      alert('Error al notificar a CS: ' + e.message)
+    } finally {
+      setNotifyingCsMap(prev => ({ ...prev, [key]: false }))
+    }
+  }
+
   if (loading) {
     return (
       <div style={{
@@ -803,22 +837,25 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                           <span>💼 {cand.occupation && cand.occupation !== 'No especificado' ? cand.occupation : 'Ocupación no especificada'}</span>
                           <span>•</span>
                           <span>📋 {cand.plan_tier}</span>
-                          <span style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: '2px 7px',
-                            borderRadius: 6,
-                            background: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
-                              ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)')
-                              : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
-                            color: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
-                              ? (isLight ? '#065F46' : '#81C784')
-                              : (isLight ? '#92400E' : '#FFE082'),
-                            border: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
-                              ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.25)')
-                              : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.25)')
-                          }}>
-                            🎟️ {cand.dates_used || 0}/{cand.plan_total_dates || 2} citas ({cand.dates_remaining ?? cand.saldo_citas ?? 1} disp.)
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 7px',
+                              borderRadius: 6,
+                              background: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                                ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)')
+                                : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
+                              color: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                                ? (isLight ? '#065F46' : '#81C784')
+                                : (isLight ? '#92400E' : '#FFE082'),
+                              border: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                                ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.25)')
+                                : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.25)')
+                            }}
+                            title={cand.opportunity_reason || ''}
+                          >
+                            🎟️ {cand.dates_used || 0}/{cand.plan_total_dates || 2} citas ({(cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0 ? `${cand.dates_remaining ?? cand.saldo_citas ?? 1} disp.` : (cand.opportunity_badge || 'Plan completado')})
                           </span>
                         </div>
                       </div>
@@ -984,25 +1021,65 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                   )}
 
                   {/* Banner de Oportunidad Comercial / Cumplimiento para Persona B */}
-                  {cand.opportunity_badge && (
-                    <div style={{
-                      background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.08)',
-                      border: isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)',
-                      borderRadius: 8,
-                      padding: '10px 14px',
-                      fontSize: 12.5,
-                      color: isLight ? '#92400E' : '#FFE082',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10
-                    }}>
-                      <Sparkles size={16} color={isLight ? '#B45309' : '#FFC107'} style={{ flexShrink: 0 }} />
-                      <div style={{ lineHeight: 1.45 }}>
-                        <b style={{ color: isLight ? '#78350F' : '#FFF' }}>Oportunidad para María / CS:</b>{' '}
-                        <span>{cand.opportunity_reason}</span>
+                  {(cand.opportunity_badge || cand.opportunity_reason) && (() => {
+                    const candKey = cand.user_id || cand.crm_id || cand.name
+                    const isNotified = !!notifiedCsMap[candKey]
+                    const isNotifying = !!notifyingCsMap[candKey]
+                    return (
+                      <div style={{
+                        background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.1)',
+                        border: isLight ? '1.5px solid #F59E0B' : '1px solid rgba(255, 193, 7, 0.35)',
+                        borderRadius: 10,
+                        padding: '11px 14px',
+                        fontSize: 12.5,
+                        color: isLight ? '#92400E' : '#FFE082',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 10
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flex: '1 1 280px' }}>
+                          <Sparkles size={17} color={isLight ? '#B45309' : '#FFC107'} style={{ flexShrink: 0, marginTop: 2 }} />
+                          <div style={{ lineHeight: 1.45 }}>
+                            <b style={{ color: isLight ? '#78350F' : '#FFF' }}>
+                              🌟 {cand.opportunity_badge || 'Oportunidad para María / CS'}:
+                            </b>{' '}
+                            <span>{cand.opportunity_reason || `${cand.name} ya completó las citas de su plan (${cand.dates_used || 0}/${cand.plan_total_dates || 2}), pero tiene alta compatibilidad con ${client.name}. Disponible para ofrecer cita adicional o renovación.`}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleNotifyCsUpsell(cand)}
+                          disabled={isNotifying || isNotified}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 7,
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            cursor: isNotified ? 'default' : 'pointer',
+                            border: isNotified
+                              ? (isLight ? '1px solid #10B981' : '1px solid rgba(16, 185, 129, 0.5)')
+                              : (isLight ? '1px solid #D97706' : '1px solid rgba(255, 193, 7, 0.5)'),
+                            background: isNotified
+                              ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)')
+                              : (isLight ? '#FEF3C7' : 'rgba(255, 193, 7, 0.18)'),
+                            color: isNotified
+                              ? (isLight ? '#065F46' : '#6EE7B7')
+                              : (isLight ? '#92400E' : '#FFE082'),
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0
+                          }}
+                          title="Crear novedad en CS para ofrecer cita adicional o renovación de plan a este candidato"
+                        >
+                          {isNotified ? '✅ CS Notificado (Upsell)' : (isNotifying ? '⏳ Notificando a CS...' : '📢 Notificar a CS para cita adicional')}
+                        </button>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {/* Comparativa de Métricas 1-10 */}
                   <div style={{
@@ -1328,23 +1405,46 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
 
                   {/* 2. Centro: Métricas Clave en Chips Horizontales */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      background: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
-                        ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)')
-                        : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
-                      color: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
-                        ? (isLight ? '#065F46' : '#81C784')
-                        : (isLight ? '#92400E' : '#FFE082'),
-                      border: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
-                        ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.25)')
-                        : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.25)')
-                    }}>
-                      🎟️ {cand.dates_used || 0}/{cand.plan_total_dates || 2} ({cand.dates_remaining ?? cand.saldo_citas ?? 1} disp.)
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                          ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)')
+                          : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
+                        color: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                          ? (isLight ? '#065F46' : '#81C784')
+                          : (isLight ? '#92400E' : '#FFE082'),
+                        border: (cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0
+                          ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.25)')
+                          : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.25)')
+                      }}
+                      title={cand.opportunity_reason || ''}
+                    >
+                      🎟️ {cand.dates_used || 0}/{cand.plan_total_dates || 2} ({(cand.dates_remaining ?? cand.saldo_citas ?? 1) > 0 ? `${cand.dates_remaining ?? cand.saldo_citas ?? 1} disp.` : (cand.opportunity_badge || 'Plan completado')})
                     </span>
+
+                    {cand.opportunity_badge && (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: 14,
+                          background: isLight ? '#FFFBEB' : 'linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.25))',
+                          border: isLight ? '1px solid #F59E0B' : '1px solid #FFC107',
+                          color: isLight ? '#92400E' : '#FFE082',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}
+                        title={cand.opportunity_reason || ''}
+                      >
+                        🌟 {cand.opportunity_badge}
+                      </span>
+                    )}
 
                     <span style={{
                       fontSize: 11,
@@ -1536,6 +1636,61 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                       </button>
                     )}
                   </div>
+
+                  {/* 4. Fila inferior en modo compacto: Aviso accionable de oportunidad de Upsell cuando opportunity_badge no sea null */}
+                  {(cand.opportunity_badge || cand.opportunity_reason) && (() => {
+                    const candKey = cand.user_id || cand.crm_id || cand.name
+                    const isNotified = !!notifiedCsMap[candKey]
+                    const isNotifying = !!notifyingCsMap[candKey]
+                    return (
+                      <div style={{
+                        width: '100%',
+                        background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.08)',
+                        border: isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)',
+                        borderRadius: 8,
+                        padding: '7px 12px',
+                        fontSize: 11.5,
+                        color: isLight ? '#92400E' : '#FFE082',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 8
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 240px' }}>
+                          <Sparkles size={14} color={isLight ? '#B45309' : '#FFC107'} style={{ flexShrink: 0 }} />
+                          <span>
+                            <b style={{ color: isLight ? '#78350F' : '#FFF' }}>🌟 {cand.opportunity_badge || 'Plan Completado (Upsell)'}:</b>{' '}
+                            {cand.opportunity_reason}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleNotifyCsUpsell(cand)}
+                          disabled={isNotifying || isNotified}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: isNotified ? 'default' : 'pointer',
+                            border: isNotified
+                              ? (isLight ? '1px solid #10B981' : '1px solid rgba(16, 185, 129, 0.5)')
+                              : (isLight ? '1px solid #D97706' : '1px solid rgba(255, 193, 7, 0.5)'),
+                            background: isNotified
+                              ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)')
+                              : (isLight ? '#FEF3C7' : 'rgba(255, 193, 7, 0.18)'),
+                            color: isNotified
+                              ? (isLight ? '#065F46' : '#6EE7B7')
+                              : (isLight ? '#92400E' : '#FFE082'),
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {isNotified ? '✅ CS Notificado' : (isNotifying ? '⏳ Notificando...' : '📢 Notificar a CS')}
+                        </button>
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             }
@@ -1732,6 +1887,61 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
               </div>
             </div>
 
+            {(selectedCandidate.opportunity_badge || selectedCandidate.opportunity_reason) && (() => {
+              const candKey = selectedCandidate.user_id || selectedCandidate.crm_id || selectedCandidate.name
+              const isNotified = !!notifiedCsMap[candKey]
+              const isNotifying = !!notifyingCsMap[candKey]
+              return (
+                <div style={{
+                  background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.1)',
+                  border: isLight ? '1.5px solid #F59E0B' : '1px solid rgba(255, 193, 7, 0.35)',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  fontSize: 12,
+                  color: isLight ? '#92400E' : '#FFE082',
+                  marginBottom: 16,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, lineHeight: 1.45 }}>
+                    <Sparkles size={15} color={isLight ? '#B45309' : '#FFC107'} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div>
+                      <b style={{ color: isLight ? '#78350F' : '#FFF' }}>
+                        🌟 {selectedCandidate.opportunity_badge || 'Plan Completado (Upsell)'}:
+                      </b>{' '}
+                      <span>{selectedCandidate.opportunity_reason}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleNotifyCsUpsell(selectedCandidate)}
+                      disabled={isNotifying || isNotified}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: isNotified ? 'default' : 'pointer',
+                        border: isNotified
+                          ? (isLight ? '1px solid #10B981' : '1px solid rgba(16, 185, 129, 0.5)')
+                          : (isLight ? '1px solid #D97706' : '1px solid rgba(255, 193, 7, 0.5)'),
+                        background: isNotified
+                          ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)')
+                          : (isLight ? '#FEF3C7' : 'rgba(255, 193, 7, 0.18)'),
+                        color: isNotified
+                          ? (isLight ? '#065F46' : '#6EE7B7')
+                          : (isLight ? '#92400E' : '#FFE082')
+                      }}
+                    >
+                      {isNotified ? '✅ CS Notificado (Upsell)' : (isNotifying ? '⏳ Notificando...' : '📢 Notificar a CS para cita adicional')}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
+
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
                 👩‍⚕️ Psicóloga Responsable de la Entrevista:
@@ -1816,6 +2026,9 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
             setViewingAnalysis(null)
             setSelectedCandidate(cand)
           }}
+          onNotifyCsUpsell={handleNotifyCsUpsell}
+          notifyingCsMap={notifyingCsMap}
+          notifiedCsMap={notifiedCsMap}
         />
       )}
 
@@ -2295,9 +2508,23 @@ function MultiCandidateCompareModal({ client, candidates, onClose, onApprove, on
                 {candidates.map(c => (
                   <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
                     <div style={{ fontWeight: 700 }}>{c.plan_tier || 'Estándar'}</div>
-                    <div style={{ fontSize: 12, color: (c.dates_remaining ?? c.saldo_citas ?? 1) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
-                      🎟️ {c.dates_used || 0} de {c.plan_total_dates || 2} citas ({c.dates_remaining ?? c.saldo_citas ?? 1} disp.)
+                    <div style={{ fontSize: 12, color: (c.dates_remaining ?? c.saldo_citas ?? 1) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }} title={c.opportunity_reason || ''}>
+                      🎟️ {c.dates_used || 0} de {c.plan_total_dates || 2} citas ({(c.dates_remaining ?? c.saldo_citas ?? 1) > 0 ? `${c.dates_remaining ?? c.saldo_citas ?? 1} disp.` : (c.opportunity_badge || 'Plan completado')})
                     </div>
+                    {(c.opportunity_badge || c.opportunity_reason) && (
+                      <div style={{
+                        marginTop: 5,
+                        padding: '4px 7px',
+                        borderRadius: 6,
+                        background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)',
+                        border: isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)',
+                        fontSize: 11,
+                        color: isLight ? '#92400E' : '#FFE082',
+                        lineHeight: 1.35
+                      }}>
+                        <b>🌟 {c.opportunity_badge}:</b> {c.opportunity_reason}
+                      </div>
+                    )}
                   </td>
                 ))}
               </tr>
@@ -2952,7 +3179,7 @@ function MultiCandidateChatModal({ client, candidates, onClose, token }) {
   )
 }
 
-function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
+function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsUpsell, notifyingCsMap = {}, notifiedCsMap = {} }) {
   const [activeTab, setActiveTab] = useState('comparativa') // 'comparativa' | 'dictamen'
 
   // Detección reactiva de modo claro (Light Mode)
@@ -3600,11 +3827,71 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
               }}>
                 🎟️ {candidate.dates_used || 0} de {candidate.plan_total_dates || 2} citas realizadas
               </span>
-              <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }}>
-                {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? `Saldo: ${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} cita(s) disponible(s)` : '⚠️ Cupo completado'}
+              <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }} title={candidate.opportunity_reason || ''}>
+                {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0
+                  ? `Saldo: ${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} cita(s) disponible(s)`
+                  : (candidate.opportunity_badge ? `🌟 ${candidate.opportunity_badge}` : '⚠️ Cupo completado')}
               </div>
             </div>
           </div>
+
+          {(candidate.opportunity_badge || candidate.opportunity_reason) && (() => {
+            const candKey = candidate.user_id || candidate.crm_id || candidate.name
+            const isNotified = !!notifiedCsMap[candKey]
+            const isNotifying = !!notifyingCsMap[candKey]
+            return (
+              <div style={{
+                gridColumn: '1 / -1',
+                background: isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.1)',
+                border: isLight ? '1.5px solid #F59E0B' : '1px solid rgba(255, 193, 7, 0.35)',
+                borderRadius: 8,
+                padding: '9px 12px',
+                fontSize: 12,
+                color: isLight ? '#92400E' : '#FFE082',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 10
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: '1 1 260px', lineHeight: 1.45 }}>
+                  <Sparkles size={15} color={isLight ? '#B45309' : '#FFC107'} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <b style={{ color: isLight ? '#78350F' : '#FFF' }}>
+                      🌟 {candidate.opportunity_badge || 'Oportunidad para María / CS'}:
+                    </b>{' '}
+                    <span>{candidate.opportunity_reason}</span>
+                  </div>
+                </div>
+                {onNotifyCsUpsell && (
+                  <button
+                    type="button"
+                    onClick={() => onNotifyCsUpsell(candidate)}
+                    disabled={isNotifying || isNotified}
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: 6,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: isNotified ? 'default' : 'pointer',
+                      border: isNotified
+                        ? (isLight ? '1px solid #10B981' : '1px solid rgba(16, 185, 129, 0.5)')
+                        : (isLight ? '1px solid #D97706' : '1px solid rgba(255, 193, 7, 0.5)'),
+                      background: isNotified
+                        ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)')
+                        : (isLight ? '#FEF3C7' : 'rgba(255, 193, 7, 0.18)'),
+                      color: isNotified
+                        ? (isLight ? '#065F46' : '#6EE7B7')
+                        : (isLight ? '#92400E' : '#FFE082'),
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {isNotified ? '✅ CS Notificado (Upsell)' : (isNotifying ? '⏳ Notificando...' : '📢 Notificar a CS para cita adicional')}
+                  </button>
+                )}
+              </div>
+            )
+          })()}
         </div>
 
         {/* Selector de Pestañas (Tabs) con scroll táctil */}
@@ -4227,15 +4514,18 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
                   <b style={{ color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
                     {candidate.dates_used || 0} de {candidate.plan_total_dates || 2} citas realizadas
                   </b>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    background: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
-                    color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24')
-                  }}>
-                    {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? `${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} disp.` : 'Cumplido'}
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      background: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                      color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24')
+                    }}
+                    title={candidate.opportunity_reason || ''}
+                  >
+                    {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? `${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} disp.` : (candidate.opportunity_badge ? `🌟 ${candidate.opportunity_badge}` : 'Cumplido')}
                   </span>
                 </div>
 
