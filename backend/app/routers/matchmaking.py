@@ -8847,27 +8847,6 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     if is_cli_safety:
         return True, cli_safety_reason
 
-    # 0.1 Historial de Citas Previas (No Repetir Parejas que ya tuvieron cita)
-    cli_c360 = _to_d(cli.get("clinical_profile_360")) if isinstance(_to_d(cli.get("clinical_profile_360")), dict) else {}
-    cand_c360 = _to_d(cand.get("clinical_profile_360")) if isinstance(_to_d(cand.get("clinical_profile_360")), dict) else {}
-    cli_hist = cli_c360.get("historial") if isinstance(cli_c360, dict) else {}
-    if not isinstance(cli_hist, dict):
-        cli_hist = {}
-    cand_hist = cand_c360.get("historial") if isinstance(cand_c360, dict) else {}
-    if not isinstance(cand_hist, dict):
-        cand_hist = {}
-    cli_past = [normalize_text_unaccent(x) for x in (cli_hist.get("past_matched_names") or cli.get("past_matched_names") or []) if x]
-    cand_past = [normalize_text_unaccent(x) for x in (cand_hist.get("past_matched_names") or cand.get("past_matched_names") or []) if x]
-    cli_n = normalize_text_unaccent(cli.get("name") or "")
-    cand_n = normalize_text_unaccent(cand.get("name") or "")
-    has_prior_date = False
-    if cand_n and any(cand_n == p or (len(cand_n) >= 5 and (cand_n in p or p in cand_n)) for p in cli_past if p):
-        has_prior_date = True
-    elif cli_n and any(cli_n == p or (len(cli_n) >= 5 and (cli_n in p or p in cli_n)) for p in cand_past if p):
-        has_prior_date = True
-    if has_prior_date:
-        return True, f"Cita previa en historial clínico: {cli.get('name')} y {cand.get('name')} ya tuvieron una cita previa registrada en Daily Lover."
-
     # 1. Género y Orientación Sexual
     c_gender = (cli.get('gender') or '').strip().lower()
     c_sp = _to_d(cli.get('search_preferences'))
@@ -9089,18 +9068,18 @@ def sort_synergies_by_clinical_priority(puntos_fuertes: list) -> list:
     return sorted(puntos_fuertes, key=_priority_tier)
 
 
-def parse_clinical_ai_response(raw: str) -> dict:
+def parse_clinical_ai_response(raw: str) -> Optional[dict]:
     """Parsea respuestas en formato JSON o con formateo Markdown con fallbacks robustos."""
     m = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', raw)
     if m:
         try:
             parsed = json.loads(m.group(1), strict=False)
-            if isinstance(parsed, dict):
+            if isinstance(parsed, dict) and "ai_score" in parsed:
                 if "red_flags_seguridad" not in parsed:
                     parsed["red_flags_seguridad"] = []
                 if "puntos_fuertes" in parsed and isinstance(parsed["puntos_fuertes"], list):
                     parsed["puntos_fuertes"] = sort_synergies_by_clinical_priority(parsed["puntos_fuertes"])
-            return parsed
+                return parsed
         except Exception:
             pass
     f_idx = raw.find("{")
@@ -9108,21 +9087,23 @@ def parse_clinical_ai_response(raw: str) -> dict:
     if f_idx != -1 and l_idx > f_idx:
         try:
             parsed = json.loads(raw[f_idx:l_idx + 1], strict=False)
-            if isinstance(parsed, dict):
+            if isinstance(parsed, dict) and "ai_score" in parsed:
                 if "red_flags_seguridad" not in parsed:
                     parsed["red_flags_seguridad"] = []
                 if "puntos_fuertes" in parsed and isinstance(parsed["puntos_fuertes"], list):
                     parsed["puntos_fuertes"] = sort_synergies_by_clinical_priority(parsed["puntos_fuertes"])
-            return parsed
+                return parsed
         except Exception:
             pass
 
-    res = {}
     score_m = re.search(r'ai_score[\*\:\s]+(\d+)', raw, re.IGNORECASE)
-    res['ai_score'] = int(score_m.group(1)) if score_m else 65
-
     veredicto_m = re.search(r'veredicto[\*\:\s]+([^\n\*\#]+)', raw, re.IGNORECASE)
-    res['veredicto'] = veredicto_m.group(1).strip() if veredicto_m else 'VIABLE'
+    if not score_m or not veredicto_m:
+        return None
+
+    res = {}
+    res['ai_score'] = int(score_m.group(1))
+    res['veredicto'] = veredicto_m.group(1).strip()
 
     analisis_m = re.search(r'an[aá]lisis[\*\:\s]+(.*?)(?=\n\s*\*\*|\Z)', raw, re.IGNORECASE | re.DOTALL)
     res['analisis'] = analisis_m.group(1).strip() if analisis_m else raw[:300]
