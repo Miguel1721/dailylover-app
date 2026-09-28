@@ -298,6 +298,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
         ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: '💖 Mi Panel Clínico', end: true }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES (Ingreso)' }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/clientes', icon: Users, label: '👥 Directorio Clientes' }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' }] : []),
         ...(isMaria ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' }] : []),
         ...(isMaria ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales' }] : [])
