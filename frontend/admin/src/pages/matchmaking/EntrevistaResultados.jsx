@@ -886,7 +886,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                           }}>
                             ✨ {cand.compatibility_pct}% Match {!cand.datos_completos ? '(Parcial)' : ''}
                           </span>
-                          {cand.ai_score != null && (
+                          {cand.ai_score != null ? (
                             <span style={{
                               background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
                               border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
@@ -898,7 +898,37 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                             }} title={cand.ai_analisis || ''}>
                               🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
                             </span>
-                          )}
+                          ) : cand.ai_veredicto === 'FALLBACK POR TIMEOUT' || cand.ai_status === 'TIMEOUT_FALLBACK' ? (
+                            <span style={{
+                              background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                              border: '1px solid #F59E0B',
+                              color: isLight ? '#B45309' : '#FBBF24',
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '3px 10px',
+                              borderRadius: 16,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }} title={cand.ai_fallback_notice || 'Evaluación de IA excedió el tiempo límite (18s); se utilizó el score estructural'}>
+                              ⏱️ IA Timeout (Score Estructural)
+                            </span>
+                          ) : cand.ai_veredicto === 'SCORE ESTRUCTURAL' || cand.ai_status === 'STRUCTURAL_ONLY' ? (
+                            <span style={{
+                              background: isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)',
+                              border: '1px solid rgba(156, 163, 175, 0.5)',
+                              color: isLight ? '#4B5563' : '#9CA3AF',
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '3px 10px',
+                              borderRadius: 16,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }} title={cand.ai_fallback_notice || 'Evaluado con modelo estructural CRM (sin análisis profundo de IA)'}>
+                              📊 Score Estructural (Sin IA)
+                            </span>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -3583,6 +3613,33 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove }) {
             🧠 Dictamen Clínico & Pros / Contras
           </button>
         </div>
+
+        {/* BANNER INFORMATIVO SI EL CANDIDATO NO TIENE EVALUACIÓN IA COMPLETA */}
+        {(!candidate.ai_score || candidate.ai_veredicto?.includes('TIMEOUT') || candidate.ai_veredicto === 'SCORE ESTRUCTURAL') && (
+          <div style={{
+            background: candidate.ai_veredicto?.includes('TIMEOUT') ? (isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.12)') : (isLight ? '#F8FAFC' : 'rgba(148, 163, 184, 0.1)'),
+            border: candidate.ai_veredicto?.includes('TIMEOUT') ? '1px solid #F59E0B' : '1px solid rgba(148, 163, 184, 0.3)',
+            borderRadius: 10,
+            padding: '12px 16px',
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            color: candidate.ai_veredicto?.includes('TIMEOUT') ? (isLight ? '#B45309' : '#FCD34D') : (isLight ? '#475569' : '#CBD5E1'),
+            fontSize: 13,
+            fontWeight: 600
+          }}>
+            <span style={{ fontSize: 20 }}>{candidate.ai_veredicto?.includes('TIMEOUT') ? '⏱️' : '📊'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800, marginBottom: 2 }}>
+                {candidate.ai_veredicto?.includes('TIMEOUT') ? 'Aviso: Evaluación de IA no completó a tiempo (Score Estructural)' : 'Aviso: Evaluación basada exclusivamente en Score Estructural'}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.9 }}>
+                {candidate.ai_fallback_notice || 'Este candidato fue puntuado de forma determinística por coincidencias de perfil (ciudad, edad, filtros). Puedes consultar dudas clínicas específicas usando el Copiloto Clínico.'}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* TAB 1: FICHA COMPARATIVA REAL (A vs B) */}
         {activeTab === 'comparativa' && (

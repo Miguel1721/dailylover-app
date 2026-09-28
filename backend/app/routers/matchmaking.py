@@ -9329,7 +9329,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             "max_tokens": 950
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=11.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=16.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -9439,7 +9439,7 @@ async def find_candidate_matches_engine(
     client_summary: dict,
     db: AsyncSession,
     pool_limit: int = 60,
-    max_ai_evaluations: int = 4,
+    max_ai_evaluations: int = 8,
     candidate_usage_tracker: Optional[Dict[int, int]] = None,
     max_candidate_usage: Optional[int] = None,
     nvidia_key: Optional[str] = None,
@@ -10380,43 +10380,47 @@ async def find_candidate_matches_engine(
             client_to_use = httpx.AsyncClient(timeout=50.0)
             should_close_client = True
 
-        # Concurrencia optimizada: hasta 4 evaluaciones simultáneas en paralelo (~5-8s total)
-        sem = asyncio.Semaphore(4)
+        # Concurrencia optimizada: hasta 6 evaluaciones simultáneas en paralelo (~6-9s total)
+        sem = asyncio.Semaphore(6)
 
         async def _eval_with_sem(cand_item):
             if cand_item.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
-                return None
+                return {"_status": "INSUFFICIENT_DATA"}
             async with sem:
                 await asyncio.sleep(0.05)
                 try:
-                    # Timeout individual por candidato de 12s
-                    return await asyncio.wait_for(
+                    # Timeout individual por candidato de 18s
+                    res = await asyncio.wait_for(
                         evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=12.0
+                        timeout=18.0
                     )
+                    if res and isinstance(res, dict) and res.get("ai_score") is not None:
+                        res["_status"] = "COMPLETED"
+                        return res
+                    return {"_status": "EMPTY_FALLBACK"}
                 except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 12s, aplicando fallback")
-                    return None
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 18s, aplicando fallback")
+                    return {"_status": "TIMEOUT_FALLBACK"}
                 except Exception as _e:
                     logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
-                    return None
+                    return {"_status": "ERROR_FALLBACK", "error": str(_e)}
 
         try:
             eval_tasks = [_eval_with_sem(c) for c in candidates_to_evaluate]
             try:
-                # Timeout global estricto: la llamada completa de IA jamás excede 15s
+                # Timeout global estricto: la llamada completa de IA jamás excede 26s
                 eval_results = await asyncio.wait_for(
                     asyncio.gather(*eval_tasks, return_exceptions=True),
-                    timeout=15.0
+                    timeout=26.0
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"[AI MATCH TIMEOUT] Evaluación clínica IA superó 15s para cliente {client_summary.get('name')}. Activando fallback estructural.")
-                eval_results = [None] * len(candidates_to_evaluate)
+                logger.warning(f"[AI MATCH TIMEOUT] Evaluación clínica IA superó 26s para cliente {client_summary.get('name')}. Activando fallback estructural.")
+                eval_results = [{"_status": "TIMEOUT_FALLBACK"}] * len(candidates_to_evaluate)
 
             for cand, res in zip(candidates_to_evaluate, eval_results):
                 if isinstance(res, Exception):
                     logger.warning(f"[AI MATCH EXCEPTION IN GATHER] cand={cand.get('name')} error={res}")
-                    res = None
+                    res = {"_status": "ERROR_FALLBACK", "error": str(res)}
 
                 if cand.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
                     # Mantener sin datos suficientes y compatibility_pct = None
@@ -10461,6 +10465,9 @@ async def find_candidate_matches_engine(
                     cand["ai_puntos_fuertes"] = pts if verdict != "NO RECOMENDADO" else []
                     cand["ai_model"] = res.get("model_used")
                     cand["ai_notes_quality"] = notes_qual
+                    cand["ai_status"] = "COMPLETED"
+                    cand["is_ai_evaluated"] = True
+                    cand["ai_fallback_notice"] = None
 
                     client_summ = res.get("client_summary") if isinstance(res.get("client_summary"), dict) else None
                     cand_summ = res.get("candidate_summary") if isinstance(res.get("candidate_summary"), dict) else None
@@ -10508,8 +10515,8 @@ async def find_candidate_matches_engine(
                     if pts and not safety_flags:
                         cand["strengths"] = [f"IA: {p}" for p in pts] + cand.get("strengths", [])
                 else:
+                    cand["is_ai_evaluated"] = False
                     cand["ai_score"] = None
-                    cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL" if struct_score is not None else "SIN DATOS SUFICIENTES"
                     cand["ai_analisis"] = None
                     cand["ai_deal_breakers"] = []
                     cand["ai_puntos_fuertes"] = []
@@ -10519,6 +10526,20 @@ async def find_candidate_matches_engine(
                         cand["comparison"]["client_summary"] = None
                         cand["comparison"]["candidate_summary"] = None
                     cand["compatibility_pct"] = struct_score
+
+                    res_status = res.get("_status") if isinstance(res, dict) else "ERROR_FALLBACK"
+                    if res_status == "TIMEOUT_FALLBACK":
+                        cand["ai_status"] = "TIMEOUT_FALLBACK"
+                        cand["ai_veredicto"] = "FALLBACK POR TIMEOUT"
+                        cand["ai_fallback_notice"] = "La evaluación de IA excedió el tiempo límite (18s); se utilizó el score estructural determinístico."
+                    elif res_status == "INSUFFICIENT_DATA":
+                        cand["ai_status"] = "INSUFFICIENT_DATA"
+                        cand["ai_veredicto"] = "SIN DATOS SUFICIENTES"
+                        cand["ai_fallback_notice"] = "Perfil con datos insuficientes en CRM para evaluación de IA."
+                    else:
+                        cand["ai_status"] = "ERROR_FALLBACK"
+                        cand["ai_veredicto"] = "FALLBACK ESTRUCTURAL"
+                        cand["ai_fallback_notice"] = "El motor de IA no devolvió respuesta; se utilizó el score estructural determinístico."
         finally:
             if should_close_client:
                 await client_to_use.aclose()
@@ -10552,7 +10573,10 @@ async def find_candidate_matches_engine(
         )
         for c in remaining_candidates:
             if c.get("ai_veredicto") != "SIN DATOS SUFICIENTES":
+                c["ai_status"] = "STRUCTURAL_ONLY"
+                c["is_ai_evaluated"] = False
                 c["ai_veredicto"] = "SCORE ESTRUCTURAL" if c.get("structural_score") is not None else "SIN DATOS SUFICIENTES"
+                c["ai_fallback_notice"] = "Candidato fuera del lote prioritario de IA (evaluado con modelo estructural CRM)."
 
         all_candidates = evaluated_sorted + remaining_candidates
         all_candidates.sort(
@@ -10817,7 +10841,7 @@ async def get_interview_results(
         client_summary=client_summary,
         db=db,
         pool_limit=dynamic_pool_limit,
-        max_ai_evaluations=4,
+        max_ai_evaluations=8,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
         nvidia_key=nvidia_key,
