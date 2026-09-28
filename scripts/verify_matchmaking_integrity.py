@@ -50,6 +50,7 @@ def check_matchmaking_invariants() -> None:
         ("Reminder visible en fallo de correo VIP 650k (except Exception as e_vip_mail)", "Fallo Correo Agendamiento VIP:" in wh_src),
         ("Cascada centralizada F2 -> CRM (resolve_physical_activity_level / resolve_education_level)", mm_src.count("resolve_physical_activity_level(") >= 5 and mm_src.count("resolve_education_level(") >= 5),
         ("Sincronización completa _sync_crm_id_from_webhooks conectada en process_webhook_payload (webhooks.py)", "_sync_crm_id_from_webhooks" in wh_src and '"income_range"' in mm_src and '"partner_red_flags"' in mm_src and '"min_age"' in mm_src),
+        ("Constructor diferenciado strict vs relaxed (build_candidate_pool_queries) y síntesis bio_notes (synthesize_structured_bio_notes)", "def build_candidate_pool_queries(" in mm_src and "def synthesize_structured_bio_notes(" in mm_src and "LENGTH(TRIM(p.bio_notes)) > 40" not in mm_src),
     ]
 
     failed = False
@@ -64,7 +65,7 @@ def check_matchmaking_invariants() -> None:
 
 
 def check_resolvers_behavior(mm_tree: ast.Module) -> None:
-    """Extrae y ejecuta resolve_physical_activity_level y resolve_education_level contra casos reales."""
+    """Extrae y ejecuta resolve_physical_activity_level, resolve_education_level, build_candidate_pool_queries y synthesize_structured_bio_notes contra casos reales."""
     import json
     import re
     from typing import Any, Dict, Optional, Tuple
@@ -82,6 +83,8 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
         "_EDU_PROFESSIONAL_KEYWORDS",
         "_match_education_text",
         "resolve_education_level",
+        "synthesize_structured_bio_notes",
+        "build_candidate_pool_queries",
     }
     selected_nodes = []
     for node in mm_tree.body:
@@ -97,6 +100,8 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
 
     resolve_act = ns["resolve_physical_activity_level"]
     resolve_edu = ns["resolve_education_level"]
+    synth_bio = ns["synthesize_structured_bio_notes"]
+    build_queries = ns["build_candidate_pool_queries"]
 
     act_cases = [
         # (args, kwargs, expected)
@@ -158,6 +163,63 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
             print(f"[FAIL] resolve_education_level{args} -> {actual} != {expected}")
             sys.exit(1)
     print(f"[OK] Pruebas unitarias resolve_education_level ({len(edu_cases)} casos verificados, incl. profesiones y ocupación)")
+
+    # Prueba de comportamiento: build_candidate_pool_queries (strict vs relaxed)
+    sample_gender_sql = "(p.gender ILIKE '%homb%' OR p.gender ILIKE '%masc%')"
+    sample_anti_name_sql = "AND u.name !~* '^(maria|paula|laura)'"
+    sample_city_sql = "AND (p.city ILIKE '%Bogotá%' OR p.city IS NULL OR p.city = '')"
+    sample_orient_sql = "AND (p.orientation IS NULL OR p.orientation = '' OR p.orientation ILIKE '%hetero%')"
+    sample_age_order_sql = "CASE WHEN p.age BETWEEN 25 AND 35 THEN 0 ELSE 1 END ASC,"
+
+    strict_sql, relaxed_sql = build_queries(
+        sample_gender_sql,
+        sample_anti_name_sql,
+        sample_city_sql,
+        sample_orient_sql,
+        sample_age_order_sql,
+    )
+    if strict_sql.strip() == relaxed_sql.strip():
+        print("[FAIL] build_candidate_pool_queries: strict_sql y relaxed_sql siguen siendo idénticas")
+        sys.exit(1)
+    if sample_anti_name_sql not in strict_sql or sample_anti_name_sql in relaxed_sql:
+        print("[FAIL] build_candidate_pool_queries: anti_opposite_name_sql debe estar en strict_sql y relajarse en relaxed_sql")
+        sys.exit(1)
+    strict_where = strict_sql.split("ORDER BY")[0]
+    relaxed_where = relaxed_sql.split("ORDER BY")[0]
+    if "p.city ILIKE '%Bogotá%'" not in strict_where or "p.city ILIKE '%Bogotá%'" in relaxed_where:
+        print("[FAIL] build_candidate_pool_queries: city_sql debe filtrar en WHERE de strict_sql y pasar a ORDER BY en relaxed_sql")
+        sys.exit(1)
+    if "p.lifestyle IS NOT NULL" not in strict_where or "p.lifestyle IS NOT NULL" in relaxed_where:
+        print("[FAIL] build_candidate_pool_queries: filtro de completitud estructurada/bio debe estar en strict_where y relajarse en relaxed_where")
+        sys.exit(1)
+    if "COALESCE(p.bio_notes, '') !~*" not in strict_where or "COALESCE(p.bio_notes, '') !~*" not in relaxed_where:
+        print("[FAIL] build_candidate_pool_queries: debe usar COALESCE(p.bio_notes, '') !~* para no excluir NULLs en SQL")
+        sys.exit(1)
+    print("[OK] Prueba de comportamiento build_candidate_pool_queries (strict_sql != relaxed_sql y relajación real verificada)")
+
+    # Prueba de comportamiento: synthesize_structured_bio_notes
+    laura_mock = {
+        "bio_notes": "",
+        "age": 21,
+        "city": "Bogotá",
+        "estatura": "162 cm",
+        "education": "Pregrado / Universitario (Colegio Mayor de Cundinamarca)",
+        "love_language": "Tiempo de calidad",
+        "lifestyle": {"fitness_level": "Moderado", "wants_children": "No", "has_pets": "Sí", "pet_type": "Perro"},
+        "search_preferences": {"min_age": 21, "max_age": 27, "non_negotiables": ["Falta de honestidad"]},
+    }
+    synthesized = synth_bio(laura_mock)
+    if len(synthesized) <= 40 or "Edad: 21 años" not in synthesized or "Estatura: 162 cm" not in synthesized:
+        print(f"[FAIL] synthesize_structured_bio_notes falló en perfil estructurado: {synthesized!r}")
+        sys.exit(1)
+    long_existing = "Abogada corporativa apasionada por el deporte, busca relación estable en Bogotá."
+    if synth_bio({"bio_notes": long_existing, "age": 30}) != long_existing:
+        print("[FAIL] synthesize_structured_bio_notes no preservó bio_notes > 40 chars existente")
+        sys.exit(1)
+    if synth_bio({"bio_notes": None, "age": None}) != "":
+        print("[FAIL] synthesize_structured_bio_notes inventó texto en perfil vacío")
+        sys.exit(1)
+    print("[OK] Prueba de comportamiento synthesize_structured_bio_notes (síntesis estructurada >40 chars y preservación verificadas)")
 
 
 def main() -> None:

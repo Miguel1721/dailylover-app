@@ -7905,7 +7905,8 @@ def _match_education_text(raw_text: Any) -> Optional[int]:
         return 9
     if any(k in txt for k in ("especializaci", "especialista", "posgrado", "postgrado")):
         return 8
-    if re.search(r"\b(tecn[oó]log[oa]?s?|t[eé]cnic[oa]?s?|estudiantes?|students?|associates?|sena)\b", txt):
+    txt_no_poli = re.sub(r"polit[eé]cnic[oa]s?", "", txt)
+    if re.search(r"\b(tecn[oó]log[oa]?s?|t[eé]cnic[oa]?s?|estudiantes?|students?|associates?|sena)\b", txt_no_poli):
         return 5
     if any(k in txt for k in _EDU_PROFESSIONAL_KEYWORDS):
         return 7
@@ -10066,6 +10067,201 @@ Responde ÚNICAMENTE con un objeto JSON válido:
     return copy.deepcopy(res_json)
 
 
+def synthesize_structured_bio_notes(profile_data: Any) -> str:
+    """
+    Genera una síntesis clínica estructurada y 100% fundamentada (sin inventar datos)
+    cuando bio_notes es nulo o <= 40 caracteres pero el perfil cuenta con datos
+    estructurados reales en profiles o client_extended_profile.
+    """
+    def _g(key: str) -> Any:
+        if isinstance(profile_data, dict):
+            return profile_data.get(key)
+        return getattr(profile_data, key, None)
+
+    raw_bio = str(_g("bio_notes") or "").strip()
+    if len(raw_bio) > 40:
+        return raw_bio
+
+    cep_syn = str(_g("synthesis_who_really_is") or "").strip()
+    parts = []
+    if raw_bio:
+        parts.append(raw_bio)
+    if cep_syn and cep_syn not in raw_bio:
+        parts.append(cep_syn)
+
+    age = _g("age")
+    if age not in (None, "", "No especificado"):
+        parts.append(f"Edad: {age} años")
+
+    city = str(_g("city") or "").strip()
+    if city and city.lower() not in ("no especificada", "no especificado", "none"):
+        parts.append(f"Ciudad: {city}")
+
+    estatura = str(_g("estatura") or "").strip()
+    if estatura and estatura.lower() not in ("no especificada", "no especificado", "none"):
+        parts.append(f"Estatura: {estatura}")
+
+    occ = str(_g("occupation") or "").strip()
+    if occ and occ.lower() not in ("no especificada", "no especificado", "none"):
+        parts.append(f"Ocupación: {occ}")
+
+    edu = str(_g("education") or "").strip()
+    if edu and edu.lower() not in ("no especificada", "no especificado", "none"):
+        parts.append(f"Educación: {edu}")
+
+    love_lang = str(_g("love_language_given") or _g("love_language_received") or _g("love_language") or "").strip()
+    if love_lang and love_lang.lower() not in ("no especificado", "none"):
+        parts.append(f"Lenguaje del amor: {love_lang}")
+
+    ls = _g("lifestyle") or {}
+    if isinstance(ls, str):
+        try:
+            ls = json.loads(ls)
+        except Exception:
+            ls = {}
+    if isinstance(ls, dict):
+        ls_bits = []
+        if ls.get("fitness_level"):
+            ls_bits.append(f"actividad física {ls['fitness_level']}")
+        if ls.get("wants_children"):
+            ls_bits.append(f"quiere hijos: {ls['wants_children']}")
+        if ls.get("has_children"):
+            ls_bits.append(f"tiene hijos: {ls['has_children']}")
+        if ls.get("smoker"):
+            ls_bits.append(f"fumador: {ls['smoker']}")
+        if ls.get("drinks_alcohol"):
+            ls_bits.append(f"alcohol: {ls['drinks_alcohol']}")
+        if ls.get("has_pets"):
+            pet_str = f" ({ls['pet_type']})" if ls.get("pet_type") else ""
+            ls_bits.append(f"mascotas: {ls['has_pets']}{pet_str}")
+        if ls.get("free_time"):
+            ls_bits.append(f"tiempo libre: {ls['free_time']}")
+        if ls.get("values"):
+            vals = ", ".join(ls["values"]) if isinstance(ls["values"], list) else str(ls["values"])
+            if vals:
+                ls_bits.append(f"valores: {vals}")
+        if ls_bits:
+            parts.append("Estilo de vida: " + ", ".join(ls_bits))
+
+    sp = _g("search_preferences") or {}
+    if isinstance(sp, str):
+        try:
+            sp = json.loads(sp)
+        except Exception:
+            sp = {}
+    if isinstance(sp, dict):
+        sp_bits = []
+        if sp.get("min_age") or sp.get("max_age"):
+            sp_bits.append(f"edad {sp.get('min_age') or 18}-{sp.get('max_age') or 99} años")
+        if sp.get("preferred_height"):
+            sp_bits.append(f"estatura {sp['preferred_height']}")
+        if sp.get("preferred_vibe"):
+            sp_bits.append(f"vibra {sp['preferred_vibe']}")
+        if sp.get("non_negotiables"):
+            nn = ", ".join(sp["non_negotiables"]) if isinstance(sp["non_negotiables"], list) else str(sp["non_negotiables"])
+            if nn:
+                sp_bits.append(f"no negociables: {nn}")
+        if sp_bits:
+            parts.append("Busca: " + ", ".join(sp_bits))
+
+    return " | ".join(parts).strip()
+
+
+def build_candidate_pool_queries(
+    gender_filter_sql: str,
+    anti_opposite_name_sql: str,
+    city_sql: str,
+    orient_filter_sql: str,
+    age_order_sql: str,
+) -> Tuple[str, str]:
+    """
+    Construye las dos consultas SQL de candidatos para find_candidate_matches_engine:
+    1) strict_query_sql: Aplica filtro de ciudad estricto, anti_opposite_name_sql y exige
+       que el candidato tenga bio_notes (>= 15 chars), synthesis_who_really_is (>= 15 chars)
+       o perfil estructurado válido (edad + ocupación/educación/lifestyle/search_preferences).
+    2) relaxed_query_sql: Se ejecuta únicamente si strict_query_sql devuelve 0 filas.
+       Relaja realmente los filtros: elimina anti_opposite_name_sql, elimina el umbral de
+       bio_notes/completitud estructurada, y convierte el filtro de ciudad en prioridad
+       dentro del ORDER BY en vez de exclusión dura en WHERE.
+    """
+    strict_query_sql = f"""
+        SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
+               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
+               p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+               p.lifestyle, p.love_language,
+               cep.social_group_score, cep.physical_activity_level, cep.education_level,
+               cep.love_language_given, cep.love_language_received, cep.attachment_style,
+               cep.non_negotiables, cep.synthesis_who_really_is
+        FROM profiles p
+        JOIN users u ON u.id = p.user_id
+        LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
+        WHERE u.id != :uid
+          AND u.merged_into_id IS NULL
+          AND u.name NOT ILIKE 'Cliente CRM%'
+          AND u.name NOT ILIKE 'Sin nombre%'
+          AND u.name NOT ILIKE '%unknown%'
+          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
+          AND {gender_filter_sql}
+          {anti_opposite_name_sql}
+          {city_sql}
+          {orient_filter_sql}
+          AND (
+              (p.bio_notes IS NOT NULL AND LENGTH(TRIM(p.bio_notes)) >= 15)
+              OR (cep.synthesis_who_really_is IS NOT NULL AND LENGTH(TRIM(cep.synthesis_who_really_is)) >= 15)
+              OR (
+                  p.age IS NOT NULL
+                  AND (
+                      (p.occupation IS NOT NULL AND TRIM(p.occupation) != '')
+                      OR (p.education IS NOT NULL AND TRIM(p.education) != '')
+                      OR (p.lifestyle IS NOT NULL AND p.lifestyle::text NOT IN ('{{}}', 'null', '""'))
+                      OR (p.search_preferences IS NOT NULL AND p.search_preferences::text NOT IN ('{{}}', 'null', '""'))
+                  )
+              )
+          )
+          AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
+          AND COALESCE(p.bio_notes, '') !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)'
+        ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND ((p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 15) OR (p.lifestyle IS NOT NULL AND p.lifestyle::text NOT IN ('{{}}', 'null', '""')))) DESC,
+                 {age_order_sql}
+                 (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
+                 (p.occupation IS NOT NULL AND p.occupation != '') DESC,
+                 (p.age IS NOT NULL) DESC,
+                 u.id DESC
+        LIMIT :pool_limit
+    """
+
+    city_expr = re.sub(r"^\s*AND\s+", "", city_sql.strip(), flags=re.IGNORECASE) if city_sql and city_sql.strip() else "TRUE"
+    relaxed_query_sql = f"""
+        SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
+               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
+               p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
+               p.lifestyle, p.love_language,
+               cep.social_group_score, cep.physical_activity_level, cep.education_level,
+               cep.love_language_given, cep.love_language_received, cep.attachment_style,
+               cep.non_negotiables, cep.synthesis_who_really_is
+        FROM profiles p
+        JOIN users u ON u.id = p.user_id
+        LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
+        WHERE u.id != :uid
+          AND u.merged_into_id IS NULL
+          AND u.name NOT ILIKE 'Cliente CRM%'
+          AND u.name NOT ILIKE 'Sin nombre%'
+          AND u.name NOT ILIKE '%unknown%'
+          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
+          AND {gender_filter_sql}
+          {orient_filter_sql}
+          AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
+          AND COALESCE(p.bio_notes, '') !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)'
+        ORDER BY (CASE WHEN {city_expr} THEN 0 ELSE 1 END) ASC,
+                 (p.age IS NOT NULL AND p.age >= 18) DESC,
+                 {age_order_sql}
+                 (p.occupation IS NOT NULL AND p.occupation != '') DESC,
+                 (p.bio_notes IS NOT NULL AND LENGTH(TRIM(p.bio_notes)) >= 15) DESC,
+                 u.id DESC
+        LIMIT :pool_limit
+    """
+    return strict_query_sql, relaxed_query_sql
+
+
 async def find_candidate_matches_engine(
     client_summary: dict,
     db: AsyncSession,
@@ -10309,78 +10505,22 @@ async def find_candidate_matches_engine(
             END ASC,
         """
 
-    cand_res = await db.execute(text(f"""
-        SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
-               p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-               p.lifestyle, p.love_language,
-               cep.social_group_score, cep.physical_activity_level, cep.education_level,
-               cep.love_language_given, cep.love_language_received, cep.attachment_style,
-               cep.non_negotiables, cep.synthesis_who_really_is
-        FROM profiles p
-        JOIN users u ON u.id = p.user_id
-        LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
-        WHERE u.id != :uid
-          AND u.merged_into_id IS NULL
-          AND u.name NOT ILIKE 'Cliente CRM%'
-          AND u.name NOT ILIKE 'Sin nombre%'
-          AND u.name NOT ILIKE '%unknown%'
-          AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
-          AND {gender_filter_sql}
-          {anti_opposite_name_sql}
-          {city_sql}
-          {orient_filter_sql}
-          AND p.bio_notes IS NOT NULL
-          AND LENGTH(TRIM(p.bio_notes)) > 40
-          AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
-          AND p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)'
-        ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25) DESC,
-                 {age_order_sql}
-                 (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
-                 (p.occupation IS NOT NULL AND p.occupation != '') DESC,
-                 (p.age IS NOT NULL) DESC,
-                 u.id DESC
-        LIMIT :pool_limit
-    """), {
+    strict_query_sql, relaxed_query_sql = build_candidate_pool_queries(
+        gender_filter_sql=gender_filter_sql,
+        anti_opposite_name_sql=anti_opposite_name_sql,
+        city_sql=city_sql,
+        orient_filter_sql=orient_filter_sql,
+        age_order_sql=age_order_sql,
+    )
+
+    cand_res = await db.execute(text(strict_query_sql), {
         "uid": uid,
         "pool_limit": pool_limit
     })
     candidate_rows = cand_res.fetchall()
 
     if not candidate_rows:
-        cand_res = await db.execute(text(f"""
-            SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-                   p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
-                   p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-                   p.lifestyle, p.love_language,
-                   cep.social_group_score, cep.physical_activity_level, cep.education_level,
-                   cep.love_language_given, cep.love_language_received, cep.attachment_style,
-                   cep.non_negotiables, cep.synthesis_who_really_is
-            FROM profiles p
-            JOIN users u ON u.id = p.user_id
-            LEFT JOIN client_extended_profile cep ON cep.user_id = u.id
-            WHERE u.id != :uid
-              AND u.merged_into_id IS NULL
-              AND u.name NOT ILIKE 'Cliente CRM%'
-              AND u.name NOT ILIKE 'Sin nombre%'
-              AND u.name NOT ILIKE '%unknown%'
-              AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble|unknown|cliente)'
-              AND {gender_filter_sql}
-              {anti_opposite_name_sql}
-              {city_sql}
-              {orient_filter_sql}
-              AND p.bio_notes IS NOT NULL
-              AND LENGTH(TRIM(p.bio_notes)) > 40
-              AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
-              AND p.bio_notes !~* '(no quiere m.s (citas|dates)|no m.s (citas|dates)|pidio devolucion|descalificad|en pausa|refund|no desea m.s)'
-            ORDER BY (p.age IS NOT NULL AND p.age >= 18 AND p.city IS NOT NULL AND p.city NOT IN ('', 'No especificada') AND p.bio_notes IS NOT NULL AND length(trim(p.bio_notes)) >= 25) DESC,
-                     {age_order_sql}
-                     (p.bio_notes IS NOT NULL AND LENGTH(p.bio_notes) > 80) DESC,
-                     (p.occupation IS NOT NULL AND p.occupation != '') DESC,
-                     (p.age IS NOT NULL) DESC,
-                     u.id DESC
-            LIMIT :pool_limit
-        """), {
+        cand_res = await db.execute(text(relaxed_query_sql), {
             "uid": uid,
             "pool_limit": pool_limit
         })
@@ -10784,7 +10924,7 @@ async def find_candidate_matches_engine(
             except Exception as _e:
                 logger.warning(f"No se pudo sincronizar candidato CRM ID {r.crm_id} desde webhooks: {_e}")
 
-        cand_bio_clean = (r.bio_notes or "").strip()
+        cand_bio_clean = synthesize_structured_bio_notes(r)
         cand_eval_age = int(r.age) if r.age else None
         if not cand_eval_age and cand_bio_clean:
             m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
@@ -10923,7 +11063,7 @@ async def find_candidate_matches_engine(
         else:
             cand_lang = "No especificado"
             cand_lang_source = "CRM"
-        cand_bio_clean = (r.bio_notes or "").strip()
+        cand_bio_clean = synthesize_structured_bio_notes(r)
         cand_eval_age = int(r.age) if r.age else None
         if not cand_eval_age and cand_bio_clean:
             m_age = re.search(r'(\d{2})\s*a[ñn]os', cand_bio_clean, re.IGNORECASE) or re.search(r'edad:\s*(\d{2})', cand_bio_clean, re.IGNORECASE)
@@ -12936,9 +13076,21 @@ async def get_priority_candidates(
                p.estatura, p.search_preferences, p.bio_notes
         FROM users u
         JOIN profiles p ON p.user_id = u.id
-        WHERE u.name NOT ILIKE 'Cliente CRM%' AND u.name NOT ILIKE 'Sin nombre%'
+        WHERE u.merged_into_id IS NULL
+          AND u.name NOT ILIKE 'Cliente CRM%' AND u.name NOT ILIKE 'Sin nombre%'
           AND u.name !~* '^(no match|not approved|no hay|aprobado|refund|descalificado|trouble)'
-          AND p.bio_notes IS NOT NULL AND LENGTH(TRIM(p.bio_notes)) > 40
+          AND (
+              (p.bio_notes IS NOT NULL AND LENGTH(TRIM(p.bio_notes)) >= 15)
+              OR (
+                  p.age IS NOT NULL
+                  AND (
+                      (p.occupation IS NOT NULL AND TRIM(p.occupation) != '')
+                      OR (p.education IS NOT NULL AND TRIM(p.education) != '')
+                      OR (p.lifestyle IS NOT NULL AND p.lifestyle::text NOT IN ('{}', 'null', '""'))
+                      OR (p.search_preferences IS NOT NULL AND p.search_preferences::text NOT IN ('{}', 'null', '""'))
+                  )
+              )
+          )
           AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
           AND (p.gender ILIKE :tgen OR p.gender IS NULL)
           AND (unaccent(p.city) ILIKE unaccent(:city) OR p.city IS NULL OR p.city = '')
