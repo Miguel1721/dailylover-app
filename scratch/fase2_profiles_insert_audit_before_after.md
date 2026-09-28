@@ -1,4 +1,8 @@
-# Respaldo de Auditoría Pre-INSERT (Fase 2): Perfiles Nuevos (`Antes → Después`)
+# Respaldo de Auditoría Pre y Post-INSERT (Fase 2): Perfiles Nuevos (`Antes → Después` — EJECUTADO Y VERIFICADO)
+
+- **Estado de ejecución en Producción (`dl_api`):** `EJECUTADO Y VERIFICADO EN BD` (`2026-09-28T19:40:38.604437Z`)
+- **Filas nuevas insertadas en `profiles` (`INSERT ... ON CONFLICT DO NOTHING`):** **`645 / 645`**
+- **Filas verificadas en `profiles` después del commit (`verified_after_count`):** **`645 / 645` (100%)**
 
 - **Fecha de generación (UTC, dry-run sin escrituras en BD):** `2026-09-28T19:17:58.440246Z`
 - **Total de usuarios auditados en este respaldo:** `645` (`628` en `smartmatch_canonical_3933.json` + `17` pagadores únicos de Stripe fuera del export)
