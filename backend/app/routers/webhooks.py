@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
+from datetime import datetime
 import json
 import logging
 import hmac
@@ -284,18 +285,39 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     if c_final_email and "@" in c_final_email:
                         slots = calculate_available_vip_slots(days_ahead=7, slot_minutes=30, max_slots=6)
                         token_book = f"vip_{pi_id or 'pay'}_{int(datetime.now().timestamp())}"
-                        asyncio.create_task(
-                            asyncio.to_thread(
-                                send_vip_slot_selection_email,
-                                customer_name=c_final_name,
-                                customer_email=c_final_email,
-                                slots=slots,
-                                booking_token=token_book
-                            )
+                        sent_ok = await asyncio.to_thread(
+                            send_vip_slot_selection_email,
+                            customer_name=c_final_name,
+                            customer_email=c_final_email,
+                            slots=slots,
+                            booking_token=token_book
                         )
+                        if not sent_ok:
+                            raise RuntimeError(f"El servicio de correo no pudo entregar las opciones de agendamiento VIP a {c_final_email}")
                         logger.info(f"💌 Correo con {len(slots)} opciones de agendamiento VIP enviado al cliente '{c_final_name}' ({c_final_email})")
+                    else:
+                        raise ValueError(f"El pago VIP 650k de '{c_final_name}' no incluyó un correo válido para enviar los horarios de agendamiento.")
                 except Exception as e_vip_mail:
                     logger.error(f"Error disparando correos VIP 650k: {e_vip_mail}")
+                    try:
+                        c_err_name = target_name or customer_name or "Cliente VIP"
+                        err_note = (
+                            f"⚠️ [ALERTA AGENDAMIENTO VIP 650k] No se pudo enviar el correo con horarios disponibles a "
+                            f"{c_err_name} ({customer_email or 'Sin correo'} | Tel: {customer_phone or 'Sin teléfono'}). "
+                            f"Motivo: {type(e_vip_mail).__name__}: {e_vip_mail}. "
+                            f"Por favor contactar manualmente desde CS/María para agendar su sesión VIP."
+                        )
+                        await db.execute(text("""
+                            INSERT INTO reminders (title, description, due_date, status, assigned_to, created_at)
+                            VALUES (:title, :desc, CURRENT_DATE, 'PENDIENTE', :assigned, NOW())
+                        """), {
+                            "title": f"⚠️ Fallo Correo Agendamiento VIP: {c_err_name}",
+                            "desc": err_note,
+                            "assigned": "MPS"
+                        })
+                        await db.commit()
+                    except Exception as e_rem_vip:
+                        logger.error(f"No se pudo registrar reminder de fallo VIP 650k: {e_rem_vip}")
 
             if user_row:
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}

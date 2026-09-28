@@ -8,6 +8,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MATCHMAKING_PY = ROOT / "backend" / "app" / "routers" / "matchmaking.py"
+WEBHOOKS_PY = ROOT / "backend" / "app" / "routers" / "webhooks.py"
 EXTRACTOR_PY = ROOT / "backend" / "app" / "services" / "clinical_profile_extractor.py"
 FRONTEND_JSX = ROOT / "frontend" / "admin" / "src" / "pages" / "matchmaking" / "EntrevistaResultados.jsx"
 
@@ -25,6 +26,7 @@ def check_ast_syntax(filepath: pathlib.Path) -> ast.Module:
 
 def check_matchmaking_invariants() -> None:
     mm_src = MATCHMAKING_PY.read_text(encoding="utf-8")
+    wh_src = WEBHOOKS_PY.read_text(encoding="utf-8")
     ext_src = EXTRACTOR_PY.read_text(encoding="utf-8")
     jsx_src = FRONTEND_JSX.read_text(encoding="utf-8")
 
@@ -33,12 +35,16 @@ def check_matchmaking_invariants() -> None:
         ("Extractor estructurado _extract_plan_and_dates_fields", "def _extract_plan_and_dates_fields(" in mm_src),
         ("Respuesta determinística para consultas de citas (_is_direct_plan_or_dates_question)", "def _is_direct_plan_or_dates_question(" in mm_src),
         ("Grounding cruzado en evaluate_candidate_quick_notes_ai", "_SPECIFIC_TOPIC_PATTERNS" in mm_src and "_has_unilateral_cross_attribution" in mm_src),
+        ("Segunda pasada LLM de verificación de grounding (_verify_bilateral_grounding_llm)", "async def _verify_bilateral_grounding_llm(" in mm_src),
+        ("Clusters de personalidad/estilo de vida (tranquilo vs espontáneo/activo)", "estilo de vida tranquilo/hogareño" in mm_src and "has_lifestyle_polarity_mismatch" in mm_src),
         ("Truncado ampliado de notas clínicas [:3500]", "[:3500]" in mm_src),
-        ("Cache key v5 en evaluate_candidate_quick_notes_ai", 'cache_key = f"v5:' in mm_src),
+        ("Cache key v6 en evaluate_candidate_quick_notes_ai", 'cache_key = f"v6:v5:' in mm_src),
         ("Rastro estructurado decision_trace en find_candidate_matches_engine", '"decision_trace":' in mm_src),
         ("Regla had_date=true en historial de citas", "had_date = true" in mm_src.lower()),
         ("Advertencia no bloqueante para 'Ya presentado/a antes' en extractor", 'warnings.append(f"Historial previo:' in ext_src),
         ("Conexión de opportunity_reason en EntrevistaResultados.jsx", "cand.opportunity_reason" in jsx_src or "c.opportunity_reason" in jsx_src),
+        ("Importación de datetime a nivel de módulo en webhooks.py", "\nfrom datetime import datetime\n" in wh_src),
+        ("Reminder visible en fallo de correo VIP 650k (except Exception as e_vip_mail)", "Fallo Correo Agendamiento VIP:" in wh_src),
     ]
 
     failed = False
@@ -54,6 +60,7 @@ def check_matchmaking_invariants() -> None:
 
 def main() -> None:
     check_ast_syntax(MATCHMAKING_PY)
+    check_ast_syntax(WEBHOOKS_PY)
     check_ast_syntax(EXTRACTOR_PY)
     check_matchmaking_invariants()
     print("\n[SUCCESS] TODAS LAS VERIFICACIONES DE INTEGRIDAD PASARON EXITOSAMENTE.")

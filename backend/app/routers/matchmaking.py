@@ -9148,7 +9148,7 @@ async def evaluate_candidate_quick_notes_ai(
     Evalúa integralmente (360°) la compatibilidad de pareja mediante Tier 1 determinístico
     y Tier 2 con la API de NVIDIA leyendo la totalidad de notas clínicas y campos del CRM.
     """
-    cache_key = f"v5:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}"
+    cache_key = f"v6:v5:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}"
     if cache_key in _AI_MATCH_CACHE:
         return _AI_MATCH_CACHE[cache_key]
 
@@ -9234,13 +9234,14 @@ PERFIL CANDIDATO (PERSONA B): {cand_info.get('name')}
 0. RIGOR FACTUAL ESTRICTO Y PROHIBICIÓN DE ATRIBUCIÓN CRUZADA (GROUNDING BILATERAL):
    - PROHIBIDO inventar estilo de apego: si dice "No especificado", indica que el apego formal no está registrado.
    - PROHIBIDO inventar o invertir deseo de hijos: respeta estrictamente "No", "Tal vez" y "Sí".
-   - PROHIBIDO cruzar o proyectar datos entre Persona A y Persona B: cada afirmación de interés, pasatiempo, hábito o estilo de vida compartido ("ambos", "comparten", "interés compartido") en "puntos_fuertes", "analisis" o "deal_breakers" DEBE estar respaldada por texto explícito en las notas de AMBAS personas ({client_info.get('name')} Y {cand_info.get('name')}). Nunca asumas que un interés mencionado solo en las notas de una persona (ej. lectura, libros, mascotas, vino, baile, correr) también aplica a la otra.
+   - PROHIBIDO cruzar o proyectar datos entre Persona A y Persona B: cada afirmación de interés, pasatiempo, hábito, rasgo de personalidad o estilo de vida compartido ("ambos", "comparten", "interés compartido", "estilo de vida tranquilo/activo") en "puntos_fuertes", "analisis" o "deal_breakers" DEBE estar respaldada por texto explícito en las notas de AMBAS personas ({client_info.get('name')} Y {cand_info.get('name')}).
+   - Si uno es tranquilo/introvertido/hogareño y el otro es activo/sociable/espontáneo/aventurero, JAMÁS afirmes que "ambos comparten un estilo de vida tranquilo" ni que tienen el mismo ritmo; descríbelos como perfiles con ritmos distintos o complementarios. Nunca asumas que un interés mencionado solo en las notas de una persona (ej. lectura, libros, mascotas, vino, baile, correr) aplica a la otra.
    - Discrepancias reales (edad fuera de rango, disparidad deportiva marcada, posturas opuestas ante hijos) DEBEN registrarse en "deal_breakers" y en "analisis".
 1. PROTOCOLO CRÍTICO DE SEGURIDAD (CERO TOLERANCIA):
    - Antecedentes de violencia física, agresión a exparejas, abuso psicológico severo o adicciones graves activas:
      1) Registrar en "red_flags_seguridad". 2) Asignar "veredicto": "NO RECOMENDADO". 3) Asignar "ai_score": 0. 4) En "analisis", iniciar con "🚨 DESCALIFICADO POR SEGURIDAD: [motivo]".
 2. ESPECIFICIDAD CLÍNICA DE PUNTOS FUERTES:
-   - Prioriza reciprocidad en Lenguaje del Amor y afinidad en valores específicos verificados en AMBAS fichas. Demografía al final. CERO frases genéricas vacías ("comparten valores", "relación seria") y CERO intereses unilaterales disfrazados de compartidos.
+   - Prioriza reciprocidad en Lenguaje del Amor y afinidad en valores específicos verificados en AMBAS fichas. Demografía al final. CERO frases genéricas vacías ("comparten valores", "relación seria") y CERO intereses o estilos de vida unilaterales disfrazados de compartidos.
 3. CONCORDANCIAS NEGATIVAS:
    - Si ambos coinciden en una postura de 'NO' (no hijos, no fuman, no rumba), es PUNTO FUERTE DE ALINEACIÓN, JAMÁS deal_breaker.
 4. RÚBRICA Y COHERENCIA DE PUNTAJE:
@@ -9250,7 +9251,7 @@ Responde ÚNICAMENTE un objeto JSON:
 {{
   "ai_score": <entero coherente con la rúbrica>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
-  "analisis": "<2-3 líneas de análisis clínico riguroso aterrizado a los datos reales de ambos sin cruzar gustos unilaterales>",
+  "analisis": "<2-3 líneas de análisis clínico riguroso aterrizado a los datos reales de ambos sin cruzar gustos ni estilos de vida unilaterales>",
   "red_flags_seguridad": [],
   "deal_breakers": ["<discrepancias reales o vacío>"],
   "puntos_fuertes": ["<2 a 3 afinidades concretas verificadas explícitamente en AMBAS fichas>"]
@@ -9269,7 +9270,7 @@ Responde ÚNICAMENTE un objeto JSON:
     sys_msg = (
         "Eres un asistente de psicología clínica experto en matchmaking de Daily Lover. "
         "Responde SIEMPRE en formato JSON estricto sin inventar datos que digan 'No especificado' "
-        "y sin atribuir gustos o hábitos de una persona a la otra."
+        "y sin atribuir gustos, rasgos de personalidad o estilos de vida de una persona a la otra."
     )
 
     res_json = None
@@ -9312,7 +9313,7 @@ Responde ÚNICAMENTE un objeto JSON:
     if not res_json:
         return None
 
-    # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y GROUNDING CRUZADO ESTRICTO ──
+    # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y GROUNDING CRUZADO ESTRICTO (ACTUALIZACIÓN 26) ──
     name_a_clean = client_info.get("name") or "Persona A"
     name_b_clean = cand_info.get("name") or "Persona B"
     first_a = name_a_clean.split()[0].lower() if name_a_clean else "persona_a"
@@ -9323,7 +9324,122 @@ Responde ÚNICAMENTE un objeto JSON:
     occ_a_val = client_info.get("occupation") or ""
     occ_b_val = cand_info.get("occupation") or ""
 
-    # Construir corpus verificable de cada persona para auditar atribuciones cruzadas (Recomendación #4)
+    # ── VÍA 1 (MÁS ROBUSTA): SEGUNDA PASADA DE VERIFICACIÓN VÍA LLM LIGERO (TEMPERATURA 0) ──
+    # Recibe el analisis y puntos_fuertes generados + las dos notas por separado, y confirma
+    # si cada afirmación de "ambos"/"comparten" (incluyendo descriptores de personalidad/estilo de vida)
+    # está realmente respaldada en los dos perfiles; si no, la reescribe o elimina.
+    async def _verify_bilateral_grounding_llm(draft_analisis: str, draft_pts: List[str]) -> Tuple[str, List[str]]:
+        if not draft_analisis and not draft_pts:
+            return draft_analisis, draft_pts
+
+        verify_prompt = f"""Eres un Auditor Clínico de Grounding Factual (Temperatura 0).
+Tu única función es auditar el siguiente borrador (`analisis` y `puntos_fuertes`) contrastándolo contra las notas reales de cada persona por separado:
+
+NOTAS EXCLUSIVAS DE PERSONA A ({name_a_clean}):
+\"\"\"{c_notes[:2500] if c_notes else 'Sin notas'}\"\""
+
+NOTAS EXCLUSIVAS DE PERSONA B ({name_b_clean}):
+\"\"\"{cand_notes[:2500] if cand_notes else 'Sin notas'}\"\""
+
+BORRADOR GENERADO A AUDITAR:
+- analisis: {json.dumps(draft_analisis, ensure_ascii=False)}
+- puntos_fuertes: {json.dumps(draft_pts, ensure_ascii=False)}
+
+REGLAS ESTRICTAS DE AUDITORÍA BILATERAL:
+1. Verifica cada afirmación de "ambos", "comparten", "en común", "coinciden", "similares" o cada elemento de `puntos_fuertes`.
+2. Si el borrador afirma que ambos comparten un descriptor de personalidad o estilo de vida (por ejemplo: decir que "ambos comparten un estilo de vida tranquilo" cuando {name_a_clean} es tranquilo/introvertido pero {name_b_clean} es activa/sociable/espontánea/inquieta) o un hobby/hábito (ej. lectura, deportes, mascotas, emprendimiento) que SOLO está en las notas de UNO de ellos o que contradice el perfil del otro:
+   - En `puntos_fuertes`: ELIMINA cualquier punto fuerte que no esté explícitamente respaldado en AMBAS notas (no dejes gustos ni estilos de vida unilaterales).
+   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} (ej. "{name_a_clean} prefiere un estilo de vida tranquilo, mientras que {name_b_clean} se describe como activa, sociable y espontánea").
+3. Conserva intactas las observaciones verdaderas (como reservas de edad, postura sobre hijos, ciudad o no gusto por la fiesta constante si consta en ambos).
+
+Responde ÚNICAMENTE con un objeto JSON válido:
+{{
+  "analisis": "<análisis verificado y corregido sin atribuciones cruzadas>",
+  "puntos_fuertes": ["<solo fortalezas 100% respaldadas explícitamente en AMBOS perfiles>"]
+}}"""
+
+        settings_obj = get_settings()
+        gem_key = (settings_obj.gemini_api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+        if not gem_key:
+            for env_p in ["/app/.env", ".env", "../.env", "/home/ubuntu/dailylover/.env"]:
+                if os.path.exists(env_p):
+                    try:
+                        with open(env_p, "r", encoding="utf-8", errors="ignore") as _f:
+                            for _ln in _f:
+                                if _ln.strip().startswith("GEMINI_API_KEY="):
+                                    gem_key = _ln.strip().split("=", 1)[1].strip().strip("\"'")
+                                    break
+                    except Exception:
+                        pass
+                if gem_key:
+                    break
+
+        verified_raw = None
+        # Intento 1: Gemini 2.5 Flash con thinkingBudget=0 y temperature=0.0 (~0.5s)
+        if gem_key:
+            try:
+                url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gem_key}"
+                payload_g = {
+                    "contents": [{"parts": [{"text": verify_prompt}]}],
+                    "generationConfig": {
+                        "maxOutputTokens": 320,
+                        "temperature": 0.0,
+                        "responseMimeType": "application/json",
+                        "thinkingConfig": {"thinkingBudget": 0}
+                    }
+                }
+                r_g = await client_http.post(url_g, json=payload_g, timeout=5.5)
+                if r_g.status_code == 200:
+                    cands_g = r_g.json().get("candidates", [])
+                    if cands_g and "content" in cands_g[0]:
+                        parts_g = cands_g[0]["content"].get("parts", [])
+                        if parts_g and "text" in parts_g[0]:
+                            verified_raw = parts_g[0]["text"].strip()
+            except Exception as _eg:
+                logger.warning(f"[AI GROUNDING VERIFIER GEMINI] {name_b_clean}: {_eg}")
+
+        # Intento 2 (Fallback): NVIDIA NIM Llama 3.2 11B a temperature=0.0
+        if not verified_raw and api_key:
+            try:
+                payload_v_nv = {
+                    "model": "meta/llama-3.2-11b-vision-instruct",
+                    "messages": [
+                        {"role": "system", "content": "Responde únicamente en JSON válido verificando grounding bilateral a temperatura 0."},
+                        {"role": "user", "content": verify_prompt}
+                    ],
+                    "temperature": 0.0,
+                    "max_tokens": 300
+                }
+                r_nv = await client_http.post(url, json=payload_v_nv, headers=headers, timeout=8.0)
+                if r_nv.status_code == 200:
+                    verified_raw = r_nv.json()["choices"][0]["message"]["content"].strip()
+            except Exception as _env:
+                logger.warning(f"[AI GROUNDING VERIFIER NVIDIA] {name_b_clean}: {_env}")
+
+        if verified_raw:
+            try:
+                clean_v = re.sub(r'^```(?:json)?\s*|\s*```$', '', verified_raw.strip(), flags=re.IGNORECASE)
+                m_json = re.search(r'\{.*\}', clean_v, re.DOTALL)
+                if m_json:
+                    v_obj = json.loads(m_json.group(0))
+                    new_an = str(v_obj.get("analisis") or "").strip()
+                    new_pts = v_obj.get("puntos_fuertes")
+                    if len(new_an) >= 40 and isinstance(new_pts, list):
+                        logger.info(f"[AI GROUNDING LLM PASS 2 OK] {name_a_clean} x {name_b_clean}")
+                        return new_an, [str(x).strip() for x in new_pts if str(x).strip()]
+            except Exception as _ep:
+                logger.warning(f"[AI GROUNDING VERIFIER PARSE] {name_b_clean}: {_ep}")
+
+        return draft_analisis, draft_pts
+
+    draft_an_initial = str(res_json.get("analisis") or "").strip()
+    draft_pts_initial = res_json.get("puntos_fuertes") if isinstance(res_json.get("puntos_fuertes"), list) else []
+    verified_an_llm, verified_pts_llm = await _verify_bilateral_grounding_llm(draft_an_initial, draft_pts_initial)
+    res_json["analisis"] = verified_an_llm
+    res_json["puntos_fuertes"] = verified_pts_llm
+
+    # ── VÍA 2 (DETERMINÍSTICA): CLUSTERS DE PERSONALIDAD/ESTILO DE VIDA + CONTRADICCIÓN POLAR ──
+    # Construir corpus verificable de cada persona para auditar atribuciones cruzadas (Recomendación #4 + Actualización 26)
     corpus_a = " ".join([
         c_notes,
         str(occ_a_val),
@@ -9340,6 +9456,7 @@ Responde ÚNICAMENTE un objeto JSON:
     ]).lower()
 
     _SPECIFIC_TOPIC_PATTERNS = [
+        # Hobbies y hábitos puntuales
         ("lectura", r'\b(lectura|leer|lee\b|libro|libros|literatura|novelas?)\b'),
         ("mascotas", r'\b(mascota|mascotas|perro|perros|perrito|gato|gatos|gatito)\b'),
         ("vino", r'\b(vino|vinos|cata\s+de\s+vino|enolog)\b'),
@@ -9351,34 +9468,63 @@ Responde ÚNICAMENTE un objeto JSON:
         ("ciclismo", r'\b(bicicleta|ciclismo|bici|mtb)\b'),
         ("natación", r'\b(nataci[oó]n|nadar|piscina)\b'),
         ("pádel/tenis", r'\b(p[aá]del|tenis|squash)\b'),
+        ("café/barismo", r'\b(barismo|barista|aprender\s+sobre\s+caf[eé])\b'),
+        ("música/instrumentos", r'\b(ukelele|guitarra|piano|cantar)\b'),
+        ("emprendimiento", r'\b(emprendedor[ae]?s?|emprendimiento|negocio\s+propio|empresari[oa]s?)\b'),
+        # Clusters de personalidad y estilo de vida (Actualización 26: tranquilo/calmado/pausado/hogareño vs activo/social/espontáneo/enérgico/aventurero)
+        ("estilo de vida tranquilo/hogareño", r'\b(tranquil[oa]s?|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|sedentari[oa]s?)\b'),
+        ("estilo de vida espontáneo/aventurero/inquieto", r'\b(espont[aá]ne[oa]s?|en[eé]rgic[oa]s?|aventurer[oa]s?|inquiet[oa]s?|muy\s+sociables?|energ[ií]a\s+muy\s+social)\b'),
+        ("personalidad introvertida/reservada", r'\b(introvertid[oa]s?|reservad[oa]s?|callad[oa]s?|t[ií]mid[oa]s?|poco\s+expresiv[oa]s?)\b'),
     ]
-    _SHARED_CLAIM_MARKERS = r'\b(ambos|ambas|comparten|compartid[oa]s?|mutu[oa]s?|coinciden|en\s+com[uú]n|los\s+dos|las\s+dos)\b'
+    _SHARED_CLAIM_MARKERS = r'\b(ambos|ambas|comparten|compartid[oa]s?|mutu[oa]s?|coinciden|en\s+com[uú]n|los\s+dos|las\s+dos|similares|compatible\s+en\s+muchos\s+aspectos)\b'
+    _CONTRAST_SPLIT_RE = r'\b(?:mientras\s+que|en\s+cambio|por\s+su\s+parte|a\s+diferencia\s+de|pero\b|sin\s+embargo|aunque|frente\s+a)\b'
+
+    # Detectar polos opuestos de estilo de vida / personalidad entre Persona A y Persona B
+    _CALM_POLE_PAT = r'\b(tranquil[oa]s?|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|introvertid[oa]s?)\b'
+    _ACTIVE_POLE_PAT = r'\b(activ[oa]s?|espont[aá]ne[oa]s?|en[eé]rgic[oa]s?|aventurer[oa]s?|inquiet[oa]s?|muy\s+sociables?|energ[ií]a\s+muy\s+social)\b'
+    has_calm_a = bool(re.search(_CALM_POLE_PAT, corpus_a, re.IGNORECASE))
+    has_calm_b = bool(re.search(_CALM_POLE_PAT, corpus_b, re.IGNORECASE))
+    has_active_a = bool(re.search(_ACTIVE_POLE_PAT, corpus_a, re.IGNORECASE))
+    has_active_b = bool(re.search(_ACTIVE_POLE_PAT, corpus_b, re.IGNORECASE))
+    has_lifestyle_polarity_mismatch = (has_calm_a and not has_calm_b and has_active_b) or (has_calm_b and not has_calm_a and has_active_a)
 
     def _has_unilateral_cross_attribution(text_item: str) -> bool:
         """
-        Retorna True si `text_item` afirma que un interés/hábito específico es compartido por ambos
-        (o se lo atribuye a la persona en cuyo corpus NO existe) cuando no está respaldado en ambos corpus.
+        Retorna True si `text_item` afirma que un interés/hábito o descriptor de personalidad/estilo de vida
+        es compartido por ambos (o se lo atribuye a la persona en cuyo corpus NO existe) cuando no está respaldado en ambos corpus.
+        Evalúa por cláusulas separadas por conectores de contraste ('mientras que', 'en cambio', etc.) para preservar contrastes legítimos.
         """
         t_low = str(text_item or "").lower()
         if not t_low:
             return False
-        for _topic_name, pat in _SPECIFIC_TOPIC_PATTERNS:
-            if re.search(pat, t_low, re.IGNORECASE):
-                in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
-                in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
-                if not (in_a and in_b):
-                    # Si el punto o frase lo presenta como compartido, o está dentro de puntos_fuertes de pareja,
-                    # o menciona el nombre de quien NO lo tiene junto al tópico:
-                    is_shared_phrasing = bool(re.search(_SHARED_CLAIM_MARKERS, t_low, re.IGNORECASE))
-                    mentions_wrong_person = (not in_b and first_b in t_low) or (not in_a and first_a in t_low)
-                    if is_shared_phrasing or mentions_wrong_person or (not in_a and not in_b):
-                        return True
+
+        # Si hay contradicción polar de estilo de vida (uno tranquilo/introvertido y el otro activo/sociable/espontáneo)
+        # y la oración afirma que comparten el estilo de vida sin contrastarlos:
+        if has_lifestyle_polarity_mismatch and re.search(r'estilo\s+de\s+vida', t_low) and re.search(_SHARED_CLAIM_MARKERS, t_low):
+            if not re.search(_CONTRAST_SPLIT_RE, t_low):
+                return True
+
+        clauses = re.split(_CONTRAST_SPLIT_RE, t_low, flags=re.IGNORECASE)
+        for clause in clauses:
+            c_str = clause.strip()
+            if not c_str:
+                continue
+            for _topic_name, pat in _SPECIFIC_TOPIC_PATTERNS:
+                if re.search(pat, c_str, re.IGNORECASE):
+                    in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
+                    in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
+                    if not (in_a and in_b):
+                        is_shared_phrasing = bool(re.search(_SHARED_CLAIM_MARKERS, c_str, re.IGNORECASE))
+                        mentions_wrong_person = (not in_b and first_b in c_str) or (not in_a and first_a in c_str)
+                        if is_shared_phrasing or mentions_wrong_person or (not in_a and not in_b):
+                            return True
         return False
 
     def _sanitize_sentence_cross_attribution(paragraph: str) -> str:
         """
         Audita oración por oración un párrafo de análisis y corrige/elimina afirmaciones donde
-        un gusto unilateral (como lectura) fue atribuido como compartido o adjudicado a la otra persona.
+        un gusto o descriptor de personalidad/estilo de vida unilateral (como 'lectura' o 'estilo de vida tranquilo')
+        fue atribuido como compartido o adjudicado a la otra persona.
         """
         if not paragraph:
             return ""
@@ -9388,13 +9534,44 @@ Responde ÚNICAMENTE un objeto JSON:
             s_low = s.lower()
             modified_s = s
             drop_sentence = False
+
+            # Caso específico: contradicción polar de estilo de vida presentada como compartida
+            if has_lifestyle_polarity_mismatch and _has_unilateral_cross_attribution(modified_s) and re.search(r'(estilo\s+de\s+vida|tranquil[oa]s?)', s_low):
+                if has_calm_a and not has_calm_b:
+                    modified_s = (
+                        f"En cuanto a ritmo y estilo de vida, {name_a_clean} prefiere planes tranquilos, "
+                        f"mientras que {name_b_clean} se describe como una persona activa, sociable y espontánea."
+                    )
+                else:
+                    modified_s = (
+                        f"En cuanto a ritmo y estilo de vida, {name_b_clean} prefiere planes tranquilos, "
+                        f"mientras que {name_a_clean} proyecta un perfil más activo y social."
+                    )
+                clean_sentences.append(modified_s)
+                continue
+
             for topic_label, pat in _SPECIFIC_TOPIC_PATTERNS:
-                if re.search(pat, s_low, re.IGNORECASE):
+                if re.search(pat, modified_s, re.IGNORECASE):
                     in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
                     in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
-                    if not (in_a and in_b):
-                        # Si la oración tiene múltiples cláusulas o atribuye el tópico como compartido:
-                        # intentar limpiar la mención del tópico espurio o descartar la oración si gira en torno a él
+                    if not (in_a and in_b) and _has_unilateral_cross_attribution(modified_s):
+                        is_lifestyle_cluster = "estilo de vida" in topic_label or "personalidad" in topic_label
+                        if is_lifestyle_cluster:
+                            if in_a and not in_b:
+                                modified_s = (
+                                    f"En cuanto a personalidad y ritmo de vida, {name_a_clean} presenta un perfil más tranquilo, "
+                                    f"mientras que {name_b_clean} destaca por su energía activa, sociable y espontánea."
+                                )
+                            elif in_b and not in_a:
+                                modified_s = (
+                                    f"En cuanto a personalidad y ritmo de vida, {name_b_clean} presenta un perfil asociado a {topic_label}, "
+                                    f"a diferencia del ritmo registrado en la ficha de {name_a_clean}."
+                                )
+                            else:
+                                drop_sentence = True
+                            break
+
+                        # Para hobbies puntuales: intentar limpiar cláusula coordinada o reescribir atribución individual
                         cleaned_clause = re.sub(
                             r'(?:[,;\s]+(?:y|e|as[ií]\s+como|adem[aá]s\s+de)\s+[^,\.;]*?' + pat + r'[^,\.;]*)',
                             '',
@@ -9403,25 +9580,24 @@ Responde ÚNICAMENTE un objeto JSON:
                         )
                         if cleaned_clause != modified_s and not re.search(pat, cleaned_clause, re.IGNORECASE):
                             modified_s = cleaned_clause
-                        elif _has_unilateral_cross_attribution(modified_s):
-                            if in_a and not in_b:
-                                modified_s = re.sub(
-                                    r'[^,\.;]*?' + pat + r'[^,\.;]*',
-                                    f"el interés de {name_a_clean} por la {topic_label} (registrado en su perfil individual)",
-                                    modified_s,
-                                    count=1,
-                                    flags=re.IGNORECASE
-                                )
-                            elif in_b and not in_a:
-                                modified_s = re.sub(
-                                    r'[^,\.;]*?' + pat + r'[^,\.;]*',
-                                    f"el interés de {name_b_clean} por la {topic_label} (registrado en su perfil individual)",
-                                    modified_s,
-                                    count=1,
-                                    flags=re.IGNORECASE
-                                )
-                            else:
-                                drop_sentence = True
+                        elif in_a and not in_b:
+                            modified_s = re.sub(
+                                r'[^,\.;]*?' + pat + r'[^,\.;]*',
+                                f"el interés de {name_a_clean} por {topic_label} (registrado en su perfil individual)",
+                                modified_s,
+                                count=1,
+                                flags=re.IGNORECASE
+                            )
+                        elif in_b and not in_a:
+                            modified_s = re.sub(
+                                r'[^,\.;]*?' + pat + r'[^,\.;]*',
+                                f"el interés de {name_b_clean} por {topic_label} (registrado en su perfil individual)",
+                                modified_s,
+                                count=1,
+                                flags=re.IGNORECASE
+                            )
+                        else:
+                            drop_sentence = True
             if not drop_sentence and modified_s.strip():
                 clean_sentences.append(modified_s.strip())
         return " ".join(clean_sentences).strip()
@@ -9453,7 +9629,7 @@ Responde ÚNICAMENTE un objeto JSON:
         )
     res_json["analisis"] = raw_analisis
 
-    # 2. Filtrar puntos_fuertes con atribución cruzada unilateral (ej. "interés compartido en la lectura" cuando solo uno lee)
+    # 2. Filtrar puntos_fuertes con atribución cruzada unilateral (hobbies o clusters de estilo de vida/personalidad)
     ai_pts = res_json.get("puntos_fuertes")
     verified_pts = []
     if isinstance(ai_pts, list):
@@ -9461,20 +9637,27 @@ Responde ÚNICAMENTE un objeto JSON:
             pt_str = str(pt or "").strip()
             if not pt_str:
                 continue
-            # En puntos_fuertes de compatibilidad de pareja, cualquier tópico específico debe existir en AMBOS
-            # o no presentarse como compartido/atribuido al otro:
             unilateral_topic = False
-            for _topic_name, pat in _SPECIFIC_TOPIC_PATTERNS:
-                if re.search(pat, pt_str, re.IGNORECASE):
-                    in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
-                    in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
-                    if not (in_a and in_b):
-                        unilateral_topic = True
-                        logger.info(
-                            f"[AI GROUNDING FILTER] Removido punto fuerte unilateral ({_topic_name}, in_a={in_a}, in_b={in_b}) "
-                            f"entre {name_a_clean} y {name_b_clean}: '{pt_str}'"
-                        )
-                        break
+            # Si hay contradicción polar de estilo de vida y el punto fuerte afirma estilo de vida compartido:
+            if has_lifestyle_polarity_mismatch and re.search(r'estilo\s+de\s+vida', pt_str, re.IGNORECASE):
+                if not re.search(_CONTRAST_SPLIT_RE, pt_str, re.IGNORECASE):
+                    unilateral_topic = True
+                    logger.info(
+                        f"[AI GROUNDING FILTER] Removido punto fuerte por contradicción polar de estilo de vida "
+                        f"entre {name_a_clean} y {name_b_clean}: '{pt_str}'"
+                    )
+            if not unilateral_topic:
+                for _topic_name, pat in _SPECIFIC_TOPIC_PATTERNS:
+                    if re.search(pat, pt_str, re.IGNORECASE):
+                        in_a = bool(re.search(pat, corpus_a, re.IGNORECASE))
+                        in_b = bool(re.search(pat, corpus_b, re.IGNORECASE))
+                        if not (in_a and in_b):
+                            unilateral_topic = True
+                            logger.info(
+                                f"[AI GROUNDING FILTER] Removido punto fuerte unilateral ({_topic_name}, in_a={in_a}, in_b={in_b}) "
+                                f"entre {name_a_clean} y {name_b_clean}: '{pt_str}'"
+                            )
+                            break
             if not unilateral_topic:
                 verified_pts.append(pt_str)
 
@@ -10844,26 +11027,26 @@ async def find_candidate_matches_engine(
             async with sem:
                 await asyncio.sleep(0.05)
                 try:
-                    # Timeout individual por candidato de 26s
+                    # Timeout individual por candidato de 34s (incluye pasada 2 de verificación de grounding)
                     res = await asyncio.wait_for(
                         evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=26.0
+                        timeout=34.0
                     )
                     if res and isinstance(res, dict) and res.get("ai_score") is not None:
                         res["_status"] = "COMPLETED"
                         return res
                     return {"_status": "EMPTY_FALLBACK"}
                 except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 26s, aplicando fallback")
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 34s, aplicando fallback")
                     return {"_status": "TIMEOUT_FALLBACK"}
                 except Exception as _e:
                     logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
                     return {"_status": "ERROR_FALLBACK", "error": str(_e)}
 
         try:
-            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 27s)
+            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 35s)
             tasks = [asyncio.create_task(_eval_with_sem(c)) for c in candidates_to_evaluate]
-            done, pending = await asyncio.wait(tasks, timeout=27.0)
+            done, pending = await asyncio.wait(tasks, timeout=35.0)
 
             for p in pending:
                 p.cancel()
@@ -13178,6 +13361,12 @@ def _sanitize_clinical_chat_answer(
         ("ciclismo", r'\b(bicicleta|ciclismo|bici|mtb)\b'),
         ("natación", r'\b(nataci[oó]n|nadar|piscina)\b'),
         ("pádel/tenis", r'\b(p[aá]del|tenis|squash)\b'),
+        ("café/barismo", r'\b(barismo|barista|aprender\s+sobre\s+caf[eé])\b'),
+        ("música/instrumentos", r'\b(ukelele|guitarra|piano|cantar)\b'),
+        ("emprendimiento", r'\b(emprendedor[ae]?s?|emprendimiento|negocio\s+propio|empresari[oa]s?)\b'),
+        ("estilo de vida tranquilo/hogareño", r'\b(tranquil[oa]s?|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|sedentari[oa]s?)\b'),
+        ("estilo de vida espontáneo/aventurero/inquieto", r'\b(espont[aá]ne[oa]s?|en[eé]rgic[oa]s?|aventurer[oa]s?|inquiet[oa]s?|muy\s+sociables?|energ[ií]a\s+muy\s+social)\b'),
+        ("personalidad introvertida/reservada", r'\b(introvertid[oa]s?|reservad[oa]s?|callad[oa]s?|t[ií]mid[oa]s?|poco\s+expresiv[oa]s?)\b'),
     ]
 
     combined_text = f"{question or ''}\n{ai_answer}"
