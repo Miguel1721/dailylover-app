@@ -9186,8 +9186,8 @@ async def evaluate_candidate_quick_notes_ai(
     c_ap = _to_d(client_info.get("apego"))
     cand_ap = _to_d(cand_info.get("apego"))
 
-    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:3500]
-    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:3500]
+    c_notes = (client_info.get("bio_notes") or client_info.get("synthesis_who_really_is") or "").strip()[:1200]
+    cand_notes = (cand_info.get("bio_notes") or cand_info.get("synthesis") or "").strip()[:1200]
 
     c_att = client_info.get('attachment_style') or c_ap.get('style') or 'No especificado'
     c_att_src = client_info.get('attachment_source')
@@ -9206,100 +9206,51 @@ async def evaluate_candidate_quick_notes_ai(
     cand_love_str = f"{cand_love} (Fuente: {cand_love_src})" if cand_love_src and cand_love != "No especificado" else cand_love
 
     prompt = f"""Eres la Directora de Matchmaking y psicóloga clínica senior de Daily Lover.
-Tu labor es contrastar en 360° los perfiles de ambas personas: sus notas clínicas de entrevista, sus estilos de apego, lenguajes del amor, valores, hábitos de vida, nivel deportivo, proyecto familiar (hijos), rango de edad y lo que cada uno expresó que busca.
+Evalúa en 360° la compatibilidad entre ambas personas contrastando sus perfiles, notas clínicas y lo que buscan:
 
 ==============================
 PERFIL CLIENTE (PERSONA A): {client_info.get('name')}
-- Demografía: Género: {client_info.get('gender') or 'No especificado'} | Edad: {client_info.get('age') or 'No especificada'} años | Ciudad: {client_info.get('city') or 'No especificada'} | Estatura: {client_info.get('estatura') or 'No especificada'}
-- Profesión: {client_info.get('occupation') or 'No especificada'} | Educación: {client_info.get('education') or 'No especificada'}
-- Dinámica Psicológica: Estilo de Apego: {c_att_str} | Lenguaje del Amor: {c_love_str} | Temperamento: {c_ls.get('temperament') or 'No especificado'}
-- Estilo de Vida: ¿Tiene hijos?: {c_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'No especificado'} | Nivel Deportivo: {c_ls.get('fitness_level') or 'No especificado'} | Tiempo Libre/Hobbies: {c_ls.get('free_time') or 'No especificado'} | Fuma: {c_ls.get('smoker') or 'No especificado'} | Bebe: {c_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {c_ls.get('has_pets') or 'No especificado'} | Rumba: {c_ls.get('rumba') or 'No especificado'} | Valores: {c_ls.get('values') or []}
-- Qué busca y límites: Rango Edad Buscado: {c_sp.get('min_age') or 'No esp.'}-{c_sp.get('max_age') or 'No esp.'} | Estatura Buscada: {c_sp.get('preferred_height') or 'No esp.'} | No Negociables: {c_sp.get('non_negotiables') or []} | Red Flags: {c_sp.get('red_flags') or []} | Qué busca: {c_sp.get('what_searches_in_partner') or 'No especificado'}
+- Demografía: {client_info.get('gender') or 'No esp.'}, {client_info.get('age') or 'No esp.'} años, {client_info.get('city') or 'No esp.'}, {client_info.get('estatura') or 'No esp.'}
+- Profesión: {client_info.get('occupation') or 'No esp.'} | Educación: {client_info.get('education') or 'No esp.'}
+- Dinámica Psicológica: Apego: {c_att_str} | Lenguaje del Amor: {c_love_str}
+- Estilo de Vida: Hijos: {c_ls.get('has_children') or 'No'} | Quiere hijos: {c_ls.get('wants_children') or 'No esp.'} | Deporte: {c_ls.get('fitness_level') or 'No esp.'} | Fuma: {c_ls.get('smoker') or 'No esp.'} | Valores: {c_ls.get('values') or []}
+- Qué busca: Rango edad: {c_sp.get('min_age') or 'No esp.'}-{c_sp.get('max_age') or 'No esp.'} | No Negociables: {c_sp.get('non_negotiables') or []} | Red Flags: {c_sp.get('red_flags') or []}
 - Notas Clínicas de la Psicóloga:
 {c_notes if c_notes else 'Sin notas clínicas registradas en ficha.'}
 
 ==============================
 PERFIL CANDIDATO (PERSONA B): {cand_info.get('name')}
-- Demografía: Género: {cand_info.get('gender') or 'No especificado'} | Edad: {cand_info.get('age') or 'No especificada'} años | Ciudad: {cand_info.get('city') or 'No especificada'} | Estatura: {cand_info.get('estatura') or 'No especificada'}
-- Profesión: {cand_info.get('occupation') or 'No especificada'} | Educación: {cand_info.get('education') or 'No especificada'}
-- Dinámica Psicológica: Estilo de Apego: {cand_att_str} | Lenguaje del Amor: {cand_love_str} | Temperamento: {cand_ls.get('temperament') or 'No especificado'}
-- Estilo de Vida: ¿Tiene hijos?: {cand_ls.get('has_children') or 'No especificado'} | ¿Quiere hijos?: {cand_ls.get('wants_children') or 'No especificado'} | Nivel Deportivo: {cand_ls.get('fitness_level') or 'No especificado'} | Tiempo Libre/Hobbies: {cand_ls.get('free_time') or 'No especificado'} | Fuma: {cand_ls.get('smoker') or 'No especificado'} | Bebe: {cand_ls.get('drinks_alcohol') or 'No especificado'} | Mascotas: {cand_ls.get('has_pets') or 'No especificado'} | Rumba: {cand_ls.get('rumba') or 'No especificado'} | Valores: {cand_ls.get('values') or []}
-- Qué busca y límites: Rango Edad Buscado: {cand_sp.get('min_age') or 'No esp.'}-{cand_sp.get('max_age') or 'No esp.'} | Estatura Buscada: {cand_sp.get('preferred_height') or 'No esp.'} | No Negociables: {cand_sp.get('non_negotiables') or []} | Red Flags: {cand_sp.get('red_flags') or []} | Qué busca: {cand_sp.get('what_searches_in_partner') or 'No especificado'}
+- Demografía: {cand_info.get('gender') or 'No esp.'}, {cand_info.get('age') or 'No esp.'} años, {cand_info.get('city') or 'No esp.'}, {cand_info.get('estatura') or 'No esp.'}
+- Profesión: {cand_info.get('occupation') or 'No esp.'} | Educación: {cand_info.get('education') or 'No esp.'}
+- Dinámica Psicológica: Apego: {cand_att_str} | Lenguaje del Amor: {cand_love_str}
+- Estilo de Vida: Hijos: {cand_ls.get('has_children') or 'No'} | Quiere hijos: {cand_ls.get('wants_children') or 'No esp.'} | Deporte: {cand_ls.get('fitness_level') or 'No esp.'} | Fuma: {cand_ls.get('smoker') or 'No esp.'} | Valores: {cand_ls.get('values') or []}
+- Qué busca: Rango edad: {cand_sp.get('min_age') or 'No esp.'}-{cand_sp.get('max_age') or 'No esp.'} | No Negociables: {cand_sp.get('non_negotiables') or []} | Red Flags: {cand_sp.get('red_flags') or []}
 - Notas Clínicas de la Psicóloga:
 {cand_notes if cand_notes else 'Sin notas clínicas registradas en ficha.'}
 
 --- REGLAS CLÍNICAS DE EVALUACIÓN ---
-0. REGLA CERO DE RIGOR FACTUAL (PROHIBIDO ALUCINAR O CONTRADECIR EL CRM):
-   - PROHIBIDO INVENTAR APEGO: Si el campo "Estilo de Apego" de una persona dice "No especificado", TIENES ESTRICTAMENTE PROHIBIDO afirmar que tiene "apego seguro", "apego ansioso" o cualquier otro etiqueta diagnóstica no escrita. Indica honestamente que el estilo de apego formal no está registrado y evalúa su disposición relacional según sus notas y valores reales.
-   - PROHIBIDO INVENTAR O INVERTIR DESEO DE HIJOS: Lee con precisión quién dice "No", quién dice "Tal vez" y quién dice "Sí" en "¿Quiere hijos?". Jamás atribuyas a una persona que "no quiere tener hijos" si su campo dice "Tal vez" y su valor #1 es "Familia".
-   - EVALÚA EXPLÍCITAMENTE LAS DISCREPANCIAS REALES:
-     * Si la edad de Persona A supera el rango máximo buscado por Persona B (ej. Persona A tiene 34 años y Persona B busca 26-33 años, o la mujer es varios años mayor que el hombre), señálalo en "deal_breakers" y en "analisis".
-     * Si uno busca explícitamente pareja "deportiva" (ej. entrena constante, montaña, básquet) y la otra persona tiene nivel deportivo "Principiante" y hobbies culturales/tranquilos, señálalo como reserva real en "deal_breakers".
-     * Si uno registra que NO desea hijos y la otra persona indica "Tal vez" con valor nuclear "Familia", señálalo con exactitud en "deal_breakers".
-
+0. RIGOR FACTUAL ESTRICTO:
+   - PROHIBIDO inventar estilo de apego: si dice "No especificado", indica que el apego formal no está registrado.
+   - PROHIBIDO inventar o invertir deseo de hijos: respeta estrictamente "No", "Tal vez" y "Sí".
+   - Discrepancias reales (edad fuera de rango, disparidad deportiva marcada, posturas opuestas ante hijos) DEBEN registrarse en "deal_breakers" y en "analisis".
 1. PROTOCOLO CRÍTICO DE SEGURIDAD (CERO TOLERANCIA):
-   - Si en las notas clínicas o perfil de CUALQUIERA de las dos personas se detecta antecedentes, patrones o menciones de:
-     * Violencia física, intrafamiliar, sexual o de pareja (ej. agresiones físicas a exparejas, golpes, antecedentes de violencia).
-     * Abuso psicológico severo, amenazas, intimidación o conductas delictivas.
-     * Denuncias penales, medidas de protección u órdenes de alejamiento vigentes o pasadas en su contra.
-     * Adicciones severas activas (drogadicción destructiva, alcoholismo severo descontrolado).
-   - DEBES OBLIGATORIAMENTE:
-     1) Declararlo en el campo "red_flags_seguridad": ["<descripción exacta del antecedente o riesgo de seguridad>"].
-     2) Asignar "veredicto": "NO RECOMENDADO".
-     3) Asignar "ai_score": 0.
-     4) En "analisis", iniciar la primera línea con: "🚨 DESCALIFICADO POR SEGURIDAD: [motivo concreto]".
-   - ESTÁ TOTALMENTE PROHIBIDO otorgar veredicto favorable (RECOMENDADO / VIABLE) si existe una Red Flag de Seguridad.
+   - Antecedentes de violencia física, agresión a exparejas, abuso psicológico severo o adicciones graves activas:
+     1) Registrar en "red_flags_seguridad". 2) Asignar "veredicto": "NO RECOMENDADO". 3) Asignar "ai_score": 0. 4) En "analisis", iniciar con "🚨 DESCALIFICADO POR SEGURIDAD: [motivo]".
+2. ESPECIFICIDAD CLÍNICA DE PUNTOS FUERTES:
+   - Prioriza reciprocidad en Lenguaje del Amor y afinidad en valores específicos. Demografía al final. CERO frases genéricas vacías ("comparten valores", "relación seria").
+3. CONCORDANCIAS NEGATIVAS:
+   - Si ambos coinciden en una postura de 'NO' (no hijos, no fuman, no rumba), es PUNTO FUERTE DE ALINEACIÓN, JAMÁS deal_breaker.
+4. RÚBRICA Y COHERENCIA DE PUNTAJE:
+   - RECOMENDADO (75 a 92, cero dealbreakers); VIABLE BUENO (65 a 74); VIABLE CON RESERVAS (50 a 64, si hay reservas etarias o de ritmo); COMPATIBILIDAD BAJA (36 a 49); NO RECOMENDADO (0 a 35).
 
-2. ESPECIFICIDAD OBLIGATORIA Y JERARQUÍA CLÍNICA DE PUNTOS FUERTES:
-   - Si la fuente de un dato es "Psicóloga", dale PRIORIDAD absoluta sobre cualquier dato auto-declarado en CRM, ya que representa el criterio clínico profesional validado en entrevista.
-   - PROHIBIDO TERMINANTEMENTE usar frases genéricas, diplomáticas o de relleno que aplicarían a cualquier pareja (ejemplos prohibidos: "comparten valores", "buscan una relación seria/estable", "estilo de vida compatible", "respeto y honestidad", "dinámica armónica", "ambos son leales/honestos").
-   - JERARQUÍA ESTRICTA PARA "puntos_fuertes" (ORDEN OBLIGATORIO DE ARRIBA HACIA ABAJO):
-     1) SUSTANCIA RELACIONAL Y PSICOLÓGICA (OBLIGATORIA EN PRIMERAS VIÑETAS):
-        * Reciprocidad real en Lenguaje del Amor (ej. ambos comparten 'Tiempo de calidad' como lenguaje principal).
-        * Afinidad en valores específicos o espiritualidad/crecimiento personal verificable en ambos perfiles.
-     2) AFINIDADES CONCRETAS DE ESTILO DE VIDA Y CRITERIOS FÍSICOS CUMPLIDOS (SECUNDARIO):
-        * Gusto compartido por viajes, gastronomía o estatura dentro del rango buscado (ej. ella mide 155 cm y él busca hasta 170 cm; ambos son profesionales universitarios en áreas afines al territorio/medio ambiente: Arquitecta en Planeación Territorial e Ingeniero Ambiental).
-     3) CONTEXTO LOGÍSTICO Y DEMOGRÁFICO (SOLO AL FINAL, MÁXIMO 1 VIÑETA):
-        * Coincidencia de ciudad (ej. 'Ambos residen en Bogotá').
-
-3. REGLA DE CONCORDANCIAS NEGATIVAS (ALINEACIÓN VS DEALBREAKER):
-   - Si ambas personas coinciden en una postura de 'NO' (por ejemplo: AMBOS no quieren tener hijos, AMBOS no son fiesteros/rumberos, AMBOS no fuman, o AMBOS son caseros), esto es un PUNTO FUERTE DE ALINEACIÓN FUNDAMENTAL. Está ESTRICTAMENTE PROHIBIDO clasificarlo como deal_breaker.
-   - Solo clasifica como "deal_breakers" cuando exista una DISCREPANCIA DIRECTA o fricción real entre lo que una persona busca/ofrece y lo que la otra es/busca (ej. fuera de rango de edad buscado, diferencia en deseo de hijos No vs Tal vez/Familia, brecha entre exigencia deportiva vs nivel principiante).
-   - Si existen "deal_breakers" o reservas reales, el veredicto DEBE ser "VIABLE CON RESERVAS" (ai_score entre 56 y 64) o "NO RECOMENDADO", JAMÁS "RECOMENDADO" con >75%.
-
-4. RÚBRICA CLÍNICA Y COHERENCIA DE PUNTAJE (ai_score 0 a 92):
-   - "RECOMENDADO" (ai_score 75 a 92): Afinidad psicológica y vincular evidente, dentro del rango de edad y preferencias, CERO dealbreakers.
-   - "VIABLE BUENO" (ai_score 65 a 74): Buena compatibilidad general con puntos menores a conversar.
-   - "VIABLE CON RESERVAS" (ai_score 50 a 64): Hay puntos fuertes reales (lenguaje del amor, afinidad profesional, ciudad/estatura), PERO existen reservas objetivas que las psicólogas deben validar (ej. desfase en rango de edad 34 vs 26-33, expectativa de pareja muy deportiva vs nivel principiante, o postura ante hijos).
-   - "COMPATIBILIDAD BAJA" (ai_score 36 a 49): Disparidad marcada en hábitos, energía o visión de vida.
-   - "NO RECOMENDADO" (ai_score 0 a 35): Red flags de seguridad o incompatibilidad radical.
-
-5. SÍNTESIS INDIVIDUAL DE CADA PERSONA (3 VIÑETAS EJECUTIVAS):
-   Para que la psicóloga no tenga que leer las notas completas en bruto, sintetiza a cada persona en exactamente 3 puntos concisos:
-   - "quien_es": 1-2 líneas con edad, ocupación, ciudad, estatura, estilo de vida y aficiones principales reales.
-   - "que_busca": 1-2 líneas con sus criterios reales de pareja, rango de edad/estatura y no negociables.
-   - "destaca": 1 línea con su lenguaje del amor, valores nucleares y dinámica afectiva real.
-
-6. FORMATO DE RESPUESTA:
-Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
+Responde ÚNICAMENTE un objeto JSON:
 {{
-  "ai_score": <entero coherente con la rúbrica, entre 56 y 64 si hay reservas/deal_breakers>,
+  "ai_score": <entero coherente con la rúbrica>,
   "veredicto": "<RECOMENDADO / VIABLE BUENO / VIABLE CON RESERVAS / COMPATIBILIDAD BAJA / NO RECOMENDADO>",
-  "analisis": "<2-3 líneas con análisis clínico aterrizado a los datos reales de ambos sin inventar apego no especificado y explicando tanto la afinidad (Tiempo de calidad, profesiones afines territorio/ambiente, estatura) como las reservas objetivas (edad 34 vs tope 33, ritmo deportivo, postura ante hijos)>",
-  "red_flags_seguridad": ["<alertas críticas de seguridad o vacía si no hay>"],
-  "deal_breakers": ["<solo discrepancias y reservas reales verificables en los datos>"],
-  "puntos_fuertes": ["<2 a 4 hechos concretos empíricos verificables en ambos perfiles>"],
-  "client_summary": {{
-    "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
-    "que_busca": "<1-2 líneas con visión de pareja y límites>",
-    "destaca": "<1 línea con lenguaje del amor, valores y dinámica afectiva>"
-  }},
-  "candidate_summary": {{
-    "quien_es": "<1-2 líneas con ocupación, rutina y estilo de vida>",
-    "que_busca": "<1-2 líneas con visión de pareja y límites>",
-    "destaca": "<1 línea con lenguaje del amor, valores y dinámica afectiva>"
-  }},
-  "calidad_notas": "<SUFICIENTE / ESCUETA / NULA>"
+  "analisis": "<2-3 líneas de análisis clínico riguroso aterrizado a los datos reales de ambos>",
+  "red_flags_seguridad": [],
+  "deal_breakers": ["<discrepancias reales o vacío>"],
+  "puntos_fuertes": ["<2 a 3 afinidades concretas verificadas>"]
 }}"""
 
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -9326,10 +9277,10 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.15,
-            "max_tokens": 950
+            "max_tokens": 320
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=12.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=22.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -9337,28 +9288,25 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
                 if parsed_r and isinstance(parsed_r, dict) and "ai_score" in parsed_r:
                     parsed_r["model_used"] = model
                     res_json = parsed_r
+                    logger.info(f"[AI MATCH OK] {cand_info.get('name')}: score={parsed_r.get('ai_score')} verdict={parsed_r.get('veredicto')}")
                     break
+                else:
+                    logger.warning(f"[AI MATCH PARSE FAIL] {cand_info.get('name')}: raw={raw[:120]}")
             elif resp.status_code == 429:
+                logger.warning(f"[AI MATCH 429 RATE LIMIT] {cand_info.get('name')}")
                 await asyncio.sleep(1.0)
                 continue
             elif resp.status_code in (404, 410):
+                logger.warning(f"[AI MATCH {resp.status_code}] Model {model} unavailable")
                 continue
-        except Exception:
+            else:
+                logger.warning(f"[AI MATCH HTTP {resp.status_code}] {cand_info.get('name')}: {resp.text[:120]}")
+        except Exception as _e:
+            logger.warning(f"[AI MATCH EXCEPTION] {cand_info.get('name')}: {_e}")
             continue
 
     if not res_json:
-        res_json = {
-            "ai_score": 62,
-            "veredicto": "VIABLE CON RESERVAS",
-            "analisis": "",
-            "red_flags_seguridad": [],
-            "deal_breakers": [],
-            "puntos_fuertes": [],
-            "client_summary": {},
-            "candidate_summary": {},
-            "calidad_notas": "SUFICIENTE",
-            "model_used": "clinical_hybrid_360"
-        }
+        return None
 
     # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y PRESERVACIÓN CLÍNICA REAL ──
     name_a_clean = client_info.get("name") or "Persona A"
@@ -9439,7 +9387,7 @@ async def find_candidate_matches_engine(
     client_summary: dict,
     db: AsyncSession,
     pool_limit: int = 60,
-    max_ai_evaluations: int = 4,
+    max_ai_evaluations: int = 3,
     candidate_usage_tracker: Optional[Dict[int, int]] = None,
     max_candidate_usage: Optional[int] = None,
     nvidia_key: Optional[str] = None,
@@ -10389,26 +10337,26 @@ async def find_candidate_matches_engine(
             async with sem:
                 await asyncio.sleep(0.05)
                 try:
-                    # Timeout individual por candidato de 13s
+                    # Timeout individual por candidato de 23s
                     res = await asyncio.wait_for(
                         evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=13.0
+                        timeout=23.0
                     )
                     if res and isinstance(res, dict) and res.get("ai_score") is not None:
                         res["_status"] = "COMPLETED"
                         return res
                     return {"_status": "EMPTY_FALLBACK"}
                 except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 13s, aplicando fallback")
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 23s, aplicando fallback")
                     return {"_status": "TIMEOUT_FALLBACK"}
                 except Exception as _e:
                     logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
                     return {"_status": "ERROR_FALLBACK", "error": str(_e)}
 
         try:
-            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 15s)
+            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 24s)
             tasks = [asyncio.create_task(_eval_with_sem(c)) for c in candidates_to_evaluate]
-            done, pending = await asyncio.wait(tasks, timeout=15.0)
+            done, pending = await asyncio.wait(tasks, timeout=24.0)
 
             for p in pending:
                 p.cancel()
@@ -10537,7 +10485,7 @@ async def find_candidate_matches_engine(
                     if res_status == "TIMEOUT_FALLBACK":
                         cand["ai_status"] = "TIMEOUT_FALLBACK"
                         cand["ai_veredicto"] = "FALLBACK POR TIMEOUT"
-                        cand["ai_fallback_notice"] = "La evaluación de IA excedió el tiempo límite (18s); se utilizó el score estructural determinístico."
+                        cand["ai_fallback_notice"] = "La evaluación de IA excedió el tiempo límite (23s); se utilizó el score estructural determinístico."
                     elif res_status == "INSUFFICIENT_DATA":
                         cand["ai_status"] = "INSUFFICIENT_DATA"
                         cand["ai_veredicto"] = "SIN DATOS SUFICIENTES"
@@ -10853,7 +10801,7 @@ async def get_interview_results(
         client_summary=client_summary,
         db=db,
         pool_limit=dynamic_pool_limit,
-        max_ai_evaluations=4,
+        max_ai_evaluations=3,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
         nvidia_key=nvidia_key,
