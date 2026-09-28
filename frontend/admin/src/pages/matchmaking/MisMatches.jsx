@@ -5338,7 +5338,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                     </button>
                     <button
                       type="button"
-                      onClick={() => runCompatibilityCheck(matchRow, pB.name || matchRow?.person_b, pB.crm_id || matchRow?.person_b_crm_id, '', true, true)}
+                      onClick={() => runCompatibilityCheck(matchRow, ((pB.name && pB.name !== 'Persona B') ? pB.name : matchRow?.person_b), (pB.crm_id || matchRow?.person_b_crm_id || ''), '', true, true)}
                       disabled={loadingCompatId === matchId}
                       style={{
                         padding: '9px 15px',

@@ -5441,21 +5441,58 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
     4. Análisis IA de Quick Notes y Ficha Clínica 360° (Dealbreakers y afinidad).
     5. Caché instantánea: si ya fue evaluada en operational_matches y los datos no cambian, responde en 0ms.
     """
-    # ── VERIFICACIÓN DE CACHÉ EN operational_matches ──
+    # ── 0. RECUPERACIÓN / RESOLUCIÓN CANÓNICA DESDE operational_matches ──
     target_match_id = payload.match_id
+    match_row_db = None
+    if target_match_id:
+        try:
+            m_res = await db.execute(text("""
+                SELECT id, person_a, person_b, person_a_crm_id, person_b_crm_id, user_id_a, user_id_b
+                FROM operational_matches WHERE id = :mid
+            """), {"mid": target_match_id})
+            match_row_db = m_res.fetchone()
+        except Exception as e_m:
+            print(f"Error fetching match row {target_match_id}: {e_m}")
+
     if not target_match_id and payload.person_a_name and payload.person_b_name:
         try:
             m_find = await db.execute(text("""
-                SELECT id FROM operational_matches
+                SELECT id, person_a, person_b, person_a_crm_id, person_b_crm_id, user_id_a, user_id_b
+                FROM operational_matches
                 WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) AND LOWER(TRIM(person_b)) = LOWER(TRIM(:b))
                 ORDER BY id DESC LIMIT 1
             """), {"a": payload.person_a_name.strip(), "b": payload.person_b_name.strip()})
             mf = m_find.fetchone()
             if mf:
                 target_match_id = mf.id
+                match_row_db = mf
         except Exception:
             pass
 
+    # Rehidratar nombres e IDs desde la base de datos si el payload vino incompleto
+    req_name_a = (payload.person_a_name or "").strip()
+    if (not req_name_a or req_name_a.upper() in ("PERSONA A", "NONE", "NULL")) and match_row_db and match_row_db.person_a:
+        req_name_a = match_row_db.person_a.strip()
+
+    req_cid_a = (payload.person_a_crm_id or "").strip()
+    if (not req_cid_a or req_cid_a.lower() in ("none", "null")) and match_row_db and match_row_db.person_a_crm_id:
+        req_cid_a = str(match_row_db.person_a_crm_id).strip()
+
+    req_uid_a = match_row_db.user_id_a if match_row_db else None
+
+    req_name_b = (payload.person_b_name or "").strip()
+    if (not req_name_b or req_name_b.upper() in ("PERSONA B", "NONE", "NULL")) and match_row_db and match_row_db.person_b:
+        req_name_b = match_row_db.person_b.strip()
+
+    req_cid_b = (payload.person_b_crm_id or "").strip()
+    if not req_cid_b and payload.person_b_url:
+        req_cid_b = _extract_crm_id_from_url(payload.person_b_url) or ""
+    if (not req_cid_b or req_cid_b.lower() in ("none", "null")) and match_row_db and match_row_db.person_b_crm_id:
+        req_cid_b = str(match_row_db.person_b_crm_id).strip()
+
+    req_uid_b = match_row_db.user_id_b if match_row_db else None
+
+    # ── VERIFICACIÓN DE CACHÉ EN operational_matches ──
     if target_match_id and not payload.force_refresh:
         try:
             c_res = await db.execute(text("""
@@ -5466,21 +5503,35 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             c_row = c_res.fetchone()
             if c_row and c_row.compatibility_analysis:
                 c_pb = (c_row.person_b or "").strip().lower()
-                p_pb = (payload.person_b_name or "").strip().lower()
-                if not p_pb or p_pb == c_pb or (c_row.person_b_crm_id and payload.person_b_crm_id and str(c_row.person_b_crm_id) == str(payload.person_b_crm_id)):
+                p_pb = req_name_b.lower()
+                if not p_pb or p_pb == c_pb or (c_row.person_b_crm_id and req_cid_b and str(c_row.person_b_crm_id) == str(req_cid_b)):
                     cached_dict = dict(c_row.compatibility_analysis)
-                    cached_dict["is_cached"] = True
-                    cached_dict["evaluated_at"] = c_row.compatibility_evaluated_at.isoformat() if c_row.compatibility_evaluated_at else None
-                    return cached_dict
+                    c_p_a_name = (cached_dict.get("profile_a") or {}).get("name")
+                    c_p_b_name = (cached_dict.get("profile_b") or {}).get("name")
+                    # No servir caché corrupta de "Persona A" o "Persona B"
+                    if c_p_a_name != "Persona A" and c_p_b_name != "Persona B":
+                        cached_dict["is_cached"] = True
+                        cached_dict["evaluated_at"] = c_row.compatibility_evaluated_at.isoformat() if c_row.compatibility_evaluated_at else None
+                        return cached_dict
         except Exception as e_cache_chk:
             print(f"Error checking compatibility cache: {e_cache_chk}")
 
     issues = []
 
-    async def _fetch_full_prof(cid_val: Optional[str], name_val: Optional[str]):
+    async def _fetch_full_prof(cid_val: Optional[str], name_val: Optional[str], uid_val: Optional[int] = None):
         row_p = None
+        if uid_val:
+            res_u = await db.execute(text("""
+                SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
+                       p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
+                       p.bio_notes, p.responsable, p.plan_tier, p.clinical_profile_360, p.canonical_profile
+                FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+                WHERE u.id = :uid LIMIT 1
+            """), {"uid": uid_val})
+            row_p = res_u.fetchone()
+
         clean_cid = (cid_val or "").strip()
-        if clean_cid:
+        if not row_p and clean_cid and clean_cid.lower() not in ("none", "null", ""):
             res = await db.execute(text("""
                 SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
                        p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
@@ -5508,7 +5559,9 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                     WHERE u.crm_id = :cid ORDER BY u.id DESC LIMIT 1
                 """), {"cid": str(clean_cid)})
                 row_p = res.fetchone()
-        if not row_p and name_val:
+
+        clean_n = (name_val or "").strip()
+        if not row_p and clean_n and clean_n.upper() not in ("N/A", "NA", "PERSONA A", "PERSONA B", "POR DEFINIR", "NONE", "NULL"):
             res = await db.execute(text("""
                 SELECT u.id AS user_id, u.name, u.crm_id, p.city, p.orientation, p.gender, p.age, p.estatura,
                        p.occupation, p.education, p.search_preferences, p.lifestyle, p.apego, p.love_language,
@@ -5523,7 +5576,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
                     (p.age IS NOT NULL) DESC,
                     u.id DESC
                 LIMIT 1
-            """), {"n": name_val.strip(), "n_like": f"%{name_val.strip()}%"})
+            """), {"n": clean_n, "n_like": f"%{clean_n}%"})
             row_p = res.fetchone()
             if row_p and row_p.crm_id and (not row_p.city or not row_p.estatura or not row_p.lifestyle):
                 await _sync_crm_id_from_webhooks(str(row_p.crm_id), db)
@@ -5684,14 +5737,70 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             "quick_notes": q_notes
         }
 
-    prof_a = await _fetch_full_prof(payload.person_a_crm_id, payload.person_a_name)
-    b_cid = (payload.person_b_crm_id or "").strip()
-    if not b_cid and payload.person_b_url:
-        b_cid = _extract_crm_id_from_url(payload.person_b_url) or ""
-    prof_b = await _fetch_full_prof(b_cid, payload.person_b_name)
+    prof_a = await _fetch_full_prof(req_cid_a, req_name_a, req_uid_a)
+    meta_a = await _enrich_prof_meta(prof_a, req_name_a or "Persona A", req_cid_a)
 
-    meta_a = await _enrich_prof_meta(prof_a, payload.person_a_name or "Persona A", payload.person_a_crm_id or "")
-    meta_b = await _enrich_prof_meta(prof_b, payload.person_b_name or "Persona B", b_cid)
+    # Validación rigurosa de Persona B: si no existe, está vacía o es placeholder ("N/A", "Por definir")
+    is_b_empty = (
+        not req_name_b or
+        req_name_b.upper() in ("N/A", "NA", "POR DEFINIR", "PENDIENTE", "SIN ASIGNAR", "NONE", "NULL", "PERSONA B")
+    ) and not (req_cid_b and req_cid_b.isdigit())
+
+    if is_b_empty:
+        # Si este match tenía previamente un score o análisis falso contra un fantasma, limpiarlo
+        if target_match_id:
+            try:
+                await db.execute(text("""
+                    UPDATE operational_matches
+                    SET compatibility_score = NULL,
+                        compatibility_verdict = NULL,
+                        compatibility_analysis = NULL,
+                        compatibility_evaluated_at = NULL
+                    WHERE id = :mid
+                """), {"mid": target_match_id})
+                await db.commit()
+            except Exception as e_clr:
+                print(f"Error clearing phantom compatibility for match {target_match_id}: {e_clr}")
+
+        return {
+            "compatible": False,
+            "score": None,
+            "veredicto": "SIN CANDIDATO ASIGNADO",
+            "issues": ["Este match aún no tiene asignada a Persona B (Candidata). Ingrese el ID CRM o URL de Persona B."],
+            "warnings": [],
+            "profile_a": meta_a,
+            "profile_b": None,
+            "ai_evaluation": {
+                "ai_score": None,
+                "veredicto": "SIN CANDIDATO ASIGNADO",
+                "analisis": f"{meta_a['name']} no tiene candidato(a) asignado(a) en este match.",
+                "deal_breakers": [],
+                "coincidencias": [],
+                "red_flags_seguridad": [],
+                "recomendacion_accion": "Asignar Persona B para evaluar compatibilidad."
+            },
+            "canonical_analysis": {
+                "score_factual": None,
+                "veredicto": "SIN CANDIDATO ASIGNADO",
+                "coverage_pct": 0,
+                "coincidencias_verificadas": [],
+                "discrepancias_reales": [],
+                "pendientes_para_entrevista": [],
+                "sintesis_clinica": f"{meta_a['name']} no tiene candidato(a) asignado(a) aún."
+            },
+            "profile_a_canonical": None,
+            "profile_b_canonical": None,
+            "name_a": meta_a["name"],
+            "name_b": "",
+            "city_a": meta_a["city"],
+            "city_b": "",
+            "pref_a": meta_a["orientation"],
+            "pref_b": "",
+            "is_cached": False
+        }
+
+    prof_b = await _fetch_full_prof(req_cid_b, req_name_b, req_uid_b)
+    meta_b = await _enrich_prof_meta(prof_b, req_name_b or "Persona B", req_cid_b)
 
     name_a = meta_a["name"] or "Persona A"
     name_b = meta_b["name"] or "Persona B"
@@ -6037,7 +6146,8 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
     }
 
     # Persistir en operational_matches para caché instantánea en futuras aperturas
-    if target_match_id:
+    # SOLO persistir si ambos perfiles corresponden a personas reales (nunca placeholders)
+    if target_match_id and name_a and name_b and name_a != "Persona A" and name_b != "Persona B":
         try:
             await db.execute(text("""
                 UPDATE operational_matches
