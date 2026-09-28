@@ -51,6 +51,7 @@ def check_matchmaking_invariants() -> None:
         ("Cascada centralizada F2 -> CRM (resolve_physical_activity_level / resolve_education_level)", mm_src.count("resolve_physical_activity_level(") >= 5 and mm_src.count("resolve_education_level(") >= 5),
         ("Sincronización completa _sync_crm_id_from_webhooks conectada en process_webhook_payload (webhooks.py)", "_sync_crm_id_from_webhooks" in wh_src and '"income_range"' in mm_src and '"partner_red_flags"' in mm_src and '"min_age"' in mm_src),
         ("Constructor diferenciado strict vs relaxed (build_candidate_pool_queries) y síntesis bio_notes (synthesize_structured_bio_notes)", "def build_candidate_pool_queries(" in mm_src and "def synthesize_structured_bio_notes(" in mm_src and "LENGTH(TRIM(p.bio_notes)) > 40" not in mm_src),
+        ("Blindaje de resolve_person_email_and_id contra emails corridos (profiles real, merged_into_id IS NULL, +57300000% y GEN_%)", "def _is_safe_user_row_for_email(" in mm_src and "def _select_safe_person_email_and_id(" in mm_src and "NOT LIKE '+57300000%'" in mm_src and "NOT LIKE 'GEN_%'" in mm_src),
     ]
 
     failed = False
@@ -65,16 +66,20 @@ def check_matchmaking_invariants() -> None:
 
 
 def check_resolvers_behavior(mm_tree: ast.Module) -> None:
-    """Extrae y ejecuta resolve_physical_activity_level, resolve_education_level, build_candidate_pool_queries y synthesize_structured_bio_notes contra casos reales."""
+    """Extrae y ejecuta resolve_physical_activity_level, resolve_education_level, build_candidate_pool_queries, synthesize_structured_bio_notes y resolve_person_email_and_id contra casos reales."""
+    import asyncio
     import json
     import re
-    from typing import Any, Dict, Optional, Tuple
+    from typing import Any, Dict, List, Optional, Tuple
 
     ns: Dict[str, Any] = {
         "Any": Any,
         "Dict": Dict,
+        "List": List,
         "Optional": Optional,
         "Tuple": Tuple,
+        "AsyncSession": Any,
+        "text": lambda s: s,
         "json": json,
         "re": re,
     }
@@ -85,10 +90,13 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
         "resolve_education_level",
         "synthesize_structured_bio_notes",
         "build_candidate_pool_queries",
+        "_is_safe_user_row_for_email",
+        "_select_safe_person_email_and_id",
+        "resolve_person_email_and_id",
     }
     selected_nodes = []
     for node in mm_tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name in target_names:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in target_names:
             selected_nodes.append(node)
         elif isinstance(node, ast.Assign):
             for t in node.targets:
@@ -102,6 +110,8 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
     resolve_edu = ns["resolve_education_level"]
     synth_bio = ns["synthesize_structured_bio_notes"]
     build_queries = ns["build_candidate_pool_queries"]
+    select_safe_email = ns["_select_safe_person_email_and_id"]
+    resolve_email_async = ns["resolve_person_email_and_id"]
 
     act_cases = [
         # (args, kwargs, expected)
@@ -221,6 +231,110 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
         sys.exit(1)
     print("[OK] Prueba de comportamiento synthesize_structured_bio_notes (síntesis estructurada >40 chars y preservación verificadas)")
 
+    # Prueba de comportamiento: resolve_person_email_and_id (Caso Isabella Luquetta / Diana Coral Guerrero y colisiones por nombre)
+    class _MockResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class _MockAsyncDB:
+        def __init__(self, dataset_by_name):
+            self.dataset_by_name = dataset_by_name
+            self.queries = []
+
+        async def execute(self, sql, params=None):
+            self.queries.append((str(sql), params or {}))
+            n = (params or {}).get("n", "").strip().lower()
+            if n and n in self.dataset_by_name:
+                return _MockResult(self.dataset_by_name[n])
+            return _MockResult([])
+
+    mock_dataset = {
+        # 1) Isabella Luquetta (UID=12011): tiene profiles real, merged_into_id=None, teléfono real +573103185223 -> DEBE devolver isalu.luquetta@gmail.com
+        "isabella luquetta": [
+            {
+                "id": 12011,
+                "email": "isalu.luquetta@gmail.com",
+                "phone": "+573103185223",
+                "merged_into_id": None,
+                "has_profile": True,
+            }
+        ],
+        # 2) Diana Coral Guerrero (UID=5557): tiene el email corrido de Isabella Luquetta en una fila con teléfono +573000000167 -> DEBE ignorar el email ("")
+        "diana coral guerrero": [
+            {
+                "id": 5557,
+                "email": "isalu.luquetta@gmail.com",
+                "phone": "+573000000167",
+                "merged_into_id": None,
+                "has_profile": True,
+            }
+        ],
+        # 3) Colisión de nombre exacto: fila sin profiles (o con +57300000% / GEN_% / merged_into_id) tiene email corrido, y fila con profiles real no tiene email
+        "miguel angel duarte sánchez": [
+            {
+                "id": 5407,
+                "email": "cespedes.daniele2310@gmail.com",
+                "phone": "+573000000016",
+                "merged_into_id": None,
+                "has_profile": False,
+            },
+            {
+                "id": 99991,
+                "email": "leak@example.com",
+                "phone": "GEN_62285ffdf9d3",
+                "merged_into_id": None,
+                "has_profile": True,
+            },
+            {
+                "id": 99992,
+                "email": "merged_leak@example.com",
+                "phone": "+573109998877",
+                "merged_into_id": 15412,
+                "has_profile": True,
+            },
+            {
+                "id": 15412,
+                "email": "",
+                "phone": "+573152223344",
+                "merged_into_id": None,
+                "has_profile": True,
+            },
+        ],
+    }
+
+    mock_db = _MockAsyncDB(mock_dataset)
+    res_isabella = asyncio.run(resolve_email_async(mock_db, "Isabella Luquetta"))
+    if res_isabella != (12011, "isalu.luquetta@gmail.com"):
+        print(f"[FAIL] resolve_person_email_and_id('Isabella Luquetta') -> {res_isabella} != (12011, 'isalu.luquetta@gmail.com')")
+        sys.exit(1)
+
+    res_diana = asyncio.run(resolve_email_async(mock_db, "Diana Coral Guerrero"))
+    if res_diana != (5557, ""):
+        print(f"[FAIL] resolve_person_email_and_id('Diana Coral Guerrero') filtró email corrido de Isabella Luquetta: {res_diana}")
+        sys.exit(1)
+
+    res_collision = asyncio.run(resolve_email_async(mock_db, "Miguel Angel Duarte Sánchez"))
+    if res_collision != (15412, ""):
+        print(f"[FAIL] resolve_person_email_and_id('Miguel Angel Duarte Sánchez') no priorizó fila con profiles real o filtró email corrido: {res_collision}")
+        sys.exit(1)
+
+    # Verificar que la consulta SQL generada también contiene las cláusulas de protección
+    executed_sql = mock_db.queries[0][0]
+    for required_sql_piece in (
+        "LEFT JOIN profiles p ON p.user_id = u.id",
+        "u.merged_into_id IS NULL",
+        "NOT LIKE '+57300000%'",
+        "NOT LIKE 'GEN_%'",
+    ):
+        if required_sql_piece not in executed_sql:
+            print(f"[FAIL] SQL de resolve_person_email_and_id no incluye '{required_sql_piece}'")
+            sys.exit(1)
+
+    print("[OK] Prueba de comportamiento resolve_person_email_and_id (Isabella Luquetta / Diana Coral Guerrero y colisión de nombres verificadas)")
+
 
 def main() -> None:
     mm_tree = check_ast_syntax(MATCHMAKING_PY)
@@ -233,3 +347,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

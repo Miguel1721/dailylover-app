@@ -3958,34 +3958,149 @@ class SendFeedbackEmailRequest(BaseModel):
     target_override_email: Optional[str] = "agente.sti.col@gmail.com"
 
 
+def _is_safe_user_row_for_email(
+    has_profile: bool,
+    merged_into_id: Optional[int],
+    phone: Optional[str],
+    email: Optional[str],
+) -> bool:
+    """
+    Valida que una fila de usuario sea elegible para usar su correo electrónico en comunicaciones:
+    - Debe tener fila real en `profiles` (has_profile=True)
+    - Debe tener `merged_into_id IS NULL`
+    - No debe tener teléfono sintético (`+57300000%` ni `GEN_%`)
+    - Debe tener un correo no vacío con `@`
+    """
+    if not has_profile:
+        return False
+    if merged_into_id is not None:
+        return False
+    clean_phone = (phone or "").strip()
+    if clean_phone.startswith("+57300000") or clean_phone.upper().startswith("GEN_"):
+        return False
+    clean_email = (email or "").strip()
+    if not clean_email or "@" not in clean_email:
+        return False
+    return True
+
+
+def _select_safe_person_email_and_id(
+    candidate_rows: List[Dict[str, Any]],
+) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Selecciona el usuario canónico y su email seguro:
+    - Ignora filas con `merged_into_id IS NOT NULL`
+    - Prioriza siempre filas con `profiles` real (`has_profile=True`), teléfono real (no `+57300000%` ni `GEN_%`),
+      email seguro elegible y mayor `id`.
+    - Ignora (devuelve `""`) el email de cualquier fila sin `profiles`, con `merged_into_id IS NOT NULL`,
+      o con teléfono `+57300000%` / `GEN_%`.
+    """
+    active_rows = [r for r in candidate_rows if r.get("merged_into_id") is None]
+    if not active_rows:
+        return None, None
+
+    def _sort_key(r: Dict[str, Any]):
+        has_prof = bool(r.get("has_profile"))
+        ph = (r.get("phone") or "").strip()
+        is_real_phone = not (ph.startswith("+57300000") or ph.upper().startswith("GEN_"))
+        safe_em = _is_safe_user_row_for_email(
+            has_prof, r.get("merged_into_id"), r.get("phone"), r.get("email")
+        )
+        return (
+            1 if has_prof else 0,
+            1 if is_real_phone else 0,
+            1 if safe_em else 0,
+            int(r.get("id") or 0),
+        )
+
+    best = sorted(active_rows, key=_sort_key, reverse=True)[0]
+    uid = best.get("id")
+    if not uid:
+        return None, None
+    safe_email = (
+        (best.get("email") or "").strip()
+        if _is_safe_user_row_for_email(
+            bool(best.get("has_profile")),
+            best.get("merged_into_id"),
+            best.get("phone"),
+            best.get("email"),
+        )
+        else ""
+    )
+    return uid, safe_email
+
+
 async def resolve_person_email_and_id(db: AsyncSession, person_name: str):
-    """Resuelve user_id y correo electrónico de una persona por nombre."""
+    """
+    Resuelve user_id y correo electrónico de una persona por nombre.
+    Ignora el email de cualquier fila sin `profiles`, sin `merged_into_id IS NULL`,
+    o con teléfono `+57300000%` / `GEN_%`, priorizando siempre la fila con `profiles` real.
+    """
     if not person_name:
         return None, None
     clean_name = person_name.strip()
     res = await db.execute(text("""
-        SELECT u.id, u.email 
+        SELECT
+            u.id,
+            CASE
+                WHEN p.user_id IS NOT NULL
+                 AND u.merged_into_id IS NULL
+                 AND COALESCE(u.phone, '') NOT LIKE '+57300000%'
+                 AND UPPER(COALESCE(u.phone, '')) NOT LIKE 'GEN_%'
+                THEN COALESCE(TRIM(u.email), '')
+                ELSE ''
+            END AS email,
+            u.phone,
+            u.merged_into_id,
+            (p.user_id IS NOT NULL) AS has_profile
         FROM users u
-        WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
-        ORDER BY (u.email IS NOT NULL AND u.email != '') DESC, u.id DESC
-        LIMIT 1
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE u.merged_into_id IS NULL
+          AND LOWER(TRIM(u.name)) = LOWER(TRIM(:n))
+        ORDER BY
+            (p.user_id IS NOT NULL) DESC,
+            (COALESCE(u.phone, '') NOT LIKE '+57300000%' AND UPPER(COALESCE(u.phone, '')) NOT LIKE 'GEN_%') DESC,
+            (CASE
+                WHEN p.user_id IS NOT NULL
+                 AND COALESCE(u.phone, '') NOT LIKE '+57300000%'
+                 AND UPPER(COALESCE(u.phone, '')) NOT LIKE 'GEN_%'
+                 AND u.email IS NOT NULL AND TRIM(u.email) != ''
+                THEN 1 ELSE 0
+             END) DESC,
+            u.id DESC
     """), {"n": clean_name})
-    row = res.fetchone()
-    if row and row.id:
-        return row.id, row.email or ""
+    rows = [dict(r._mapping) if hasattr(r, "_mapping") else dict(r) for r in res.fetchall()]
+    if rows:
+        uid, safe_em = _select_safe_person_email_and_id(rows)
+        if uid:
+            return uid, safe_em
 
-    # Búsqueda secundaria por similitud
+    # Búsqueda secundaria por similitud (solo filas activas con profiles real y teléfono no sintético)
     res_like = await db.execute(text("""
-        SELECT id, email FROM users
-        WHERE (email IS NOT NULL AND email != '') AND (
-            LOWER(TRIM(name)) LIKE LOWER(:n_like)
-            OR LOWER(:n_full) LIKE '%' || LOWER(TRIM(name)) || '%'
-        )
-        ORDER BY id DESC LIMIT 1
+        SELECT
+            u.id,
+            COALESCE(TRIM(u.email), '') AS email,
+            u.phone,
+            u.merged_into_id,
+            TRUE AS has_profile
+        FROM users u
+        INNER JOIN profiles p ON p.user_id = u.id
+        WHERE u.merged_into_id IS NULL
+          AND COALESCE(u.phone, '') NOT LIKE '+57300000%'
+          AND UPPER(COALESCE(u.phone, '')) NOT LIKE 'GEN_%'
+          AND (u.email IS NOT NULL AND TRIM(u.email) != '')
+          AND (
+              LOWER(TRIM(u.name)) LIKE LOWER(:n_like)
+              OR LOWER(:n_full) LIKE '%' || LOWER(TRIM(u.name)) || '%'
+          )
+        ORDER BY u.id DESC
+        LIMIT 5
     """), {"n_like": f"%{clean_name}%", "n_full": clean_name})
-    row_like = res_like.fetchone()
-    if row_like:
-        return row_like.id, row_like.email or ""
+    rows_like = [dict(r._mapping) if hasattr(r, "_mapping") else dict(r) for r in res_like.fetchall()]
+    if rows_like:
+        uid, safe_em = _select_safe_person_email_and_id(rows_like)
+        if uid:
+            return uid, safe_em
 
     return None, None
 
