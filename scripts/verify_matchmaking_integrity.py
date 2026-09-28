@@ -11,6 +11,8 @@ MATCHMAKING_PY = ROOT / "backend" / "app" / "routers" / "matchmaking.py"
 WEBHOOKS_PY = ROOT / "backend" / "app" / "routers" / "webhooks.py"
 EXTRACTOR_PY = ROOT / "backend" / "app" / "services" / "clinical_profile_extractor.py"
 FRONTEND_JSX = ROOT / "frontend" / "admin" / "src" / "pages" / "matchmaking" / "EntrevistaResultados.jsx"
+MIS_MATCHES_JSX = ROOT / "frontend" / "admin" / "src" / "pages" / "matchmaking" / "MisMatches.jsx"
+MIGRATIONS_DIR = ROOT / "backend" / "alembic" / "versions"
 
 
 def check_ast_syntax(filepath: pathlib.Path) -> ast.Module:
@@ -29,6 +31,8 @@ def check_matchmaking_invariants() -> None:
     wh_src = WEBHOOKS_PY.read_text(encoding="utf-8")
     ext_src = EXTRACTOR_PY.read_text(encoding="utf-8")
     jsx_src = FRONTEND_JSX.read_text(encoding="utf-8")
+    mis_matches_src = MIS_MATCHES_JSX.read_text(encoding="utf-8")
+    migration_files = {p.name: p.read_text(encoding="utf-8") for p in MIGRATIONS_DIR.glob("*.py")}
 
     checks = [
         ("Plan & Citas en _format_clinical_entity_for_chat", "- Plan & Citas:" in mm_src),
@@ -52,6 +56,28 @@ def check_matchmaking_invariants() -> None:
         ("Sincronización completa _sync_crm_id_from_webhooks conectada en process_webhook_payload (webhooks.py)", "_sync_crm_id_from_webhooks" in wh_src and '"income_range"' in mm_src and '"partner_red_flags"' in mm_src and '"min_age"' in mm_src),
         ("Constructor diferenciado strict vs relaxed (build_candidate_pool_queries) y síntesis bio_notes (synthesize_structured_bio_notes)", "def build_candidate_pool_queries(" in mm_src and "def synthesize_structured_bio_notes(" in mm_src and "LENGTH(TRIM(p.bio_notes)) > 40" not in mm_src),
         ("Blindaje de resolve_person_email_and_id contra emails corridos (profiles real, merged_into_id IS NULL, +57300000% y GEN_%)", "def _is_safe_user_row_for_email(" in mm_src and "def _select_safe_person_email_and_id(" in mm_src and "NOT LIKE '+57300000%'" in mm_src and "NOT LIKE 'GEN_%'" in mm_src),
+
+        # --- Bloqueo secuencial de slots multi-cita (sequential_gate) ---
+        ("Migración alembic agrega operational_matches.sequential_gate (aditivo, default false)",
+            any("ADD COLUMN IF NOT EXISTS sequential_gate BOOLEAN NOT NULL DEFAULT false" in src for src in migration_files.values())),
+        ("intake-client marca sequential_gate=true solo en planes de 2+ citas creados de aquí en adelante (no toca clientes existentes)",
+            "seq_gate_val = num_slots > 1" in mm_src and '"seq_gate": seq_gate_val' in mm_src and "sequential_gate, created_at, updated_at)" in mm_src),
+        ("my-matches calcula is_locked_sequential vía EXISTS de slot anterior no CITA REALIZADA (no retroactivo: exige sequential_gate=true)",
+            "AS is_locked_sequential" in mm_src and "COALESCE(m.sequential_gate, false) AND m.slot_number > 1" in mm_src and "UPPER(COALESCE(m2.status, '')) != 'CITA REALIZADA'" in mm_src),
+        ("my-matches expone is_locked/lock_reason/sequential_wait_slot combinando aprobado + cross_review + sequential_gate",
+            '"is_locked": is_approved or is_cross_locked or is_locked_sequential' in mm_src and '"lock_reason":' in mm_src and '"sequential_wait_slot":' in mm_src),
+        ("MisMatches.jsx muestra etiqueta 'Bloqueado hasta Cita N' solo para lock_reason sequential_gate, y separa 'Aprobado por María' de is_locked genérico",
+            "Bloqueado hasta Cita" in mis_matches_src and "m.lock_reason === 'sequential_gate'" in mis_matches_src and "{m.approved_by_maria ? (" in mis_matches_src),
+
+        # --- Espejo de rechazo para Persona B (vuelve a su propia psicóloga) ---
+        ("Estados nuevos relativos a Persona B registrados en STATUS_COLORS/ALLOWED_STATUSES (backend) y STATUS_GROUPS/STATUS_COLORS (frontend)",
+            '"RECHAZÓ A LA OTRA PERSONA"' in mm_src and '"RECHAZADO POR LA OTRA PERSONA"' in mm_src and "'RECHAZÓ A LA OTRA PERSONA'" in mis_matches_src and "'RECHAZADO POR LA OTRA PERSONA'" in mis_matches_src),
+        ("Al rechazar, Persona B se busca por su propia ficha (person_a=B) y se le asigna el estado correcto direccional (no copia RECHAZADO POR PERSONA A/B tal cual)",
+            'b_status = "RECHAZÓ A LA OTRA PERSONA"' in mm_src and 'b_status = "RECHAZADO POR LA OTRA PERSONA"' in mm_src and "WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pB))" in mm_src),
+        ("Persona B solo se devuelve a su psicóloga si ya tiene ficha propia (b_home_row con psychologist_name); si no, no se toca nada",
+            "if b_home_row and b_home_row.psychologist_name and b_home_row.psychologist_name.strip():" in mm_src),
+        ("Se evita duplicar el slot 'Listo para match' de Persona B si ya tiene uno abierto (mismo guard que Persona A)",
+            mm_src.count("LOWER(TRIM(status)) = 'listo para match'") >= 2),
     ]
 
     failed = False

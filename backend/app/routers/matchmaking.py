@@ -121,6 +121,8 @@ STATUS_COLORS = {
     "RECHAZADO POR PERSONA A": "#F4CCCC",
     "RECHAZADO POR PERSONA B": "#F4CCCC",
     "RECHAZADO AMBOS": "#F4CCCC",
+    "RECHAZÓ A LA OTRA PERSONA": "#F4CCCC",
+    "RECHAZADO POR LA OTRA PERSONA": "#F4CCCC",
 }
 
 ALLOWED_STATUSES = [
@@ -134,7 +136,8 @@ ALLOWED_STATUSES = [
     "AGENDANDO", "POR CONFIRMAR", "REPROGRAMAR",
     "RECHAZADA POR PSICÓLOGA B", "RECHAZADO POR PSICÓLOGA B",
     "NO MATCH/CAMBIAR", "NO MATCH", "CAMBIAR", "RECHAZADO", "RECHAZADA", "RECHAZADO POR CLIENTE",
-    "RECHAZADO POR PERSONA A", "RECHAZADO POR PERSONA B", "RECHAZADO AMBOS"
+    "RECHAZADO POR PERSONA A", "RECHAZADO POR PERSONA B", "RECHAZADO AMBOS",
+    "RECHAZÓ A LA OTRA PERSONA", "RECHAZADO POR LA OTRA PERSONA"
 ]
 
 def is_vip_plan(plan_str: Optional[str]) -> bool:
@@ -475,6 +478,15 @@ async def get_my_matches(
             m.person_a_crm_id, m.person_b_crm_id,
             m.compatibility_score, m.compatibility_verdict, m.compatibility_evaluated_at,
             (m.compatibility_analysis IS NOT NULL) AS has_cached_analysis,
+            COALESCE(m.sequential_gate, false) AS sequential_gate,
+            (
+                COALESCE(m.sequential_gate, false) AND m.slot_number > 1 AND EXISTS (
+                    SELECT 1 FROM operational_matches m2
+                    WHERE LOWER(TRIM(m2.person_a)) = LOWER(TRIM(m.person_a))
+                      AND m2.slot_number < m.slot_number
+                      AND UPPER(COALESCE(m2.status, '')) != 'CITA REALIZADA'
+                )
+            ) AS is_locked_sequential,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS ua_crm_id,
             COALESCE(m.person_b_crm_id, uB.crm_id, '') AS ub_crm_id,
             uA.phone AS person_a_phone, uA.email AS person_a_email,
@@ -751,6 +763,7 @@ async def get_my_matches(
         p_b_psyc = normalize_psychologist(d.get("psyc_of_b")) or ""
         curr_psyc = normalize_psychologist(d.get("psychologist_name")) or d.get("psychologist_name")
         is_cross_locked = bool(p_b_psyc and p_b_psyc != curr_psyc and (d.get("status") in ("HECHO", "HECHO POR MAPE", "REVISAR", "PROPUESTO")))
+        is_locked_sequential = bool(d.get("is_locked_sequential"))
 
         stripe_date = d.get("stripe_pay_date")
         slot_date = d.get("created_at")
@@ -858,7 +871,14 @@ async def get_my_matches(
             "status_color": STATUS_COLORS.get(effective_status, "#FFF2CC"),
             "plan_color": PLAN_COLORS.get(norm_plan_a, "#F3F3F3"),
             "pref_color": PREF_COLORS.get(final_pref, "#CFE2F3"),
-            "is_locked": is_approved or is_cross_locked,
+            "is_locked": is_approved or is_cross_locked or is_locked_sequential,
+            "lock_reason": (
+                "aprobado" if is_approved
+                else "cross_review" if is_cross_locked
+                else "sequential_gate" if is_locked_sequential
+                else None
+            ),
+            "sequential_wait_slot": ((d.get("slot_number") or 1) - 1) if is_locked_sequential else None,
             "has_compatibility_alert": bool(
                 "COMPATIBILIDAD FORZADA" in (d.get("observations") or "").upper() or
                 "ALERTA COMPATIBILIDAD" in (d.get("observations") or "").upper() or
@@ -1652,12 +1672,16 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
         }
 
     num_slots = get_slots_by_plan(plan_val) or 3
+    # Los planes de 2+ citas creados a partir de aquí quedan marcados con sequential_gate=true:
+    # el slot N solo se libera en Matches Psicóloga cuando el slot N-1 llega a status 'CITA REALIZADA'.
+    # Los clientes que ya existían antes de este cambio no se tocan (no llevan esta marca).
+    seq_gate_val = num_slots > 1
     created_ids = []
     for slot_num in range(1, num_slots + 1):
         ins_res = await db.execute(text("""
-            INSERT INTO operational_matches 
-            (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, status_a, observations, person_a_crm_id, user_id_a, created_at, updated_at)
-            VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, :is_prio, 'Listo para match', 'Listo para match', :obs, :cid, :uid, NOW(), NOW())
+            INSERT INTO operational_matches
+            (city, pref, plan_tier, person_a, psychologist_name, slot_number, is_priority, status, status_a, observations, person_a_crm_id, user_id_a, sequential_gate, created_at, updated_at)
+            VALUES (:city, :pref, :plan, :person_a, :psyc, :slot, :is_prio, 'Listo para match', 'Listo para match', :obs, :cid, :uid, :seq_gate, NOW(), NOW())
             RETURNING id
         """), {
             "city": normalize_city(city_val),
@@ -1669,7 +1693,8 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             "is_prio": bool(payload.is_priority),
             "obs": obs_final,
             "cid": crm_id_val,
-            "uid": user_id
+            "uid": user_id,
+            "seq_gate": seq_gate_val
         })
         created_ids.append(ins_res.scalar())
 
@@ -3438,6 +3463,96 @@ async def update_match_schedule_details(
             })
             returned_to_psychologist = True
 
+    # 5. Espejo para Persona B: si tiene su propia ficha/psicóloga (es cliente propio en otra mesa),
+    # se le cierra con el estado correcto relativo a ella y se le regresa un slot nuevo 'Listo para match'.
+    # Si Persona B nunca ha sido registrada como cliente propio en PROFILES, no hay a quién devolverla: no se toca nada.
+    returned_b_to_psychologist = False
+    if is_rejected and match_row.person_b and match_row.person_b.strip():
+        b_status = None
+        if new_status == "RECHAZADO AMBOS":
+            b_status = "RECHAZADO AMBOS"
+        elif new_status == "RECHAZADO POR PERSONA B":
+            # Persona B fue quien rechazó
+            b_status = "RECHAZÓ A LA OTRA PERSONA"
+        elif new_status == "RECHAZADO POR PERSONA A":
+            # Persona B fue la rechazada
+            b_status = "RECHAZADO POR LA OTRA PERSONA"
+
+        if b_status:
+            b_home_res = await db.execute(text("""
+                SELECT psychologist_name, city, plan_tier, pref, person_a_crm_id, slot_number
+                FROM operational_matches
+                WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pB))
+                ORDER BY id DESC LIMIT 1
+            """), {"pB": match_row.person_b})
+            b_home_row = b_home_res.fetchone()
+
+            if b_home_row and b_home_row.psychologist_name and b_home_row.psychologist_name.strip():
+                b_open_res = await db.execute(text("""
+                    SELECT id FROM operational_matches
+                    WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pB))
+                      AND LOWER(TRIM(status)) = 'listo para match'
+                    LIMIT 1
+                """), {"pB": match_row.person_b})
+                if not b_open_res.fetchone():
+                    b_next_slot = (b_home_row.slot_number or 1) + 1
+                    b_obs_closed = f"Match con {match_row.person_a} finalizado: {b_status} ({new_status})"
+                    b_obs_retry = f"Reintento automático tras {b_status} con {match_row.person_a}"
+
+                    # Fila cerrada, con el estado correcto relativo a Persona B (histórico/trazabilidad)
+                    await db.execute(text("""
+                        INSERT INTO operational_matches (
+                            person_a, person_a_crm_id, person_b, psychologist_name,
+                            city, plan_tier, pref, status, slot_number,
+                            approved_by_maria, observations, created_at, updated_at
+                        ) VALUES (
+                            :pA, :crmA, :pB, :psyc,
+                            :city, :plan, :pref, :st, :slot,
+                            false, :obs, NOW(), NOW()
+                        )
+                    """), {
+                        "pA": match_row.person_b,
+                        "crmA": b_home_row.person_a_crm_id or "",
+                        "pB": match_row.person_a,
+                        "psyc": b_home_row.psychologist_name,
+                        "city": b_home_row.city or None,
+                        "plan": b_home_row.plan_tier or "",
+                        "pref": b_home_row.pref or None,
+                        "st": b_status,
+                        "slot": b_next_slot,
+                        "obs": b_obs_closed
+                    })
+                    # Fila nueva 'Listo para match' para que su psicóloga la vuelva a trabajar
+                    await db.execute(text("""
+                        INSERT INTO operational_matches (
+                            person_a, person_a_crm_id, person_b, psychologist_name,
+                            city, plan_tier, pref, status, slot_number,
+                            approved_by_maria, observations, created_at, updated_at
+                        ) VALUES (
+                            :pA, :crmA, '', :psyc,
+                            :city, :plan, :pref, 'Listo para match', :slot,
+                            false, :obs, NOW(), NOW()
+                        )
+                    """), {
+                        "pA": match_row.person_b,
+                        "crmA": b_home_row.person_a_crm_id or "",
+                        "psyc": b_home_row.psychologist_name,
+                        "city": b_home_row.city or None,
+                        "plan": b_home_row.plan_tier or "",
+                        "pref": b_home_row.pref or None,
+                        "slot": b_next_slot + 1,
+                        "obs": b_obs_retry
+                    })
+                    await db.execute(text("""
+                        INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
+                        VALUES (:n, :mid, 'RETURNED_TO_PSYCHOLOGIST', :d, NOW())
+                    """), {
+                        "n": match_row.person_b,
+                        "mid": match_id,
+                        "d": f"Devuelta automáticamente a su psicóloga ({b_home_row.psychologist_name}) tras {b_status} con {match_row.person_a}."
+                    })
+                    returned_b_to_psychologist = True
+
     await db.commit()
     return {
         "status": "success",
@@ -3445,7 +3560,8 @@ async def update_match_schedule_details(
         "new_match_status": new_status,
         "person_a_confirmation": eff_ca,
         "person_b_confirmation": eff_cb,
-        "returned_to_psychologist": returned_to_psychologist
+        "returned_to_psychologist": returned_to_psychologist,
+        "returned_b_to_psychologist": returned_b_to_psychologist
     }
 
 

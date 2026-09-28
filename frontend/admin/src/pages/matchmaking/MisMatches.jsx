@@ -92,6 +92,8 @@ const STATUS_COLORS = {
   'RECHAZADO AMBOS': { bg: '#FECACA', color: '#7F1D1D' },
   'RECHAZADO': { bg: '#FEE2E2', color: '#991B1B' },
   'CANCELADA': { bg: '#FEE2E2', color: '#991B1B' },
+  'RECHAZÓ A LA OTRA PERSONA': { bg: '#FEE2E2', color: '#991B1B' },
+  'RECHAZADO POR LA OTRA PERSONA': { bg: '#FEE2E2', color: '#991B1B' },
 }
 
 export const INHERITED_PSYCHOLOGIST_LABELS = {
@@ -181,6 +183,8 @@ export const STATUS_GROUPS = [
       'MATCH DONE',
       'EN PAUSA',
       'EN PAUSA INDEFINIDA',
+      'RECHAZÓ A LA OTRA PERSONA',
+      'RECHAZADO POR LA OTRA PERSONA',
     ]
   },
   {
@@ -4110,6 +4114,21 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       <td style={{ padding: isCompact ? '8px 14px' : '14px 18px' }}>
                         {isLocked ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {m.lock_reason === 'sequential_gate' && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: isCompact ? '5px 10px' : '7px 12px',
+                                borderRadius: 8,
+                                fontSize: isCompact ? 11.5 : 12.5,
+                                fontWeight: 800,
+                                background: '#E8EAED',
+                                color: '#5F6368'
+                              }}>
+                                <Lock size={isCompact ? 12 : 13} /> Bloqueado hasta Cita {m.sequential_wait_slot || 1}
+                              </span>
+                            )}
                             <span style={{
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -4121,7 +4140,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               background: statusCfg.bg,
                               color: statusCfg.color
                             }}>
-                              <Lock size={isCompact ? 12 : 13} /> {m.status}
+                              {m.lock_reason !== 'sequential_gate' && <Lock size={isCompact ? 12 : 13} />} {m.status}
                             </span>
                             {m.scheduled_date_time && m.scheduled_date_time.trim() !== '' && !m.scheduled_date_time.toLowerCase().includes('por definir') && (
                               <div style={{
@@ -4210,7 +4229,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
 
                       {/* APROBADO POR MARÍA */}
                       <td style={{ padding: isCompact ? '8px 6px' : '12px 10px', textAlign: 'center' }}>
-                        {isLocked ? (
+                        {m.approved_by_maria ? (
                           <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                             <span title={`Aprobado por María (Fila Bloqueada)${m.approved_at ? ` el ${m.approved_at.slice(0, 10)}` : ''}`} style={{ display: 'inline-flex', color: '#274E13' }}>
                               <Lock size={isCompact ? 14 : 17} />
