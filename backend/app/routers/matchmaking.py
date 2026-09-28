@@ -7766,6 +7766,98 @@ async def search_clients_for_profiles(
     return {"clients": clients}
 
 
+def resolve_physical_activity_level(
+    cep_val: Any,
+    lifestyle_val: Any = None,
+    sp_val: Any = None,
+    is_persisted_in_cep: bool = True
+) -> Tuple[Optional[int], str]:
+    """
+    Regla Unificada de Cascada para Actividad Física (escala 1–10):
+    1) Prioridad 1: client_extended_profile.physical_activity_level (si existe fila real en F2 y no es placeholder sin persistir).
+    2) Prioridad 2 (CRM): profiles.lifestyle->>'fitness_level' (o search_preferences.lifestyle.actividad_fisica).
+    """
+    if is_persisted_in_cep and cep_val is not None:
+        try:
+            v = int(cep_val)
+            return v, "Psicóloga (F2)"
+        except (ValueError, TypeError):
+            pass
+
+    ls_dict: Dict[str, Any] = {}
+    if isinstance(lifestyle_val, dict):
+        ls_dict = lifestyle_val
+    elif isinstance(lifestyle_val, str) and lifestyle_val.strip():
+        try:
+            ls_dict = json.loads(lifestyle_val)
+        except Exception:
+            ls_dict = {}
+
+    sp_dict: Dict[str, Any] = {}
+    if isinstance(sp_val, dict):
+        sp_dict = sp_val
+    elif isinstance(sp_val, str) and sp_val.strip():
+        try:
+            sp_dict = json.loads(sp_val)
+        except Exception:
+            sp_dict = {}
+
+    fit_str = str(
+        ls_dict.get("fitness_level")
+        or (sp_dict.get("lifestyle") or {}).get("actividad_fisica")
+        or ""
+    ).strip().lower()
+
+    if fit_str:
+        if "atleta" in fit_str or "todos los d" in fit_str or "daily" in fit_str:
+            return 10, "CRM"
+        if "4–6" in fit_str or "4-6" in fit_str or "lover" in fit_str:
+            return 8, "CRM"
+        if "2–3" in fit_str or "2-3" in fit_str or "constante" in fit_str or "constant" in fit_str:
+            return 6, "CRM"
+        if "principiante" in fit_str or "beginner" in fit_str or "1" in fit_str or "ocasional" in fit_str:
+            return 4, "CRM"
+        if "no entrena" in fit_str or "sedentario" in fit_str or "nada" in fit_str or "ninguno" in fit_str or "does not" in fit_str:
+            return 2, "CRM"
+
+    return None, "Pendiente (F2)"
+
+
+def resolve_education_level(
+    cep_val: Any,
+    crm_education_val: Any = None,
+    is_persisted_in_cep: bool = True
+) -> Tuple[Optional[int], str]:
+    """
+    Regla Unificada de Cascada para Nivel Educativo (escala 1–10):
+    1) Prioridad 1: client_extended_profile.education_level (si existe fila real en F2 y no es placeholder sin persistir).
+    2) Prioridad 2 (CRM): profiles.education (Doctorado->10, Maestría->9, Especialización->8, Profesional/Universitario->7, Técnico/Tecnólogo/Estudiante->5, Bachiller->3).
+    """
+    if is_persisted_in_cep and cep_val is not None:
+        try:
+            v = int(cep_val)
+            return v, "Psicóloga (F2)"
+        except (ValueError, TypeError):
+            pass
+
+    edu_str = str(crm_education_val or "").strip().lower()
+    if edu_str and edu_str not in ("none", "null", "no especificado", "no especificada"):
+        if "doctorad" in edu_str or "phd" in edu_str or "doctorate" in edu_str:
+            return 10, "CRM"
+        if "maestr" in edu_str or "master" in edu_str or "mba" in edu_str or "magíster" in edu_str or "magister" in edu_str:
+            return 9, "CRM"
+        if "especializaci" in edu_str or "posgrado" in edu_str or "postgrado" in edu_str:
+            return 8, "CRM"
+        if "profesional" in edu_str or "professional" in edu_str or "universitari" in edu_str or "pregrado" in edu_str or "bachelor" in edu_str or "licenciad" in edu_str:
+            return 7, "CRM"
+        if "tecnólog" in edu_str or "tecnolog" in edu_str or "técnic" in edu_str or "tecnic" in edu_str or "estudiante" in edu_str or "student" in edu_str or "associate" in edu_str:
+            return 5, "CRM"
+        if "bachiller" in edu_str or "secundaria" in edu_str or "high school" in edu_str:
+            return 3, "CRM"
+
+    return None, "Pendiente (F2)"
+
+
 @router.get("/extended-profile/{crm_id_or_user_id}")
 async def get_client_extended_profile(
     crm_id_or_user_id: str,
@@ -7794,7 +7886,7 @@ async def get_client_extended_profile(
 
     # 2. Consultar profiles (datos del CRM / onboarding)
     prof_db_res = await db.execute(text("""
-        SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.orientation, p.responsable,
+        SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.orientation, p.responsable,
                p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes, p.lifestyle
         FROM profiles p
         WHERE p.user_id = :uid
@@ -8028,17 +8120,26 @@ async def get_client_extended_profile(
             inferred_ws.append("Mixto")
         d["weekend_style"] = inferred_ws
 
-    # 7. Nivel de Actividad Física
-    if not is_persisted_in_cep or d.get("physical_activity_level") is None or d.get("physical_activity_level") == 5:
-        fit_str = str(lifestyle.get("fitness_level") or (sp.get("lifestyle") or {}).get("actividad_fisica") or "").lower()
-        if "4–6" in fit_str or "4-6" in fit_str or "lover" in fit_str:
-            d["physical_activity_level"] = 8
-        elif "2–3" in fit_str or "2-3" in fit_str or "constante" in fit_str:
-            d["physical_activity_level"] = 6
-        elif "principiante" in fit_str or "1" in fit_str:
-            d["physical_activity_level"] = 4
-        elif "sedentario" in fit_str or "nada" in fit_str:
-            d["physical_activity_level"] = 2
+    # 7. Nivel de Actividad Física y Nivel Educativo (usando helpers centralizados F2 -> CRM)
+    resolved_act, act_source = resolve_physical_activity_level(
+        d.get("physical_activity_level") if (is_persisted_in_cep and d.get("physical_activity_level") != 5) else None,
+        lifestyle,
+        sp,
+        is_persisted_in_cep=(is_persisted_in_cep and d.get("physical_activity_level") not in (None, 5))
+    )
+    if resolved_act is not None:
+        d["physical_activity_level"] = resolved_act
+    d["physical_activity_source"] = act_source
+
+    resolved_edu, edu_source = resolve_education_level(
+        d.get("education_level") if (is_persisted_in_cep and d.get("education_level") != 5) else None,
+        prof_row.education if prof_row else None,
+        is_persisted_in_cep=(is_persisted_in_cep and d.get("education_level") not in (None, 5))
+    )
+    if resolved_edu is not None:
+        d["education_level"] = resolved_edu
+    d["education_source"] = edu_source
+    d["education_crm_raw"] = (prof_row.education if prof_row and prof_row.education else None)
 
     # 8. Importancia de Hijos (kids_importance)
     if not is_persisted_in_cep or d.get("kids_importance") is None or d.get("kids_importance") == 5:
@@ -9967,17 +10068,30 @@ async def find_candidate_matches_engine(
 
     client_gender = raw_cg.strip().lower()
     client_sg = float(client_summary["social_group_score"]) if client_summary.get("social_group_score") is not None else None
-    client_act = int(client_summary["physical_activity_level"]) if client_summary.get("physical_activity_level") is not None else None
-    client_edu = int(client_summary["education_level"]) if client_summary.get("education_level") is not None else None
-    client_lang_rec = (client_summary.get("love_language_received") or "").lower()
-    client_lang_given = (client_summary.get("love_language_given") or "").lower()
-    client_non_neg = client_summary.get("non_negotiables") or []
     client_prefs = (client_summary.get("search_preferences") if client_summary.get("search_preferences") else {}) or {}
     if isinstance(client_prefs, str):
         try:
             client_prefs = json.loads(client_prefs)
         except Exception:
             client_prefs = {}
+    client_act, client_act_source = resolve_physical_activity_level(
+        client_summary.get("physical_activity_level"),
+        client_summary.get("lifestyle"),
+        client_prefs,
+        is_persisted_in_cep=(client_summary.get("physical_activity_level") is not None)
+    )
+    client_edu, client_edu_source = resolve_education_level(
+        client_summary.get("education_level"),
+        client_summary.get("education"),
+        is_persisted_in_cep=(client_summary.get("education_level") is not None)
+    )
+    client_summary["physical_activity_level"] = client_act
+    client_summary["physical_activity_source"] = client_summary.get("physical_activity_source") or client_act_source
+    client_summary["education_level"] = client_edu
+    client_summary["education_source"] = client_summary.get("education_source") or client_edu_source
+    client_lang_rec = (client_summary.get("love_language_received") or "").lower()
+    client_lang_given = (client_summary.get("love_language_given") or "").lower()
+    client_non_neg = client_summary.get("non_negotiables") or []
     client_height_cm = parse_cm_height(client_summary.get("estatura")) if client_summary.get("estatura") else None
     client_age = int(client_summary["age"]) if client_summary.get("age") else None
     client_attachment = client_summary.get("attachment_style")
@@ -10100,7 +10214,7 @@ async def find_candidate_matches_engine(
 
     cand_res = await db.execute(text(f"""
         SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
+               p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
                p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
                p.lifestyle, p.love_language,
                cep.social_group_score, cep.physical_activity_level, cep.education_level,
@@ -10139,7 +10253,7 @@ async def find_candidate_matches_engine(
     if not candidate_rows:
         cand_res = await db.execute(text(f"""
             SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-                   p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
+                   p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
                    p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
                    p.lifestyle, p.love_language,
                    cep.social_group_score, cep.physical_activity_level, cep.education_level,
@@ -10555,7 +10669,7 @@ async def find_candidate_matches_engine(
                 await _sync_crm_id_from_webhooks(str(r.crm_id), db)
                 _refreshed = await db.execute(text("""
                     SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
-                           p.gender, p.city, p.age, p.plan_tier, p.occupation, p.responsable,
+                           p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
                            p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
                            p.lifestyle, p.love_language,
                            cep.social_group_score, cep.physical_activity_level, cep.education_level,
@@ -10687,9 +10801,12 @@ async def find_candidate_matches_engine(
                 "badge_text": "Apego: Pendiente"
             }
 
-        # 4. Datos clínicos
+        # 4. Datos clínicos (Regla Unificada de Cascada: 1) F2 (client_extended_profile) -> 2) CRM (profiles))
         cand_sg = float(r.social_group_score) if r.social_group_score is not None else None
-        cand_act = int(r.physical_activity_level) if r.physical_activity_level is not None else None
+        cand_act, cand_act_source = resolve_physical_activity_level(
+            getattr(r, "physical_activity_level", None),
+            getattr(r, "lifestyle", None)
+        )
         cand_occ = r.occupation.strip() if r.occupation and r.occupation.strip() else "No especificado"
 
         # Regla Unificada de Cascada: 1) Psicóloga (love_language_given / love_language_received) -> 2) CRM (profiles.love_language)
@@ -10719,7 +10836,11 @@ async def find_candidate_matches_engine(
                 except Exception:
                     pass
         cand_age = cand_eval_age
-        cand_edu = int(r.education_level) if r.education_level is not None else None
+        cand_edu, cand_edu_source = resolve_education_level(
+            getattr(r, "education_level", None),
+            getattr(r, "education", None),
+            getattr(r, "occupation", None)
+        )
 
         # 5. Cálculo clínico proporcional
         earned_points = 0.0
@@ -11024,9 +11145,12 @@ async def find_candidate_matches_engine(
             "dates_used": raw_cand_used,
             "dates_remaining": saldo_citas_b,
             "occupation": cand_occ,
+            "education": getattr(r, "education", None),
             "social_group_score": cand_sg,
             "physical_activity_level": cand_act,
+            "physical_activity_source": cand_act_source,
             "education_level": cand_edu,
+            "education_source": cand_edu_source,
             "love_language": cand_lang,
             "love_language_source": cand_lang_source,
             "lifestyle": getattr(r, "lifestyle", None),
@@ -11483,7 +11607,7 @@ async def get_interview_results(
 
     # 1. Datos básicos y perfil
     prof_res = await db.execute(text("""
-        SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.orientation, p.responsable,
+        SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.orientation, p.responsable,
                p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes, p.lifestyle
         FROM profiles p
         WHERE p.user_id = :uid
@@ -11507,7 +11631,7 @@ async def get_interview_results(
         try:
             await _sync_crm_id_from_webhooks(str(user_row.crm_id), db)
             prof_res = await db.execute(text("""
-                SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.orientation, p.responsable,
+                SELECT p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.orientation, p.responsable,
                        p.love_language, p.apego, p.estatura, p.search_preferences, p.bio_notes, p.lifestyle
                 FROM profiles p
                 WHERE p.user_id = :uid
@@ -11542,7 +11666,15 @@ async def get_interview_results(
                 pass
     client_gender = raw_cg.strip().lower() if raw_cg and raw_cg not in ["No especificado", "None", ""] else "género no determinado"
     client_sg = float(ext_data["social_group_score"]) if ext_data.get("social_group_score") is not None else None
-    client_act = int(ext_data["physical_activity_level"]) if ext_data.get("physical_activity_level") is not None else None
+    client_act, client_act_source = resolve_physical_activity_level(
+        ext_data.get("physical_activity_level"),
+        prof_row.lifestyle if prof_row else None
+    )
+    client_edu, client_edu_source = resolve_education_level(
+        ext_data.get("education_level"),
+        getattr(prof_row, "education", None) if prof_row else None,
+        prof_row.occupation if prof_row else None
+    )
     client_prefs = (prof_row.search_preferences if prof_row and prof_row.search_preferences else {}) or {}
     if isinstance(client_prefs, str):
         try:
@@ -11654,6 +11786,7 @@ async def get_interview_results(
         "age": client_age,
         "estatura": prof_row.estatura if prof_row and prof_row.estatura else "",
         "occupation": prof_row.occupation.strip() if prof_row and prof_row.occupation and prof_row.occupation.strip() else "No especificado",
+        "education": getattr(prof_row, "education", None) if prof_row else None,
         "plan_tier": client_plan,
         "plan_total_dates": client_slots_total,
         "dates_used": client_used,
@@ -11663,8 +11796,10 @@ async def get_interview_results(
         "attachment_style": client_attachment,
         "attachment_source": client_attachment_source,
         "social_group_score": client_sg,
-        "education_level": ext_data.get("education_level"),
+        "education_level": client_edu,
+        "education_source": client_edu_source,
         "physical_activity_level": client_act,
+        "physical_activity_source": client_act_source,
         "social_energy_level": ext_data.get("social_energy_level"),
         "love_language": primary_love_lang,
         "love_language_given": client_lang_given,
