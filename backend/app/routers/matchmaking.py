@@ -9348,14 +9348,14 @@ BORRADOR GENERADO A AUDITAR:
 REGLAS ESTRICTAS DE AUDITORÍA BILATERAL:
 1. Verifica cada afirmación de "ambos", "comparten", "en común", "coinciden", "similares" o cada elemento de `puntos_fuertes`.
 2. Si el borrador afirma que ambos comparten un descriptor de personalidad o estilo de vida (por ejemplo: decir que "ambos comparten un estilo de vida tranquilo" cuando {name_a_clean} es tranquilo/introvertido pero {name_b_clean} es activa/sociable/espontánea/inquieta) o un hobby/hábito (ej. lectura, deportes, mascotas, emprendimiento) que SOLO está en las notas de UNO de ellos o que contradice el perfil del otro:
-   - En `puntos_fuertes`: ELIMINA cualquier punto fuerte que no esté explícitamente respaldado en AMBAS notas (no dejes gustos ni estilos de vida unilaterales).
-   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} (ej. "{name_a_clean} prefiere un estilo de vida tranquilo, mientras que {name_b_clean} se describe como activa, sociable y espontánea").
+   - En `puntos_fuertes`: ELIMINA cualquier punto fuerte que no esté explícitamente respaldado en AMBAS notas (no dejes gustos ni estilos de vida unilaterales), y si quedan menos de 2 elementos, REEMPLÁZALOS por coincidencias reales presentes en AMBAS notas (ej. "Ambos buscan construir una relación seria", "Ambos coinciden en evitar la rumba o fiesta constante", "Ambos disfrutan viajar y conocer lugares").
+   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} (ej. "{name_a_clean} prefiere un estilo de vida tranquilo, mientras que {name_b_clean} se describe como activa, sociable y espontánea"), manteniendo un párrafo clínico fluido de 2 a 3 oraciones que incluya tanto las afinidades reales como las reservas reales.
 3. Conserva intactas las observaciones verdaderas (como reservas de edad, postura sobre hijos, ciudad o no gusto por la fiesta constante si consta en ambos).
 
 Responde ÚNICAMENTE con un objeto JSON válido:
 {{
   "analisis": "<análisis verificado y corregido sin atribuciones cruzadas>",
-  "puntos_fuertes": ["<solo fortalezas 100% respaldadas explícitamente en AMBOS perfiles>"]
+  "puntos_fuertes": ["<2 a 3 fortalezas 100% respaldadas explícitamente en AMBOS perfiles>"]
 }}"""
 
         settings_obj = get_settings()
@@ -13381,8 +13381,10 @@ def _sanitize_clinical_chat_answer(
     negative_markers = (
         "sin información", "sin informacion", "no especifica", "no menciona",
         "no registra", "no hay información", "no hay mención", "no se menciona",
-        "no aparece"
+        "no aparece", "no lleva", "no tiene", "no es ", "por el contrario",
+        "en cambio", "sino como", "se describe como activa", "se percibe activa"
     )
+    active_pole_pat = r'\b(activ[oa]s?|espont[aá]ne[oa]s?|en[eé]rgic[oa]s?|aventurer[oa]s?|inquiet[oa]s?|muy\s+sociables?|energ[ií]a\s+muy\s+social)\b'
 
     lines = ai_answer.splitlines()
     sanitized_lines = []
@@ -13390,20 +13392,6 @@ def _sanitize_clinical_chat_answer(
     corrected_topic_label = None
     who_has_topic = []
     who_lacks_topic = []
-
-    for t_label, t_pat in active_topics:
-        has_list = []
-        lacks_list = []
-        for ent_name, ent_corpus in entities:
-            if re.search(t_pat, ent_corpus or "", re.IGNORECASE):
-                has_list.append(ent_name)
-            else:
-                lacks_list.append(ent_name)
-        if has_list and lacks_list:
-            corrected_topic_label = t_label
-            who_has_topic = has_list
-            who_lacks_topic = lacks_list
-            break
 
     for line in lines:
         stripped = line.strip()
@@ -13415,21 +13403,34 @@ def _sanitize_clinical_chat_answer(
             ):
                 content_after_colon = stripped.split(":", 1)[1].strip() if ":" in stripped else stripped
                 content_low = content_after_colon.lower()
-                # Revisar si afirma positivamente un tópico que NO está en ent_corpus
+                # Revisar solo tópicos mencionados en ESTA línea o preguntados explícitamente en `question`
                 for t_label, t_pat in active_topics:
                     in_corpus = bool(re.search(t_pat, ent_corpus or "", re.IGNORECASE))
                     if not in_corpus:
-                        mentions_topic_or_yes = bool(re.search(t_pat, content_low, re.IGNORECASE)) or bool(
-                            re.match(r'^(s[ií]\b|le\s+gusta|le\s+encanta|disfruta|comparte)', content_low)
+                        in_this_line = bool(re.search(t_pat, content_low, re.IGNORECASE))
+                        in_question = bool(re.search(t_pat, question or "", re.IGNORECASE))
+                        mentions_topic_or_yes = in_this_line or (
+                            in_question and bool(re.match(r'^(s[ií]\b|le\s+gusta|le\s+encanta|disfruta|comparte|lleva\s+un)', content_low))
                         )
-                        is_already_pure_negative = content_low.startswith("⚠️") or content_low.startswith("no ") or any(
-                             content_low.startswith(nm) for nm in negative_markers
+                        is_already_negative = content_low.startswith("⚠️") or content_low.startswith("no ") or any(
+                            nm in content_low for nm in negative_markers
                         )
-                        if mentions_topic_or_yes and not is_already_pure_negative:
-                            replaced_line = f"• {ent_name}: ⚠️ Sin información registrada en notas sobre {t_label}."
+                        if mentions_topic_or_yes and not is_already_negative:
+                            if "tranquilo" in t_label and re.search(active_pole_pat, ent_corpus or "", re.IGNORECASE):
+                                replaced_line = (
+                                    f"• {ent_name}: En sus notas no se describe con un estilo de vida tranquilo/hogareño, "
+                                    f"sino como una persona activa, sociable y espontánea."
+                                )
+                            else:
+                                replaced_line = f"• {ent_name}: ⚠️ Sin información registrada en notas sobre {t_label}."
                             corrected_any = True
-                            if not corrected_topic_label:
-                                corrected_topic_label = t_label
+                            corrected_topic_label = t_label
+                            who_has_topic = [
+                                en for en, ec in entities if re.search(t_pat, ec or "", re.IGNORECASE)
+                            ]
+                            who_lacks_topic = [
+                                en for en, ec in entities if not re.search(t_pat, ec or "", re.IGNORECASE)
+                            ]
                             break
         sanitized_lines.append(replaced_line)
 
@@ -13439,10 +13440,16 @@ def _sanitize_clinical_chat_answer(
             if re.match(r'^[•\-\*]?\s*(conclusi[oó]n|veredicto)', ln.strip(), re.IGNORECASE):
                 prefix = ln.split(":", 1)[0]
                 if who_has_topic and who_lacks_topic:
-                    final_lines.append(
-                        f"{prefix}: Solo {', '.join(who_has_topic)} registra mención explícita de {corrected_topic_label} en su ficha/notas; "
-                        f"en el perfil de {', '.join(who_lacks_topic)} no hay información registrada sobre {corrected_topic_label} (validar en entrevista si es relevante)."
-                    )
+                    if "estilo de vida" in corrected_topic_label:
+                        final_lines.append(
+                            f"{prefix}: No comparten el mismo ritmo: {', '.join(who_has_topic)} registra un {corrected_topic_label}, "
+                            f"mientras que {', '.join(who_lacks_topic)} presenta un perfil distinto (más activo, sociable y espontáneo)."
+                        )
+                    else:
+                        final_lines.append(
+                            f"{prefix}: Solo {', '.join(who_has_topic)} registra mención explícita de {corrected_topic_label} en su ficha/notas; "
+                            f"en el perfil de {', '.join(who_lacks_topic)} no hay información registrada sobre {corrected_topic_label} (validar en entrevista si es relevante)."
+                        )
                 else:
                     final_lines.append(
                         f"{prefix}: Ninguno de los perfiles registra mención explícita de {corrected_topic_label} en sus notas clínicas."
