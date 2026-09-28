@@ -8847,6 +8847,27 @@ def check_deterministic_hard_dealbreakers(cli: dict, cand: dict):
     if is_cli_safety:
         return True, cli_safety_reason
 
+    # 0.1 Historial de Citas Previas (No Repetir Parejas que ya tuvieron cita)
+    cli_c360 = _to_d(cli.get("clinical_profile_360")) if isinstance(_to_d(cli.get("clinical_profile_360")), dict) else {}
+    cand_c360 = _to_d(cand.get("clinical_profile_360")) if isinstance(_to_d(cand.get("clinical_profile_360")), dict) else {}
+    cli_hist = cli_c360.get("historial") if isinstance(cli_c360, dict) else {}
+    if not isinstance(cli_hist, dict):
+        cli_hist = {}
+    cand_hist = cand_c360.get("historial") if isinstance(cand_c360, dict) else {}
+    if not isinstance(cand_hist, dict):
+        cand_hist = {}
+    cli_past = [normalize_text_unaccent(x) for x in (cli_hist.get("past_matched_names") or cli.get("past_matched_names") or []) if x]
+    cand_past = [normalize_text_unaccent(x) for x in (cand_hist.get("past_matched_names") or cand.get("past_matched_names") or []) if x]
+    cli_n = normalize_text_unaccent(cli.get("name") or "")
+    cand_n = normalize_text_unaccent(cand.get("name") or "")
+    has_prior_date = False
+    if cand_n and any(cand_n == p or (len(cand_n) >= 5 and (cand_n in p or p in cand_n)) for p in cli_past if p):
+        has_prior_date = True
+    elif cli_n and any(cli_n == p or (len(cli_n) >= 5 and (cli_n in p or p in cli_n)) for p in cand_past if p):
+        has_prior_date = True
+    if has_prior_date:
+        return True, f"Cita previa en historial clínico: {cli.get('name')} y {cand.get('name')} ya tuvieron una cita previa registrada en Daily Lover."
+
     # 1. Género y Orientación Sexual
     c_gender = (cli.get('gender') or '').strip().lower()
     c_sp = _to_d(cli.get('search_preferences'))
@@ -9688,21 +9709,210 @@ async def find_candidate_matches_engine(
         })
         candidate_rows = cand_res.fetchall()
 
-    # 1. Obtener historial previo de citas del cliente en 1 sola consulta eficiente
+    # 1. Obtener historial previo de citas del cliente de forma integral (multi-origen, insensible a mayúsculas, user_id, crm_id y nombres normalizados)
     client_name_clean = (client_summary.get("name") or "").strip()
-    past_partners = set()
-    if client_name_clean:
-        res_prev_all = await db.execute(text("""
-            SELECT DISTINCT 
-                CASE 
-                    WHEN LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) THEN LOWER(TRIM(person_b))
-                    ELSE LOWER(TRIM(person_a))
-                END as partner
-            FROM operational_matches
-            WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:a)))
-              AND status IN ('HECHO', 'APROBADO', 'cita realizada', 'DATE REALIZADO', 'MATCH DONE', 'CITA COMPLETADA', 'cita confirmada')
-        """), {"a": client_name_clean})
-        past_partners = {r[0] for r in res_prev_all.fetchall() if r[0]}
+    client_norm = normalize_text_unaccent(client_name_clean)
+    client_uid = client_summary.get("user_id") or uid
+    client_crm_id = str(client_summary.get("crm_id") or "").strip()
+    client_norm_like = f"%{client_norm}%" if client_norm else ""
+
+    client_past_by_uid: Dict[int, dict] = {}
+    client_past_by_crm_id: Dict[str, dict] = {}
+    client_past_by_name: Dict[str, dict] = {}
+    all_past_partner_names: set = set()
+    all_past_observations: List[str] = []
+
+    def _is_client_side_a(u_a, cid_a, n_a):
+        if u_a and client_uid and u_a == client_uid:
+            return True
+        if cid_a and client_crm_id and str(cid_a).strip() == client_crm_id:
+            return True
+        if n_a and client_norm:
+            norm_a = normalize_text_unaccent(n_a)
+            if norm_a == client_norm or (client_norm in norm_a and len(client_norm) >= 6):
+                return True
+        return False
+
+    # 1.1 Consultar operational_matches + scheduled_dates
+    try:
+        q_op_prev = text("""
+            SELECT m.id, m.person_a, m.person_b, m.user_id_a, m.user_id_b,
+                   m.person_a_crm_id, m.person_b_crm_id, m.status,
+                   sd.had_date, sd.date_time, sd.venue, m.observations
+            FROM operational_matches m
+            LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+            WHERE (
+                (m.user_id_a IS NOT NULL AND m.user_id_a = :uid)
+                OR (m.user_id_b IS NOT NULL AND m.user_id_b = :uid)
+                OR (:cid != '' AND (m.person_a_crm_id = :cid OR m.person_b_crm_id = :cid))
+                OR (:norm != '' AND (unaccent(lower(trim(m.person_a))) = :norm OR unaccent(lower(trim(m.person_b))) = :norm))
+                OR (:norm_like != '' AND (unaccent(lower(trim(m.person_a))) LIKE :norm_like OR unaccent(lower(trim(m.person_b))) LIKE :norm_like))
+            )
+        """)
+        res_op_prev = await db.execute(q_op_prev, {
+            "uid": client_uid,
+            "cid": client_crm_id,
+            "norm": client_norm,
+            "norm_like": client_norm_like
+        })
+        for r_op in res_op_prev.fetchall():
+            st = (r_op.status or "").upper().strip()
+            had_d = r_op.had_date is True
+            is_valid_past = (
+                had_d
+                or "CITA" in st
+                or "DATE" in st
+                or "HECHO" in st
+                or "APROBAD" in st
+                or "MATCH DONE" in st
+                or "CONFIRMAD" in st
+                or "PROGRAMAD" in st
+                or st in ["LISTO PARA MATCH", "PENDIENTE", "REPROGRAMAR", "HISTORIAL"]
+                or (st not in ["CANCELADO", "CANCELADA", "RECHAZADO", "RECHAZADA", "DESCARTADO", "DESCARTADA", "NO HAY GENTE", "DESCALIFICADO", "INACTIVO"] and st != "")
+            )
+            if not is_valid_past:
+                continue
+
+            cli_is_a = _is_client_side_a(r_op.user_id_a, r_op.person_a_crm_id, r_op.person_a)
+            partner_uid = r_op.user_id_b if cli_is_a else r_op.user_id_a
+            partner_cid = str(r_op.person_b_crm_id or "").strip() if cli_is_a else str(r_op.person_a_crm_id or "").strip()
+            partner_name = (r_op.person_b if cli_is_a else r_op.person_a) or ""
+
+            match_info = {
+                "match_id": r_op.id,
+                "partner_uid": partner_uid,
+                "partner_crm_id": partner_cid,
+                "partner_name": partner_name,
+                "status": r_op.status,
+                "had_date": r_op.had_date,
+                "date_time": r_op.date_time,
+                "venue": r_op.venue,
+                "observations": r_op.observations,
+                "source": "operational_matches"
+            }
+            if partner_uid:
+                client_past_by_uid[partner_uid] = match_info
+            if partner_cid:
+                client_past_by_crm_id[partner_cid] = match_info
+            p_norm = normalize_text_unaccent(partner_name)
+            if p_norm:
+                client_past_by_name[p_norm] = match_info
+                all_past_partner_names.add(partner_name.strip())
+            if r_op.observations:
+                all_past_observations.append(f"{partner_name}: {r_op.observations}")
+    except Exception as _e_op:
+        logger.warning(f"Error consultando operational_matches para historial previo del cliente: {_e_op}")
+
+    # 1.2 Consultar historical_matches
+    try:
+        q_hist_prev = text("""
+            SELECT hm.id, hm.person_a, hm.person_b, hm.user_id_a, hm.user_id_b,
+                   hm.status, hm.match_date, hm.venue, hm.observations
+            FROM historical_matches hm
+            WHERE (
+                (hm.user_id_a IS NOT NULL AND hm.user_id_a = :uid)
+                OR (hm.user_id_b IS NOT NULL AND hm.user_id_b = :uid)
+                OR (:norm != '' AND (unaccent(lower(trim(hm.person_a))) = :norm OR unaccent(lower(trim(hm.person_b))) = :norm))
+                OR (:norm_like != '' AND (unaccent(lower(trim(hm.person_a))) LIKE :norm_like OR unaccent(lower(trim(hm.person_b))) LIKE :norm_like))
+            )
+        """)
+        res_hist_prev = await db.execute(q_hist_prev, {
+            "uid": client_uid,
+            "norm": client_norm,
+            "norm_like": client_norm_like
+        })
+        for r_h in res_hist_prev.fetchall():
+            cli_is_a = _is_client_side_a(r_h.user_id_a, None, r_h.person_a)
+            partner_uid = r_h.user_id_b if cli_is_a else r_h.user_id_a
+            partner_name = (r_h.person_b if cli_is_a else r_h.person_a) or ""
+
+            match_info = {
+                "match_id": r_h.id,
+                "partner_uid": partner_uid,
+                "partner_crm_id": "",
+                "partner_name": partner_name,
+                "status": r_h.status or "HISTORICO APROBADO",
+                "had_date": True,
+                "date_time": r_h.match_date,
+                "venue": r_h.venue,
+                "observations": r_h.observations,
+                "source": "historical_matches"
+            }
+            if partner_uid and partner_uid not in client_past_by_uid:
+                client_past_by_uid[partner_uid] = match_info
+            p_norm = normalize_text_unaccent(partner_name)
+            if p_norm:
+                if p_norm not in client_past_by_name:
+                    client_past_by_name[p_norm] = match_info
+                all_past_partner_names.add(partner_name.strip())
+            if r_h.observations:
+                all_past_observations.append(f"{partner_name}: {r_h.observations}")
+    except Exception as _e_h:
+        logger.warning(f"Error consultando historical_matches para historial previo del cliente: {_e_h}")
+
+    # 1.3 Historial en lote de los candidatos pre-seleccionados del pool
+    cand_hist_map: Dict[int, dict] = {}
+    cand_uids = [r.id for r in candidate_rows if r.id]
+    if cand_uids:
+        for c_id in cand_uids:
+            cand_hist_map[c_id] = {"partner_names": [], "observations": [], "dates_count": 0}
+        try:
+            q_cand_om = text("""
+                SELECT m.user_id_a, m.user_id_b, m.person_a, m.person_b,
+                       m.status, sd.had_date, sd.date_time, sd.venue, m.observations
+                FROM operational_matches m
+                LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+                WHERE (m.user_id_a = ANY(:uids) OR m.user_id_b = ANY(:uids))
+                  AND (
+                    sd.had_date = true
+                    OR UPPER(COALESCE(m.status, '')) LIKE '%CITA%'
+                    OR UPPER(COALESCE(m.status, '')) LIKE '%DATE%'
+                    OR UPPER(COALESCE(m.status, '')) LIKE '%HECHO%'
+                    OR UPPER(COALESCE(m.status, '')) LIKE '%APROBAD%'
+                    OR UPPER(COALESCE(m.status, '')) LIKE '%MATCH DONE%'
+                  )
+            """)
+            res_cand_om = await db.execute(q_cand_om, {"uids": cand_uids})
+            for r_co in res_cand_om.fetchall():
+                if r_co.user_id_a in cand_hist_map:
+                    pn = r_co.person_b
+                    if pn and pn.strip() and pn.strip() not in cand_hist_map[r_co.user_id_a]["partner_names"]:
+                        cand_hist_map[r_co.user_id_a]["partner_names"].append(pn.strip())
+                    if r_co.observations:
+                        cand_hist_map[r_co.user_id_a]["observations"].append(f"{pn}: {r_co.observations}")
+                    if r_co.had_date:
+                        cand_hist_map[r_co.user_id_a]["dates_count"] += 1
+                if r_co.user_id_b in cand_hist_map:
+                    pn = r_co.person_a
+                    if pn and pn.strip() and pn.strip() not in cand_hist_map[r_co.user_id_b]["partner_names"]:
+                        cand_hist_map[r_co.user_id_b]["partner_names"].append(pn.strip())
+                    if r_co.observations:
+                        cand_hist_map[r_co.user_id_b]["observations"].append(f"{pn}: {r_co.observations}")
+                    if r_co.had_date:
+                        cand_hist_map[r_co.user_id_b]["dates_count"] += 1
+
+            q_cand_hm = text("""
+                SELECT hm.user_id_a, hm.user_id_b, hm.person_a, hm.person_b,
+                       hm.status, hm.match_date, hm.venue, hm.observations
+                FROM historical_matches hm
+                WHERE (hm.user_id_a = ANY(:uids) OR hm.user_id_b = ANY(:uids))
+            """)
+            res_cand_hm = await db.execute(q_cand_hm, {"uids": cand_uids})
+            for r_ch in res_cand_hm.fetchall():
+                if r_ch.user_id_a in cand_hist_map:
+                    pn = r_ch.person_b
+                    if pn and pn.strip() and pn.strip() not in cand_hist_map[r_ch.user_id_a]["partner_names"]:
+                        cand_hist_map[r_ch.user_id_a]["partner_names"].append(pn.strip())
+                    if r_ch.observations:
+                        cand_hist_map[r_ch.user_id_a]["observations"].append(f"{pn}: {r_ch.observations}")
+                if r_ch.user_id_b in cand_hist_map:
+                    pn = r_ch.person_a
+                    if pn and pn.strip() and pn.strip() not in cand_hist_map[r_ch.user_id_b]["partner_names"]:
+                        cand_hist_map[r_ch.user_id_b]["partner_names"].append(pn.strip())
+                    if r_ch.observations:
+                        cand_hist_map[r_ch.user_id_b]["observations"].append(f"{pn}: {r_ch.observations}")
+        except Exception as _e_ch:
+            logger.warning(f"Error consultando historial en lote de candidatos: {_e_ch}")
 
     # Extracción del Perfil Clínico 360° Integral de Persona A (Cliente Entrevistado)
     client_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
@@ -9710,8 +9920,11 @@ async def find_candidate_matches_engine(
         name=client_summary.get("name") or "Cliente",
         profile_data=client_summary,
         bio_notes=client_summary.get("bio_notes", ""),
-        past_matched_names=list(past_partners),
+        past_matched_names=list(all_past_partner_names),
+        past_match_observations=all_past_observations,
     )
+    client_summary["clinical_profile_360"] = client_profile_360
+    client_summary["past_matched_names"] = list(all_past_partner_names)
 
     suggested_matches = []
     discarded_matches = []
@@ -9730,15 +9943,104 @@ async def find_candidate_matches_engine(
             if candidate_usage_tracker.get(r.id, 0) >= max_candidate_usage:
                 is_capped = True
 
-        # 1. Historial previo (evitar parejas que ya tuvieron cita juntos)
-        if cand_name.lower() in past_partners:
+        # 1. Historial previo (evitar parejas que ya tuvieron cita juntos o fueron emparejados previamente)
+        cand_norm_name = normalize_text_unaccent(cand_name)
+        cand_cid_str = str(r.crm_id or "").strip()
+
+        # Búsqueda en mapas indexados del cliente
+        past_match_info = (
+            client_past_by_uid.get(r.id)
+            or (client_past_by_crm_id.get(cand_cid_str) if cand_cid_str else None)
+            or client_past_by_name.get(cand_norm_name)
+        )
+
+        # Búsqueda por coincidencia difusa / contenida en nombres
+        if not past_match_info and cand_norm_name:
+            for p_norm_key, p_info in client_past_by_name.items():
+                if p_norm_key and (p_norm_key in cand_norm_name or cand_norm_name in p_norm_key):
+                    past_match_info = p_info
+                    break
+
+        # Búsqueda inversa: ¿el candidato tiene al cliente en su propio historial registrado?
+        if not past_match_info:
+            cand_past_p = [normalize_text_unaccent(x) for x in cand_hist_map.get(r.id, {}).get("partner_names", [])]
+            if client_norm and any(client_norm == cp or (len(client_norm) >= 5 and (client_norm in cp or cp in client_norm)) for cp in cand_past_p if cp):
+                past_match_info = {
+                    "status": "REGISTRADO EN HISTORIAL CANDIDATO",
+                    "observations": f"Historial previo: {cand_name} registra asignación previa con {client_name_clean}.",
+                    "had_date": True
+                }
+
+        # Búsqueda en notas CRM / bio: mención explícita de cita o match previo entre ambos
+        if not past_match_info:
+            cand_bio_norm = normalize_text_unaccent(r.bio_notes or "").lower()
+            cli_bio_norm = normalize_text_unaccent(client_summary.get("bio_notes", "")).lower()
+            client_words = [w for w in client_norm.split() if len(w) > 2]
+            if len(client_words) >= 2:
+                two_names = f"{client_words[0]} {client_words[1]}"
+                first_last = f"{client_words[0]} {client_words[-1]}"
+                has_cli_name = (client_norm in cand_bio_norm or two_names in cand_bio_norm or first_last in cand_bio_norm)
+                match_keywords = ["match con", "cita con", "salio con", "salieron con", "match previo", "ultimo match", "primer match", "segundo match", "tercer match"]
+                if has_cli_name and any(kw in cand_bio_norm for kw in match_keywords):
+                    past_match_info = {
+                        "status": "NOTAS CRM",
+                        "observations": f"Ficha CRM de {cand_name} registra textualmente cita o match previo con {client_name_clean}.",
+                        "had_date": True
+                    }
+
+        if past_match_info:
+            st = past_match_info.get("status") or "REGISTRADA"
+            dt = past_match_info.get("date_time") or past_match_info.get("match_date") or ""
+            vn = past_match_info.get("venue") or ""
+            obs = past_match_info.get("observations") or ""
+            had_d = past_match_info.get("had_date")
+
+            details_parts = []
+            if st:
+                details_parts.append(f"Estado: {st}")
+            if dt:
+                details_parts.append(f"Fecha: {dt}")
+            if vn:
+                details_parts.append(f"Lugar: {vn}")
+            if obs:
+                details_parts.append(f"Obs: {obs}")
+            elif had_d:
+                details_parts.append("Cita confirmada realizada")
+
+            details_str = f" ({', '.join(details_parts)})" if details_parts else ""
+            discard_reason = f"Ya tuvieron una cita o asignación previa en Daily Lover{details_str}."
+
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id,
+                name=cand_name,
+                profile_data={
+                    "city": r.city,
+                    "age": r.age,
+                    "gender": r.gender,
+                    "estatura": r.estatura,
+                    "occupation": r.occupation or "No especificado",
+                    "orientation": getattr(r, "orientation", None),
+                    "religion": getattr(r, "religion", None),
+                    "apego": getattr(r, "apego", None),
+                    "love_language": getattr(r, "love_language", None),
+                    "search_preferences": getattr(r, "search_preferences", None) or {},
+                    "lifestyle": getattr(r, "lifestyle", None),
+                    "non_negotiables": getattr(r, "non_negotiables", None),
+                },
+                bio_notes=(r.bio_notes or "").strip(),
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+
             discarded_matches.append({
                 "candidate_user_id": r.id,
                 "candidate_name": cand_name,
                 "age": r.age,
                 "occupation": r.occupation,
-                "reasons": [f"Ya tuvieron una cita o asignación previa en Daily Lover."],
-                "warnings": []
+                "reasons": [discard_reason],
+                "warnings": [],
+                "clinical_profile_360": cand_profile_360
             })
             continue
 
@@ -9791,6 +10093,7 @@ async def find_candidate_matches_engine(
         cand_real_city = (r.city or infer_city_from_text(cand_bio_clean) or "").strip()
 
         # 2. Extracción Pre-Match del Perfil Clínico 360° de Persona B (Candidata)
+        cand_hist = cand_hist_map.get(r.id, {})
         cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
             user_id=r.id,
             name=cand_name,
@@ -9809,6 +10112,8 @@ async def find_candidate_matches_engine(
                 "non_negotiables": getattr(r, "non_negotiables", None),
             },
             bio_notes=cand_bio_clean,
+            past_matched_names=cand_hist.get("partner_names", []),
+            past_match_observations=cand_hist.get("observations", []),
         )
 
         # 3. Evaluación Determinística Pre-Match de Dealbreakers 360°
@@ -10728,10 +11033,29 @@ async def get_interview_results(
     client_plan = clean_plan_name(prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)")
     client_slots_total = get_slots_by_plan(client_plan) or 2
     res_used_a = await db.execute(text("""
-        SELECT COUNT(*) FROM operational_matches
-        WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:a)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:a)))
-          AND status IN ('HECHO', 'HECHO POR MAPE', 'MATCH DONE', 'CITA COMPLETADA', 'cita realizada')
-    """), {"a": user_row.name or ""})
+        SELECT COUNT(DISTINCT m.id)
+        FROM operational_matches m
+        LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+        WHERE (
+            (m.user_id_a IS NOT NULL AND m.user_id_a = :uid)
+            OR (m.user_id_b IS NOT NULL AND m.user_id_b = :uid)
+            OR (:cid != '' AND (m.person_a_crm_id = :cid OR m.person_b_crm_id = :cid))
+            OR unaccent(lower(trim(m.person_a))) = unaccent(lower(trim(:name)))
+            OR unaccent(lower(trim(m.person_b))) = unaccent(lower(trim(:name)))
+        )
+        AND (
+            sd.had_date = true
+            OR UPPER(COALESCE(m.status, '')) LIKE '%CITA%'
+            OR UPPER(COALESCE(m.status, '')) LIKE '%DATE%'
+            OR UPPER(COALESCE(m.status, '')) LIKE '%HECHO%'
+            OR UPPER(COALESCE(m.status, '')) LIKE '%APROBAD%'
+            OR UPPER(COALESCE(m.status, '')) LIKE '%MATCH DONE%'
+        )
+    """), {
+        "uid": user_row.id,
+        "cid": clean_user_cid if clean_user_cid and clean_user_cid.isdigit() else "",
+        "name": user_row.name or ""
+    })
     raw_client_used = res_used_a.scalar() or 0
     client_used = min(raw_client_used, client_slots_total)
     client_saldo = max(0, client_slots_total - client_used)
