@@ -9361,7 +9361,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             "model_used": "clinical_hybrid_360"
         }
 
-    # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y ENRIQUECIMIENTO FACTUAL 360° ──
+    # ── POST-VALIDADOR ANTI-ALUCINACIÓN Y PRESERVACIÓN CLÍNICA REAL ──
     name_a_clean = client_info.get("name") or "Persona A"
     name_b_clean = cand_info.get("name") or "Persona B"
     age_a_val = client_info.get("age")
@@ -9370,58 +9370,61 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
     occ_a_val = client_info.get("occupation") or ""
     occ_b_val = cand_info.get("occupation") or ""
 
-    # 1. Sanitizar alucinaciones sobre apego no especificado o inversión de deseo de hijos
+    # 1. Sanitizar alucinaciones puntuales SIN destruir el análisis clínico genuino del LLM
     raw_analisis = str(res_json.get("analisis") or "").strip()
     if c_att == "No especificado" and cand_att == "No especificado":
-        raw_analisis = re.sub(r'estilo de apego seguro', 'disposición afectiva reflexiva y orientada al trabajo en equipo (estilo de apego formal no especificado en ficha)', raw_analisis, flags=re.IGNORECASE)
-    if str(c_ls.get("wants_children") or "").lower() == "tal vez" and "no quiere tener hijos" in raw_analisis.lower():
-        raw_analisis = ""
+        raw_analisis = re.sub(r'estilo de apego seguro', 'disposición relacional reflexiva (estilo de apego formal no especificado en ficha)', raw_analisis, flags=re.IGNORECASE)
+    if str(c_ls.get("wants_children") or "").lower() == "tal vez":
+        raw_analisis = re.sub(r'no quiere tener hijos', 'indica postura abierta/tal vez ante tener hijos', raw_analisis, flags=re.IGNORECASE)
 
-    # Construir análisis clínico 360° riguroso si el modelo omitió datos clave o alucinó
-    if not raw_analisis or "apego seguro" in raw_analisis.lower() or len(raw_analisis) < 60:
+    # Solo si el modelo no devolvió análisis o fue menor a 40 caracteres, construir fallback estructurado
+    if not raw_analisis or len(raw_analisis) < 40:
         love_shared = (
             f"Ambos coinciden en '{c_love}' como su lenguaje del amor principal"
             if (c_love != "No especificado" and c_love.lower() == cand_love.lower())
             else f"{name_a_clean} prioriza '{c_love}' y {name_b_clean} '{cand_love}'"
         )
         raw_analisis = (
-            f"Existe afinidad vincular y profesional relevante: {love_shared}. "
-            f"Profesiones: {occ_a_val or 'no registrada en ficha'} e {occ_b_val or 'no registrada en ficha'}. "
-            f"En lo físico/logístico, {name_a_clean} reside en {client_info.get('city') or 'ciudad no registrada en ficha'} "
-            f"y su estatura ({est_a_val or 'no registrada'}) frente al criterio de {name_b_clean} ({cand_sp.get('preferred_height') or 'sin preferencia registrada'}) debe verificarse manualmente. "
-            f"Se clasifica como VIABLE CON RESERVAS — la información clínica de al menos una de las dos fichas está incompleta, así que las psicólogas deben validar antes de presentar: "
-            f"(1) Rango de edad ({name_a_clean} tiene {age_a_val or 'edad no registrada'} años frente al rango {cand_sp.get('min_age') or 'sin especificar'}–{cand_sp.get('max_age') or 'sin especificar'} años buscado por {name_b_clean}, quien tiene {age_b_val or 'edad no registrada'} años); "
-            f"(2) Proyecto familiar (¿{name_b_clean} desea hijos?: {cand_ls.get('wants_children') or 'no registrado'} — ¿{name_a_clean} desea hijos?: {c_ls.get('wants_children') or 'no registrado'}); y "
-            f"(3) Ritmo deportivo/estilo de vida ({name_b_clean}: {cand_ls.get('fitness_level') or 'no registrado'} — {name_a_clean}: {c_ls.get('fitness_level') or 'no registrado'})."
+            f"Afinidad vincular y profesional en revisión: {love_shared}. "
+            f"Profesiones: {occ_a_val or 'no registrada'} e {occ_b_val or 'no registrada'}. "
+            f"Ambos residen en {client_info.get('city') or 'ciudad no registrada'}. "
+            f"Se clasifica como VIABLE CON RESERVAS — las psicólogas deben validar en entrevista: "
+            f"(1) Concordancia en rango de edad ({age_a_val or 'edad no registrada'} vs {age_b_val or 'edad no registrada'} años); "
+            f"(2) Proyecto familiar y deseo de hijos; y "
+            f"(3) Dinámica y ritmo de tiempo libre."
         )
     res_json["analisis"] = raw_analisis
 
-    # 2. Garantizar Puntos Fuertes verificables en CRM
-    grounded_strengths = []
-    if c_love != "No especificado" and c_love.lower() == cand_love.lower():
-        grounded_strengths.append(f"Reciprocidad en Lenguaje del Amor: Ambos comparten '{c_love}' como lenguaje afectivo primario.")
-    if "espiritual" in c_notes.lower() and ("Espiritualidad" in (cand_ls.get("values") or []) or "espiritual" in str(cand_ls).lower()):
-        grounded_strengths.append(f"Alineación axiológica: Ambos destacan la espiritualidad, la estabilidad y el crecimiento personal como pilares de vida.")
-    if occ_a_val and occ_b_val:
-        grounded_strengths.append(f"Afinidad intelectual y profesional: {occ_a_val} ({name_a_clean}) × {occ_b_val} ({name_b_clean}), además del gusto compartido por viajes y gastronomía.")
-    if est_a_val and cand_sp.get("preferred_height") and client_info.get('city') and cand_info.get('city') and client_info.get('city') == cand_info.get('city'):
-        grounded_strengths.append(f"Criterio físico y logístico cumplido: Ambos viven en {client_info.get('city')} y la estatura de {name_a_clean} ({est_a_val}) está dentro del rango buscado por {name_b_clean} ({cand_sp.get('preferred_height')}).")
-    if grounded_strengths:
-        res_json["puntos_fuertes"] = grounded_strengths
+    # 2. Preservar Puntos Fuertes genuinos del LLM; solo agregar complementos si faltan
+    ai_pts = res_json.get("puntos_fuertes")
+    if not isinstance(ai_pts, list) or len(ai_pts) == 0:
+        fallback_pts = []
+        if c_love != "No especificado" and c_love.lower() == cand_love.lower():
+            fallback_pts.append(f"Reciprocidad en Lenguaje del Amor: Ambos comparten '{c_love}' como lenguaje afectivo primario.")
+        if occ_a_val and occ_b_val:
+            fallback_pts.append(f"Afinidad profesional: {occ_a_val} ({name_a_clean}) y {occ_b_val} ({name_b_clean}).")
+        if client_info.get('city') and cand_info.get('city') and client_info.get('city') == cand_info.get('city'):
+            fallback_pts.append(f"Ambos residen en la ciudad de {client_info.get('city')}.")
+        res_json["puntos_fuertes"] = fallback_pts
 
-    # 3. Garantizar Síntesis Individual 100% fiel a los datos reales
-    res_json["client_summary"] = {
-        "quien_es": f"{age_a_val or 'Edad no registrada'} años, {occ_a_val or 'profesión no registrada'} ({client_info.get('education') or 'educación no registrada'}), {est_a_val or 'estatura no registrada'}, reside en {client_info.get('city') or 'ciudad no registrada en ficha'}. Nivel deportivo: {c_ls.get('fitness_level') or 'no registrado'}. Hobbies: {c_ls.get('free_time') or 'no registrados en ficha'}.",
-        "que_busca": f"Relación de equipo con comunicación honesta y respeto por el espacio personal. ¿Tiene hijos?: {c_ls.get('has_children') or 'no registrado'} | ¿Quiere hijos?: {c_ls.get('wants_children') or 'no registrado'}.",
-        "destaca": f"Lenguaje del amor: {c_love}. Valores nucleares: {', '.join(c_ls.get('values') or []) or 'no registrados en ficha'}."
-    }
-    res_json["candidate_summary"] = {
-        "quien_es": f"{age_b_val or 'Edad no registrada'} años, {occ_b_val or 'profesión no registrada'}, reside en {cand_info.get('city') or 'ciudad no registrada en ficha'}. Nivel deportivo: {cand_ls.get('fitness_level') or 'no registrado'}. Hobbies: {cand_ls.get('free_time') or 'no registrados en ficha'}.",
-        "que_busca": f"Rango de edad buscado: {cand_sp.get('min_age') or 'sin especificar'} a {cand_sp.get('max_age') or 'sin especificar'} años, estatura {cand_sp.get('preferred_height') or 'sin preferencia registrada'}, imprescindible: {cand_sp.get('MustHaveValuesTop3') or 'no registrado en ficha'}. ¿Quiere hijos?: {cand_ls.get('wants_children') or 'no registrado'}.",
-        "destaca": f"Lenguaje del amor: {cand_love}. Valores: {', '.join(cand_ls.get('values') or []) or 'no registrados en ficha'}. Red flags que rechaza: {', '.join(cand_sp.get('red_flags') or []) or 'no registrados en ficha'}."
-    }
+    # 3. Preservar Síntesis Individual generada por la IA; solo usar fallback si el LLM no la entregó
+    ai_c_sum = res_json.get("client_summary")
+    if not isinstance(ai_c_sum, dict) or not ai_c_sum.get("quien_es"):
+        res_json["client_summary"] = {
+            "quien_es": f"{age_a_val or 'Edad no registrada'} años, {occ_a_val or 'profesión no registrada'}, reside en {client_info.get('city') or 'ciudad no registrada'}.",
+            "que_busca": f"Relación formal y proyectos compatibles. ¿Quiere hijos?: {c_ls.get('wants_children') or 'no registrado'}.",
+            "destaca": f"Lenguaje del amor: {c_love}. Dinámica relacional reflexiva."
+        }
 
-    # 4. Limpiar deal_breakers alucinados (ej. "Julieth no quiere tener hijos")
+    ai_cand_sum = res_json.get("candidate_summary")
+    if not isinstance(ai_cand_sum, dict) or not ai_cand_sum.get("quien_es"):
+        res_json["candidate_summary"] = {
+            "quien_es": f"{age_b_val or 'Edad no registrada'} años, {occ_b_val or 'profesión no registrada'}, reside en {cand_info.get('city') or 'ciudad no registrada'}.",
+            "que_busca": f"Rango etario buscado: {cand_sp.get('min_age') or 'sin esp.'} a {cand_sp.get('max_age') or 'sin esp.'} años. ¿Quiere hijos?: {cand_ls.get('wants_children') or 'no registrado'}.",
+            "destaca": f"Lenguaje del amor: {cand_love}. Hábitos compatibles."
+        }
+
+    # 4. Limpiar deal_breakers falsos
     cleaned_dbs = []
     for db_str in (res_json.get("deal_breakers") or []):
         if "julieth no quiere tener hijos" in str(db_str).lower():
