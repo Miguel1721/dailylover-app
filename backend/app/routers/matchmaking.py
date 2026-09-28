@@ -9263,8 +9263,7 @@ Responde ÚNICAMENTE un objeto JSON:
     }
 
     attempts_to_try = [
-        ("meta/llama-3.2-11b-vision-instruct", 12.0),
-        ("meta/llama-3.2-11b-vision-instruct", 9.0),
+        ("meta/llama-3.2-11b-vision-instruct", 24.0),
     ]
 
     sys_msg = (
@@ -10845,26 +10844,26 @@ async def find_candidate_matches_engine(
             async with sem:
                 await asyncio.sleep(0.05)
                 try:
-                    # Timeout individual por candidato de 23s
+                    # Timeout individual por candidato de 26s
                     res = await asyncio.wait_for(
                         evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=23.0
+                        timeout=26.0
                     )
                     if res and isinstance(res, dict) and res.get("ai_score") is not None:
                         res["_status"] = "COMPLETED"
                         return res
                     return {"_status": "EMPTY_FALLBACK"}
                 except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 23s, aplicando fallback")
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 26s, aplicando fallback")
                     return {"_status": "TIMEOUT_FALLBACK"}
                 except Exception as _e:
                     logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
                     return {"_status": "ERROR_FALLBACK", "error": str(_e)}
 
         try:
-            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 24s)
+            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 27s)
             tasks = [asyncio.create_task(_eval_with_sem(c)) for c in candidates_to_evaluate]
-            done, pending = await asyncio.wait(tasks, timeout=24.0)
+            done, pending = await asyncio.wait(tasks, timeout=27.0)
 
             for p in pending:
                 p.cancel()
@@ -13151,6 +13150,121 @@ def _format_clinical_entity_for_chat(name: str, info: Optional[Dict[str, Any]]) 
 \"\"\"{bio_notes}\"\"\""""
 
 
+def _sanitize_clinical_chat_answer(
+    ai_answer: str,
+    question: str,
+    entities: List[Tuple[str, str]]
+) -> str:
+    """
+    Post-validador de Grounding Cruzado para el Copiloto Clínico (Recomendación #4):
+    Verifica que si una línea `• Nombre: ...` afirma un tópico específico (ej. lectura/leer/libros,
+    mascotas, vino, correr, cocina, baile, cine, yoga) o si la pregunta consulta por ese tópico,
+    el dato exista realmente en la ficha/notas de esa persona. Si no existe en su corpus,
+    reemplaza la afirmación alucinada por '⚠️ Sin información registrada en notas sobre <tópico>.'
+    y ajusta la Conclusión / Veredicto para no afirmar una coincidencia inexistente.
+    """
+    if not ai_answer or not entities:
+        return ai_answer
+
+    topic_patterns = [
+        ("lectura", r'\b(lectura|leer|lee\b|libro|libros|literatura|novelas?)\b'),
+        ("mascotas", r'\b(mascota|mascotas|perro|perros|perrito|gato|gatos|gatito)\b'),
+        ("vino", r'\b(vino|vinos|cata\s+de\s+vino|enolog)\b'),
+        ("correr", r'\b(correr|running|marat[oó]n|trotar|trota)\b'),
+        ("cocina", r'\b(cocinar|cocina|gastronom[ií]a|culinari)\b'),
+        ("baile", r'\b(bailar|baile|salsa|bachata)\b'),
+        ("cine", r'\b(cine|pel[ií]culas|series)\b'),
+        ("yoga", r'\b(yoga|meditaci[oó]n|meditar|mindfulness)\b'),
+        ("ciclismo", r'\b(bicicleta|ciclismo|bici|mtb)\b'),
+        ("natación", r'\b(nataci[oó]n|nadar|piscina)\b'),
+        ("pádel/tenis", r'\b(p[aá]del|tenis|squash)\b'),
+    ]
+
+    combined_text = f"{question or ''}\n{ai_answer}"
+    active_topics = [
+        (t_label, t_pat)
+        for t_label, t_pat in topic_patterns
+        if re.search(t_pat, combined_text, re.IGNORECASE)
+    ]
+    if not active_topics:
+        return ai_answer
+
+    negative_markers = (
+        "sin información", "sin informacion", "no especifica", "no menciona",
+        "no registra", "no hay información", "no hay mención", "no se menciona",
+        "no aparece"
+    )
+
+    lines = ai_answer.splitlines()
+    sanitized_lines = []
+    corrected_any = False
+    corrected_topic_label = None
+    who_has_topic = []
+    who_lacks_topic = []
+
+    for t_label, t_pat in active_topics:
+        has_list = []
+        lacks_list = []
+        for ent_name, ent_corpus in entities:
+            if re.search(t_pat, ent_corpus or "", re.IGNORECASE):
+                has_list.append(ent_name)
+            else:
+                lacks_list.append(ent_name)
+        if has_list and lacks_list:
+            corrected_topic_label = t_label
+            who_has_topic = has_list
+            who_lacks_topic = lacks_list
+            break
+
+    for line in lines:
+        stripped = line.strip()
+        replaced_line = line
+        for ent_name, ent_corpus in entities:
+            first_tok = ent_name.split()[0].lower() if ent_name else ""
+            if stripped.lower().startswith(f"• {ent_name.lower()}:") or (
+                first_tok and re.match(rf'^[•\-\*]\s*{re.escape(first_tok)}\b[^:]*:', stripped, re.IGNORECASE)
+            ):
+                content_after_colon = stripped.split(":", 1)[1].strip() if ":" in stripped else stripped
+                content_low = content_after_colon.lower()
+                # Revisar si afirma positivamente un tópico que NO está en ent_corpus
+                for t_label, t_pat in active_topics:
+                    in_corpus = bool(re.search(t_pat, ent_corpus or "", re.IGNORECASE))
+                    if not in_corpus:
+                        mentions_topic_or_yes = bool(re.search(t_pat, content_low, re.IGNORECASE)) or bool(
+                            re.match(r'^(s[ií]\b|le\s+gusta|le\s+encanta|disfruta|comparte)', content_low)
+                        )
+                        is_already_pure_negative = content_low.startswith("⚠️") or content_low.startswith("no ") or any(
+                             content_low.startswith(nm) for nm in negative_markers
+                        )
+                        if mentions_topic_or_yes and not is_already_pure_negative:
+                            replaced_line = f"• {ent_name}: ⚠️ Sin información registrada en notas sobre {t_label}."
+                            corrected_any = True
+                            if not corrected_topic_label:
+                                corrected_topic_label = t_label
+                            break
+        sanitized_lines.append(replaced_line)
+
+    if corrected_any and corrected_topic_label:
+        final_lines = []
+        for ln in sanitized_lines:
+            if re.match(r'^[•\-\*]?\s*(conclusi[oó]n|veredicto)', ln.strip(), re.IGNORECASE):
+                prefix = ln.split(":", 1)[0]
+                if who_has_topic and who_lacks_topic:
+                    final_lines.append(
+                        f"{prefix}: Solo {', '.join(who_has_topic)} registra mención explícita de {corrected_topic_label} en su ficha/notas; "
+                        f"en el perfil de {', '.join(who_lacks_topic)} no hay información registrada sobre {corrected_topic_label} (validar en entrevista si es relevante)."
+                    )
+                else:
+                    final_lines.append(
+                        f"{prefix}: Ninguno de los perfiles registra mención explícita de {corrected_topic_label} en sus notas clínicas."
+                    )
+            else:
+                final_lines.append(ln)
+        return "\n".join(final_lines)
+
+    return "\n".join(sanitized_lines)
+
+
 @router.post("/clinical-chat-pair")
 async def clinical_chat_pair(
     payload: ClinicalChatPairRequest,
@@ -13286,7 +13400,7 @@ HISTORIAL DE LA CONVERSACIÓN:
         }
         for attempt in (1, 2):
             try:
-                timeout_val = 11.0 if attempt == 1 else 7.0
+                timeout_val = 14.0 if attempt == 1 else 9.0
                 async with httpx.AsyncClient(timeout=timeout_val) as client_http:
                     r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
                     if r.status_code == 200:
@@ -13331,7 +13445,13 @@ HISTORIAL DE LA CONVERSACIÓN:
     t_end = datetime.now()
     duration_ms = int((t_end - t_start).total_seconds() * 1000)
 
-    if not ai_answer:
+    if ai_answer:
+        ai_answer = _sanitize_clinical_chat_answer(
+            ai_answer,
+            question,
+            [(name_a, formatted_a), (name_b, formatted_b)]
+        )
+    else:
         ai_answer = (
             f"⚠️ En este momento el motor de análisis no pudo procesar la consulta. "
             f"Por favor revisa directamente las notas de {name_a} y {name_b} en las columnas superiores o reintenta."
@@ -13408,11 +13528,13 @@ async def clinical_chat_multi(
     # Formatear contexto clínico de cada candidata seleccionada
     formatted_candidates_list = []
     cand_names_list = []
+    chat_entities_for_grounding = [(client_name, formatted_client)]
     for idx, c in enumerate(candidates[:5]):
         c_name = (c.get("name") or f"Candidata {idx + 1}").strip()
         cand_names_list.append(c_name)
         cand_str = _format_clinical_entity_for_chat(c_name, c)
         formatted_candidates_list.append(f"--- CANDIDATA #{idx+1}: {c_name} ---\n{cand_str}")
+        chat_entities_for_grounding.append((c_name, cand_str))
 
     all_candidates_context = "\n\n".join(formatted_candidates_list)
     candidates_names_str = ", ".join(cand_names_list)
@@ -13496,7 +13618,7 @@ HISTORIAL DE LA CONVERSACIÓN:
         }
         for attempt in (1, 2):
             try:
-                timeout_val = 12.0 if attempt == 1 else 8.0
+                timeout_val = 14.0 if attempt == 1 else 9.0
                 async with httpx.AsyncClient(timeout=timeout_val) as client_http:
                     r = await client_http.post(url_nv, json=payload_nv, headers=headers_nv)
                     if r.status_code == 200:
@@ -13541,7 +13663,13 @@ HISTORIAL DE LA CONVERSACIÓN:
     t_end = datetime.now()
     duration_ms = int((t_end - t_start).total_seconds() * 1000)
 
-    if not ai_answer:
+    if ai_answer:
+        ai_answer = _sanitize_clinical_chat_answer(
+            ai_answer,
+            question,
+            chat_entities_for_grounding
+        )
+    else:
         ai_answer = (
             f"⚠️ En este momento el motor de análisis multi-candidata no pudo responder. "
             f"Por favor revisa la matriz comparativa de {client_name} vs {candidates_names_str} o reintenta."
