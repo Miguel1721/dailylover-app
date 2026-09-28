@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Heart, Sparkles, CheckCircle2, AlertTriangle, ShieldCheck, UserCheck, ArrowRight, Check, X,
+  Heart, Sparkles, CheckCircle2, AlertTriangle, AlertCircle, ShieldCheck, UserCheck, ArrowRight, Check, X,
   ExternalLink, RefreshCw, FileText, User, Users, ChevronDown, ChevronUp, Bot, Send, Trash2,
   MessageSquare, LayoutGrid, List, CheckSquare, Square, Scale, Copy
 } from 'lucide-react'
@@ -546,6 +546,47 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
 
         {/* COLUMNA DERECHA: 3 A 4 CANDIDATOS SUGERIDOS */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* BANNER DE ADVERTENCIA / BLOQUEO INFORMATIVO */}
+          {(data?.warning_message || data?.motivo_bloqueo || data?.ciudad_bloqueada || data?.genero_bloqueado) && (
+            <div style={{
+              background: isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.1)',
+              border: '1.5px solid #F59E0B',
+              borderRadius: 12,
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12
+            }}>
+              <AlertTriangle size={20} color="#F59E0B" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: isLight ? '#92400E' : '#FCD34D', marginBottom: 2 }}>
+                  {data?.ciudad_bloqueada ? 'Atención: Ciudad no determinada en CRM' : (data?.genero_bloqueado ? 'Atención: Género no determinado en CRM' : 'Aviso sobre sugerencias de match')}
+                </div>
+                <div style={{ fontSize: 12, color: isLight ? '#B45309' : '#FDE68A', lineHeight: 1.5 }}>
+                  {data?.warning_message || data?.motivo_bloqueo}
+                </div>
+              </div>
+              {onGoToTab && (
+                <button
+                  onClick={() => onGoToTab('objetivos')}
+                  style={{
+                    background: '#F59E0B',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '6px 12px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Completar en F1
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -1450,11 +1491,29 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                       background: isLight ? '#FFFFFF' : 'var(--bg-card)',
                       border: isLight ? '1px solid #E2E8F0' : '1px solid var(--border-color)',
                       borderRadius: 12,
-                      padding: 30,
-                      textAlign: 'center',
-                      color: isLight ? '#64748B' : 'var(--text-muted)'
+                      padding: '36px 24px',
+                      textAlign: 'center'
                     }}>
-                      No se encontraron candidatos con datos suficientes para evaluación clínica en este momento.
+                      <AlertCircle size={32} style={{ color: '#F59E0B', margin: '0 auto 12px', display: 'block' }} />
+                      <div style={{ fontSize: 15, fontWeight: 700, color: isLight ? '#0F172A' : 'var(--text-primary)', marginBottom: 6 }}>
+                        {data?.ciudad_bloqueada ? 'Ciudad no registrada en CRM' : (data?.genero_bloqueado ? 'Género no registrado en CRM' : 'No se encontraron candidatos viables')}
+                      </div>
+                      <p style={{ fontSize: 13, color: isLight ? '#64748B' : 'var(--text-muted)', maxWidth: 540, margin: '0 auto 16px', lineHeight: 1.5 }}>
+                        {data?.warning_message || data?.motivo_bloqueo || (
+                          data?.discarded_matches?.length > 0 
+                            ? `Se evaluaron ${data?.total_evaluated || data?.discarded_matches?.length} perfiles pero fueron descartados por filtros etarios o dealbreakers cruzados. Revisa la sección de descartados más abajo.`
+                            : 'No se encontraron candidatos con datos suficientes para evaluación clínica en este momento.'
+                        )}
+                      </p>
+                      {onGoToTab && (data?.ciudad_bloqueada || data?.genero_bloqueado) && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => onGoToTab('objetivos')}
+                          style={{ margin: '0 auto' }}
+                        >
+                          Ir a Datos Objetivos (F1)
+                        </button>
+                      )}
                     </div>
                   ) : (
                     viewDisplayMode === 'compact' ? (

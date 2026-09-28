@@ -9330,7 +9330,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             "max_tokens": 950
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=12.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=8.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -10378,22 +10378,42 @@ async def find_candidate_matches_engine(
             client_to_use = httpx.AsyncClient(timeout=50.0)
             should_close_client = True
 
-        sem = asyncio.Semaphore(1)
+        # Concurrencia optimizada: hasta 4 evaluaciones simultáneas en paralelo (~5-8s total)
+        sem = asyncio.Semaphore(4)
 
         async def _eval_with_sem(cand_item):
             if cand_item.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
                 return None
             async with sem:
-                await asyncio.sleep(0.3)
-                return await evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use)
+                await asyncio.sleep(0.05)
+                try:
+                    # Timeout individual por candidato de 11s
+                    return await asyncio.wait_for(
+                        evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
+                        timeout=11.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 11s, aplicando fallback")
+                    return None
+                except Exception as _e:
+                    logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
+                    return None
 
         try:
             eval_tasks = [_eval_with_sem(c) for c in candidates_to_evaluate]
-            eval_results = await asyncio.gather(*eval_tasks, return_exceptions=True)
+            try:
+                # Timeout global estricto: la llamada completa de IA jamás excede 14s
+                eval_results = await asyncio.wait_for(
+                    asyncio.gather(*eval_tasks, return_exceptions=True),
+                    timeout=14.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[AI MATCH TIMEOUT] Evaluación clínica IA superó 14s para cliente {client_summary.get('name')}. Activando fallback estructural.")
+                eval_results = [None] * len(candidates_to_evaluate)
 
             for cand, res in zip(candidates_to_evaluate, eval_results):
                 if isinstance(res, Exception):
-                    print(f"[AI MATCH EXCEPTION IN GATHER] cand={cand.get('name')} error={res}")
+                    logger.warning(f"[AI MATCH EXCEPTION IN GATHER] cand={cand.get('name')} error={res}")
                     res = None
 
                 if cand.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
@@ -10795,7 +10815,7 @@ async def get_interview_results(
         client_summary=client_summary,
         db=db,
         pool_limit=dynamic_pool_limit,
-        max_ai_evaluations=6,
+        max_ai_evaluations=4,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
         nvidia_key=nvidia_key,
@@ -10814,6 +10834,12 @@ async def get_interview_results(
         print(f"    #{idx+1}: {cand.get('name')} | comp={cand.get('compatibility_pct')}% | struct={cand.get('structural_score')} | ai={cand.get('ai_score')}% | verdict={cand.get('ai_veredicto')}", flush=True)
     print(f">>> [AUDIT LIVE INTERVIEW-RESULTS 360] Returning {len(top_matches)} candidates & {len(discarded_matches)} discarded.\n", flush=True)
 
+    warning_msg = (
+        client_profile_360.get("motivo_bloqueo")
+        or client_profile_360.get("warning")
+        or ("No se encontraron candidatos viables en este momento debido a filtros de edad, ciudad o dealbreakers (ver descartados)." if len(viable_matches) == 0 and len(discarded_matches) > 0 else None)
+    )
+
     return {
         "client": client_summary,
         "client_profile_360": client_profile_360,
@@ -10823,7 +10849,11 @@ async def get_interview_results(
         "discarded_matches": discarded_matches[:15],
         "total_evaluated": len(suggested_matches) + len(discarded_matches),
         "total_candidates_pool": len(suggested_matches),
-        "total_discarded": len(discarded_matches)
+        "total_discarded": len(discarded_matches),
+        "warning_message": warning_msg,
+        "motivo_bloqueo": client_profile_360.get("motivo_bloqueo") or None,
+        "ciudad_bloqueada": bool(client_profile_360.get("ciudad_bloqueada", False)),
+        "genero_bloqueado": bool(client_profile_360.get("genero_bloqueado", False))
     }
 
 
