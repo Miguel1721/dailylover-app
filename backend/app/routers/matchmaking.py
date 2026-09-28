@@ -9333,13 +9333,15 @@ Responde ÚNICAMENTE un objeto JSON:
             return draft_analisis, draft_pts
 
         verify_prompt = f"""Eres un Auditor Clínico de Grounding Factual (Temperatura 0).
-Tu única función es auditar el siguiente borrador (`analisis` y `puntos_fuertes`) contrastándolo contra las notas reales de cada persona por separado:
+Tu única función es auditar el siguiente borrador (`analisis` y `puntos_fuertes`) contrastándolo contra los datos y notas reales de cada persona por separado:
 
-NOTAS EXCLUSIVAS DE PERSONA A ({name_a_clean}):
-\"\"\"{c_notes[:2500] if c_notes else 'Sin notas'}\"\""
+PERFIL Y NOTAS EXCLUSIVAS DE PERSONA A ({name_a_clean}):
+- Datos: {client_info.get('age') or 'No esp.'} años, {client_info.get('city') or 'No esp.'}, Estatura: {client_info.get('estatura') or 'No esp.'}, Hijos: {c_ls.get('has_children') or 'No'}, Quiere hijos: {c_ls.get('wants_children') or 'No esp.'}, Deporte: {c_ls.get('fitness_level') or 'No esp.'}, Fuma: {c_ls.get('smoker') or 'No esp.'}, Rango edad buscado: {c_sp.get('min_age') or '?'}-{c_sp.get('max_age') or '?'}
+- Notas clínicas: \"\"\"{c_notes[:2500] if c_notes else 'Sin notas'}\"\""
 
-NOTAS EXCLUSIVAS DE PERSONA B ({name_b_clean}):
-\"\"\"{cand_notes[:2500] if cand_notes else 'Sin notas'}\"\""
+PERFIL Y NOTAS EXCLUSIVAS DE PERSONA B ({name_b_clean}):
+- Datos: {cand_info.get('age') or 'No esp.'} años, {cand_info.get('city') or 'No esp.'}, Estatura: {cand_info.get('estatura') or 'No esp.'}, Hijos: {cand_ls.get('has_children') or 'No'}, Quiere hijos: {cand_ls.get('wants_children') or 'No esp.'}, Deporte: {cand_ls.get('fitness_level') or 'No esp.'}, Fuma: {cand_ls.get('smoker') or 'No esp.'}, Rango edad buscado: {cand_sp.get('min_age') or '?'}-{cand_sp.get('max_age') or '?'}
+- Notas clínicas: \"\"\"{cand_notes[:2500] if cand_notes else 'Sin notas'}\"\""
 
 BORRADOR GENERADO A AUDITAR:
 - analisis: {json.dumps(draft_analisis, ensure_ascii=False)}
@@ -9347,14 +9349,15 @@ BORRADOR GENERADO A AUDITAR:
 
 REGLAS ESTRICTAS DE AUDITORÍA BILATERAL:
 1. Verifica cada afirmación de "ambos", "comparten", "en común", "coinciden", "similares" o cada elemento de `puntos_fuertes`.
-2. Si el borrador afirma que ambos comparten un descriptor de personalidad o estilo de vida (por ejemplo: decir que "ambos comparten un estilo de vida tranquilo" cuando {name_a_clean} es tranquilo/introvertido pero {name_b_clean} es activa/sociable/espontánea/inquieta) o un hobby/hábito (ej. lectura, deportes, mascotas, emprendimiento) que SOLO está en las notas de UNO de ellos o que contradice el perfil del otro:
-   - En `puntos_fuertes`: ELIMINA cualquier punto fuerte que no esté explícitamente respaldado en AMBAS notas (no dejes gustos ni estilos de vida unilaterales), y si quedan menos de 2 elementos, REEMPLÁZALOS por coincidencias reales presentes en AMBAS notas (ej. "Ambos buscan construir una relación seria", "Ambos coinciden en evitar la rumba o fiesta constante", "Ambos disfrutan viajar y conocer lugares").
-   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} (ej. "{name_a_clean} prefiere un estilo de vida tranquilo, mientras que {name_b_clean} se describe como activa, sociable y espontánea"), manteniendo un párrafo clínico fluido de 2 a 3 oraciones que incluya tanto las afinidades reales como las reservas reales.
-3. Conserva intactas las observaciones verdaderas (como reservas de edad, postura sobre hijos, ciudad o no gusto por la fiesta constante si consta en ambos).
+2. Si el borrador afirma que ambos comparten un descriptor de personalidad o estilo de vida (por ejemplo: decir que "ambos comparten un estilo de vida tranquilo" cuando uno es tranquilo/introvertido pero la otra persona se describe en sus propias notas como activa/sociable/espontánea/inquieta) o un hobby/hábito (ej. lectura, deportes, mascotas, emprendimiento) que SOLO está en las notas de UNO de ellos o que contradice el perfil del otro:
+   - En `puntos_fuertes`: ELIMINA cualquier punto fuerte que no esté explícitamente respaldado en AMBOS perfiles (no dejes gustos ni estilos de vida unilaterales), y si quedan menos de 2 elementos, REEMPLÁZALOS por coincidencias reales presentes en AMBOS perfiles (ej. buscar relación seria, evitar rumba o fiesta constante, no tolerar el cigarrillo, gusto por viajar).
+   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} según sus propias notas, manteniendo un párrafo clínico fluido de 2 a 3 oraciones que incluya tanto las afinidades reales como las reservas reales.
+3. Si AMBAS notas sí respaldan explícitamente un rasgo compartido (por ejemplo, si en ambas notas dice que prefieren planes tranquilos o evitar la rumba), consérvalo intacto.
+4. PROHIBIDO usar lenguaje meta-editorial como "El borrador menciona...", "En las notas no se menciona..." o "Según la auditoría...". Redacta directamente el análisis clínico final en tercera persona.
 
 Responde ÚNICAMENTE con un objeto JSON válido:
 {{
-  "analisis": "<análisis verificado y corregido sin atribuciones cruzadas>",
+  "analisis": "<análisis clínico final verificado y corregido en tercera persona>",
   "puntos_fuertes": ["<2 a 3 fortalezas 100% respaldadas explícitamente en AMBOS perfiles>"]
 }}"""
 
