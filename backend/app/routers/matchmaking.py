@@ -9264,7 +9264,9 @@ Responde ÚNICAMENTE un objeto JSON:
     }
 
     attempts_to_try = [
-        ("meta/llama-3.2-11b-vision-instruct", 24.0),
+        ("meta/llama-3.2-11b-vision-instruct", 18.0),
+        ("meta/llama-3.2-11b-vision-instruct", 18.0),
+        ("meta/llama-3.1-8b-instruct", 15.0),
     ]
 
     sys_msg = (
@@ -9337,11 +9339,11 @@ Tu única función es auditar el siguiente borrador (`analisis` y `puntos_fuerte
 
 PERFIL Y NOTAS EXCLUSIVAS DE PERSONA A ({name_a_clean}):
 - Datos: {client_info.get('age') or 'No esp.'} años, {client_info.get('city') or 'No esp.'}, Estatura: {client_info.get('estatura') or 'No esp.'}, Hijos: {c_ls.get('has_children') or 'No'}, Quiere hijos: {c_ls.get('wants_children') or 'No esp.'}, Deporte: {c_ls.get('fitness_level') or 'No esp.'}, Fuma: {c_ls.get('smoker') or 'No esp.'}, Rango edad buscado: {c_sp.get('min_age') or '?'}-{c_sp.get('max_age') or '?'}
-- Notas clínicas: \"\"\"{c_notes[:2500] if c_notes else 'Sin notas'}\"\""
+- Notas clínicas: \"\"\"{c_notes[:3500] if c_notes else 'Sin notas'}\"\""
 
 PERFIL Y NOTAS EXCLUSIVAS DE PERSONA B ({name_b_clean}):
 - Datos: {cand_info.get('age') or 'No esp.'} años, {cand_info.get('city') or 'No esp.'}, Estatura: {cand_info.get('estatura') or 'No esp.'}, Hijos: {cand_ls.get('has_children') or 'No'}, Quiere hijos: {cand_ls.get('wants_children') or 'No esp.'}, Deporte: {cand_ls.get('fitness_level') or 'No esp.'}, Fuma: {cand_ls.get('smoker') or 'No esp.'}, Rango edad buscado: {cand_sp.get('min_age') or '?'}-{cand_sp.get('max_age') or '?'}
-- Notas clínicas: \"\"\"{cand_notes[:2500] if cand_notes else 'Sin notas'}\"\""
+- Notas clínicas: \"\"\"{cand_notes[:3500] if cand_notes else 'Sin notas'}\"\""
 
 BORRADOR GENERADO A AUDITAR:
 - analisis: {json.dumps(draft_analisis, ensure_ascii=False)}
@@ -9349,10 +9351,10 @@ BORRADOR GENERADO A AUDITAR:
 
 REGLAS ESTRICTAS DE AUDITORÍA BILATERAL:
 1. Verifica cada afirmación de "ambos", "comparten", "en común", "coinciden", "similares" o cada elemento de `puntos_fuertes`.
-2. Si el borrador afirma que ambos comparten un descriptor de personalidad o estilo de vida (por ejemplo: decir que "ambos comparten un estilo de vida tranquilo" cuando uno es tranquilo/introvertido pero la otra persona se describe en sus propias notas como activa/sociable/espontánea/inquieta) o un hobby/hábito (ej. lectura, deportes, mascotas, emprendimiento) que SOLO está en las notas de UNO de ellos o que contradice el perfil del otro:
+2. Si el borrador afirma que ambos comparten un descriptor de personalidad o estilo de vida (por ejemplo: decir que "ambos comparten un estilo de vida tranquilo" cuando uno es tranquilo/introvertido pero la otra persona no menciona ser tranquila en sus notas sino que se describe con un ritmo distinto) o un hobby/hábito (ej. lectura, deportes, mascotas, emprendimiento) que SOLO está en las notas de UNO de ellos o que contradice el perfil del otro:
    - En `puntos_fuertes`: ELIMINA cualquier punto fuerte que no esté explícitamente respaldado en AMBOS perfiles (no dejes gustos ni estilos de vida unilaterales), y si quedan menos de 2 elementos, REEMPLÁZALOS por coincidencias reales presentes en AMBOS perfiles (ej. buscar relación seria, evitar rumba o fiesta constante, no tolerar el cigarrillo, gusto por viajar).
-   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} según sus propias notas, manteniendo un párrafo clínico fluido de 2 a 3 oraciones que incluya tanto las afinidades reales como las reservas reales.
-3. Si AMBAS notas sí respaldan explícitamente un rasgo compartido (por ejemplo, si en ambas notas dice que prefieren planes tranquilos o evitar la rumba), consérvalo intacto.
+   - En `analisis`: REESCRIBE la oración errónea diferenciando con exactitud el rasgo real de {name_a_clean} frente al rasgo real de {name_b_clean} usando únicamente los descriptores literales que figuran en las notas de cada uno, manteniendo un párrafo clínico fluido de 2 a 3 oraciones que incluya tanto las afinidades reales como las reservas reales.
+3. Si AMBAS notas sí respaldan explícitamente un rasgo compartido (por ejemplo, si en ambas notas consta explícitamente que prefieren planes tranquilos/"traqui" o evitar la rumba), consérvalo intacto.
 4. PROHIBIDO usar lenguaje meta-editorial como "El borrador menciona...", "En las notas no se menciona..." o "Según la auditoría...". Redacta directamente el análisis clínico final en tercera persona.
 
 Responde ÚNICAMENTE con un objeto JSON válido:
@@ -9475,7 +9477,7 @@ Responde ÚNICAMENTE con un objeto JSON válido:
         ("música/instrumentos", r'\b(ukelele|guitarra|piano|cantar)\b'),
         ("emprendimiento", r'\b(emprendedor[ae]?s?|emprendimiento|negocio\s+propio|empresari[oa]s?)\b'),
         # Clusters de personalidad y estilo de vida (Actualización 26: tranquilo/calmado/pausado/hogareño vs activo/social/espontáneo/enérgico/aventurero)
-        ("estilo de vida tranquilo/hogareño", r'\b(tranquil[oa]s?|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|sedentari[oa]s?)\b'),
+        ("estilo de vida tranquilo/hogareño", r'\b(tranquil[oa]s?|tranqui\b|traqui\b|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|sedentari[oa]s?)\b'),
         ("estilo de vida espontáneo/aventurero/inquieto", r'\b(espont[aá]ne[oa]s?|en[eé]rgic[oa]s?|aventurer[oa]s?|inquiet[oa]s?|muy\s+sociables?|energ[ií]a\s+muy\s+social)\b'),
         ("personalidad introvertida/reservada", r'\b(introvertid[oa]s?|reservad[oa]s?|callad[oa]s?|t[ií]mid[oa]s?|poco\s+expresiv[oa]s?)\b'),
     ]
@@ -9483,13 +9485,31 @@ Responde ÚNICAMENTE con un objeto JSON válido:
     _CONTRAST_SPLIT_RE = r'\b(?:mientras\s+que|en\s+cambio|por\s+su\s+parte|a\s+diferencia\s+de|pero\b|sin\s+embargo|aunque|frente\s+a)\b'
 
     # Detectar polos opuestos de estilo de vida / personalidad entre Persona A y Persona B
-    _CALM_POLE_PAT = r'\b(tranquil[oa]s?|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|introvertid[oa]s?)\b'
+    _CALM_POLE_PAT = r'\b(tranquil[oa]s?|tranqui\b|traqui\b|calmad[oa]s?|pausad[oa]s?|hogare[ñn][oa]s?|caser[oa]s?|introvertid[oa]s?)\b'
     _ACTIVE_POLE_PAT = r'\b(activ[oa]s?|espont[aá]ne[oa]s?|en[eé]rgic[oa]s?|aventurer[oa]s?|inquiet[oa]s?|muy\s+sociables?|energ[ií]a\s+muy\s+social)\b'
     has_calm_a = bool(re.search(_CALM_POLE_PAT, corpus_a, re.IGNORECASE))
     has_calm_b = bool(re.search(_CALM_POLE_PAT, corpus_b, re.IGNORECASE))
     has_active_a = bool(re.search(_ACTIVE_POLE_PAT, corpus_a, re.IGNORECASE))
     has_active_b = bool(re.search(_ACTIVE_POLE_PAT, corpus_b, re.IGNORECASE))
     has_lifestyle_polarity_mismatch = (has_calm_a and not has_calm_b and has_active_b) or (has_calm_b and not has_calm_a and has_active_a)
+
+    def _describe_active_traits(corpus_txt: str) -> str:
+        matched = [
+            adj for adj, rgx in [
+                ("activa", r'\bactiv[oa]s?\b'),
+                ("sociable", r'\bsociables?\b'),
+                ("espontánea", r'\bespont[aá]ne[oa]s?\b'),
+                ("aventurera", r'\baventurer[oa]s?\b'),
+                ("enérgica", r'\ben[eé]rgic[oa]s?\b'),
+                ("inquieta", r'\binquiet[oa]s?\b'),
+            ]
+            if re.search(rgx, corpus_txt, re.IGNORECASE)
+        ]
+        if len(matched) > 1:
+            return ", ".join(matched[:-1]) + " y " + matched[-1]
+        if len(matched) == 1:
+            return f"{matched[0]} y dinámica"
+        return "más activa y dinámica"
 
     def _has_unilateral_cross_attribution(text_item: str) -> bool:
         """
@@ -9543,12 +9563,12 @@ Responde ÚNICAMENTE con un objeto JSON válido:
                 if has_calm_a and not has_calm_b:
                     modified_s = (
                         f"En cuanto a ritmo y estilo de vida, {name_a_clean} prefiere planes tranquilos, "
-                        f"mientras que {name_b_clean} se describe como una persona activa, sociable y espontánea."
+                        f"mientras que {name_b_clean} se describe en sus notas como {_describe_active_traits(corpus_b)}."
                     )
                 else:
                     modified_s = (
                         f"En cuanto a ritmo y estilo de vida, {name_b_clean} prefiere planes tranquilos, "
-                        f"mientras que {name_a_clean} proyecta un perfil más activo y social."
+                        f"mientras que {name_a_clean} se describe en sus notas como {_describe_active_traits(corpus_a)}."
                     )
                 clean_sentences.append(modified_s)
                 continue
