@@ -9309,8 +9309,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
     }
 
     models_to_try = [
-        "meta/llama-3.2-11b-vision-instruct",
-        "meta/llama-3.2-90b-vision-instruct"
+        "meta/llama-3.2-11b-vision-instruct"
     ]
 
     sys_msg = (
@@ -9330,7 +9329,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             "max_tokens": 950
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=8.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=11.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -10390,13 +10389,13 @@ async def find_candidate_matches_engine(
             async with sem:
                 await asyncio.sleep(0.05)
                 try:
-                    # Timeout individual por candidato de 11s
+                    # Timeout individual por candidato de 12s
                     return await asyncio.wait_for(
                         evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=11.0
+                        timeout=12.0
                     )
                 except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 11s, aplicando fallback")
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 12s, aplicando fallback")
                     return None
                 except Exception as _e:
                     logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
@@ -10405,13 +10404,13 @@ async def find_candidate_matches_engine(
         try:
             eval_tasks = [_eval_with_sem(c) for c in candidates_to_evaluate]
             try:
-                # Timeout global estricto: la llamada completa de IA jamás excede 14s
+                # Timeout global estricto: la llamada completa de IA jamás excede 15s
                 eval_results = await asyncio.wait_for(
                     asyncio.gather(*eval_tasks, return_exceptions=True),
-                    timeout=14.0
+                    timeout=15.0
                 )
             except asyncio.TimeoutError:
-                logger.warning(f"[AI MATCH TIMEOUT] Evaluación clínica IA superó 14s para cliente {client_summary.get('name')}. Activando fallback estructural.")
+                logger.warning(f"[AI MATCH TIMEOUT] Evaluación clínica IA superó 15s para cliente {client_summary.get('name')}. Activando fallback estructural.")
                 eval_results = [None] * len(candidates_to_evaluate)
 
             for cand, res in zip(candidates_to_evaluate, eval_results):
