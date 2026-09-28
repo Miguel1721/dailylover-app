@@ -811,14 +811,14 @@ class ClinicalProfileExtractor:
             elif not v_b.get("datos_sustancias_verificados"):
                 reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} exige pareja no fumadora / sin vicios, y la ficha de {p_b.get('name')} no cuenta con datos verificados sobre consumo de sustancias.")
 
-        # 5. REGLA CITAS PREVIAS REGISTRADAS
+        # 5. HISTORIAL PREVIO (informativo clínico; el descarte vinculante por cita física realizada lo realiza matchmaking engine con had_date=true)
         hist_a = p_a.get("historial", {}).get("past_matched_names", [])
         hist_b = p_b.get("historial", {}).get("past_matched_names", [])
         name_a_lower = p_a.get("name", "").lower().strip()
         name_b_lower = p_b.get("name", "").lower().strip()
 
         if any(name_b_lower in past.lower() for past in hist_a) or any(name_a_lower in past.lower() for past in hist_b):
-            reasons.append(f"Historial previo: {p_a.get('name')} y {p_b.get('name')} ya tuvieron una cita o asignación previa en Daily Lover.")
+            warnings.append(f"Historial previo: {p_a.get('name')} y {p_b.get('name')} registran asignación o contacto previo en Daily Lover.")
 
         # 6. REGLA CIUDAD / TERRITORIO
         city_a = p_a.get("city") or ""
