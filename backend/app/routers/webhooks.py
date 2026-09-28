@@ -602,13 +602,18 @@ async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int
                                 WHERE id = :uid
                             """), {"uid": user_id, "name": name, "email": email, "cid": crm_id})
                     else:
+                        has_real_name = bool(name and not name.startswith("Cliente CRM"))
+                        has_real_phone = bool(phone and not phone.startswith("+57300000") and not phone.startswith("+57399999"))
+                        if not has_real_name and not has_real_phone and not email:
+                            logger.info(f"Evento de estado sin nombre/teléfono real para CRM ID {crm_id}; omitiendo creación de placeholder.")
+                            return
                         result = await db.execute(text("""
                             INSERT INTO users (phone, name, email, crm_id, created_at)
                             VALUES (:phone, :name, :email, :cid, NOW())
                             ON CONFLICT (phone) DO UPDATE SET
-                                name = COALESCE(NULLIF(EXCLUDED.name, ''), users.name),
-                                email = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
-                                crm_id = COALESCE(NULLIF(EXCLUDED.crm_id, ''), users.crm_id)
+                                name = COALESCE(NULLIF(users.name, ''), NULLIF(EXCLUDED.name, '')),
+                                email = COALESCE(NULLIF(users.email, ''), NULLIF(EXCLUDED.email, '')),
+                                crm_id = COALESCE(NULLIF(users.crm_id, ''), NULLIF(EXCLUDED.crm_id, ''))
                             RETURNING id
                         """), {
                             "phone": phone,
@@ -668,13 +673,13 @@ async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int
                         INSERT INTO profiles (user_id, age, gender, city, orientation, occupation, plan_tier, bio_notes, updated_at)
                         VALUES (:uid, :age, :gender, :city, :orientation, :occupation, :plan, :notes, NOW())
                         ON CONFLICT (user_id) DO UPDATE SET
-                            age = COALESCE(EXCLUDED.age, profiles.age),
-                            gender = COALESCE(NULLIF(EXCLUDED.gender, ''), profiles.gender),
-                            city = COALESCE(NULLIF(EXCLUDED.city, ''), profiles.city),
-                            orientation = COALESCE(NULLIF(EXCLUDED.orientation, ''), profiles.orientation),
-                            occupation = COALESCE(NULLIF(EXCLUDED.occupation, ''), profiles.occupation),
+                            age = COALESCE(profiles.age, EXCLUDED.age),
+                            gender = COALESCE(NULLIF(profiles.gender, ''), NULLIF(EXCLUDED.gender, '')),
+                            city = COALESCE(NULLIF(profiles.city, ''), NULLIF(EXCLUDED.city, '')),
+                            orientation = COALESCE(NULLIF(profiles.orientation, ''), NULLIF(EXCLUDED.orientation, '')),
+                            occupation = COALESCE(NULLIF(profiles.occupation, ''), NULLIF(EXCLUDED.occupation, '')),
                             plan_tier = COALESCE(NULLIF(EXCLUDED.plan_tier, ''), profiles.plan_tier),
-                            bio_notes = COALESCE(NULLIF(EXCLUDED.bio_notes, ''), profiles.bio_notes),
+                            bio_notes = COALESCE(NULLIF(profiles.bio_notes, ''), NULLIF(EXCLUDED.bio_notes, '')),
                             updated_at = NOW()
                     """), {
                         "uid": user_id,
@@ -687,6 +692,15 @@ async def process_webhook_payload(event_type: str, data: dict, raw_event_id: int
                         "notes": notes
                     })
                     await db.commit()
+
+                    # Sincronizar todos los campos extendidos CRM (lifestyle, education, estatura, love_language, apego, search_preferences)
+                    if crm_id:
+                        try:
+                            from app.routers.matchmaking import _sync_crm_id_from_webhooks
+                            await _sync_crm_id_from_webhooks(str(crm_id), db)
+                        except Exception as e_sync:
+                            logger.warning(f"No se pudo completar _sync_crm_id_from_webhooks para CRM ID {crm_id}: {e_sync}")
+
                     logger.info(f"Cliente procesado exitosamente vía Webhook: CRM ID {crm_id} - {name} (User ID: {user_id})")
 
             # 2. EVENTOS DE MATCH (match.created, match.updated, match_added, match_group_changed, intro.created, date.scheduled)

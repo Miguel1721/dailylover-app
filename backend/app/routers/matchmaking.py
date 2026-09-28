@@ -1002,11 +1002,14 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
             phone = f"+57300000{crm_id}"
 
         city = str(merged.get("city") or merged.get("ciudad") or "").strip()
-        if not city and merged.get("prof_191"):
+        neighborhood = ""
+        if merged.get("prof_191"):
             p191 = merged.get("prof_191")
             if isinstance(p191, dict):
-                city = str(p191.get("city") or p191.get("state") or "").strip()
-            elif isinstance(p191, str):
+                if not city:
+                    city = str(p191.get("city") or p191.get("state") or "").strip()
+                neighborhood = str(p191.get("street") or "").strip()
+            elif isinstance(p191, str) and not city:
                 city = p191.strip()
         city = normalize_city(city) if city else ""
 
@@ -1076,22 +1079,35 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
         education = f"{edu_level} ({university})" if (edu_level and university) else (edu_level or university)
         religion = _choice_str(merged.get("prof_197"))
         love_language = _choice_str(merged.get("prof_220"))
+        apego_style_wh = _choice_str(merged.get("prof_221"))
         bio_essay = str(merged.get("pref_64") or "").strip()
 
-        # Construir lifestyle JSONB desde campos CRM
+        # Construir lifestyle JSONB desde campos CRM (incluyendo nuevos campos auditados)
         lifestyle_new = {}
         if merged.get("prof_201"):
             lifestyle_new["has_children"] = _choice_str(merged.get("prof_201"))
         if merged.get("prof_202"):
             lifestyle_new["wants_children"] = _choice_str(merged.get("prof_202"))
+        if merged.get("prof_204"):
+            lifestyle_new["body_type"] = _choice_str(merged.get("prof_204"))
         if merged.get("prof_208"):
             lifestyle_new["smoker"] = _choice_str(merged.get("prof_208"))
+        if merged.get("prof_209"):
+            lifestyle_new["drinks_alcohol"] = _choice_str(merged.get("prof_209"))
+        if merged.get("prof_210"):
+            lifestyle_new["has_pets"] = _choice_str(merged.get("prof_210"))
+        if merged.get("prof_211"):
+            lifestyle_new["pet_type"] = _choice_str(merged.get("prof_211"))
         if merged.get("prof_216"):
             lifestyle_new["fitness_level"] = _choice_str(merged.get("prof_216"))
+        if merged.get("prof_217"):
+            lifestyle_new["fitness_preferences"] = _choice_str(merged.get("prof_217"))
         if merged.get("prof_218"):
             lifestyle_new["ideal_weekend"] = _choice_str(merged.get("prof_218"))
         if merged.get("prof_223"):
             lifestyle_new["temperament"] = _choice_str(merged.get("prof_223"))
+        if merged.get("prof_224"):
+            lifestyle_new["rumba"] = _choice_str(merged.get("prof_224"))
         if merged.get("prof_226"):
             lifestyle_new["politics"] = _choice_str(merged.get("prof_226"))
         if merged.get("prof_228"):
@@ -1109,8 +1125,12 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
                 free_time_items.append(ft_extra)
         if free_time_items:
             lifestyle_new["free_time"] = "; ".join(free_time_items)
+        inc_str = _choice_str(merged.get("prof_289")) or _choice_str(merged.get("prof_285"))
+        if inc_str:
+            lifestyle_new["income_range"] = inc_str
+        lifestyle_new = {k: v for k, v in lifestyle_new.items() if v is not None and v != "" and v != []}
 
-        # Construir search_preferences JSONB desde campos CRM
+        # Construir search_preferences JSONB desde campos CRM (incluyendo pref_68 min_age/max_age y red flags)
         sp_new = {}
         if merged.get("pref_54"):
             sp_new["preferred_gender"] = _choice_str(merged.get("pref_54"))
@@ -1121,6 +1141,18 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
             sp_new["preferred_looks"] = _choice_list(merged.get("pref_61"))
         if merged.get("pref_51"):
             sp_new["preferred_vibe"] = ", ".join(_choice_list(merged.get("pref_51")))
+        if merged.get("pref_68") and isinstance(merged.get("pref_68"), dict):
+            p68 = merged.get("pref_68")
+            if p68.get("start"):
+                try:
+                    sp_new["min_age"] = int(p68["start"])
+                except Exception:
+                    pass
+            if p68.get("end"):
+                try:
+                    sp_new["max_age"] = int(p68["end"])
+                except Exception:
+                    pass
         if merged.get("pref_70") and isinstance(merged.get("pref_70"), dict):
             p70 = merged.get("pref_70")
             st_h = p70.get("start")
@@ -1135,6 +1167,13 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
                 sp_new["preferred_height"] = f"Desde {st_cm} cm"
         if bio_essay:
             sp_new["what_searches_in_partner"] = bio_essay
+        pers_rf = _choice_list(merged.get("prof_241")) or _choice_list(merged.get("pref_67"))
+        if pers_rf:
+            sp_new["personal_red_flags"] = pers_rf
+        part_rf = _choice_list(merged.get("prof_242")) or _choice_list(merged.get("prof_243"))
+        if part_rf:
+            sp_new["partner_red_flags"] = part_rf
+        sp_new = {k: v for k, v in sp_new.items() if v is not None and v != "" and v != []}
 
         bio_parts = []
         if occupation:
@@ -1147,7 +1186,7 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
             bio_parts.append(bio_essay)
         bio_notes_synth = " | ".join(bio_parts)
 
-        # Upsert en users
+        # Upsert en users (solo crear si tiene nombre o teléfono real)
         u_res = await db.execute(text("SELECT id, name FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": str(crm_id)})
         u_row = u_res.fetchone()
         if not u_row and phone and not phone.startswith("+57300000"):
@@ -1159,44 +1198,56 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
             await db.execute(text("""
                 UPDATE users SET
                     name = CASE
-                        WHEN (users.name IS NULL OR users.name = '' OR users.name LIKE 'Cliente CRM%') AND NULLIF(:name, '') IS NOT NULL THEN :name
+                        WHEN (users.name IS NULL OR users.name = '' OR users.name LIKE 'Cliente CRM%') AND NULLIF(:name, '') IS NOT NULL AND :name NOT LIKE 'Cliente CRM%' THEN :name
                         ELSE users.name
                     END,
-                    email = COALESCE(NULLIF(:email, ''), users.email),
-                    crm_id = COALESCE(NULLIF(:cid, ''), users.crm_id)
+                    email = COALESCE(NULLIF(users.email, ''), NULLIF(:email, '')),
+                    crm_id = COALESCE(NULLIF(users.crm_id, ''), NULLIF(:cid, ''))
                 WHERE id = :uid
             """), {"uid": uid, "name": name, "email": email, "cid": str(crm_id)})
         else:
+            has_real_name = bool(name and not name.startswith("Cliente CRM"))
+            has_real_phone = bool(phone and not phone.startswith("+57300000"))
+            if not has_real_name and not has_real_phone:
+                return None
             ins_u = await db.execute(text("""
                 INSERT INTO users (phone, name, email, crm_id, created_at)
                 VALUES (:phone, :name, :email, :cid, NOW())
                 ON CONFLICT (phone) DO UPDATE SET
-                    name = COALESCE(NULLIF(EXCLUDED.name, ''), users.name),
-                    email = COALESCE(NULLIF(EXCLUDED.email, ''), users.email),
-                    crm_id = COALESCE(NULLIF(EXCLUDED.crm_id, ''), users.crm_id)
+                    name = COALESCE(NULLIF(users.name, ''), NULLIF(EXCLUDED.name, '')),
+                    email = COALESCE(NULLIF(users.email, ''), NULLIF(EXCLUDED.email, '')),
+                    crm_id = COALESCE(NULLIF(users.crm_id, ''), NULLIF(EXCLUDED.crm_id, ''))
                 RETURNING id
             """), {"phone": phone, "name": name, "email": email or None, "cid": str(crm_id)})
             uid = ins_u.scalar()
 
-        # Upsert en profiles
-        p_res = await db.execute(text("SELECT user_id, lifestyle, search_preferences FROM profiles WHERE user_id = :uid LIMIT 1"), {"uid": uid})
+        # Upsert en profiles (100% aditivo / no destructivo: solo llena vacíos)
+        p_res = await db.execute(text("SELECT user_id, apego, lifestyle, search_preferences FROM profiles WHERE user_id = :uid LIMIT 1"), {"uid": uid})
         p_row = p_res.fetchone()
         if p_row:
             cur_ls = p_row.lifestyle if isinstance(p_row.lifestyle, dict) else {}
-            merged_ls = {**lifestyle_new, **{k: v for k, v in cur_ls.items() if v is not None and v != ""}}
+            merged_ls = {**lifestyle_new, **{k: v for k, v in cur_ls.items() if v is not None and v != "" and v != []}}
             cur_sp = p_row.search_preferences if isinstance(p_row.search_preferences, dict) else {}
-            merged_sp = {**sp_new, **{k: v for k, v in cur_sp.items() if v is not None and v != ""}}
+            merged_sp = {**sp_new, **{k: v for k, v in cur_sp.items() if v is not None and v != "" and v != []}}
+            cur_apego = dict(p_row.apego) if isinstance(p_row.apego, dict) else {}
+            if apego_style_wh and not cur_apego.get("style"):
+                cur_apego["style"] = apego_style_wh
             await db.execute(text("""
                 UPDATE profiles SET
                     city = COALESCE(NULLIF(profiles.city, ''), NULLIF(:city, '')),
+                    neighborhood = COALESCE(NULLIF(profiles.neighborhood, ''), NULLIF(:neigh, '')),
                     orientation = COALESCE(NULLIF(profiles.orientation, ''), NULLIF(:ori, '')),
                     gender = COALESCE(NULLIF(profiles.gender, ''), NULLIF(:gen, '')),
-                    age = COALESCE(CAST(:age AS INTEGER), profiles.age),
+                    age = COALESCE(profiles.age, CAST(:age AS INTEGER)),
                     estatura = COALESCE(NULLIF(profiles.estatura, ''), NULLIF(:est, '')),
                     occupation = COALESCE(NULLIF(profiles.occupation, ''), NULLIF(:occ, '')),
                     education = COALESCE(NULLIF(profiles.education, ''), NULLIF(:edu, '')),
                     religion = COALESCE(NULLIF(profiles.religion, ''), NULLIF(:rel, '')),
                     love_language = COALESCE(NULLIF(profiles.love_language, ''), NULLIF(:love, '')),
+                    apego = CASE
+                        WHEN CAST(:apego AS jsonb) != '{}'::jsonb THEN CAST(:apego AS jsonb)
+                        ELSE profiles.apego
+                    END,
                     lifestyle = CAST(:ls AS jsonb),
                     search_preferences = CAST(:sp AS jsonb),
                     bio_notes = CASE
@@ -1205,23 +1256,26 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
                     END
                 WHERE user_id = :uid
             """), {
-                "uid": uid, "city": city, "ori": orientation,
+                "uid": uid, "city": city, "neigh": neighborhood, "ori": orientation,
                 "gen": gender, "age": age, "est": estatura,
                 "occ": occupation, "edu": education, "rel": religion,
                 "love": love_language,
+                "apego": json.dumps(cur_apego, ensure_ascii=False),
                 "ls": json.dumps(merged_ls, ensure_ascii=False),
                 "sp": json.dumps(merged_sp, ensure_ascii=False),
                 "bio": bio_notes_synth
             })
         else:
+            apego_init = {"style": apego_style_wh} if apego_style_wh else {}
             await db.execute(text("""
-                INSERT INTO profiles (user_id, city, orientation, gender, age, estatura, occupation, education, religion, love_language, lifestyle, search_preferences, bio_notes)
-                VALUES (:uid, :city, :ori, :gen, CAST(:age AS INTEGER), :est, :occ, :edu, :rel, :love, CAST(:ls AS jsonb), CAST(:sp AS jsonb), :bio)
+                INSERT INTO profiles (user_id, city, neighborhood, orientation, gender, age, estatura, occupation, education, religion, love_language, apego, lifestyle, search_preferences, bio_notes)
+                VALUES (:uid, :city, :neigh, :ori, :gen, CAST(:age AS INTEGER), :est, :occ, :edu, :rel, :love, CAST(:apego AS jsonb), CAST(:ls AS jsonb), CAST(:sp AS jsonb), :bio)
             """), {
-                "uid": uid, "city": city or None, "ori": orientation or None,
+                "uid": uid, "city": city or None, "neigh": neighborhood or None, "ori": orientation or None,
                 "gen": gender or None, "age": age, "est": estatura or None,
                 "occ": occupation or None, "edu": education or None,
                 "rel": religion or None, "love": love_language or None,
+                "apego": json.dumps(apego_init, ensure_ascii=False),
                 "ls": json.dumps(lifestyle_new, ensure_ascii=False),
                 "sp": json.dumps(sp_new, ensure_ascii=False),
                 "bio": bio_notes_synth or None
