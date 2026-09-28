@@ -158,6 +158,8 @@ async def startup_seed():
                     error_log TEXT,
                     received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
+                CREATE INDEX IF NOT EXISTS idx_webhook_events_raw_crm_id 
+                ON webhook_events_raw (COALESCE(payload->'payload'->>'id', payload->>'id', payload->'payload'->>'client_id', payload->>'client_id'));
             """))
             await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS client_notes (
