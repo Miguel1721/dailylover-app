@@ -14,6 +14,10 @@ from datetime import datetime
 import os
 import re
 import json
+import copy
+import time
+import hashlib
+import sqlite3
 import asyncio
 import httpx
 import logging
@@ -572,7 +576,7 @@ async def get_my_matches(
             query += " AND m.approved_by_maria = false"
 
     if approved_date:
-        query += " AND COALESCE(m.approved_at, m.updated_at)::date = CAST(:app_date AS date)"
+        query += " AND m.approved_at IS NOT NULL AND m.approved_at::date = CAST(:app_date AS date)"
         params["app_date"] = approved_date.strip()[:10]
 
     if date_filter and date_filter.lower() not in ("all", "todos", "todas"):
@@ -2942,8 +2946,24 @@ async def get_confirmations(
             uA.crm_id AS ua_crm_id, uB.crm_id AS ub_crm_id
         FROM match_confirmations c
         JOIN operational_matches m ON m.id = c.match_id
-        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
+            FROM users
+            WHERE name IS NOT NULL AND TRIM(name) != '' AND merged_into_id IS NULL
+            ORDER BY LOWER(TRIM(name)),
+                     (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END),
+                     (CASE WHEN phone IS NOT NULL AND phone != '' AND phone NOT LIKE 'GEN_%' THEN 0 ELSE 1 END),
+                     id DESC
+        ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
+            FROM users
+            WHERE name IS NOT NULL AND TRIM(name) != '' AND merged_into_id IS NULL
+            ORDER BY LOWER(TRIM(name)),
+                     (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END),
+                     (CASE WHEN phone IS NOT NULL AND phone != '' AND phone NOT LIKE 'GEN_%' THEN 0 ELSE 1 END),
+                     id DESC
+        ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
         {where_sql}
         ORDER BY c.updated_at DESC, c.id DESC
         LIMIT :limit OFFSET :offset
@@ -6196,14 +6216,35 @@ async def get_matches_pending_service(
         SELECT 
             m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.pref,
             m.status, m.observations, m.created_at, m.updated_at, m.approved_at,
-            m.person_a_crm_id, m.person_b_crm_id,
+            COALESCE(NULLIF(m.person_a_crm_id, ''), uA.crm_id, '') AS person_a_crm_id,
+            COALESCE(NULLIF(m.person_b_crm_id, ''), uB.crm_id, '') AS person_b_crm_id,
             COALESCE(c.stage, 'pendiente') AS cs_stage,
             c.person_a_confirmation, c.person_b_confirmation,
             uA.phone AS phone_a, uB.phone AS phone_b
         FROM operational_matches m
-        LEFT JOIN match_confirmations c ON c.match_id = m.id
-        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN (
+            SELECT DISTINCT ON (match_id) match_id, stage, person_a_confirmation, person_b_confirmation, scheduled_date
+            FROM match_confirmations
+            ORDER BY match_id, id DESC
+        ) c ON c.match_id = m.id
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
+            FROM users
+            WHERE name IS NOT NULL AND TRIM(name) != '' AND merged_into_id IS NULL
+            ORDER BY LOWER(TRIM(name)),
+                     (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END),
+                     (CASE WHEN phone IS NOT NULL AND phone != '' AND phone NOT LIKE 'GEN_%' THEN 0 ELSE 1 END),
+                     id DESC
+        ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
+            FROM users
+            WHERE name IS NOT NULL AND TRIM(name) != '' AND merged_into_id IS NULL
+            ORDER BY LOWER(TRIM(name)),
+                     (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END),
+                     (CASE WHEN phone IS NOT NULL AND phone != '' AND phone NOT LIKE 'GEN_%' THEN 0 ELSE 1 END),
+                     id DESC
+        ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
         WHERE (m.status = 'APROBADO' OR m.approved_by_maria = true)
           AND (c.stage IS NULL OR c.stage IN ('pendiente', 'agendando', 'por confirmar', 'esperar', 'de viaje', 'problemas personales', 'no contestan', 'reprogramar'))
           AND (c.scheduled_date IS NULL)
@@ -6220,22 +6261,22 @@ async def get_matches_pending_service(
         query += " AND COALESCE(c.stage, 'pendiente') = :st"
         params["st"] = status.strip()
     if approval_date:
-        query += " AND COALESCE(m.approved_at, m.updated_at)::date = CAST(:app_date AS date)"
+        query += " AND m.approved_at IS NOT NULL AND m.approved_at::date = CAST(:app_date AS date)"
         params["app_date"] = approval_date.strip()[:10]
     if date_from:
-        query += " AND COALESCE(m.approved_at, m.updated_at)::date >= CAST(:d_from AS date)"
+        query += " AND m.approved_at IS NOT NULL AND m.approved_at::date >= CAST(:d_from AS date)"
         params["d_from"] = date_from.strip()[:10]
     if date_to:
-        query += " AND COALESCE(m.approved_at, m.updated_at)::date <= CAST(:d_to AS date)"
+        query += " AND m.approved_at IS NOT NULL AND m.approved_at::date <= CAST(:d_to AS date)"
         params["d_to"] = date_to.strip()[:10]
     if search:
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
     if sort_by in ("oldest_first", "asc"):
-        query += " ORDER BY COALESCE(m.approved_at, m.updated_at) ASC, m.id ASC"
+        query += " ORDER BY m.approved_at ASC NULLS LAST, m.id ASC"
     else:
-        query += " ORDER BY COALESCE(m.approved_at, m.updated_at) DESC, m.id DESC"
+        query += " ORDER BY m.approved_at DESC NULLS LAST, m.id DESC"
 
     eff_page = page or 1
     eff_page_size = page_size if page_size is not None else (None if all_items else 50)
@@ -6260,17 +6301,20 @@ async def get_matches_pending_service(
     matches = []
     for r in rows:
         d = dict(r._mapping)
-        created_dt = d.get("updated_at") or d.get("created_at")
-        days_pending = (datetime.utcnow() - created_dt).days if created_dt else 0
         obs_text = d.get("observations") or ""
         has_comp_alert = bool(
             "COMPATIBILIDAD FORZADA" in obs_text.upper() or
             "ALERTA COMPATIBILIDAD" in obs_text.upper() or
             "INCOMPATIBILIDAD" in obs_text.upper()
         )
-        app_dt = d.get("approved_at") or d.get("updated_at")
-        approved_at_str = app_dt.strftime("%Y-%m-%d %H:%M") if app_dt else ""
-        approved_date_str = app_dt.strftime("%Y-%m-%d") if app_dt else ""
+        # REGLA ESTRICTA: Prohibido sustituir approved_at nulo por updated_at ni fabricar
+        # antigüedad de vencimiento (days_pending / is_overdue) con timestamps de backfill/migración.
+        app_dt = d.get("approved_at")
+        approved_at_str = app_dt.strftime("%Y-%m-%d %H:%M") if app_dt else None
+        approved_date_str = app_dt.strftime("%Y-%m-%d") if app_dt else None
+        display_date_str = approved_date_str if approved_date_str else "Sin fecha registrada"
+        days_pending = (datetime.utcnow() - app_dt).days if app_dt else None
+        is_overdue = bool(days_pending is not None and days_pending >= 15)
 
         matches.append({
             "id": d.get("id"),
@@ -6287,11 +6331,11 @@ async def get_matches_pending_service(
             "confirmation_a": d.get("person_a_confirmation") or "Pendiente",
             "confirmation_b": d.get("person_b_confirmation") or "Pendiente",
             "observations": obs_text,
-            "date": approved_date_str,
+            "date": display_date_str,
             "approved_at": approved_at_str,
             "approved_date": approved_date_str,
             "days_pending": days_pending,
-            "is_overdue": days_pending >= 15,
+            "is_overdue": is_overdue,
             "has_compatibility_alert": has_comp_alert
         })
 
@@ -6451,8 +6495,24 @@ async def get_matches_scheduled(
             uA.phone AS phone_a, uB.phone AS phone_b
         FROM match_confirmations c
         JOIN operational_matches m ON m.id = c.match_id
-        LEFT JOIN users uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN users uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
+            FROM users
+            WHERE name IS NOT NULL AND TRIM(name) != '' AND merged_into_id IS NULL
+            ORDER BY LOWER(TRIM(name)),
+                     (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END),
+                     (CASE WHEN phone IS NOT NULL AND phone != '' AND phone NOT LIKE 'GEN_%' THEN 0 ELSE 1 END),
+                     id DESC
+        ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
+        LEFT JOIN (
+            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id, phone
+            FROM users
+            WHERE name IS NOT NULL AND TRIM(name) != '' AND merged_into_id IS NULL
+            ORDER BY LOWER(TRIM(name)),
+                     (CASE WHEN crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None' THEN 0 ELSE 1 END),
+                     (CASE WHEN phone IS NOT NULL AND phone != '' AND phone NOT LIKE 'GEN_%' THEN 0 ELSE 1 END),
+                     id DESC
+        ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
         {where_sql}
         ORDER BY c.scheduled_date ASC, c.id DESC
         LIMIT :limit OFFSET :offset
@@ -8718,6 +8778,69 @@ _AI_MATCH_CACHE: Dict[str, dict] = {
     }
 }
 
+_SHARED_AI_CACHE_DB_PATH = "/tmp/dl_ai_match_cache_v6.sqlite"
+_SHARED_AI_CACHE_TTL_SECONDS = 86400 * 7  # 7 días (se invalida automáticamente si cambian notas o edad)
+
+
+def _get_shared_ai_match_cache(cache_key: str) -> Optional[dict]:
+    """
+    Lee el caché de evaluaciones IA compartido entre los 4 workers de Uvicorn (SQLite WAL en /tmp)
+    respaldado por el diccionario en memoria L1 (_AI_MATCH_CACHE).
+    Retorna una copia profunda para evitar mutaciones cruzadas en memoria.
+    """
+    if cache_key in _AI_MATCH_CACHE:
+        return copy.deepcopy(_AI_MATCH_CACHE[cache_key])
+    try:
+        conn = sqlite3.connect(_SHARED_AI_CACHE_DB_PATH, timeout=2.0)
+        try:
+            row = conn.execute(
+                "SELECT payload_json, updated_at FROM ai_match_cache WHERE cache_key = ?",
+                (cache_key,)
+            ).fetchone()
+            if row:
+                payload_str, updated_ts = row
+                if (time.time() - float(updated_ts or 0)) <= _SHARED_AI_CACHE_TTL_SECONDS:
+                    parsed = json.loads(payload_str)
+                    if isinstance(parsed, dict) and parsed.get("ai_score") is not None:
+                        _AI_MATCH_CACHE[cache_key] = parsed
+                        return copy.deepcopy(parsed)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return None
+
+
+def _set_shared_ai_match_cache(cache_key: str, val: dict) -> None:
+    """
+    Persiste el resultado de evaluación IA tanto en memoria L1 (_AI_MATCH_CACHE) como en el
+    almacén SQLite WAL compartido entre todos los workers de Uvicorn.
+    """
+    if not isinstance(val, dict) or val.get("ai_score") is None:
+        return
+    clean_val = copy.deepcopy(val)
+    clean_val.pop("_status", None)
+    _AI_MATCH_CACHE[cache_key] = clean_val
+    try:
+        conn = sqlite3.connect(_SHARED_AI_CACHE_DB_PATH, timeout=2.0)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS ai_match_cache ("
+                "cache_key TEXT PRIMARY KEY, "
+                "payload_json TEXT NOT NULL, "
+                "updated_at REAL NOT NULL)"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO ai_match_cache (cache_key, payload_json, updated_at) VALUES (?, ?, ?)",
+                (cache_key, json.dumps(clean_val, ensure_ascii=False), time.time())
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as _e:
+        logger.warning(f"[AI CACHE SQLITE WRITE] {_e}")
+
 
 def check_safety_red_flags(person: dict) -> Tuple[bool, Optional[str]]:
     """
@@ -9142,15 +9265,23 @@ async def evaluate_candidate_quick_notes_ai(
     cand_info: dict,
     api_key: str,
     client_http: httpx.AsyncClient,
-    bypass_hard_filter: bool = False
+    bypass_hard_filter: bool = False,
+    force_refresh: bool = False
 ) -> Optional[dict]:
     """
     Evalúa integralmente (360°) la compatibilidad de pareja mediante Tier 1 determinístico
     y Tier 2 con la API de NVIDIA leyendo la totalidad de notas clínicas y campos del CRM.
     """
-    cache_key = f"v6:v5:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}"
-    if cache_key in _AI_MATCH_CACHE:
-        return _AI_MATCH_CACHE[cache_key]
+    notes_fp = hashlib.md5(
+        f"{(client_info.get('bio_notes') or '')[:600]}|{(cand_info.get('bio_notes') or '')[:600]}".encode("utf-8", errors="ignore")
+    ).hexdigest()[:10]
+    legacy_cache_key = f"v6:v5:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}"
+    cache_key = f"v7:{bypass_hard_filter}:{client_info.get('user_id') or client_info.get('name')}:{cand_info.get('user_id')}:{client_info.get('age')}:{cand_info.get('age')}:{notes_fp}"
+
+    if not force_refresh:
+        cached_hit = _get_shared_ai_match_cache(cache_key) or _get_shared_ai_match_cache(legacy_cache_key)
+        if cached_hit is not None:
+            return cached_hit
 
     # BARRERA 1: Filtro Determinístico (0% AI, 0 tokens para batch, pero si bypass_hard_filter=True solo corta en SEGURIDAD)
     is_hard_dealbreaker, hard_reason = check_deterministic_hard_dealbreakers(client_info, cand_info)
@@ -9167,7 +9298,7 @@ async def evaluate_candidate_quick_notes_ai(
                 "calidad_notas": "N/A - FILTRO DETERMINISTICO",
                 "model_used": "deterministic_tier1"
             }
-            _AI_MATCH_CACHE[cache_key] = rejection_res
+            _set_shared_ai_match_cache(cache_key, rejection_res)
             return rejection_res
 
     # BARRERA 2: Evaluación Clínica 360° con IA
@@ -9263,10 +9394,11 @@ Responde ÚNICAMENTE un objeto JSON:
         "Authorization": f"Bearer {api_key}"
     }
 
+    # Presupuesto acotado de Pass 1 (13s + 12s + 10s) para garantizar margen holgado antes del timeout de corrutina
     attempts_to_try = [
-        ("meta/llama-3.2-11b-vision-instruct", 18.0),
-        ("meta/llama-3.2-11b-vision-instruct", 18.0),
-        ("meta/llama-3.1-8b-instruct", 15.0),
+        ("meta/llama-3.2-11b-vision-instruct", 13.0),
+        ("meta/llama-3.2-11b-vision-instruct", 12.0),
+        ("meta/llama-3.1-8b-instruct", 10.0),
     ]
 
     sys_msg = (
@@ -9380,7 +9512,7 @@ Responde ÚNICAMENTE con un objeto JSON válido:
                     break
 
         verified_raw = None
-        # Intento 1: Gemini 2.5 Flash con thinkingBudget=0 y temperature=0.0 (~0.5s)
+        # Intento 1: Gemini 2.5 Flash con thinkingBudget=0 y temperature=0.0 (~0.5s, cap 4.5s)
         if gem_key:
             try:
                 url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gem_key}"
@@ -9393,7 +9525,7 @@ Responde ÚNICAMENTE con un objeto JSON válido:
                         "thinkingConfig": {"thinkingBudget": 0}
                     }
                 }
-                r_g = await client_http.post(url_g, json=payload_g, timeout=5.5)
+                r_g = await client_http.post(url_g, json=payload_g, timeout=4.5)
                 if r_g.status_code == 200:
                     cands_g = r_g.json().get("candidates", [])
                     if cands_g and "content" in cands_g[0]:
@@ -9403,7 +9535,7 @@ Responde ÚNICAMENTE con un objeto JSON válido:
             except Exception as _eg:
                 logger.warning(f"[AI GROUNDING VERIFIER GEMINI] {name_b_clean}: {_eg}")
 
-        # Intento 2 (Fallback): NVIDIA NIM Llama 3.2 11B a temperature=0.0
+        # Intento 2 (Fallback): NVIDIA NIM Llama 3.2 11B a temperature=0.0 (cap 5.5s)
         if not verified_raw and api_key:
             try:
                 payload_v_nv = {
@@ -9415,7 +9547,7 @@ Responde ÚNICAMENTE con un objeto JSON válido:
                     "temperature": 0.0,
                     "max_tokens": 300
                 }
-                r_nv = await client_http.post(url, json=payload_v_nv, headers=headers, timeout=8.0)
+                r_nv = await client_http.post(url, json=payload_v_nv, headers=headers, timeout=5.5)
                 if r_nv.status_code == 200:
                     verified_raw = r_nv.json()["choices"][0]["message"]["content"].strip()
             except Exception as _env:
@@ -9439,7 +9571,16 @@ Responde ÚNICAMENTE con un objeto JSON válido:
 
     draft_an_initial = str(res_json.get("analisis") or "").strip()
     draft_pts_initial = res_json.get("puntos_fuertes") if isinstance(res_json.get("puntos_fuertes"), list) else []
-    verified_an_llm, verified_pts_llm = await _verify_bilateral_grounding_llm(draft_an_initial, draft_pts_initial)
+    # Envolver Pass 2 en presupuesto estricto no destructivo de 7.5s: si excede el tiempo,
+    # conserva intacto el resultado válido de Pass 1 y pasa de inmediato a Vía 2 determinística (<1ms).
+    try:
+        verified_an_llm, verified_pts_llm = await asyncio.wait_for(
+            _verify_bilateral_grounding_llm(draft_an_initial, draft_pts_initial),
+            timeout=7.5
+        )
+    except (asyncio.TimeoutError, Exception) as _e_pass2:
+        logger.warning(f"[AI GROUNDING PASS 2 TIMEOUT/SKIP] {name_a_clean} x {name_b_clean}: {_e_pass2} — aplicando Vía 2 determinística")
+        verified_an_llm, verified_pts_llm = draft_an_initial, draft_pts_initial
     res_json["analisis"] = verified_an_llm
     res_json["puntos_fuertes"] = verified_pts_llm
 
@@ -9724,8 +9865,8 @@ Responde ÚNICAMENTE con un objeto JSON válido:
         cleaned_dbs.append(db_s)
     res_json["deal_breakers"] = cleaned_dbs
 
-    _AI_MATCH_CACHE[cache_key] = res_json
-    return res_json
+    _set_shared_ai_match_cache(cache_key, res_json)
+    return copy.deepcopy(res_json)
 
 
 async def find_candidate_matches_engine(
@@ -9737,7 +9878,8 @@ async def find_candidate_matches_engine(
     max_candidate_usage: Optional[int] = None,
     nvidia_key: Optional[str] = None,
     http_client: Optional[httpx.AsyncClient] = None,
-    return_discarded: bool = False
+    return_discarded: bool = False,
+    force_refresh: bool = False
 ) -> Any:
     """
     Motor unificado de búsqueda, filtrado estructural multidimensional y evaluación
@@ -11049,27 +11191,44 @@ async def find_candidate_matches_engine(
                 return {"_status": "INSUFFICIENT_DATA"}
             async with sem:
                 await asyncio.sleep(0.05)
-                try:
-                    # Timeout individual por candidato de 34s (incluye pasada 2 de verificación de grounding)
-                    res = await asyncio.wait_for(
-                        evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=34.0
-                    )
-                    if res and isinstance(res, dict) and res.get("ai_score") is not None:
-                        res["_status"] = "COMPLETED"
-                        return res
-                    return {"_status": "EMPTY_FALLBACK"}
-                except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 34s, aplicando fallback")
-                    return {"_status": "TIMEOUT_FALLBACK"}
-                except Exception as _e:
-                    logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
-                    return {"_status": "ERROR_FALLBACK", "error": str(_e)}
+                for attempt_idx, cand_timeout in enumerate((42.0, 18.0)):
+                    try:
+                        # Timeout individual por candidato (42s intento 1 + reintento rápido de 18s si falla)
+                        res = await asyncio.wait_for(
+                            evaluate_candidate_quick_notes_ai(
+                                client_summary,
+                                cand_item,
+                                nvidia_key,
+                                client_to_use,
+                                force_refresh=(force_refresh and attempt_idx == 0)
+                            ),
+                            timeout=cand_timeout
+                        )
+                        if res and isinstance(res, dict) and res.get("ai_score") is not None:
+                            res["_status"] = "COMPLETED"
+                            return res
+                        if attempt_idx == 0:
+                            logger.warning(f"[AI MATCH AUTO-RETRY] {cand_item.get('name')} devolvió vacío en intento 1, reintentando...")
+                            continue
+                        return {"_status": "EMPTY_FALLBACK"}
+                    except asyncio.TimeoutError:
+                        if attempt_idx == 0:
+                            logger.warning(f"[AI MATCH AUTO-RETRY] {cand_item.get('name')} excedió {cand_timeout}s en intento 1, ejecutando reintento automático...")
+                            continue
+                        logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió reintento ({cand_timeout}s), aplicando fallback")
+                        return {"_status": "TIMEOUT_FALLBACK"}
+                    except Exception as _e:
+                        if attempt_idx == 0:
+                            logger.warning(f"[AI MATCH AUTO-RETRY] {cand_item.get('name')} excepción en intento 1 ({_e}), reintentando...")
+                            continue
+                        logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
+                        return {"_status": "ERROR_FALLBACK", "error": str(_e)}
+                return {"_status": "TIMEOUT_FALLBACK"}
 
         try:
-            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 35s)
+            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 45s)
             tasks = [asyncio.create_task(_eval_with_sem(c)) for c in candidates_to_evaluate]
-            done, pending = await asyncio.wait(tasks, timeout=35.0)
+            done, pending = await asyncio.wait(tasks, timeout=45.0)
 
             for p in pending:
                 p.cancel()
@@ -11303,6 +11462,7 @@ async def find_candidate_matches_engine(
 async def get_interview_results(
     crm_id_or_user_id: str,
     response: Response,
+    force_refresh: bool = Query(False, description="Si es True, recalcula la evaluación de IA e invalida el caché previo"),
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -11550,7 +11710,8 @@ async def get_interview_results(
         candidate_usage_tracker=None,
         max_candidate_usage=None,
         nvidia_key=nvidia_key,
-        return_discarded=True
+        return_discarded=True,
+        force_refresh=force_refresh
     )
 
     top_matches = suggested_matches[:8]
