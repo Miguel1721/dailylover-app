@@ -10584,8 +10584,8 @@ async def find_candidate_matches_engine(
                 c["ai_veredicto"] = "SCORE ESTRUCTURAL" if c.get("structural_score") is not None else "SIN DATOS SUFICIENTES"
                 c["ai_fallback_notice"] = "Candidato fuera del lote prioritario de IA (evaluado con modelo estructural CRM)."
 
-        all_candidates = evaluated_sorted + remaining_candidates
-        all_candidates.sort(
+        remaining_sorted = sorted(
+            remaining_candidates,
             key=lambda x: (
                 x["compatibility_pct"] is not None,
                 x["compatibility_pct"] or 0,
@@ -10596,7 +10596,13 @@ async def find_candidate_matches_engine(
             ),
             reverse=True
         )
-        suggested_matches = all_candidates
+
+        evaluated_viable = [c for c in evaluated_sorted if c.get("ai_veredicto") != "NO RECOMENDADO"]
+        evaluated_non_viable = [c for c in evaluated_sorted if c.get("ai_veredicto") == "NO RECOMENDADO"]
+
+        # Los candidatos del lote prioritario evaluados por IA van SIEMPRE al inicio,
+        # seguidos por los mejores candidatos con score estructural para completar la parrilla de 8.
+        suggested_matches = evaluated_viable + remaining_sorted + evaluated_non_viable
 
     elif suggested_matches and not client_has_notes:
         for c in suggested_matches:
