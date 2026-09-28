@@ -7809,30 +7809,74 @@ def resolve_physical_activity_level(
     ).strip().lower()
 
     if fit_str:
-        if "atleta" in fit_str or "todos los d" in fit_str or "daily" in fit_str:
+        if any(k in fit_str for k in ("atleta", "todos los d", "daily", "diario")):
             return 10, "CRM"
-        if "4–6" in fit_str or "4-6" in fit_str or "lover" in fit_str:
+        if any(k in fit_str for k in ("4–6", "4-6", "lover", "avanzad", "alto", "frecuente", "5 veces", "6 veces")):
             return 8, "CRM"
-        if "2–3" in fit_str or "2-3" in fit_str or "constante" in fit_str or "constant" in fit_str:
+        if any(k in fit_str for k in ("2–3", "2-3", "constante", "constant", "moderad", "regular", "intermedio", "3 veces", "medio")):
             return 6, "CRM"
-        if "principiante" in fit_str or "beginner" in fit_str or "1" in fit_str or "ocasional" in fit_str:
+        if any(k in fit_str for k in ("principiante", "beginner", "1", "ocasional", "esporádic", "esporadic")):
             return 4, "CRM"
-        if "no entrena" in fit_str or "sedentario" in fit_str or "nada" in fit_str or "ninguno" in fit_str or "does not" in fit_str:
+        if any(k in fit_str for k in ("no entrena", "sedentari", "nada", "ningun", "does not", "nunca", "bajo")):
             return 2, "CRM"
 
     return None, "Pendiente (F2)"
 
 
+_EDU_PROFESSIONAL_KEYWORDS = (
+    "profesional", "professional", "universitari", "pregrado", "bachelor", "licenciad", "graduad",
+    # Universidades presentes en importación histórica (profiles.education)
+    "universidad", "javeriana", "los andes", "rosario", "externado", "sabana", "eafit", "cesa",
+    "unad", "minuto de dios", "uniminuto", "sergio arboleda", "salle", "católica", "catolica",
+    "libertadores", "pedagógica", "pedagogica", "stanford", "nacional", "politécnico", "politecnico",
+    # Profesiones universitarias (en profiles.education texto libre o profiles.occupation)
+    "ingenier", "iomgeniero", "abogad", "médic", "medic", "cirujan", "psicólog", "psicolog",
+    "arquitect", "odontólog", "odontolog", "economist", "administrador", "administraci", "admnisnitracion",
+    "contador", "contadur", "comunicador", "periodist", "diseñador", "disenador", "financier", "finance",
+    "veterinari", "enfermer", "fisioterapeut", "nutricionist", "biólog", "biolog", "químic", "quimic",
+    "físic", "fisic", "matemátic", "matematic", "sociólog", "sociolog", "antropólog", "antropolog",
+    "filósof", "filosof", "politólog", "politolog", "internacionalist", "publicist", "marketing", "makerting",
+    "mercadeo", "gerente", "director", "consultor", "analista", "data analytics", "desarrollador",
+    "software", "programador", "piloto", "megatronico", "mecatrónico", "mecatronico"
+)
+
+
+def _match_education_text(raw_text: Any) -> Optional[int]:
+    txt = str(raw_text or "").strip().lower()
+    if not txt or txt in ("none", "null", "no especificado", "no especificada"):
+        return None
+    if any(k in txt for k in ("doctorad", "phd", "ph.d", "doctorate")):
+        return 10
+    if any(k in txt for k in ("maestr", "master", "máster", "mba", "magíster", "magister", "msc")):
+        return 9
+    if any(k in txt for k in ("especializaci", "especialista", "posgrado", "postgrado")):
+        return 8
+    if any(k in txt for k in ("tecnólog", "tecnolog", "técnic", "tecnic", "estudiante", "student", "associate", "sena")):
+        return 5
+    if any(k in txt for k in _EDU_PROFESSIONAL_KEYWORDS):
+        return 7
+    if any(k in txt for k in ("bachiller", "secundaria", "high school")):
+        return 3
+    return None
+
+
 def resolve_education_level(
     cep_val: Any,
     crm_education_val: Any = None,
+    crm_occupation_val: Any = None,
     is_persisted_in_cep: bool = True
 ) -> Tuple[Optional[int], str]:
     """
     Regla Unificada de Cascada para Nivel Educativo (escala 1–10):
     1) Prioridad 1: client_extended_profile.education_level (si existe fila real en F2 y no es placeholder sin persistir).
-    2) Prioridad 2 (CRM): profiles.education (Doctorado->10, Maestría->9, Especialización->8, Profesional/Universitario->7, Técnico/Tecnólogo/Estudiante->5, Bachiller->3).
+    2) Prioridad 2 (CRM): profiles.education, con respaldo en profiles.occupation cuando education está vacío o solo indica universidad.
+       (Doctorado->10, Maestría->9, Especialización->8, Profesional/Universitario->7, Técnico/Tecnólogo/Estudiante->5, Bachiller->3).
     """
+    # Compatibilidad posicional por si el 3er argumento se pasó como booleano is_persisted_in_cep
+    if isinstance(crm_occupation_val, bool):
+        is_persisted_in_cep = crm_occupation_val
+        crm_occupation_val = None
+
     if is_persisted_in_cep and cep_val is not None:
         try:
             v = int(cep_val)
@@ -7840,20 +7884,17 @@ def resolve_education_level(
         except (ValueError, TypeError):
             pass
 
-    edu_str = str(crm_education_val or "").strip().lower()
-    if edu_str and edu_str not in ("none", "null", "no especificado", "no especificada"):
-        if "doctorad" in edu_str or "phd" in edu_str or "doctorate" in edu_str:
-            return 10, "CRM"
-        if "maestr" in edu_str or "master" in edu_str or "mba" in edu_str or "magíster" in edu_str or "magister" in edu_str:
-            return 9, "CRM"
-        if "especializaci" in edu_str or "posgrado" in edu_str or "postgrado" in edu_str:
-            return 8, "CRM"
-        if "profesional" in edu_str or "professional" in edu_str or "universitari" in edu_str or "pregrado" in edu_str or "bachelor" in edu_str or "licenciad" in edu_str:
-            return 7, "CRM"
-        if "tecnólog" in edu_str or "tecnolog" in edu_str or "técnic" in edu_str or "tecnic" in edu_str or "estudiante" in edu_str or "student" in edu_str or "associate" in edu_str:
-            return 5, "CRM"
-        if "bachiller" in edu_str or "secundaria" in edu_str or "high school" in edu_str:
-            return 3, "CRM"
+    edu_score = _match_education_text(crm_education_val)
+    occ_score = _match_education_text(crm_occupation_val)
+
+    if edu_score is not None:
+        # Si education solo indicó universidad/pregrado (7) pero occupation especifica posgrado (8, 9 o 10), respetar el posgrado
+        if edu_score == 7 and occ_score is not None and occ_score > edu_score:
+            return occ_score, "CRM"
+        return edu_score, "CRM"
+
+    if occ_score is not None:
+        return occ_score, "CRM"
 
     return None, "Pendiente (F2)"
 
@@ -8134,6 +8175,7 @@ async def get_client_extended_profile(
     resolved_edu, edu_source = resolve_education_level(
         d.get("education_level") if (is_persisted_in_cep and d.get("education_level") != 5) else None,
         prof_row.education if prof_row else None,
+        prof_row.occupation if prof_row else None,
         is_persisted_in_cep=(is_persisted_in_cep and d.get("education_level") not in (None, 5))
     )
     if resolved_edu is not None:
@@ -10083,6 +10125,7 @@ async def find_candidate_matches_engine(
     client_edu, client_edu_source = resolve_education_level(
         client_summary.get("education_level"),
         client_summary.get("education"),
+        client_summary.get("occupation"),
         is_persisted_in_cep=(client_summary.get("education_level") is not None)
     )
     client_summary["physical_activity_level"] = client_act
