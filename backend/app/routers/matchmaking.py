@@ -9262,8 +9262,9 @@ Responde ÚNICAMENTE un objeto JSON:
         "Authorization": f"Bearer {api_key}"
     }
 
-    models_to_try = [
-        "meta/llama-3.2-11b-vision-instruct"
+    attempts_to_try = [
+        ("meta/llama-3.2-11b-vision-instruct", 12.0),
+        ("meta/llama-3.2-11b-vision-instruct", 9.0),
     ]
 
     sys_msg = (
@@ -9273,7 +9274,7 @@ Responde ÚNICAMENTE un objeto JSON:
     )
 
     res_json = None
-    for model in models_to_try:
+    for model, req_timeout in attempts_to_try:
         payload = {
             "model": model,
             "messages": [
@@ -9284,7 +9285,7 @@ Responde ÚNICAMENTE un objeto JSON:
             "max_tokens": 320
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=22.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=req_timeout)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -9298,7 +9299,7 @@ Responde ÚNICAMENTE un objeto JSON:
                     logger.warning(f"[AI MATCH PARSE FAIL] {cand_info.get('name')}: raw={raw[:120]}")
             elif resp.status_code == 429:
                 logger.warning(f"[AI MATCH 429 RATE LIMIT] {cand_info.get('name')}")
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.6)
                 continue
             elif resp.status_code in (404, 410):
                 logger.warning(f"[AI MATCH {resp.status_code}] Model {model} unavailable")
@@ -9306,7 +9307,7 @@ Responde ÚNICAMENTE un objeto JSON:
             else:
                 logger.warning(f"[AI MATCH HTTP {resp.status_code}] {cand_info.get('name')}: {resp.text[:120]}")
         except Exception as _e:
-            logger.warning(f"[AI MATCH EXCEPTION] {cand_info.get('name')}: {_e}")
+            logger.warning(f"[AI MATCH EXCEPTION] {cand_info.get('name')} ({type(_e).__name__}): {_e}")
             continue
 
     if not res_json:
