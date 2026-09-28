@@ -65,6 +65,7 @@ def check_matchmaking_invariants() -> None:
 def check_resolvers_behavior(mm_tree: ast.Module) -> None:
     """Extrae y ejecuta resolve_physical_activity_level y resolve_education_level contra casos reales."""
     import json
+    import re
     from typing import Any, Dict, Optional, Tuple
 
     ns: Dict[str, Any] = {
@@ -73,6 +74,7 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
         "Optional": Optional,
         "Tuple": Tuple,
         "json": json,
+        "re": re,
     }
     target_names = {
         "resolve_physical_activity_level",
@@ -134,6 +136,8 @@ def check_resolvers_behavior(mm_tree: ast.Module) -> None:
         ((None, "Psicóloga clínica", None), {}, (7, "CRM")),
         ((None, "La Javeriana", None), {}, (7, "CRM")),
         ((None, "Los Andes", None), {}, (7, "CRM")),
+        ((None, "Politécnico Grancolombiano", None), {}, (7, "CRM")),
+        ((None, "Professional Degree (politecnico grancolombiano)", None), {}, (7, "CRM")),
         # Fallback por crm_occupation_val cuando crm_education_val está vacío
         ((None, None, "Ingeniero de Sistemas"), {}, (7, "CRM")),
         ((None, "", "Abogada"), {}, (7, "CRM")),

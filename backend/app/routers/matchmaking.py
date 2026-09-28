@@ -7851,7 +7851,7 @@ def _match_education_text(raw_text: Any) -> Optional[int]:
         return 9
     if any(k in txt for k in ("especializaci", "especialista", "posgrado", "postgrado")):
         return 8
-    if any(k in txt for k in ("tecnólog", "tecnolog", "técnic", "tecnic", "estudiante", "student", "associate", "sena")):
+    if re.search(r"\b(tecn[oó]log[oa]?s?|t[eé]cnic[oa]?s?|estudiantes?|students?|associates?|sena)\b", txt):
         return 5
     if any(k in txt for k in _EDU_PROFESSIONAL_KEYWORDS):
         return 7
