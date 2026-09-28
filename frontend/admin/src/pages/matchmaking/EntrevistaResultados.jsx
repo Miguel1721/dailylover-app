@@ -1404,24 +1404,72 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                         ⚠️ Sin datos
                       </span>
                     ) : (
-                      <span style={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        padding: '3px 10px',
-                        borderRadius: 14,
-                        background: (cand.compatibility_pct ?? 0) >= 80
-                          ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)')
-                          : (isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)'),
-                        color: (cand.compatibility_pct ?? 0) >= 80
-                          ? (isLight ? '#065F46' : '#81C784')
-                          : (isLight ? '#1E40AF' : '#93C5FD'),
-                        border: (cand.compatibility_pct ?? 0) >= 80
-                          ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)')
-                          : (isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.3)')
-                      }}>
-                        ✨ {cand.compatibility_pct}% {!cand.datos_completos ? '(Parcial)' : ''}
-                      </span>
+                      <>
+                        <span style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          padding: '3px 10px',
+                          borderRadius: 14,
+                          background: (cand.compatibility_pct ?? 0) >= 80
+                            ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)')
+                            : (isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)'),
+                          color: (cand.compatibility_pct ?? 0) >= 80
+                            ? (isLight ? '#065F46' : '#81C784')
+                            : (isLight ? '#1E40AF' : '#93C5FD'),
+                          border: (cand.compatibility_pct ?? 0) >= 80
+                            ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)')
+                            : (isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.3)')
+                        }}>
+                          ✨ {cand.compatibility_pct}% {!cand.datos_completos ? '(Parcial)' : ''}
+                        </span>
 
+                        {cand.ai_score != null ? (
+                          <span style={{
+                            background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
+                            border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
+                            color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
+                            fontWeight: 700,
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title={cand.ai_analisis || ''}>
+                            🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
+                          </span>
+                        ) : cand.ai_veredicto === 'FALLBACK POR TIMEOUT' || cand.ai_status === 'TIMEOUT_FALLBACK' ? (
+                          <span style={{
+                            background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                            border: '1px solid #F59E0B',
+                            color: isLight ? '#B45309' : '#FBBF24',
+                            fontWeight: 700,
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title={cand.ai_fallback_notice || 'Evaluación de IA excedió el tiempo límite (13s); se utilizó el score estructural'}>
+                            ⏱️ IA Timeout
+                          </span>
+                        ) : cand.ai_veredicto === 'SCORE ESTRUCTURAL' || cand.ai_status === 'STRUCTURAL_ONLY' ? (
+                          <span style={{
+                            background: isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)',
+                            border: '1px solid rgba(156, 163, 175, 0.5)',
+                            color: isLight ? '#4B5563' : '#9CA3AF',
+                            fontWeight: 700,
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title={cand.ai_fallback_notice || 'Candidato fuera del lote prioritario de IA; evaluado con modelo estructural CRM'}>
+                            📊 Score Estructural
+                          </span>
+                        ) : null}
+                      </>
                     )}
                   </div>
 
