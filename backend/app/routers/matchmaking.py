@@ -9329,7 +9329,7 @@ Responde ÚNICAMENTE un objeto JSON con la siguiente estructura:
             "max_tokens": 950
         }
         try:
-            resp = await client_http.post(url, json=payload, headers=headers, timeout=16.0)
+            resp = await client_http.post(url, json=payload, headers=headers, timeout=12.0)
             if resp.status_code == 200:
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
@@ -9439,7 +9439,7 @@ async def find_candidate_matches_engine(
     client_summary: dict,
     db: AsyncSession,
     pool_limit: int = 60,
-    max_ai_evaluations: int = 8,
+    max_ai_evaluations: int = 4,
     candidate_usage_tracker: Optional[Dict[int, int]] = None,
     max_candidate_usage: Optional[int] = None,
     nvidia_key: Optional[str] = None,
@@ -10380,8 +10380,8 @@ async def find_candidate_matches_engine(
             client_to_use = httpx.AsyncClient(timeout=50.0)
             should_close_client = True
 
-        # Concurrencia optimizada: hasta 6 evaluaciones simultáneas en paralelo (~6-9s total)
-        sem = asyncio.Semaphore(6)
+        # Concurrencia optimizada: 4 evaluaciones en tanda única (~6-8s total, sin segundas tandas)
+        sem = asyncio.Semaphore(4)
 
         async def _eval_with_sem(cand_item):
             if cand_item.get("ai_veredicto") == "SIN DATOS SUFICIENTES":
@@ -10389,33 +10389,39 @@ async def find_candidate_matches_engine(
             async with sem:
                 await asyncio.sleep(0.05)
                 try:
-                    # Timeout individual por candidato de 18s
+                    # Timeout individual por candidato de 13s
                     res = await asyncio.wait_for(
                         evaluate_candidate_quick_notes_ai(client_summary, cand_item, nvidia_key, client_to_use),
-                        timeout=18.0
+                        timeout=13.0
                     )
                     if res and isinstance(res, dict) and res.get("ai_score") is not None:
                         res["_status"] = "COMPLETED"
                         return res
                     return {"_status": "EMPTY_FALLBACK"}
                 except asyncio.TimeoutError:
-                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 18s, aplicando fallback")
+                    logger.warning(f"[AI MATCH CANDIDATE TIMEOUT] {cand_item.get('name')} excedió 13s, aplicando fallback")
                     return {"_status": "TIMEOUT_FALLBACK"}
                 except Exception as _e:
                     logger.warning(f"[AI MATCH CANDIDATE ERROR] {cand_item.get('name')}: {_e}")
                     return {"_status": "ERROR_FALLBACK", "error": str(_e)}
 
         try:
-            eval_tasks = [_eval_with_sem(c) for c in candidates_to_evaluate]
-            try:
-                # Timeout global estricto: la llamada completa de IA jamás excede 26s
-                eval_results = await asyncio.wait_for(
-                    asyncio.gather(*eval_tasks, return_exceptions=True),
-                    timeout=26.0
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"[AI MATCH TIMEOUT] Evaluación clínica IA superó 26s para cliente {client_summary.get('name')}. Activando fallback estructural.")
-                eval_results = [{"_status": "TIMEOUT_FALLBACK"}] * len(candidates_to_evaluate)
+            # Ejecución en tanda única de hasta 4 candidatos con recolección no destructiva (máximo 15s)
+            tasks = [asyncio.create_task(_eval_with_sem(c)) for c in candidates_to_evaluate]
+            done, pending = await asyncio.wait(tasks, timeout=15.0)
+
+            for p in pending:
+                p.cancel()
+
+            eval_results = []
+            for t in tasks:
+                if t in done and not t.cancelled():
+                    try:
+                        eval_results.append(t.result())
+                    except Exception as _e:
+                        eval_results.append({"_status": "ERROR_FALLBACK", "error": str(_e)})
+                else:
+                    eval_results.append({"_status": "TIMEOUT_FALLBACK"})
 
             for cand, res in zip(candidates_to_evaluate, eval_results):
                 if isinstance(res, Exception):
@@ -10841,7 +10847,7 @@ async def get_interview_results(
         client_summary=client_summary,
         db=db,
         pool_limit=dynamic_pool_limit,
-        max_ai_evaluations=8,
+        max_ai_evaluations=4,
         candidate_usage_tracker=None,
         max_candidate_usage=None,
         nvidia_key=nvidia_key,
