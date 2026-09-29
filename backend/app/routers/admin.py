@@ -3708,6 +3708,10 @@ async def get_live_alerts(
             urgency = "high"
             icon_type = "trouble"
             link = "/matchmaking/trouble"
+        elif "POSIBLE_MATCH" in ev_type:
+            urgency = "high"
+            icon_type = "info"
+            link = f"/matchmaking/mis-matches?psychologist=all&search={quote(r[1] or '')}"
         elif "INACTIVITY" in ev_type or "PRIORITY" in ev_type:
             urgency = "urgent"
             icon_type = "trouble"
@@ -3719,6 +3723,7 @@ async def get_live_alerts(
 
         iso_str, time_col, time_col_display = format_colombia_time(r[5])
         title = (
+            f"🔎 Posible match nuevo para {r[1]}" if "POSIBLE_MATCH" in ev_type else
             f"⚠️ Inactividad: {r[1]} (+15 días)" if ("INACTIVITY" in ev_type or "PRIORITY" in ev_type) else
             f"💎 Cliente Matchmaking Service: {r[1]}" if ("VIP" in ev_type or "650" in ev_type) else
             "No-Show Reportado" if "NO_SHOW" in ev_type else

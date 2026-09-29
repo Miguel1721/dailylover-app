@@ -15746,6 +15746,19 @@ async def get_leads_men_rescue(
     }
 
 
+@router.post("/possible-matches/scan")
+async def scan_possible_matches_endpoint(
+    dry_run: bool = Query(False, description="Solo mostrar lo que avisaría, sin guardar"),
+    window_days: int = Query(30, ge=1, le=120),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Busca perfiles nuevos que podrían servirle a quienes están en 'NO HAY GENTE' y deja el aviso en las alertas en vivo."""
+    from app.services.possible_match_scan import scan_possible_matches
+    notices = await scan_possible_matches(db, window_days=window_days, dry_run=dry_run)
+    return {"status": "success", "dry_run": dry_run, "count": len(notices), "notices": notices}
+
+
 # ─── CORREOS MANUALES A UNA PERSONA (botón "Correo" en Perfiles) ─────────────────────────────
 
 class ClientEmailRequest(BaseModel):

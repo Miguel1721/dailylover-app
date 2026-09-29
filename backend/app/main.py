@@ -323,6 +323,22 @@ async def startup_seed():
 
             asyncio.create_task(daily_priority_reviewer())
 
+            # Tarea periódica: avisar de posibles matches nuevos para quienes están en 'NO HAY GENTE'
+            async def possible_match_scanner():
+                await asyncio.sleep(120)  # deja terminar el arranque
+                while True:
+                    try:
+                        from app.services.possible_match_scan import scan_possible_matches
+                        async with AsyncSessionLocal() as session:
+                            n = await scan_possible_matches(session)
+                            if n:
+                                logger.info(f"[POSIBLE-MATCH] {len(n)} aviso(s) nuevo(s)")
+                    except Exception as ex_pm:
+                        logger.warning(f"Error en possible_match_scanner: {ex_pm}")
+                    await asyncio.sleep(6 * 3600)
+
+            asyncio.create_task(possible_match_scanner())
+
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")
 
