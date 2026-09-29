@@ -189,6 +189,14 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 WHERE (u.email IS NOT NULL AND lower(u.email) = lower(:e))
                    OR (u.phone IS NOT NULL AND u.phone = :p)
                    OR (u.name IS NOT NULL AND lower(u.name) = lower(:n))
+                ORDER BY
+                    -- Determinista cuando hay fichas duplicadas: primero coincidencia por teléfono, luego por correo,
+                    -- se evitan las fichas con teléfono generado (GEN_...) y por último la más antigua.
+                    (CASE WHEN :p <> '' AND u.phone = :p THEN 0
+                          WHEN :e <> '' AND lower(u.email) = lower(:e) THEN 1
+                          ELSE 2 END),
+                    (CASE WHEN COALESCE(u.phone, '') LIKE 'GEN%' THEN 1 ELSE 0 END),
+                    u.id ASC
                 LIMIT 1
             """), {"e": customer_email or "", "p": customer_phone or "", "n": customer_name or ""})
             user_row = result.fetchone()

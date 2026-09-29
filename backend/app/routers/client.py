@@ -743,8 +743,14 @@ async def confirm_vip_booking(
 
     # 2. Buscar user_id si ya existe en la DB
     user_res = await db.execute(text("""
-        SELECT id FROM users WHERE lower(email) = lower(:e) LIMIT 1
-    """), {"e": client_email})
+        SELECT id FROM users
+        WHERE lower(email) = lower(:e) OR (:p <> '' AND phone = :p)
+        ORDER BY
+            (CASE WHEN :p <> '' AND phone = :p THEN 0 ELSE 1 END),
+            (CASE WHEN COALESCE(phone, '') LIKE 'GEN%' THEN 1 ELSE 0 END),
+            id ASC
+        LIMIT 1
+    """), {"e": client_email, "p": client_phone or ""})
     u_row = user_res.fetchone()
     user_id = u_row[0] if u_row else None
 
