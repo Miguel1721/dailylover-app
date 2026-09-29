@@ -26,7 +26,7 @@ from urllib.parse import quote
 logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from app.database import get_db
 from app.config import get_settings
 from app.core.permissions import require_permission, get_current_user
@@ -4835,6 +4835,17 @@ async def get_active_psychologists(db: AsyncSession = Depends(get_db)):
     return {"psychologists": result, "names": ACTIVE_OFFICIAL_PSYCHOLOGISTS}
 
 
+# Estados que ya no cuentan como "en proceso" de una persona (terminales, rechazados o devueltos).
+_MATCH_TERMINAL_STATUSES = (
+    'CITA COMPLETADA', 'CITA REALIZADA', 'MATCH DONE', 'NOT APPROVED', 'DESCALIFICADO', 'REFUND', 'REFUND DONE',
+    'TROUBLE', 'TROUBLEMAKER', 'NO MATCH', 'NO MATCH/CAMBIAR', 'CAMBIAR', 'RECHAZADO', 'RECHAZADA', 'RECHAZADO AMBOS',
+    'RECHAZADO POR CLIENTE', 'RECHAZADO POR PERSONA A', 'RECHAZADO POR PERSONA B', 'RECHAZADO POR PSICÓLOGA B',
+    'RECHAZADA POR PSICÓLOGA B', 'RECHAZÓ A LA OTRA PERSONA', 'RECHAZADO POR LA OTRA PERSONA', 'CANCELADA', 'CANCELADO',
+)
+# Guía visible (no bloqueante): a partir de esta cantidad de propuestas/citas vivas se recomienda priorizar a otras personas.
+ACTIVE_MATCH_CAP = 3
+
+
 @router.get("/check-duplicate-match")
 async def check_duplicate_match(
     person_a: str = Query(...),
@@ -4885,7 +4896,41 @@ async def check_duplicate_match(
     is_duplicate = len(pair_rows) > 0
     has_active_conflict = len(b_active_rows) > 0 or len(b_dates_rows) > 0
 
+    # 4. Carga real de Persona B "en proceso con otra psicóloga" (reunión de capacitación):
+    #    propuestas de match ya armadas (con candidato) que siguen vivas, sin contar las de Persona A actual.
+    #    Solo informativo: el aviso es visible pero no bloquea (el tope es una guía, María decide).
+    res_b_load = await db.execute(text("""
+        SELECT id, person_a, person_b, psychologist_name, status
+        FROM operational_matches
+        WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:pb)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:pb)))
+          AND TRIM(COALESCE(person_a, '')) <> '' AND TRIM(COALESCE(person_b, '')) <> ''
+          AND NOT (LOWER(TRIM(person_a)) = LOWER(TRIM(:pa)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:pa)))
+          AND UPPER(COALESCE(status, '')) NOT IN :terminal
+        ORDER BY id DESC
+        LIMIT 20
+    """).bindparams(bindparam("terminal", expanding=True)), {"pb": pb, "pa": pa, "terminal": list(_MATCH_TERMINAL_STATUSES)})
+    b_load_rows = res_b_load.fetchall()
+    in_process_elsewhere = [
+        {
+            "id": r.id,
+            "psychologist": r.psychologist_name,
+            "with": (r.person_b if (r.person_a or "").strip().lower() == pb.lower() else r.person_a),
+            "status": r.status,
+        }
+        for r in b_load_rows
+    ]
+    planned_dates_count = len(b_dates_rows)
+    active_total = len(in_process_elsewhere) + planned_dates_count
+    other_psychologists = sorted({(x["psychologist"] or "").strip().upper() for x in in_process_elsewhere if (x["psychologist"] or "").strip()})
+
     return {
+        "in_process_elsewhere": in_process_elsewhere,
+        "in_process_count": len(in_process_elsewhere),
+        "in_process_psychologists": other_psychologists,
+        "planned_dates_count": planned_dates_count,
+        "active_total": active_total,
+        "active_cap": ACTIVE_MATCH_CAP,
+        "over_cap": active_total >= ACTIVE_MATCH_CAP,
         "duplicate": is_duplicate,
         "previous_matches_count": len(pair_rows),
         "previous_matches": [

@@ -2296,6 +2296,13 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             if (dupData.duplicate) {
               setDuplicateWarning(`⚠️ ALERTA: ${matchRow.person_a} y ${finalValue} ya tuvieron un match previo (${dupData.previous_matches[0]?.date || 'anteriormente'}).`)
               setTimeout(() => setDuplicateWarning(''), 6000)
+            } else if ((dupData.in_process_count || 0) > 0 || (dupData.planned_dates_count || 0) > 0) {
+              const quien = (dupData.in_process_psychologists || []).join(', ')
+              const detalle = `${dupData.in_process_count || 0} match(es) en proceso${quien ? ' con ' + quien : ''} y ${dupData.planned_dates_count || 0} cita(s) agendada(s)`
+              setDuplicateWarning(dupData.over_cap
+                ? `⚠️ ${finalValue} ya está en proceso con otra psicóloga (${detalle}; guía: máx. ${dupData.active_cap}). Considera priorizar a otras personas antes de gastarle más tiempo.`
+                : `ℹ️ ${finalValue} ya está en proceso con otra psicóloga (${detalle}).`)
+              setTimeout(() => setDuplicateWarning(''), 10000)
             } else if (dupData.has_active_conflict) {
               setDuplicateWarning(`⚠️ INFORMACIÓN: ${finalValue} ya tiene citas o matches activos en curso.`)
               setTimeout(() => setDuplicateWarning(''), 6000)
