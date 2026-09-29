@@ -15746,6 +15746,99 @@ async def get_leads_men_rescue(
     }
 
 
+# ─── CORREOS MANUALES A UNA PERSONA (botón "Correo" en Perfiles) ─────────────────────────────
+
+class ClientEmailRequest(BaseModel):
+    user_id: int
+    template_key: str
+
+
+async def _load_client_email_context(db: AsyncSession, user_id: int) -> Dict[str, Any]:
+    from app.services.client_email_templates import build_context
+    res = await db.execute(text("""
+        SELECT u.id, u.name, u.email, p.gender, p.city, p.age, p.plan_tier, p.responsable,
+               p.estatura, p.bio_notes, p.search_preferences
+        FROM users u
+        LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE u.id = :uid
+    """), {"uid": user_id})
+    row = res.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="No se encontró a la persona")
+    return build_context(row)
+
+
+@router.get("/client-emails/templates")
+async def list_client_email_templates(current_user: dict = Depends(get_current_user)):
+    from app.services.client_email_templates import list_templates
+    return {"templates": list_templates()}
+
+
+@router.post("/client-emails/preview")
+async def preview_client_email(
+    payload: ClientEmailRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Vista previa del correo con los datos de la persona (no envía nada)."""
+    from app.services.client_email_templates import render_template
+    ctx = await _load_client_email_context(db, payload.user_id)
+    rendered = render_template(payload.template_key, ctx)
+    if not rendered:
+        raise HTTPException(status_code=400, detail="Plantilla de correo desconocida")
+    subject, html = rendered
+
+    last = await db.execute(text("""
+        SELECT created_at FROM person_history
+        WHERE event_type = 'EMAIL_ENVIADO' AND lower(person_name) = lower(:n) AND details LIKE :tag
+        ORDER BY created_at DESC LIMIT 1
+    """), {"n": ctx["name"], "tag": f"[{payload.template_key}]%"})
+    last_row = last.fetchone()
+    return {
+        "to_email": ctx["email"],
+        "has_email": bool(ctx["email"]),
+        "subject": subject,
+        "html": html,
+        "last_sent_at": last_row[0].strftime("%Y-%m-%d %H:%M") if last_row and last_row[0] else None,
+    }
+
+
+@router.post("/client-emails/send")
+async def send_client_email(
+    payload: ClientEmailRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Genera el correo con los datos de la persona y lo envía de inmediato; deja constancia en su historial."""
+    import asyncio
+    from app.services.client_email_templates import render_template
+    from app.services.email_service import send_email_html
+
+    ctx = await _load_client_email_context(db, payload.user_id)
+    if not ctx["email"]:
+        raise HTTPException(status_code=400, detail="Esta persona no tiene correo registrado")
+    rendered = render_template(payload.template_key, ctx)
+    if not rendered:
+        raise HTTPException(status_code=400, detail="Plantilla de correo desconocida")
+    subject, html = rendered
+
+    sent = False
+    try:
+        sent = bool(await asyncio.to_thread(send_email_html, ctx["email"], subject, html))
+    except Exception as e:
+        logger.warning(f"[CORREO-MANUAL] No se envió '{payload.template_key}' a user {payload.user_id}: {e}")
+    if not sent:
+        raise HTTPException(status_code=502, detail="No se pudo enviar el correo (revisa la configuración SMTP)")
+
+    author = current_user.get("employee_name") or current_user.get("name") or current_user.get("email") or "Usuario"
+    await db.execute(text("""
+        INSERT INTO person_history (person_name, event_type, details, created_at)
+        VALUES (:n, 'EMAIL_ENVIADO', :d, NOW())
+    """), {"n": ctx["name"], "d": f"[{payload.template_key}] Correo '{subject}' enviado a {ctx['email']} por {author}."})
+    await db.commit()
+    return {"status": "success", "email_sent": True, "to_email": ctx["email"], "subject": subject}
+
+
 @router.post("/leads-men-rescue/{user_id}/no-show")
 async def register_interview_no_show(
     user_id: int,

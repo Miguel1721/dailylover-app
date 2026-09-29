@@ -3,9 +3,10 @@ import {
   AlertTriangle, PhoneCall, MessageSquare, CheckCircle2, 
   ExternalLink, Search, Filter, RefreshCw, UserX, 
   Flame, ShieldAlert, Sparkles, User, ChevronLeft, ChevronRight,
-  HelpCircle, FileText, Check, Copy, ArrowUpDown, Coffee, Send
+  HelpCircle, FileText, Check, Copy, ArrowUpDown, Coffee, Send, Mail
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import ClientEmailModal from '../../components/ClientEmailModal'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) 
   ? window.location.origin 
@@ -51,6 +52,7 @@ export default function PerfilesIncompletos() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [copiedId, setCopiedId] = useState(null)
+  const [emailTarget, setEmailTarget] = useState(null) // persona a la que se le enviará un correo (modal)
 
   // ─── FETCH RESCATE DE HOMBRES ──────────────────────────────────────────────
   const fetchMenRescue = useCallback(async () => {
@@ -1291,6 +1293,27 @@ export default function PerfilesIncompletos() {
                                 </button>
                               )}
 
+                              <button
+                                onClick={() => setEmailTarget(prof)}
+                                style={{
+                                  background: 'rgba(212, 175, 55, 0.14)',
+                                  border: '1px solid rgba(212, 175, 55, 0.45)',
+                                  color: '#D4AF37',
+                                  padding: '7px 11px',
+                                  borderRadius: 8,
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6
+                                }}
+                                title="Enviar un correo prearmado (no hay gente, completar ficha, agendar entrevista…)"
+                              >
+                                <Mail size={14} />
+                                <span>Correo</span>
+                              </button>
+
                               {prof.crm_url && (
                                 <a
                                   href={prof.crm_url}
@@ -1358,6 +1381,7 @@ export default function PerfilesIncompletos() {
           </div>
         </div>
       )}
+      <ClientEmailModal person={emailTarget} onClose={() => setEmailTarget(null)} />
     </div>
   )
 }
