@@ -109,6 +109,43 @@ export default function PerfilesIncompletos() {
     }
   }
 
+  // No se presentó a la ENTREVISTA: suma 1, envía correo de reprogramación; a la 3ª sale de la lista
+  const handleInterviewNoShow = async (lead) => {
+    const next = (lead.interview_no_shows || 0) + 1
+    const msg = next >= 3
+      ? `Esta será la inasistencia 3 de 3 de ${lead.name}: saldrá de la lista de entrevistas y recibirá el correo de política. ¿Confirmas?`
+      : `Registrar que ${lead.name} no se presentó a la entrevista (${next} de 3). Se le enviará un correo para reprogramar. ¿Confirmas?`
+    if (!window.confirm(msg)) return
+    setUpdatingUserId(lead.user_id)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/leads-men-rescue/${lead.user_id}/no-show`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        alert(data.detail || 'No se pudo registrar la inasistencia')
+        return
+      }
+      setMenList(prev => prev.map(item => item.user_id === lead.user_id ? {
+        ...item,
+        interview_no_shows: data.interview_no_shows,
+        contact_status: data.contact_status,
+        contact_notes: data.contact_notes
+      } : item))
+      if (!data.has_email) {
+        alert('Inasistencia registrada, pero la persona no tiene correo: avísale por WhatsApp.')
+      } else if (!data.email_sent) {
+        alert('Inasistencia registrada, pero el correo no se pudo enviar. Avísale por WhatsApp.')
+      }
+    } catch (e) {
+      console.error('Error registrando no-show:', e)
+      alert('Error de conexión')
+    } finally {
+      setUpdatingUserId(null)
+    }
+  }
+
   // ─── FETCH CRM INCOMPLETES ─────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     setLoadingStats(true)
@@ -651,6 +688,34 @@ export default function PerfilesIncompletos() {
                               <option value="AGENDO" style={{ background: '#222', color: '#34D399' }}>✅ AGENDÓ CITA</option>
                               <option value="DESCARTADO" style={{ background: '#222', color: '#F87171' }}>❌ DESCARTADO</option>
                             </select>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                              {(lead.interview_no_shows || 0) > 0 && (
+                                <span
+                                  title={lead.last_no_show_at ? `Última inasistencia: ${lead.last_no_show_at}` : ''}
+                                  style={{
+                                    padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 800,
+                                    background: lead.interview_no_shows >= 3 ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.18)',
+                                    color: lead.interview_no_shows >= 3 ? '#F87171' : '#F59E0B'
+                                  }}
+                                >
+                                  No se presentó {lead.interview_no_shows}/3
+                                </span>
+                              )}
+                              {lead.contact_status !== 'DESCARTADO' && (
+                                <button
+                                  onClick={() => handleInterviewNoShow(lead)}
+                                  disabled={isUpdating}
+                                  title="Registrar que no se presentó a la entrevista y enviarle el correo para reprogramar"
+                                  style={{
+                                    padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700,
+                                    background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-color)',
+                                    color: 'var(--text-secondary)', cursor: isUpdating ? 'not-allowed' : 'pointer'
+                                  }}
+                                >
+                                  🚫 No se presentó
+                                </button>
+                              )}
+                            </div>
                           </td>
 
                           {/* Notas */}

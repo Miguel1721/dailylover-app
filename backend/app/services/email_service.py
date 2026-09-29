@@ -497,3 +497,49 @@ def send_vip_confirmation_emails(
     return res_cli and res_owner
 
 
+
+
+# ─── ENTREVISTA CLÍNICA: INASISTENCIA (NO SE PRESENTÓ) ───────────────────────
+# BORRADOR provisional: se reemplaza cuando exista la plantilla definitiva.
+INTERVIEW_CALENDLY_URL = os.getenv(
+    "INTERVIEW_CALENDLY_URL",
+    "https://calendly.com/maria-salinas-dailylover/blind-dates-1-1"
+)
+INTERVIEW_MAX_NO_SHOWS = 3
+
+
+def _interview_email_shell(body_html: str) -> str:
+    return f"""<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#2B2B2B;line-height:1.55">
+{body_html}
+<p style="margin-top:28px">Con cariño,<br><strong>Equipo Daily Lover</strong></p>
+</div>"""
+
+
+def build_interview_reschedule_email_html(user_name: str, no_show_count: int, calendly_url: str = "") -> str:
+    url = calendly_url or INTERVIEW_CALENDLY_URL
+    first = (user_name or "").strip().split(" ")[0].title() or "Hola"
+    remaining = max(INTERVIEW_MAX_NO_SHOWS - no_show_count, 0)
+    return _interview_email_shell(f"""
+<p>Hola {first},</p>
+<p>Notamos que no pudiste asistir a tu entrevista con nuestro equipo de psicólogas. ¡No te preocupes, pasa! 💛</p>
+<p>La entrevista es el paso que activa tu perfil para que empecemos a presentarte personas compatibles, así que queremos ayudarte a retomarla. Puedes elegir un nuevo horario aquí:</p>
+<p style="text-align:center;margin:24px 0"><a href="{url}" style="background:#B8324F;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold">Reprogramar mi entrevista</a></p>
+<p style="font-size:13px;color:#555">Tienes un máximo de {INTERVIEW_MAX_NO_SHOWS} oportunidades para reprogramar. Esta fue la número {no_show_count}; te {'queda' if remaining == 1 else 'quedan'} {remaining}.</p>""")
+
+
+def build_interview_removed_email_html(user_name: str) -> str:
+    first = (user_name or "").strip().split(" ")[0].title() or "Hola"
+    return _interview_email_shell(f"""
+<p>Hola {first},</p>
+<p>Te escribimos porque no pudimos concretar tu entrevista después de {INTERVIEW_MAX_NO_SHOWS} intentos de agendamiento, que es el máximo que permite nuestra política de entrevistas.</p>
+<p>Por eso retiramos tu solicitud de la lista de entrevistas. Si crees que se trata de un error o quieres conversar sobre tu caso, responde a este correo y con gusto lo revisamos.</p>""")
+
+
+def send_interview_no_show_email(to_email: str, user_name: str, no_show_count: int, removed: bool) -> bool:
+    if removed:
+        subject = "Tu entrevista en Daily Lover — actualización de tu solicitud"
+        html = build_interview_removed_email_html(user_name)
+    else:
+        subject = "¿Reprogramamos tu entrevista? — Daily Lover"
+        html = build_interview_reschedule_email_html(user_name, no_show_count)
+    return send_email_html(to_email, subject, html)

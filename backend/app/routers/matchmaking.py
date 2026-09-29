@@ -15532,6 +15532,8 @@ async def get_leads_men_rescue(
             COALESCE(l.contact_status, 'PENDIENTE') as contact_status,
             l.contact_notes,
             l.contacted_at,
+            COALESCE(l.interview_no_shows, 0) as interview_no_shows,
+            l.last_no_show_at,
             u.created_at as registration_date
         FROM leads_pendientes_entrevista l
         LEFT JOIN users u ON u.id = l.user_id
@@ -15591,6 +15593,8 @@ async def get_leads_men_rescue(
             "contact_status": r["contact_status"],
             "contact_notes": r["contact_notes"] or "",
             "contacted_at": r["contacted_at"].strftime("%Y-%m-%d %H:%M") if r["contacted_at"] else None,
+            "interview_no_shows": int(r["interview_no_shows"] or 0),
+            "last_no_show_at": r["last_no_show_at"].strftime("%Y-%m-%d %H:%M") if r["last_no_show_at"] else None,
             "registration_date": r["registration_date"].strftime("%Y-%m-%d") if r["registration_date"] else None,
             "whatsapp_url": whatsapp_url
         })
@@ -15604,6 +15608,73 @@ async def get_leads_men_rescue(
         "total_pages": total_pages,
         "stats": dict(stats_res) if stats_res else {},
         "leads": leads_list
+    }
+
+
+@router.post("/leads-men-rescue/{user_id}/no-show")
+async def register_interview_no_show(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    'No se presentó' a la ENTREVISTA clínica (solo entrevistas; no aplica a citas en restaurante).
+    - Suma 1 al contador y deja constancia en las notas.
+    - Envía correo para reprogramar (enlace general de Calendly).
+    - Con la 3ª inasistencia: la persona sale de la lista activa (DESCARTADO) y recibe el correo de política.
+    """
+    import asyncio
+    from app.services.email_service import send_interview_no_show_email, INTERVIEW_MAX_NO_SHOWS
+
+    res = await db.execute(text("""
+        SELECT l.user_id, COALESCE(l.interview_no_shows, 0) AS n, COALESCE(l.contact_status, 'PENDIENTE') AS st,
+               COALESCE(l.contact_notes, '') AS notes,
+               COALESCE(u.name, l.full_name_raw, '') AS name, COALESCE(u.email, '') AS email
+        FROM leads_pendientes_entrevista l
+        LEFT JOIN users u ON u.id = l.user_id
+        WHERE l.user_id = :uid
+    """), {"uid": user_id})
+    lead = res.fetchone()
+    if not lead:
+        raise HTTPException(status_code=404, detail="La persona no está en la lista de entrevistas pendientes")
+    if lead.st == "DESCARTADO" and lead.n >= INTERVIEW_MAX_NO_SHOWS:
+        raise HTTPException(status_code=400, detail="Esta persona ya fue retirada de la lista por 3 inasistencias")
+
+    new_n = lead.n + 1
+    removed = new_n >= INTERVIEW_MAX_NO_SHOWS
+    author = current_user.get("employee_name") or current_user.get("name") or current_user.get("email") or "Usuario"
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if removed:
+        note = f"[{stamp}] No se presentó a la entrevista ({new_n}/{INTERVIEW_MAX_NO_SHOWS}) — retirada de la lista por incumplimiento. Registrado por {author}."
+    else:
+        note = f"[{stamp}] No se presentó a la entrevista ({new_n}/{INTERVIEW_MAX_NO_SHOWS}). Se envió correo para reprogramar. Registrado por {author}."
+    new_notes = (lead.notes + "\n" if lead.notes else "") + note
+    new_status = "DESCARTADO" if removed else "CONTACTADO"
+
+    await db.execute(text("""
+        UPDATE leads_pendientes_entrevista
+        SET interview_no_shows = :n, last_no_show_at = NOW(),
+            contact_status = :st, contact_notes = :notes, contacted_at = NOW()
+        WHERE user_id = :uid
+    """), {"n": new_n, "st": new_status, "notes": new_notes, "uid": user_id})
+    await db.commit()
+
+    email_sent = False
+    if lead.email:
+        try:
+            email_sent = await asyncio.to_thread(send_interview_no_show_email, lead.email, lead.name, new_n, removed)
+        except Exception as e:
+            logger.warning(f"[ENTREVISTA-NOSHOW] Correo no enviado a user {user_id}: {e}")
+
+    return {
+        "status": "success",
+        "user_id": user_id,
+        "interview_no_shows": new_n,
+        "removed_from_list": removed,
+        "contact_status": new_status,
+        "contact_notes": new_notes,
+        "email_sent": email_sent,
+        "has_email": bool(lead.email),
     }
 
 
