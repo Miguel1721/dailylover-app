@@ -15424,6 +15424,7 @@ class LeadMenRescueUpdateRequest(BaseModel):
 async def get_leads_men_rescue(
     city_filter: str = Query("all", description="all, bogota, medellin, cali, miami, eje_cafetero, otras"),
     status_filter: str = Query("all", description="all, PENDIENTE, CONTACTADO, AGENDO, DESCARTADO"),
+    gender_filter: str = Query("Hombre", description="all, Hombre, Mujer"),
     responsable: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -15439,6 +15440,8 @@ async def get_leads_men_rescue(
         city_filter = str(city_filter.default or "all")
     if hasattr(status_filter, 'default'):
         status_filter = str(status_filter.default or "all")
+    if hasattr(gender_filter, 'default'):
+        gender_filter = str(gender_filter.default or "Hombre")
     if hasattr(responsable, 'default'):
         responsable = responsable.default
     if hasattr(search, 'default'):
@@ -15448,7 +15451,15 @@ async def get_leads_men_rescue(
     if hasattr(page_size, 'default'):
         page_size = int(page_size.default or 50)
 
-    where_clauses = ["l.gender = 'Hombre'"]
+    gf = str(gender_filter or "Hombre").strip().lower()
+    if gf in ("all", "todos", "todas"):
+        gender_sql = "1=1"
+    elif gf in ("mujer", "mujeres"):
+        gender_sql = "l.gender = 'Mujer'"
+    else:
+        gender_sql = "l.gender = 'Hombre'"
+
+    where_clauses = [gender_sql]
     params = {}
 
     # Filtro por Ciudad
@@ -15504,8 +15515,8 @@ async def get_leads_men_rescue(
             count(*) FILTER (WHERE COALESCE(l.contact_status, 'PENDIENTE') = 'AGENDO') as s_agendo,
             count(*) FILTER (WHERE COALESCE(l.contact_status, 'PENDIENTE') = 'DESCARTADO') as s_descartado
         FROM leads_pendientes_entrevista l
-        WHERE l.gender = 'Hombre'
-    """
+        WHERE __GENDER_SQL__
+    """.replace("__GENDER_SQL__", gender_sql)
     stats_res = (await db.execute(text(stats_query))).mappings().first()
 
     # 2. Conteo filtrado
@@ -15527,6 +15538,7 @@ async def get_leads_men_rescue(
             COALESCE(u.email, '') as email,
             COALESCE(l.city, 'Bogotá') as city,
             l.age,
+            l.gender,
             COALESCE(l.plan_tier, 'Sin plan') as plan_tier,
             COALESCE(l.responsable, 'Sin asignar') as responsable,
             COALESCE(l.contact_status, 'PENDIENTE') as contact_status,
@@ -15588,6 +15600,7 @@ async def get_leads_men_rescue(
             "city": r["city"],
             "city_group": city_group,
             "age": r["age"],
+            "gender": r["gender"],
             "plan_tier": r["plan_tier"],
             "responsable": r["responsable"],
             "contact_status": r["contact_status"],

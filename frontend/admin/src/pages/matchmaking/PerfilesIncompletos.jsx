@@ -29,6 +29,7 @@ export default function PerfilesIncompletos() {
   const [menTotalPages, setMenTotalPages] = useState(1)
   const [menCityFilter, setMenCityFilter] = useState('all')
   const [menStatusFilter, setMenStatusFilter] = useState('all')
+  const [menGenderFilter, setMenGenderFilter] = useState('all')
   const [menRespFilter, setMenRespFilter] = useState('')
   const [menSearch, setMenSearch] = useState('')
   const [menPage, setMenPage] = useState(1)
@@ -58,6 +59,7 @@ export default function PerfilesIncompletos() {
       const params = new URLSearchParams()
       params.append('city_filter', menCityFilter)
       params.append('status_filter', menStatusFilter)
+      params.append('gender_filter', menGenderFilter)
       if (menRespFilter && menRespFilter !== 'all') params.append('responsable', menRespFilter)
       if (menSearch.trim()) params.append('search', menSearch.trim())
       params.append('page', menPage)
@@ -78,7 +80,7 @@ export default function PerfilesIncompletos() {
     } finally {
       setLoadingMen(false)
     }
-  }, [token, menCityFilter, menStatusFilter, menRespFilter, menSearch, menPage, menPageSize])
+  }, [token, menCityFilter, menStatusFilter, menGenderFilter, menRespFilter, menSearch, menPage, menPageSize])
 
   const handleUpdateLead = async (userId, patchData) => {
     setUpdatingUserId(userId)
@@ -94,7 +96,7 @@ export default function PerfilesIncompletos() {
       if (res.ok) {
         setMenList(prev => prev.map(item => item.user_id === userId ? { ...item, ...patchData } : item))
         // Refrescar stats suavemente
-        const statsRes = await fetch(`${API}/api/v1/matchmaking/leads-men-rescue?page=1&page_size=1`, {
+        const statsRes = await fetch(`${API}/api/v1/matchmaking/leads-men-rescue?page=1&page_size=1&gender_filter=${menGenderFilter}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
         if (statsRes.ok) {
@@ -325,7 +327,7 @@ export default function PerfilesIncompletos() {
               borderRadius: 12, padding: '16px 18px'
             }}>
               <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
-                Hombres por Rescatar
+                {menGenderFilter === 'Hombre' ? 'Hombres' : menGenderFilter === 'Mujer' ? 'Mujeres' : 'Personas'} por Rescatar
               </span>
               <div style={{ fontSize: 28, fontWeight: 800, color: '#FF6B35', marginTop: 4 }}>
                 {loadingMen ? '...' : (menStats?.total_men?.toLocaleString() || '1.116')}
@@ -430,6 +432,23 @@ export default function PerfilesIncompletos() {
                 />
               </div>
 
+              {/* Filtro Género */}
+              <div style={{ minWidth: 150 }}>
+                <select
+                  value={menGenderFilter}
+                  onChange={(e) => { setMenGenderFilter(e.target.value); setMenPage(1); }}
+                  style={{
+                    width: '100%', padding: '9px 12px',
+                    background: 'var(--bg-base)', border: '1px solid var(--border-color)',
+                    borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, fontWeight: 600
+                  }}
+                >
+                  <option value="all">👥 Todos</option>
+                  <option value="Hombre">Hombres</option>
+                  <option value="Mujer">Mujeres</option>
+                </select>
+              </div>
+
               {/* Filtro Ciudad con Eje Cafetero */}
               <div style={{ minWidth: 180 }}>
                 <select
@@ -514,7 +533,7 @@ export default function PerfilesIncompletos() {
             {loadingMen ? (
               <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
                 <div className="spinner" style={{ margin: '0 auto 16px' }} />
-                <p style={{ margin: 0, fontSize: 14 }}>Cargando leads de hombres...</p>
+                <p style={{ margin: 0, fontSize: 14 }}>Cargando personas pendientes de entrevista...</p>
               </div>
             ) : menList.length === 0 ? (
               <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -585,6 +604,7 @@ export default function PerfilesIncompletos() {
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', gap: 6, marginTop: 2 }}>
                               <span>ID: #{lead.user_id}</span>
+                              {lead.gender && <span>• {lead.gender}</span>}
                               {lead.registration_date && <span>• Reg: {lead.registration_date}</span>}
                             </div>
                           </td>
@@ -754,7 +774,7 @@ export default function PerfilesIncompletos() {
               fontSize: 13, color: 'var(--text-secondary)'
             }}>
               <div>
-                Página <strong style={{ color: 'var(--text-primary)' }}>{menPage}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{menTotalPages}</strong> ({menTotal.toLocaleString()} hombres)
+                Página <strong style={{ color: 'var(--text-primary)' }}>{menPage}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{menTotalPages}</strong> ({menTotal.toLocaleString()} {menGenderFilter === 'Hombre' ? 'hombres' : menGenderFilter === 'Mujer' ? 'mujeres' : 'personas'})
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
