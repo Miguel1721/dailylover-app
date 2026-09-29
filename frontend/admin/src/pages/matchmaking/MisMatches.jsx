@@ -204,6 +204,192 @@ export const STATUS_GROUPS = [
 
 const STATUS_OPTIONS = STATUS_GROUPS.flatMap(g => g.options)
 
+// ─── OBSERVACIONES: MODAL CON HISTORIAL COMPLETO ──────────────────────────────
+const OBS_ROLE_COLORS = {
+  cs: { bg: '#FEF3C7', color: '#92400E' },
+  legacy: { bg: '#E5E7EB', color: '#374151' },
+  maria: { bg: '#FCE7F3', color: '#9D174D' },
+  default: { bg: '#DBEAFE', color: '#1E3A8A' },
+}
+
+function obsColorFor(item) {
+  if (item.source === 'cs') return OBS_ROLE_COLORS.cs
+  if (item.source === 'legacy') return OBS_ROLE_COLORS.legacy
+  const r = `${item.role || ''} ${item.author || ''}`.toLowerCase()
+  if (r.includes('maría') || r.includes('maria') || r.includes('admin')) return OBS_ROLE_COLORS.maria
+  return OBS_ROLE_COLORS.default
+}
+
+function formatObsDate(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch (e) {
+    return ''
+  }
+}
+
+function ObservationsModal({ match, onClose, onAdded }) {
+  const { token } = useAuth()
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const endRef = React.useRef(null)
+
+  useEffect(() => {
+    if (!match) return
+    setLoading(true)
+    setError('')
+    fetch(`${API}/api/v1/matchmaking/matches/${match.id}/observations`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => { if (!r.ok) throw new Error('No se pudo cargar el historial'); return r.json() })
+      .then(d => { setItems(d.items || []); setLoading(false) })
+      .catch(e => { setError(e.message || 'Error al cargar'); setLoading(false) })
+  }, [match?.id, token])
+
+  useEffect(() => {
+    if (endRef.current) endRef.current.scrollIntoView({ block: 'end' })
+  }, [items.length, loading])
+
+  if (!match) return null
+
+  const submit = async () => {
+    const body = draft.trim()
+    if (!body || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      const r = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/observations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ body })
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        throw new Error(err.detail || 'No se pudo guardar la observación')
+      }
+      const d = await r.json()
+      setItems(prev => [...prev, d.item])
+      setDraft('')
+      if (onAdded) onAdded(match.id, d.item, items.length + 1)
+    } catch (e) {
+      setError(e.message || 'Error al guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--bg-card)', color: 'var(--text-primary)', borderRadius: 14, width: 'min(680px, 100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', border: '1px solid var(--border-color)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>Observaciones</div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {match.person_a}{match.person_b ? ` ↔ ${match.person_b}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} title="Cerrar" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10, minHeight: 160 }}>
+          {loading && <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Cargando historial...</div>}
+          {!loading && items.length === 0 && !error && (
+            <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Aún no hay observaciones. Escribe la primera abajo.</div>
+          )}
+          {items.map(it => {
+            const c = obsColorFor(it)
+            return (
+              <div key={it.id} style={{ border: '1px solid var(--border-color)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg-base)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: c.bg, color: c.color }}>
+                    {it.author}
+                  </span>
+                  {it.role && it.source === 'manual' && (
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{it.role}</span>
+                  )}
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{formatObsDate(it.created_at)}</span>
+                </div>
+                <div style={{ fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{it.body}</div>
+              </div>
+            )
+          })}
+          <div ref={endRef} />
+        </div>
+
+        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--border-color)' }}>
+          {error && <div style={{ color: '#DC2626', fontSize: 12, marginBottom: 6 }}>{error}</div>}
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit() }}
+            placeholder="Escribe una observación nueva (se agrega al historial, no reemplaza las anteriores)..."
+            rows={3}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-base)', color: 'var(--text-primary)', fontSize: 13, resize: 'vertical', outline: 'none' }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Ctrl + Enter para enviar</span>
+            <button
+              onClick={submit}
+              disabled={saving || !draft.trim()}
+              style={{ background: '#B8324F', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: saving || !draft.trim() ? 'not-allowed' : 'pointer', opacity: saving || !draft.trim() ? 0.55 : 1 }}
+            >
+              {saving ? 'Guardando...' : 'Agregar observación'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Celda de la tabla: último comentario (ancho, con scroll) + botón que abre el historial
+function ObservationCell({ m, onOpen, isCompact }) {
+  const preview = m.last_observation || m.observations || ''
+  const count = m.observation_count || (preview ? 1 : 0)
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <div
+        onClick={() => onOpen(m)}
+        title={preview ? 'Ver todas las observaciones' : 'Agregar observación'}
+        style={{
+          flex: 1, minWidth: 0, maxHeight: isCompact ? 48 : 64, overflowY: 'auto',
+          padding: isCompact ? '6px 10px' : '8px 12px', borderRadius: 8, cursor: 'pointer',
+          border: '1px solid var(--border-color)', background: 'var(--bg-base)',
+          color: preview ? 'var(--text-primary)' : 'var(--text-muted)',
+          fontSize: isCompact ? 12 : 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+        }}
+      >
+        {preview || 'Sin observaciones — clic para agregar'}
+      </div>
+      <button
+        onClick={() => onOpen(m)}
+        title="Abrir historial de observaciones"
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0,
+          padding: '6px 9px', borderRadius: 8, cursor: 'pointer',
+          border: '1px solid var(--border-color)', background: 'var(--bg-card)',
+          color: 'var(--text-secondary)', fontSize: 12, fontWeight: 700
+        }}
+      >
+        <MessageSquare size={14} />
+        {count > 0 ? count : '+'}
+      </button>
+    </div>
+  )
+}
+
 // ─── MODAL DE HISTORIAL POR PERSONA ──────────────────────────────────────────
 function PersonHistoryModal({ queryTarget, onClose }) {
   const { token } = useAuth()
@@ -1602,6 +1788,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const [feedbackMsg, setFeedbackMsg] = useState('')
   const [duplicateWarning, setDuplicateWarning] = useState('')
   const [historyTarget, setHistoryTarget] = useState(null)
+  const [obsTarget, setObsTarget] = useState(null)
   const [viewMode, setViewMode] = useState('mine') // 'mine' | 'cross_review'
   const [crossReviewCount, setCrossReviewCount] = useState(0)
 
@@ -3194,8 +3381,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                           )}
                         </div>
                       </td>
-                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', fontSize: 12, color: 'var(--text-secondary)', maxWidth: 260 }}>
-                        {m.observations || 'Sin observaciones'}
+                      <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', minWidth: 260 }}>
+                        <ObservationCell m={m} onOpen={setObsTarget} isCompact={isCompact} />
                       </td>
                       <td style={{ padding: isCompact ? '8px 10px' : '12px 12px', textAlign: 'center' }}>
                         <select
@@ -4250,32 +4437,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                       </td>
 
                       {/* OBSERVACIONES */}
-                      <td style={{ padding: isCompact ? '8px 14px' : '14px 18px', minWidth: isCompact ? 240 : 340 }}>
-                        <input
-                          type="text"
-                          defaultValue={m.observations || ''}
-                          placeholder="Notas..."
-                          onBlur={e => {
-                            if (e.target.value !== (m.observations || '')) {
-                              handleUpdateField(m.id, 'observations', e.target.value, m)
-                            }
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') e.target.blur()
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: isCompact ? '6px 10px' : '8px 12px',
-                            height: isCompact ? 33 : 38,
-                            borderRadius: 8,
-                            border: '1px solid var(--border-color)',
-                            background: 'var(--bg-base)',
-                            color: 'var(--text-primary)',
-                            fontSize: isCompact ? 12 : 13,
-                            outline: 'none',
-                            boxSizing: 'border-box'
-                          }}
-                        />
+                      <td style={{ padding: isCompact ? '8px 14px' : '14px 18px', minWidth: isCompact ? 260 : 360 }}>
+                        <ObservationCell m={m} onOpen={setObsTarget} isCompact={isCompact} />
                       </td>
                     </tr>
                   )
@@ -4417,6 +4580,21 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             </button>
           </div>
         </div>
+      )}
+
+      {/* Modal Observaciones (historial completo) */}
+      {obsTarget && (
+        <ObservationsModal
+          match={obsTarget}
+          onClose={() => setObsTarget(null)}
+          onAdded={(id, item, total) => setMatches(prev => prev.map(x => x.id === id ? {
+            ...x,
+            last_observation: item.body,
+            last_observation_author: item.author,
+            observation_count: total,
+            observations: x.observations ? `${x.observations} | ${item.body}` : item.body
+          } : x))}
+        />
       )}
 
       {/* Modal Historial */}

@@ -475,6 +475,8 @@ async def get_my_matches(
             m.id, m.person_a, m.person_b, m.psychologist_name, m.psychologist_id,
             m.city, m.pref, m.plan_tier, m.status, m.status_a, m.status_b, m.approved_by_maria, m.approved_at,
             m.observations, m.slot_number, m.is_priority, m.sheet_row_index, m.created_at, m.updated_at,
+            COALESCE(mob.obs_count, 0) AS observation_count, mob.last_body AS last_observation_body,
+            mob.last_author AS last_observation_author, mob.last_at AS last_observation_at,
             m.person_a_crm_id, m.person_b_crm_id,
             m.compatibility_score, m.compatibility_verdict, m.compatibility_evaluated_at,
             (m.compatibility_analysis IS NOT NULL) AS has_cached_analysis,
@@ -545,6 +547,14 @@ async def get_my_matches(
             WHERE status = 'PENDIENTE'
             GROUP BY LOWER(TRIM(client_name))
         ) csn ON csn.client_name_clean = LOWER(TRIM(m.person_a))
+        LEFT JOIN (
+            SELECT match_id, COUNT(*) AS obs_count,
+                   (ARRAY_AGG(body ORDER BY created_at DESC, id DESC))[1] AS last_body,
+                   (ARRAY_AGG(author_name ORDER BY created_at DESC, id DESC))[1] AS last_author,
+                   MAX(created_at) AS last_at
+            FROM match_observations
+            GROUP BY match_id
+        ) mob ON mob.match_id = m.id
         WHERE 1=1
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """
@@ -865,6 +875,10 @@ async def get_my_matches(
             "approved_by_maria": is_approved,
             "approved_at": d.get("approved_at").isoformat() if d.get("approved_at") else None,
             "observations": d.get("observations") or "",
+            "observation_count": int(d.get("observation_count") or 0),
+            "last_observation": d.get("last_observation_body") or "",
+            "last_observation_author": d.get("last_observation_author") or "",
+            "last_observation_at": d.get("last_observation_at").isoformat() if d.get("last_observation_at") else None,
             "psychologist_name": curr_psyc,
             "original_psychologist": ownership["original_canonical"],
             "assigned_psychologist": ownership["assigned_psychologist"],
@@ -1925,6 +1939,101 @@ async def get_intake_list(
         "inherited_from_label": inherited_label
     }
 
+
+
+class AddObservationRequest(BaseModel):
+    body: str
+
+
+@router.get("/matches/{match_id}/observations")
+async def get_match_observations(
+    match_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Historial completo de observaciones del match (psicólogas, María y notas de CS), en orden cronológico."""
+    exist = await db.execute(text("SELECT id FROM operational_matches WHERE id = :id"), {"id": match_id})
+    if not exist.fetchone():
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    res = await db.execute(text("""
+        SELECT id, author_name, author_role, body, source, created_at
+        FROM match_observations WHERE match_id = :id
+        ORDER BY created_at ASC, id ASC
+    """), {"id": match_id})
+    items = [{
+        "id": f"obs-{r.id}",
+        "author": r.author_name,
+        "role": r.author_role or "",
+        "body": r.body,
+        "source": r.source,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in res.fetchall()]
+
+    # Notas de Servicio al Cliente (se escriben en match_confirmations; aquí solo se leen)
+    cs_res = await db.execute(text("""
+        SELECT id, observations, COALESCE(updated_at, created_at) AS ts
+        FROM match_confirmations
+        WHERE match_id = :id AND observations IS NOT NULL AND TRIM(observations) <> ''
+        ORDER BY id ASC
+    """), {"id": match_id})
+    for r in cs_res.fetchall():
+        items.append({
+            "id": f"cs-{r.id}",
+            "author": "Servicio al Cliente",
+            "role": "CS",
+            "body": r.observations.strip(),
+            "source": "cs",
+            "created_at": r.ts.isoformat() if r.ts else None,
+        })
+    items.sort(key=lambda x: x["created_at"] or "")
+    return {"match_id": match_id, "total": len(items), "items": items}
+
+
+@router.post("/matches/{match_id}/observations")
+async def add_match_observation(
+    match_id: int,
+    payload: AddObservationRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Agrega un comentario nuevo al historial (nunca sobrescribe los anteriores)."""
+    body = (payload.body or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="La observación no puede estar vacía")
+
+    exist = await db.execute(text("SELECT id FROM operational_matches WHERE id = :id"), {"id": match_id})
+    if not exist.fetchone():
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+
+    author = current_user.get("employee_name") or current_user.get("name") or current_user.get("email") or "Usuario"
+    role = current_user.get("role_name") or ("Cliente" if current_user.get("is_client") else "")
+
+    ins = await db.execute(text("""
+        INSERT INTO match_observations (match_id, author_id, author_name, author_role, body, source, created_at)
+        VALUES (:mid, :aid, :an, :ar, :body, 'manual', NOW())
+        RETURNING id, created_at
+    """), {"mid": match_id, "aid": current_user.get("id"), "an": author, "ar": role, "body": body})
+    row = ins.fetchone()
+
+    # Compatibilidad: el campo de texto acumulado se ANEXA (no se sobrescribe) para que
+    # las búsquedas y demás pantallas que lo leen sigan funcionando.
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET observations = CASE WHEN observations IS NULL OR TRIM(observations) = ''
+                                THEN :body ELSE observations || ' | ' || :body END,
+            updated_at = NOW()
+        WHERE id = :id
+    """), {"id": match_id, "body": body})
+    await db.commit()
+
+    return {
+        "ok": True,
+        "item": {
+            "id": f"obs-{row.id}", "author": author, "role": role, "body": body,
+            "source": "manual", "created_at": row.created_at.isoformat() if row.created_at else None,
+        },
+    }
 
 
 @router.patch("/matches/{match_id}")
