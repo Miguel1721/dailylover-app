@@ -2347,7 +2347,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
           runCompatibilityCheck(matchRow, effectivePB, effectivePBCid, value, false)
         }
 
-        if (field === 'status' && value === 'HECHO') {
+        if (field === 'status' && typeof value === 'string' && value.startsWith('HECHO')) {
           fetchMatches()
         }
       }

@@ -391,7 +391,7 @@ async def auto_refresh_priority_matches(db: AsyncSession):
             WHERE is_priority = true
               AND (
                   approved_by_maria = true
-                  OR UPPER(status) IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'CITA COMPLETADA', 'MATCH DONE', 'EN PAUSA', 'EN PAUSA INDEFINIDA', 'REFUND', 'REFUND DONE', 'DESCALIFICADO')
+                  OR UPPER(status) IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA', 'CITA COMPLETADA', 'MATCH DONE', 'EN PAUSA', 'EN PAUSA INDEFINIDA', 'REFUND', 'REFUND DONE', 'DESCALIFICADO')
                   OR (person_b IS NOT NULL AND TRIM(person_b) != '')
               );
         """))
@@ -420,7 +420,7 @@ async def auto_refresh_priority_matches(db: AsyncSession):
                 LEFT JOIN profiles p ON p.user_id = om.user_id_a
                 WHERE (om.person_b IS NULL OR TRIM(om.person_b) = '')
                   AND om.approved_by_maria = false
-                  AND UPPER(om.status) NOT IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'EN PAUSA', 'EN PAUSA INDEFINIDA')
+                  AND UPPER(om.status) NOT IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA', 'CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'EN PAUSA', 'EN PAUSA INDEFINIDA')
             )
             UPDATE operational_matches om
             SET is_priority = true, updated_at = NOW()
@@ -2198,7 +2198,7 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
     await db.execute(text(f"UPDATE operational_matches SET {', '.join(updates)} WHERE id = :id"), params)
 
     # 1. Registro de evento al pasar a HECHO / HECHO POR MAPE
-    if payload.status in ("HECHO", "HECHO POR MAPE"):
+    if payload.status in ("HECHO", "HECHO POR MAPE", "HECHO POR OTRA PSICÓLOGA"):
         await db.execute(text("""
             INSERT INTO person_history (person_name, match_id, event_type, details, created_at)
             VALUES (:name, :mid, 'MARKED_HECHO', 'Psicóloga marcó el match como HECHO (enviado a revisión)', NOW())
@@ -2391,7 +2391,7 @@ async def get_approval_queue(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna todos los matches en estado 'HECHO' que aún no han sido aprobados por María,
+    Retorna todos los matches en estado 'HECHO' (o 'HECHO POR OTRA PSICÓLOGA') que aún no han sido aprobados por María,
     ordenados de más antiguo a más reciente por defecto con paginación ultrarrápida.
     """
     query = """
@@ -2413,7 +2413,7 @@ async def get_approval_queue(
             WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
             ORDER BY LOWER(TRIM(name)), id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE (m.status IN ('HECHO', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') OR m.status ILIKE '%APROBA%MARIA%')
+        WHERE (m.status IN ('HECHO', 'HECHO POR OTRA PSICÓLOGA', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') OR m.status ILIKE '%APROBA%MARIA%')
           AND m.approved_by_maria = false
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
           AND m.person_b IS NOT NULL 
@@ -4808,7 +4808,7 @@ async def check_duplicate_match(
         SELECT id, person_a, person_b, psychologist_name, status
         FROM operational_matches
         WHERE (LOWER(TRIM(person_a)) = LOWER(TRIM(:pb)) OR LOWER(TRIM(person_b)) = LOWER(TRIM(:pb)))
-          AND status IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'Listo para match')
+          AND status IN ('APROBADO', 'HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA', 'Listo para match')
           AND LOWER(TRIM(person_a)) != LOWER(TRIM(:pa)) AND LOWER(TRIM(person_b)) != LOWER(TRIM(:pa))
         LIMIT 3
     """), {"pa": pa, "pb": pb})
@@ -12814,7 +12814,7 @@ async def get_supervision_maria(
             d = psyc_data[p]
             d["totalSlots"] += 1
             st = (m[1] or '').strip().upper()
-            if st in ('HECHO', 'HECHO POR MAPE'):
+            if st in ('HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA'):
                 d["hechos"] += 1
             if st == 'APROBADO' or m[2]:
                 d["aprobados"] += 1
