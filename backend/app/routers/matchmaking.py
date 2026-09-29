@@ -2261,7 +2261,7 @@ async def get_approval_queue(
     query = """
         SELECT 
             m.id, m.psychologist_name, m.person_a, m.person_b, m.city, m.plan_tier, m.pref,
-            m.created_at, m.updated_at, m.observations,
+            m.created_at, m.updated_at, m.observations, m.status,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS person_a_crm_id,
             COALESCE(m.person_b_crm_id, uB.crm_id, '') AS person_b_crm_id
         FROM operational_matches m
@@ -2277,7 +2277,7 @@ async def get_approval_queue(
             WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
             ORDER BY LOWER(TRIM(name)), id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE (m.status IN ('HECHO', 'PENDIENTE APROBACIÓN MARÍA') OR m.status ILIKE '%APROBA%MARIA%')
+        WHERE (m.status IN ('HECHO', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') OR m.status ILIKE '%APROBA%MARIA%')
           AND m.approved_by_maria = false
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
           AND m.person_b IS NOT NULL 
@@ -2345,6 +2345,7 @@ async def get_approval_queue(
             "pref": normalize_pref(d.get("pref")),
             "fecha_hecho": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else "",
             "observations": d.get("observations") or "",
+            "status": d.get("status") or "HECHO",
             "plan_color": PLAN_COLORS.get(d.get("plan_tier"), "#F3F3F3")
         })
 
@@ -2361,9 +2362,18 @@ async def get_approval_queue(
     }
 
 
+class ApproveByMariaRequest(BaseModel):
+    notes: Optional[str] = None
+    force: Optional[bool] = False
+
+
 @router.post("/matches/{match_id}/approve")
 @router.post("/matches/{match_id}/approve-by-maria")
-async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_db)):
+async def approve_match_by_maria(
+    match_id: int,
+    payload: Optional[ApproveByMariaRequest] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
     ACCIÓN ÚNICA DE MARÍA (SPEC v2):
     1. Marca status = 'APROBADO', approved_by_maria = true, approved_at = now().
@@ -2372,7 +2382,7 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
     4. Registra en person_history para Persona A y Persona B.
     """
     exist_res = await db.execute(text("""
-        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id, approved_by_maria
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id, approved_by_maria, status
         FROM operational_matches
         WHERE id = :id
     """), {"id": match_id})
@@ -2401,7 +2411,8 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
             psyc_b = normalize_psychologist(psyc_b_row.responsable)
 
     is_cross = (psyc_b and psyc_b != psyc_a)
-    if is_cross and match_row.status not in ('APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS'):
+    force_approval = bool(payload and payload.force)
+    if is_cross and match_row.status not in ('APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') and not force_approval:
         raise HTTPException(
             status_code=400,
             detail=f"⚠️ BLOQUEADO: Este match es cruzado entre {psyc_a} y {psyc_b}. Aún espera la validación de la Psicóloga B ({psyc_b}) antes de que María pueda aprobarlo."
@@ -2418,7 +2429,9 @@ async def approve_match_by_maria(match_id: int, db: AsyncSession = Depends(get_d
     pA = match_row.person_a
     pB = match_row.person_b or "Candidato B"
 
-    det = f"Match aprobado directamente por María ({pA} x {pB}, Psicóloga: {match_row.psychologist_name})."
+    notes_str = f" [Nota: {payload.notes}]" if payload and payload.notes else ""
+    force_str = " (con anulación de Dirección)" if force_approval and is_cross else ""
+    det = f"Match aprobado directamente por María{force_str} ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}).{notes_str}"
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pA, "mid": match_id, "d": det})
     if pB and pB != "Candidato B":
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pB, "mid": match_id, "d": det})

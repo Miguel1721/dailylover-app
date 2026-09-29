@@ -121,6 +121,30 @@ export default function AprobadosMaria() {
         fetchServiceQueue()
       } else {
         const err = await res.json()
+        if (err.detail && err.detail.includes('BLOQUEADO')) {
+          const forceConfirm = window.confirm(`${err.detail}\n\n¿Deseas autorizar la aprobación directamente como Dirección (María Paula)?`)
+          if (forceConfirm) {
+            const forceRes = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}/approve-by-maria`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ notes: "Aprobado oficialmente por María (Anulación de Dirección)", force: true })
+            })
+            if (forceRes.ok) {
+              setNotification('✓ Match aprobado con éxito por Dirección (autorización forzada). Enviado a Servicio al Cliente.')
+              setTimeout(() => setNotification(''), 6000)
+              fetchReviewQueue()
+              fetchServiceQueue()
+              return
+            } else {
+              const forceErr = await forceRes.json()
+              alert(`Error al forzar aprobación: ${forceErr.detail || 'Operación no completada'}`)
+              return
+            }
+          }
+        }
         alert(`Error al aprobar match: ${err.detail || 'Operación no completada'}`)
       }
     } catch (e) {
@@ -625,6 +649,19 @@ export default function AprobadosMaria() {
                       {item.fecha_hecho && (
                         <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <Clock size={12} /> {item.fecha_hecho}
+                        </span>
+                      )}
+                      {item.status && item.status.includes('APROBADO POR') && (
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                          background: 'rgba(16, 185, 129, 0.2)',
+                          color: '#34D399',
+                          border: '1px solid rgba(16, 185, 129, 0.4)'
+                        }}>
+                          ✓ Validado por Psicólogas
                         </span>
                       )}
                     </div>
