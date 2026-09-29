@@ -627,7 +627,10 @@ async def confirm_vip_booking(
         end_dt=end_dt,
         client_phone=req.client_phone
     )
-    meet_link = cal_res.get("meet_link") or "https://meet.google.com"
+    # Nunca se entrega un enlace de Meet inventado: si Google no creó el evento real, meet_link queda vacío
+    # y se deja un aviso URGENTE para MPS (más abajo) para que envíen la invitación a mano.
+    meet_link = cal_res.get("meet_link") or ""
+    cal_ok = cal_res.get("status") == "success" and bool(meet_link)
 
     # 2. Buscar user_id si ya existe en la DB
     user_res = await db.execute(text("""
@@ -656,9 +659,29 @@ async def confirm_vip_booking(
         "adate": start_dt,
         "tslot": time_str,
         "mlink": meet_link,
-        "notes": req.notes or "Entrevista VIP 650k agendada por Tercero Organizador"
+        "notes": (req.notes or "Entrevista VIP 650k agendada por Tercero Organizador") + (
+            "" if cal_ok else f" | ⚠️ EVENTO DE GOOGLE NO CREADO ({cal_res.get('error') or cal_res.get('mode')}): enviar invitación manualmente"
+        )
     })
     appt_id = ins_res.scalar()
+
+    if not cal_ok:
+        try:
+            async with db.begin_nested():
+                await db.execute(text("""
+                    INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+                    VALUES (:title, :cname, :cphone, 'URGENTE', 'MPS', 'Hoy (URGENTE)', :notes)
+                """), {
+                    "title": f"⚠️ Cita VIP sin invitación de Google: {req.client_name}",
+                    "cname": req.client_name,
+                    "cphone": req.client_phone or "",
+                    "notes": (
+                        f"{req.client_name} ({req.client_email}) eligió {req.slot_iso}, pero Google Calendar no pudo crear el evento "
+                        f"({cal_res.get('error') or cal_res.get('mode')}). Crear la invitación con Meet manualmente y enviársela."
+                    ),
+                })
+        except Exception as e_rem:
+            logger.error(f"No se pudo crear el aviso de cita VIP sin invitación: {e_rem}")
 
     # Si hay user_id, asegurar responsable = 'MPS' y plan_tier = 'Plan VIP 650k'
     if user_id:

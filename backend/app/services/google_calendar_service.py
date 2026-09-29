@@ -1,10 +1,11 @@
 """
 Google Calendar VIP Integration Service for Daily Lover.
 Acts as a Third-Party Organizer (Tercero Anfitrión) to:
-1. Inspect free/busy availability on María Salinas' calendar (contact.mariasalinas@gmail.com) with read-only freebusy.query.
+1. Inspect free/busy availability on María Salinas' calendar (OWNER_EMAIL) with read-only freebusy.query.
 2. Calculate available 45-minute slots during business hours (Mon-Fri 9:00 - 17:00 COT, min 48h advance notice).
-3. Create events in the system's calendar inviting both María and the VIP client with an auto-generated Google Meet link.
-4. Resilient fallbacks for offline or test environments.
+3. Create events as the ORGANIZER account (info@dailylover.org, via OAuth) inviting both María and the VIP client
+   with a real auto-generated Google Meet link. Google sends the official invitations.
+4. If the organizer is not configured or Google fails, NEVER invent a Meet link: the caller is told and alerts a human.
 """
 
 import os
@@ -71,6 +72,35 @@ def get_calendar_client():
         return None
 
 
+def get_organizer_calendar_client():
+    """
+    Cliente de Google Calendar autenticado como la cuenta ORGANIZADORA (info@dailylover.org) mediante OAuth.
+    Requiere GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET y GOOGLE_OAUTH_REFRESH_TOKEN.
+    Devuelve None si faltan o si falla la inicialización.
+    """
+    cid = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+    csec = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+    rtok = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "").strip()
+    if not (cid and csec and rtok):
+        return None
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        creds = Credentials(
+            token=None,
+            refresh_token=rtok,
+            client_id=cid,
+            client_secret=csec,
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=["https://www.googleapis.com/auth/calendar"],
+        )
+        return build("calendar", "v3", credentials=creds, cache_discovery=False)
+    except Exception as e:
+        logger.error(f"Error inicializando cliente OAuth del organizador de Google Calendar: {e}")
+        return None
+
+
 def get_owner_busy_intervals(start_dt: datetime, end_dt: datetime) -> List[Dict[str, datetime]]:
     """
     Consulta freebusy.query en Google Calendar para maria.salinas@dailylover.org.
@@ -78,7 +108,7 @@ def get_owner_busy_intervals(start_dt: datetime, end_dt: datetime) -> List[Dict[
     Solo lectura: no accede a títulos ni descripciones privadas de eventos.
     Garantiza normalización estricta a hora colombiana (America/Bogota, COT).
     """
-    service = get_calendar_client()
+    service = get_organizer_calendar_client() or get_calendar_client()
     if not service:
         return []
 
@@ -252,12 +282,13 @@ def create_third_party_vip_event(
     client_phone: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Crea la cita en el calendario del TERCERO ORGANIZADOR (cuenta del sistema)
-    e invita como participantes a María Salinas y al cliente VIP.
-    Genera automáticamente la sala de Google Meet y solicita a Google enviar las invitaciones oficiales (.ics).
-    """
-    service = get_calendar_client()
+    Crea la cita en el calendario de la cuenta ORGANIZADORA (info@dailylover.org, OAuth)
+    e invita a María Salinas y al cliente VIP. Google genera la sala de Meet y envía las invitaciones oficiales.
 
+    Retorna siempre un dict con "status": "success" solo si el evento REAL quedó creado.
+    En cualquier otro caso retorna status "error" con meet_link vacío: NUNCA se inventa un enlace de Meet.
+    (Para desarrollo local existe DL_CALENDAR_MOCK=1, que devuelve un evento simulado.)
+    """
     summary = f"🌹 Entrevista VIP Daily Lover — {client_name} & María Salinas"
     description = (
         f"Entrevista de Admisión y Matchmaking Personalizado Plan VIP 650k con María Paula Salinas.\n\n"
@@ -267,19 +298,17 @@ def create_third_party_vip_event(
         f"Esta reunión incluye sala oficial de Google Meet para la videollamada."
     )
 
+    if os.environ.get("DL_CALENDAR_MOCK") == "1":
+        mock_meet = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
+        logger.info(f"📅 [MOCK GOOGLE CALENDAR] '{summary}' con Meet simulado: {mock_meet}")
+        return {"status": "success", "mode": "mock", "event_id": f"mock_evt_{uuid.uuid4().hex[:8]}",
+                "meet_link": mock_meet, "summary": summary}
+
+    service = get_organizer_calendar_client()
     if not service:
-        # Mock mode para testing / desarrollo sin API keys
-        mock_meet_code = f"dlv-{uuid.uuid4().hex[:3]}-{uuid.uuid4().hex[:4]}"
-        mock_meet_link = f"https://meet.google.com/{mock_meet_code}"
-        logger.info(f"📅 [MOCK GOOGLE CALENDAR] Evento VIP Creado por Tercero: '{summary}' con Meet: {mock_meet_link}")
-        return {
-            "status": "success",
-            "mode": "mock",
-            "event_id": f"mock_evt_{uuid.uuid4().hex[:8]}",
-            "meet_link": mock_meet_link,
-            "html_link": f"https://calendar.google.com/calendar/event?eid={uuid.uuid4().hex[:12]}",
-            "summary": summary
-        }
+        msg = "Organizador de Google Calendar no configurado (faltan GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN)."
+        logger.error(f"❌ {msg}")
+        return {"status": "error", "mode": "not_configured", "error": msg, "meet_link": "", "summary": summary}
 
     try:
         tz_cot = get_colombia_tz()
@@ -289,96 +318,51 @@ def create_third_party_vip_event(
         event_body = {
             "summary": summary,
             "description": description,
-            "start": {
-                "dateTime": start_iso,
-                "timeZone": DEFAULT_TIMEZONE,
-            },
-            "end": {
-                "dateTime": end_iso,
-                "timeZone": DEFAULT_TIMEZONE,
-            },
+            "start": {"dateTime": start_iso, "timeZone": DEFAULT_TIMEZONE},
+            "end": {"dateTime": end_iso, "timeZone": DEFAULT_TIMEZONE},
             "attendees": [
                 {"email": OWNER_EMAIL, "displayName": "María Paula Salinas (Daily Lover)"},
-                {"email": client_email, "displayName": client_name}
+                {"email": client_email, "displayName": client_name},
             ],
             "conferenceData": {
                 "createRequest": {
                     "requestId": f"dlvip-{uuid.uuid4().hex[:8]}",
-                    "conferenceSolutionKey": {"type": "hangoutsMeet"}
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"},
                 }
             },
             "reminders": {
                 "useDefault": False,
                 "overrides": [
                     {"method": "email", "minutes": 24 * 60},
-                    {"method": "popup", "minutes": 30}
-                ]
-            }
+                    {"method": "popup", "minutes": 30},
+                ],
+            },
         }
 
-        meet_link = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
-        
-        try:
-            # 1. Intentar inserción con attendees y conferenceData (funciona si hay Domain-Wide Delegation)
-            created_event = service.events().insert(
-                calendarId="primary",
-                body=event_body,
-                conferenceDataVersion=1,
-                sendUpdates="all"
-            ).execute()
+        created_event = service.events().insert(
+            calendarId="primary",
+            body=event_body,
+            conferenceDataVersion=1,
+            sendUpdates="all",
+        ).execute()
 
-            api_meet = created_event.get("hangoutLink") or ""
-            if not api_meet:
-                entry_points = created_event.get("conferenceData", {}).get("entryPoints", [])
-                for ep in entry_points:
-                    if ep.get("entryPointType") == "video":
-                        api_meet = ep.get("uri", "")
-                        break
-            if api_meet:
-                meet_link = api_meet
-        except Exception as insert_err:
-            logger.info(f"ℹ️ Google Workspace no tiene Domain-Wide Delegation para Service Account ({insert_err}). Creando evento de calendario seguro con Meet.")
-            # 2. Inserción compatible con Service Account estándar
-            clean_body = {
-                "summary": summary,
-                "description": f"{description}\n\nEnlace Sala Google Meet: {meet_link}\nAsistentes: {OWNER_EMAIL}, {client_email}",
-                "start": {
-                    "dateTime": start_iso,
-                    "timeZone": DEFAULT_TIMEZONE,
-                },
-                "end": {
-                    "dateTime": end_iso,
-                    "timeZone": DEFAULT_TIMEZONE,
-                },
-                "reminders": {
-                    "useDefault": False,
-                    "overrides": [
-                        {"method": "email", "minutes": 24 * 60},
-                        {"method": "popup", "minutes": 30}
-                    ]
-                }
-            }
-            created_event = service.events().insert(
-                calendarId="primary",
-                body=clean_body
-            ).execute()
+        meet_link = created_event.get("hangoutLink") or ""
+        if not meet_link:
+            for ep in created_event.get("conferenceData", {}).get("entryPoints", []):
+                if ep.get("entryPointType") == "video":
+                    meet_link = ep.get("uri", "")
+                    break
 
-        logger.info(f"✅ Evento VIP en Google Calendar registrado exitosamente: ID={created_event.get('id')} Meet={meet_link}")
-        return {
-            "status": "success",
-            "mode": "live",
-            "event_id": created_event.get("id"),
-            "meet_link": meet_link,
-            "html_link": created_event.get("htmlLink"),
-            "summary": summary
-        }
+        if not meet_link:
+            logger.error(f"❌ Evento {created_event.get('id')} creado pero Google no devolvió enlace de Meet.")
+            return {"status": "error", "mode": "no_meet", "error": "Google no devolvió enlace de Meet",
+                    "event_id": created_event.get("id"), "html_link": created_event.get("htmlLink"),
+                    "meet_link": "", "summary": summary}
+
+        logger.info(f"✅ Evento VIP creado: ID={created_event.get('id')} Meet={meet_link}")
+        return {"status": "success", "mode": "live", "event_id": created_event.get("id"),
+                "meet_link": meet_link, "html_link": created_event.get("htmlLink"), "summary": summary}
     except Exception as e:
-        logger.error(f"❌ Error creando evento de Tercero en Google Calendar: {e}")
-        mock_meet = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
-        return {
-            "status": "partial_error",
-            "mode": "fallback",
-            "error": str(e),
-            "meet_link": mock_meet,
-            "summary": summary
-        }
+        logger.error(f"❌ Error creando evento VIP en Google Calendar: {e}")
+        return {"status": "error", "mode": "error", "error": f"{type(e).__name__}: {e}",
+                "meet_link": "", "summary": summary}

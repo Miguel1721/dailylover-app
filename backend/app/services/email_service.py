@@ -404,6 +404,18 @@ def build_vip_confirmation_email_html(
     is_for_owner: bool = False
 ) -> str:
     """Plantilla de confirmación final de la entrevista agendada con sala de Google Meet."""
+    if meet_link:
+        meet_block = f"""<p style="text-align: center; margin: 24px 0;">
+            <a href="{meet_link}" class="btn-meet" target="_blank">📹 Entrar a la Sala de Google Meet</a>
+          </p>
+
+          <p style="font-size: 13px; color: #9A8A8D; text-align: center;">
+            El sistema ha enviado la invitación formal a tu correo con archivo de Google Calendar para que quede agregada automáticamente con recordatorios previos.
+          </p>"""
+    else:
+        meet_block = """<p style="font-size: 14px; color: #E5DFE1; text-align: center; margin: 24px 0;">
+            En breve te enviaremos la invitación con el enlace de la videollamada.
+          </p>"""
     title_text = "Cita Confirmada con Cliente VIP" if is_for_owner else "Tu Entrevista VIP Está Confirmada"
     intro_text = (
         f"El cliente <strong>{customer_name}</strong> ha seleccionado su horario para la entrevista VIP de 30 minutos."
@@ -446,13 +458,7 @@ def build_vip_confirmation_email_html(
             <p style="margin: 4px 0;"><strong>🎟️ Asistentes:</strong> María Paula Salinas & {customer_name}</p>
           </div>
 
-          <p style="text-align: center; margin: 24px 0;">
-            <a href="{meet_link}" class="btn-meet" target="_blank">📹 Entrar a la Sala de Google Meet</a>
-          </p>
-
-          <p style="font-size: 13px; color: #9A8A8D; text-align: center;">
-            El sistema ha enviado la invitación formal a tu correo con archivo de Google Calendar para que quede agregada automáticamente con recordatorios previos.
-          </p>
+          {meet_block}
         </div>
 
         <div class="footer">
