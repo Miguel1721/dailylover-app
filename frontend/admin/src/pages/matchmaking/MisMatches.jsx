@@ -70,6 +70,7 @@ const STATUS_COLORS = {
   'EN PAUSA': { bg: '#F9CB9C', color: '#783F04' },
   'EN PAUSA INDEFINIDA': { bg: '#B4A7D6', color: '#351C75' },
   'HECHO POR MAPE': { bg: '#A2C4C9', color: '#134F5C' },
+  'HECHO POR OTRA PSICÓLOGA': { bg: '#A2C4C9', color: '#134F5C' },
   'NOT APPROVED': { bg: '#F4CCCC', color: '#660000' },
   'TROUBLE': { bg: '#FF6B35', color: '#FFFFFF' },
   'TROUBLEMAKER': { bg: '#FF6B35', color: '#FFFFFF' },
@@ -139,20 +140,20 @@ function formatRelativeTime(dateStr) {
   }
 }
 
+// Lista unificada (provisional) de estados que se pueden ELEGIR en las pantallas.
+// Los estados antiguos siguen existiendo en filas guardadas y el backend los sigue aceptando
+// (el desplegable los muestra tal cual si la fila ya los tiene); solo dejan de ofrecerse como opción.
+// Se ajustará cuando María defina la lista final de estados.
 export const STATUS_GROUPS = [
   {
     area: 'Psicólogas (Mesa de Trabajo)',
     icon: '🧠',
     options: [
       'Listo para match',
-      'REVISAR',
-      'REVISAR POR SI TOCA OTRO MATCH',
-      'Urgente',
-      'Pendiente',
-      'EN ESPERA',
       'NO HAY GENTE',
+      'REVISAR',
+      'Pendiente',
       'REQUEST PROFILE UPDATE',
-      'PENDIENTE PLAN',
       'HECHO',
       'HECHO POR MAPE',
       'HECHO POR OTRA PSICÓLOGA',
@@ -170,20 +171,14 @@ export const STATUS_GROUPS = [
     area: 'Servicio al Cliente & Citas',
     icon: '📞',
     options: [
-      'CITA PROGRAMADA',
-      'CITA REALIZADA',
-      'CITA RESERVADA',
       'AGENDANDO',
-      'POR CONFIRMAR',
+      'CITA PROGRAMADA',
       'REPROGRAMAR',
+      'CITA REALIZADA',
+      'EN PAUSA',
       'RECHAZADO POR PERSONA A',
       'RECHAZADO POR PERSONA B',
       'RECHAZADO AMBOS',
-      'CANCELADA',
-      'CITA COMPLETADA',
-      'MATCH DONE',
-      'EN PAUSA',
-      'EN PAUSA INDEFINIDA',
       'RECHAZÓ A LA OTRA PERSONA',
       'RECHAZADO POR LA OTRA PERSONA',
     ]
@@ -196,8 +191,6 @@ export const STATUS_GROUPS = [
       'REFUND DONE',
       'DESCALIFICADO',
       'TROUBLE',
-      'TROUBLEMAKER',
-      'RESUELTO',
     ]
   }
 ]
