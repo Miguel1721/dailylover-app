@@ -3999,6 +3999,23 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               📢 NOVEDAD CS ({m.cs_novedades_count})
                             </span>
                           )}
+                          {/^RECHAZADO (POR PERSONA|AMBOS)/i.test((m.status || '').trim()) && (
+                            <span style={{
+                              fontSize: isCompact ? 9 : 10,
+                              padding: isCompact ? '2px 5px' : '3px 7px',
+                              borderRadius: 4,
+                              background: 'rgba(220, 38, 38, 0.13)',
+                              border: '1px solid rgba(220, 38, 38, 0.5)',
+                              color: '#DC2626',
+                              fontWeight: 800,
+                              letterSpacing: '0.03em',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }} title={`Rechazado en Servicio al Cliente (${m.status}). El motivo está en Observaciones.`}>
+                              ❌ RECHAZADO EN CS
+                            </span>
+                          )}
                           <button
                             onClick={() => setHistoryTarget(m.person_a_crm_id || m.ua_crm_id || m.person_a)}
                             title="Ver historial de Persona A"

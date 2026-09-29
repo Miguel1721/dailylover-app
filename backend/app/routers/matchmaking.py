@@ -3385,6 +3385,69 @@ async def update_confirmation(
     }
 
 
+async def _register_cs_rejection(db, match_row, eff_ca, eff_cb, new_status, motive):
+    """
+    Rechazo registrado por Servicio al Cliente:
+    1. Deja el motivo en el historial de observaciones del match (autor 'Servicio al Cliente').
+    2. Crea una novedad PENDIENTE para la psicóloga dueña de cada persona (aparece en 'Con Novedad CS').
+    Todo va dentro de un SAVEPOINT: si algo falla, el rechazo y los reintentos ya hechos no se afectan.
+    """
+    if eff_ca == "Rechazó" and eff_cb == "Rechazó":
+        quien = f"ambas personas ({match_row.person_a} y {match_row.person_b})"
+    elif eff_ca == "Rechazó":
+        quien = f"Persona A ({match_row.person_a})"
+    else:
+        quien = f"Persona B ({match_row.person_b})"
+    motive_txt = (motive or "").strip() or "sin motivo indicado"
+    body = f"Rechazo registrado en Servicio al Cliente: rechazó {quien}. Estado: {new_status}. Motivo: {motive_txt}"
+
+    try:
+        async with db.begin_nested():
+            await db.execute(text("""
+                INSERT INTO match_observations (match_id, author_name, author_role, body, source, created_at)
+                VALUES (:mid, 'Servicio al Cliente', 'CS', :body, 'cs', NOW())
+            """), {"mid": match_row.id, "body": body})
+            await db.execute(text("""
+                UPDATE operational_matches
+                SET observations = CASE WHEN observations IS NULL OR TRIM(observations) = ''
+                                        THEN :body ELSE observations || ' | ' || :body END
+                WHERE id = :mid
+            """), {"mid": match_row.id, "body": body})
+    except Exception as e:
+        logger.warning(f"[CS-RECHAZO] No se pudo guardar la observación del match {match_row.id}: {e}")
+
+    # Novedad para la psicóloga de Persona A y, si es clienta propia, para la de Persona B
+    targets = []
+    if match_row.person_a:
+        targets.append((match_row.person_a, match_row.psychologist_name or "General"))
+    if match_row.person_b and match_row.person_b.strip():
+        try:
+            home = await db.execute(text("""
+                SELECT psychologist_name FROM operational_matches
+                WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pB))
+                ORDER BY id DESC LIMIT 1
+            """), {"pB": match_row.person_b})
+            hrow = home.fetchone()
+            if hrow and hrow.psychologist_name and hrow.psychologist_name.strip():
+                targets.append((match_row.person_b, hrow.psychologist_name))
+        except Exception as e:
+            logger.warning(f"[CS-RECHAZO] No se pudo resolver la psicóloga de Persona B: {e}")
+
+    for client_name, psyc in targets:
+        other = match_row.person_b if client_name == match_row.person_a else match_row.person_a
+        details = f"Match rechazado en CS con {other}. {new_status}. Motivo: {motive_txt}"
+        for ntype in ("RECHAZO_CS", "GENERAL_NOTE"):
+            try:
+                async with db.begin_nested():
+                    await db.execute(text("""
+                        INSERT INTO cs_novedades (client_name, novedad_type, details, extra_dates, created_by, assigned_to, status, created_at)
+                        VALUES (:cn, :nt, :det, 0, 'Servicio al Cliente', :asg, 'PENDIENTE', NOW())
+                    """), {"cn": client_name, "nt": ntype, "det": details, "asg": psyc})
+                break
+            except Exception as e:
+                logger.warning(f"[CS-RECHAZO] novedad ({ntype}) no registrada para {client_name}: {e}")
+
+
 @router.patch("/matches/{match_id}/schedule-details")
 async def update_match_schedule_details(
     match_id: int,
@@ -3409,7 +3472,7 @@ async def update_match_schedule_details(
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
     # 1. Actualizar o crear match_confirmations
-    mc_res = await db.execute(text("SELECT id, person_a_confirmation, person_b_confirmation, stage FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
+    mc_res = await db.execute(text("SELECT id, person_a_confirmation, person_b_confirmation, stage, observations FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
     mc_row = mc_res.fetchone()
 
     eff_ca = payload.person_a_confirmation if payload.person_a_confirmation is not None else (mc_row.person_a_confirmation if mc_row and mc_row.person_a_confirmation else "Pendiente")
@@ -3678,6 +3741,14 @@ async def update_match_schedule_details(
                         "d": f"Devuelta automáticamente a su psicóloga ({b_home_row.psychologist_name}) tras {b_status} con {match_row.person_a}."
                     })
                     returned_b_to_psychologist = True
+
+    # 6. Aviso a la psicóloga + motivo en el historial (solo cuando el rechazo es NUEVO, no en cada guardado)
+    prev_ca = (mc_row.person_a_confirmation if mc_row else None) or "Pendiente"
+    prev_cb = (mc_row.person_b_confirmation if mc_row else None) or "Pendiente"
+    is_new_rejection = (eff_ca == "Rechazó" and prev_ca != "Rechazó") or (eff_cb == "Rechazó" and prev_cb != "Rechazó")
+    if is_rejected and is_new_rejection:
+        cs_motive = payload.cs_observations if payload.cs_observations is not None else (mc_row.observations if mc_row else "")
+        await _register_cs_rejection(db, match_row, eff_ca, eff_cb, new_status, cs_motive)
 
     await db.commit()
     return {
