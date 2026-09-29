@@ -2366,6 +2366,24 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     }
   }
 
+  const handleResolveNovedades = async (m) => {
+    const name = (m.person_a || '').trim()
+    if (!name) return
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/novedades/resolve-by-client`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ client_name: name })
+      })
+      if (!res.ok) throw new Error('No se pudo marcar como atendida')
+      setMatches(prev => prev.map(x => (x.person_a || '').trim().toLowerCase() === name.toLowerCase() ? { ...x, cs_novedades_count: 0 } : x))
+      setFeedbackMsg('Novedad marcada como atendida')
+      setTimeout(() => setFeedbackMsg(''), 2500)
+    } catch (e) {
+      alert(e.message || 'Error de conexión')
+    }
+  }
+
   const handleSubmitRefund = async (e) => {
     e.preventDefault()
     const targetName = refundPersonName.trim()
@@ -3997,6 +4015,23 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               gap: 3
                             }} title={`${m.cs_novedades_count} Novedad(es) registrada(s) por CS`}>
                               📢 NOVEDAD CS ({m.cs_novedades_count})
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleResolveNovedades(m) }}
+                                title="Marcar como atendida (apaga el aviso)"
+                                style={{
+                                  background: 'rgba(234, 88, 12, 0.2)',
+                                  border: 'none',
+                                  color: '#F97316',
+                                  cursor: 'pointer',
+                                  borderRadius: 3,
+                                  padding: '0 4px',
+                                  fontSize: isCompact ? 9 : 10,
+                                  fontWeight: 800,
+                                  lineHeight: 1.4
+                                }}
+                              >
+                                ✓ Atendida
+                              </button>
                             </span>
                           )}
                           {/^RECHAZADO (POR PERSONA|AMBOS)/i.test((m.status || '').trim()) && (

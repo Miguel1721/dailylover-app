@@ -1941,6 +1941,29 @@ async def get_intake_list(
 
 
 
+class ResolveClientNovedadesRequest(BaseModel):
+    client_name: str
+
+
+@router.post("/novedades/resolve-by-client")
+async def resolve_client_novedades(
+    payload: ResolveClientNovedadesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """La psicóloga marca como ATENDIDAS las novedades de CS pendientes de una persona (apaga la insignia)."""
+    name = (payload.client_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="client_name es obligatorio")
+    res = await db.execute(text("""
+        UPDATE cs_novedades
+        SET status = 'ATENDIDO', resolved_at = NOW()
+        WHERE status = 'PENDIENTE' AND LOWER(TRIM(client_name)) = LOWER(TRIM(:n))
+    """), {"n": name})
+    await db.commit()
+    return {"status": "success", "resolved": res.rowcount or 0}
+
+
 class AddObservationRequest(BaseModel):
     body: str
 
