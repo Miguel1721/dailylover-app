@@ -492,6 +492,15 @@ async def get_my_matches(
                     WHERE LOWER(TRIM(m2.person_a)) = LOWER(TRIM(m.person_a))
                       AND m2.slot_number < m.slot_number
                       AND UPPER(COALESCE(m2.status, '')) != 'CITA REALIZADA'
+                      -- un slot anterior ya cerrado (rechazado, devuelto, refund, descalificado) no bloquea al siguiente
+                      AND UPPER(COALESCE(m2.status, '')) NOT IN (
+                          'CITA COMPLETADA', 'MATCH DONE', 'NOT APPROVED', 'DESCALIFICADO', 'REFUND', 'REFUND DONE',
+                          'TROUBLE', 'TROUBLEMAKER', 'NO MATCH', 'NO MATCH/CAMBIAR', 'CAMBIAR',
+                          'RECHAZADO', 'RECHAZADA', 'RECHAZADO AMBOS', 'RECHAZADO POR CLIENTE',
+                          'RECHAZADO POR PERSONA A', 'RECHAZADO POR PERSONA B',
+                          'RECHAZADO POR PSICÓLOGA B', 'RECHAZADA POR PSICÓLOGA B',
+                          'RECHAZÓ A LA OTRA PERSONA', 'RECHAZADO POR LA OTRA PERSONA'
+                      )
                 )
             ) AS is_locked_sequential,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS ua_crm_id,
@@ -1485,7 +1494,8 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 
     # 2. Si no teníamos user_id resuelto, buscar o crear en users
     if not user_id:
-        user_row = await resolve_client_user(person_a_clean, db)
+        # strict: al registrar un cliente nuevo NO se reutiliza la ficha de otra persona por parecido de nombre
+        user_row = await resolve_client_user(person_a_clean, db, strict=True)
         user_id = user_row.id if user_row else None
         crm_id_val = crm_id_val or (user_row.crm_id if user_row else None)
 
@@ -2662,7 +2672,8 @@ async def reject_match_by_maria(
     3. Registra en person_history.
     """
     exist_res = await db.execute(text("""
-        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, observations
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, observations,
+               pref, slot_number, person_a_crm_id
         FROM operational_matches WHERE id = :id
     """), {"id": match_id})
     match_row = exist_res.fetchone()
@@ -2685,12 +2696,43 @@ async def reject_match_by_maria(
     """), {"id": match_id, "obs": f"[DEVUELTO MARÍA] {reason}"})
 
     det = f"Match devuelto por María a {match_row.psychologist_name}. Motivo: {reason}."
+
+    # La persona vuelve a "Listo para match" en la mesa de su psicóloga (fila nueva; la original conserva su estado),
+    # salvo que ya tenga otra fila abierta sin candidato.
+    retry_created = False
+    if match_row.person_a and match_row.person_a.strip():
+        open_slot = await db.execute(text("""
+            SELECT id FROM operational_matches
+            WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa)) AND id != :mid
+              AND (person_b IS NULL OR TRIM(person_b) = '' OR LOWER(TRIM(status)) = 'listo para match')
+            LIMIT 1
+        """), {"pa": match_row.person_a, "mid": match_id})
+        if not open_slot.fetchone():
+            await db.execute(text("""
+                INSERT INTO operational_matches (
+                    person_a, person_a_crm_id, person_b, psychologist_name,
+                    city, plan_tier, pref, status, slot_number,
+                    approved_by_maria, observations, created_at, updated_at
+                ) VALUES (
+                    :pa, :cid, '', :psyc,
+                    :city, :plan, :pref, 'Listo para match',
+                    (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM operational_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))),
+                    false, :obs, NOW(), NOW()
+                )
+            """), {
+                "pa": match_row.person_a, "cid": match_row.person_a_crm_id or "",
+                "psyc": match_row.psychologist_name, "city": match_row.city or None,
+                "plan": match_row.plan_tier or "", "pref": match_row.pref or None,
+                "obs": f"Reintento automático tras NOT APPROVED de María con {match_row.person_b or 'Candidato B'}"
+            })
+            retry_created = True
+            det += " Se generó una fila nueva 'Listo para match'."
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_REJECTED', :d, NOW())"), {"n": match_row.person_a, "mid": match_id, "d": det})
     if match_row.person_b:
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_REJECTED', :d, NOW())"), {"n": match_row.person_b, "mid": match_id, "d": det})
 
     await db.commit()
-    return {"status": "success", "match_id": match_id, "message": f"Match devuelto exitosamente a {match_row.psychologist_name}."}
+    return {"status": "success", "match_id": match_id, "retry_created": retry_created, "message": f"Match devuelto exitosamente a {match_row.psychologist_name}."}
 
 
 @router.post("/refunds/manual")
@@ -5171,7 +5213,14 @@ async def check_and_create_next_slot_if_eligible(db: AsyncSession, match_id: int
             SELECT id, slot_number, status
             FROM operational_matches
             WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))
-              AND UPPER(status) NOT IN ('CITA REALIZADA', 'CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'NOT APPROVED')
+              AND UPPER(status) NOT IN (
+                  'CITA REALIZADA', 'CITA COMPLETADA', 'MATCH DONE', 'DESCALIFICADO', 'REFUND', 'REFUND DONE', 'NOT APPROVED',
+                  'RECHAZADO', 'RECHAZADA', 'RECHAZADO AMBOS', 'RECHAZADO POR CLIENTE',
+                  'RECHAZADO POR PERSONA A', 'RECHAZADO POR PERSONA B',
+                  'RECHAZADO POR PSICÓLOGA B', 'RECHAZADA POR PSICÓLOGA B',
+                  'RECHAZÓ A LA OTRA PERSONA', 'RECHAZADO POR LA OTRA PERSONA',
+                  'TROUBLE', 'TROUBLEMAKER', 'NO MATCH', 'NO MATCH/CAMBIAR', 'CAMBIAR'
+              )
               AND id != :mid
             LIMIT 1
         """), {"pa": p_name, "mid": match_id})
@@ -8185,7 +8234,10 @@ async def get_restaurant_bookings(restaurant_id: int, db: AsyncSession = Depends
 
 # ─── CLIENT EXTENDED PROFILE (FORMULARIOS OBJETIVO & CLÍNICO) ─────────────────
 
-async def resolve_client_user(crm_id_or_user_id: str, db: AsyncSession):
+async def resolve_client_user(crm_id_or_user_id: str, db: AsyncSession, strict: bool = False):
+    """Resuelve un cliente por id, CRM, código, teléfono o nombre.
+    strict=True desactiva las búsquedas aproximadas (similitud y palabras sueltas): se usa al REGISTRAR
+    a alguien, donde reutilizar la ficha de otra persona parecida sobrescribiría sus datos."""
     identifier = str(crm_id_or_user_id).strip()
     user_row = None
     if identifier.isdigit():
@@ -8222,6 +8274,9 @@ async def resolve_client_user(crm_id_or_user_id: str, db: AsyncSession):
         if op_cid:
             c_res = await db.execute(text("SELECT id, name, phone, client_code, crm_id FROM users WHERE crm_id = :cid LIMIT 1"), {"cid": str(op_cid)})
             user_row = c_res.fetchone()
+
+    if strict:
+        return user_row
 
     # Fallback 2: Búsqueda difusa (trigram similarity) tolerante a discrepancias ortográficas (ej. Camila vs Cammila)
     if not user_row and len(identifier) >= 3:
