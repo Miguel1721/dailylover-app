@@ -21,7 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-MAX_CANDIDATES_PER_PERSON = 3
+MAX_CANDIDATES_PER_PERSON = 3   # tope TOTAL de candidatos avisados por persona
+MAX_PERSONS_PER_RUN = 15        # máximo de personas avisadas por corrida (el resto en la siguiente)
+MAX_PERSONS_PER_CANDIDATE = 3   # una misma persona nueva se sugiere como máximo a 3 personas
 
 
 def _gender_key(raw: Optional[str]) -> str:
@@ -91,7 +93,10 @@ async def scan_possible_matches(db: AsyncSession, window_days: int = 30, dry_run
     """))).fetchall()
 
     notices: List[Dict[str, Any]] = []
+    persons_notified = 0
     for pa in people:
+        if persons_notified >= MAX_PERSONS_PER_RUN:
+            break  # el resto se avisa en la siguiente corrida (evita inundar las alertas)
         # solo si su fila más reciente es 'NO HAY GENTE' (si ya tiene otra fila viva, no hace falta avisar)
         latest = (await db.execute(text("""
             SELECT status FROM operational_matches
@@ -107,6 +112,17 @@ async def scan_possible_matches(db: AsyncSession, window_days: int = 30, dry_run
             continue
         min_age, max_age = _age_bounds(pa.search_preferences)
 
+        # tope TOTAL por persona (no por corrida): ya se le avisaron N candidatos en el pasado
+        # (un aviso puede llevar varios candidatos: se cuentan las etiquetas, no las filas)
+        prefix = f"[POSIBLE_MATCH:{pa.uid}:"
+        already_for_person = (await db.execute(text("""
+            SELECT COALESCE(SUM((LENGTH(details) - LENGTH(REPLACE(details, :pfx, ''))) / LENGTH(:pfx)), 0)
+            FROM person_history WHERE details LIKE :t
+        """), {"pfx": prefix, "t": f"%{prefix}%"})).scalar() or 0
+        remaining = MAX_CANDIDATES_PER_PERSON - int(already_for_person)
+        if remaining <= 0:
+            continue
+
         cands = (await db.execute(text("""
             SELECT u.id, u.name, u.created_at, p.gender, p.city, p.age
             FROM users u
@@ -115,21 +131,21 @@ async def scan_possible_matches(db: AsyncSession, window_days: int = 30, dry_run
               AND u.created_at > :since AND u.created_at > NOW() - (:days || ' days')::interval
               AND u.name NOT ILIKE 'Cliente CRM%' AND u.name NOT ILIKE 'Sin nombre%'
               AND LOWER(TRIM(u.name)) <> LOWER(TRIM(:n))
+              AND p.age IS NOT NULL AND p.age > 0
               AND (p.bio_notes IS NOT NULL AND LENGTH(TRIM(p.bio_notes)) >= 15)
               AND COALESCE(p.lifestyle->>'availability_status', 'ACTIVO') = 'ACTIVO'
             ORDER BY u.created_at DESC
             LIMIT 60
         """), {"uid": pa.uid, "since": pa.updated_at, "days": str(int(window_days)), "n": pa.person_a})).fetchall()
 
-        found = 0
+        picked = []
         for c in cands:
-            if found >= MAX_CANDIDATES_PER_PERSON:
+            if len(picked) >= remaining:
                 break
             if _gender_key(c.gender) not in targets or _norm_city(c.city) != a_city:
                 continue
-            if (min_age or max_age):
-                if not c.age or (min_age and c.age < min_age) or (max_age and c.age > max_age):
-                    continue
+            if (min_age and c.age < min_age) or (max_age and c.age > max_age):
+                continue
             # sin historial previo entre ambos
             prev = (await db.execute(text("""
                 SELECT 1 FROM operational_matches
@@ -139,28 +155,41 @@ async def scan_possible_matches(db: AsyncSession, window_days: int = 30, dry_run
             """), {"a": pa.person_a, "b": c.name})).fetchone()
             if prev:
                 continue
+            # esta pareja ya se avisó (en cualquier corrida o si el aviso fue archivado)
             tag = f"[POSIBLE_MATCH:{pa.uid}:{c.id}]"
-            already = (await db.execute(text("""
-                SELECT 1 FROM person_history WHERE event_type = 'POSIBLE_MATCH' AND details LIKE :t LIMIT 1
-            """), {"t": tag + "%"})).fetchone()
+            already = (await db.execute(text("SELECT 1 FROM person_history WHERE details LIKE :t LIMIT 1"),
+                                        {"t": f"%{tag}%"})).fetchone()
             if already:
                 continue
-            detail = (
-                f"{tag} Posible match para {pa.person_a} (en 'No hay gente'): {c.name}"
-                f"{f', {c.age} años' if c.age else ''}, {c.city}, se registró después. "
-                f"Pre-filtro básico (orientación, ciudad, edad): revisa con 'Analizar con IA'."
-            )
+            # no ofrecer siempre a la misma persona nueva a todo el mundo (queja de la reunión: se reutiliza la misma gente)
+            exposure = (await db.execute(text("SELECT COUNT(*) FROM person_history WHERE details LIKE :t"),
+                                         {"t": f"%[POSIBLE_MATCH:%:{c.id}]%"})).scalar() or 0
+            if int(exposure) >= MAX_PERSONS_PER_CANDIDATE:
+                continue
+            picked.append((c, tag))
+
+        if not picked:
+            continue
+        # UN solo aviso por persona y corrida, con todos sus candidatos
+        tags = "".join(t for _, t in picked)
+        lista = "; ".join(f"{c.name} ({c.age} años, {c.city})" for c, _ in picked)
+        detail = (
+            f"{tags} Posibles matches nuevos para {pa.person_a} (en 'No hay gente'): {lista}. "
+            f"Se registraron después de que quedó sin opciones. Pre-filtro básico (orientación, ciudad, edad): "
+            f"revisa con 'Analizar con IA'."
+        )
+        for c, _ in picked:
             notices.append({
                 "person": pa.person_a, "psychologist": pa.psychologist_name,
                 "candidate": c.name, "candidate_user_id": c.id, "candidate_age": c.age, "candidate_city": c.city,
                 "details": detail,
             })
-            if not dry_run:
-                await db.execute(text("""
-                    INSERT INTO person_history (person_name, event_type, details, created_at)
-                    VALUES (:n, 'POSIBLE_MATCH', :d, NOW())
-                """), {"n": pa.person_a, "d": detail})
-            found += 1
+        if not dry_run:
+            await db.execute(text("""
+                INSERT INTO person_history (person_name, event_type, details, created_at)
+                VALUES (:n, 'POSIBLE_MATCH', :d, NOW())
+            """), {"n": pa.person_a, "d": detail})
+        persons_notified += 1
     if notices and not dry_run:
         await db.commit()
     return notices
