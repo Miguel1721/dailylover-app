@@ -699,6 +699,7 @@ function AppContent() {
       <Route path="/agendar/:psicologaSlug" element={<AgendadorCalendly />} />
       <Route path="/agendar" element={<AgendadorCalendly />} />
       <Route path="/reservar" element={<AgendadorCalendly />} />
+      <Route path="/agendar-entrevista" element={<AgendarVip />} />
       <Route path="/agendar-vip" element={<AgendarVip />} />
       <Route path="/sala/:sessionId" element={<SalaVideollamada />} />
       <Route

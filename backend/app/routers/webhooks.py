@@ -27,7 +27,7 @@ import asyncio
 
 # Mapeo de IDs de productos / montos de Stripe a planes de Daily Lover
 STRIPE_PLAN_MAP = {
-    "650": "Plan VIP 650k",
+    "650": "Matchmaking Service (3 citas)",
     "195": "VIP 195k",
     "150": "Premium",
     "98": "Estándar Plus 98k",
@@ -114,7 +114,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         meta_plan = meta.get("plan_tier") or meta.get("plan") or meta.get("producto") or ""
         desc = str(data_object.get("description") or "").strip()
 
-        # Detección específica del Plan VIP 650k (Link directo https://buy.stripe.com/4gMcN4aqI87p4no2O48EM1g o monto 650k)
+        # Detección específica del plan Matchmaking Service 650k (Link directo https://buy.stripe.com/4gMcN4aqI87p4no2O48EM1g o monto 650k)
         is_vip_650k = bool(
             "4gMcN4aqI87p4no2O48EM1g" in str(data_object)
             or (640000 <= amount_cop <= 660000)
@@ -124,7 +124,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
         plan_name = ""
         if is_vip_650k:
-            plan_name = "Plan VIP 650k"
+            plan_name = "Matchmaking Service (3 citas)"
         elif "experience" in str(meta_plan).lower() or "experience" in desc.lower():
             plan_name = "Matchmaking Experience"
         elif meta_plan:
@@ -228,7 +228,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     responsable_name = (responsable or "").replace("MATCHES ", "").strip() or "REVISIÓN MANUAL"
                 obs_note = f"🔔 [PAGO STRIPE] {user_name} adquirió {plan_name} (${amount_cop:,.0f} {currency}). Plan anterior: {old_plan or 'Sin plan'}."
 
-                # El aviso interno NUNCA debe bloquear el plan ni los correos VIP:
+                # El aviso interno NUNCA debe bloquear el plan ni los correos de agendamiento:
                 # va en un savepoint y con las columnas reales de `reminders`.
                 try:
                     async with db.begin_nested():
@@ -266,13 +266,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 except Exception as e_sheet:
                     logger.warning(f"No se pudo programar actualización de Google Sheets en tiempo real: {e_sheet}")
 
-            # Disparador de Alerta Inmediata por Correo a María Salinas y Selección de Slots al Cliente VIP
+            # Disparador de Alerta Inmediata por Correo a María Salinas y Selección de Slots a la clienta Matchmaking Service
             if is_vip_650k:
                 try:
                     from app.services.email_service import send_vip_650k_alert_to_owner, send_vip_slot_selection_email
                     from app.services.google_calendar_service import calculate_available_vip_slots
 
-                    c_final_name = target_name or customer_name or "Cliente VIP"
+                    c_final_name = target_name or customer_name or "Cliente"
                     c_final_email = customer_email or ""
 
                     # 1. Alerta a la dueña (María Salinas)
@@ -287,7 +287,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             user_id=user_row.id if user_row else None
                         )
                     )
-                    logger.info(f"💌 Notificación VIP 650k disparada por correo a maria.salinas@dailylover.org para '{c_final_name}'")
+                    logger.info(f"💌 Notificación Matchmaking Service 650k disparada por correo a maria.salinas@dailylover.org para '{c_final_name}'")
 
                     # 2. Correo de bienvenida al cliente con huecos disponibles para selección
                     if c_final_email and "@" in c_final_email:
@@ -301,32 +301,32 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             booking_token=token_book
                         )
                         if not sent_ok:
-                            raise RuntimeError(f"El servicio de correo no pudo entregar las opciones de agendamiento VIP a {c_final_email}")
-                        logger.info(f"💌 Correo con {len(slots)} opciones de agendamiento VIP enviado al cliente '{c_final_name}' ({c_final_email})")
+                            raise RuntimeError(f"El servicio de correo no pudo entregar las opciones de agendamiento Matchmaking Service a {c_final_email}")
+                        logger.info(f"💌 Correo con {len(slots)} opciones de agendamiento Matchmaking Service enviado al cliente '{c_final_name}' ({c_final_email})")
                     else:
-                        raise ValueError(f"El pago VIP 650k de '{c_final_name}' no incluyó un correo válido para enviar los horarios de agendamiento.")
+                        raise ValueError(f"El pago Matchmaking Service (650k) de '{c_final_name}' no incluyó un correo válido para enviar los horarios de agendamiento.")
                 except Exception as e_vip_mail:
-                    logger.error(f"Error disparando correos VIP 650k: {e_vip_mail}")
+                    logger.error(f"Error disparando correos Matchmaking Service: {e_vip_mail}")
                     try:
-                        c_err_name = target_name or customer_name or "Cliente VIP"
+                        c_err_name = target_name or customer_name or "Cliente"
                         err_note = (
-                            f"⚠️ [ALERTA AGENDAMIENTO VIP 650k] No se pudo enviar el correo con horarios disponibles a "
+                            f"⚠️ [ALERTA AGENDAMIENTO MATCHMAKING SERVICE] No se pudo enviar el correo con horarios disponibles a "
                             f"{c_err_name} ({customer_email or 'Sin correo'} | Tel: {customer_phone or 'Sin teléfono'}). "
                             f"Motivo: {type(e_vip_mail).__name__}: {e_vip_mail}. "
-                            f"Por favor contactar manualmente desde CS/María para agendar su sesión VIP."
+                            f"Por favor contactar manualmente desde CS/María para agendar su entrevista."
                         )
                         await db.execute(text("""
                             INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
                             VALUES (:title, :cname, :cphone, 'URGENTE', 'MPS', 'Hoy (URGENTE)', :notes)
                         """), {
-                            "title": f"⚠️ Fallo Correo Agendamiento VIP: {c_err_name}",
+                            "title": f"⚠️ Fallo Correo Agendamiento Matchmaking Service: {c_err_name}",
                             "cname": c_err_name,
                             "cphone": customer_phone or "",
                             "notes": err_note
                         })
                         await db.commit()
                     except Exception as e_rem_vip:
-                        logger.error(f"No se pudo registrar reminder de fallo VIP 650k: {e_rem_vip}")
+                        logger.error(f"No se pudo registrar reminder de fallo de agendamiento Matchmaking Service: {e_rem_vip}")
 
             if user_row:
                 return {"status": "success", "user_id": user_id, "updated_plan": plan_name}

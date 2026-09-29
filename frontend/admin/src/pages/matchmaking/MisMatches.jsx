@@ -2000,6 +2000,8 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const checkIsVipPerson = (planStr, flagBool) => {
     if (flagBool) return true
     const up = (planStr || '').toUpperCase()
+    // Matchmaking Service (650k) NO es un plan VIP: el trato VIP es solo de los planes VIP 195k/295k/Oro/Experience
+    if (up.includes('MATCHMAKING SERVICE') || up.includes('650K')) return false
     return up.includes('VIP') || up.includes('195') || up.includes('295') || up.includes('EXPERIENCE') || up.includes('ORO')
   }
 

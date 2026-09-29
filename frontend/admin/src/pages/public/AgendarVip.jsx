@@ -52,9 +52,9 @@ function Shell({ children }) {
       <style>{css}</style>
       <div className="av-card">
         <div className="av-head">
-          <div className="av-badge">🌹 PLAN VIP</div>
+          <div className="av-badge">💎 MATCHMAKING SERVICE</div>
           <div className="av-logo">DAILY LOVER</div>
-          <div className="av-sub">Entrevista privada con María Paula Salinas</div>
+          <div className="av-sub">3 citas curadas en 90 días · Una sola matchmaker asignada a ti: María Paula Salinas</div>
         </div>
         {children}
         <div className="av-foot">© Daily Lover Matchmaking · Bogotá &amp; Medellín, Colombia</div>

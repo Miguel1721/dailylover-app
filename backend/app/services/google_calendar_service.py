@@ -289,9 +289,9 @@ def create_third_party_vip_event(
     En cualquier otro caso retorna status "error" con meet_link vacío: NUNCA se inventa un enlace de Meet.
     (Para desarrollo local existe DL_CALENDAR_MOCK=1, que devuelve un evento simulado.)
     """
-    summary = f"🌹 Entrevista VIP Daily Lover — {client_name} & María Salinas"
+    summary = f"💎 Entrevista Matchmaking Service Daily Lover — {client_name} & María Salinas"
     description = (
-        f"Entrevista de Admisión y Matchmaking Personalizado Plan VIP 650k con María Paula Salinas.\n\n"
+        f"Entrevista de Admisión y Matchmaking Personalizado plan Matchmaking Service con María Paula Salinas.\n\n"
         f"• Cliente: {client_name}\n"
         f"• Email: {client_email}\n"
         f"• Teléfono: {client_phone or 'S/D'}\n\n"

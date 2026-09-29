@@ -3720,7 +3720,7 @@ async def get_live_alerts(
         iso_str, time_col, time_col_display = format_colombia_time(r[5])
         title = (
             f"⚠️ Inactividad: {r[1]} (+15 días)" if ("INACTIVITY" in ev_type or "PRIORITY" in ev_type) else
-            f"👑 Cliente VIP Plan 650k: {r[1]}" if ("VIP" in ev_type or "650" in ev_type) else
+            f"💎 Cliente Matchmaking Service: {r[1]}" if ("VIP" in ev_type or "650" in ev_type) else
             "No-Show Reportado" if "NO_SHOW" in ev_type else
             "Match Listo (HECHO)" if "HECHO" in ev_type else
             "Match Aprobado" if "APROBADO" in ev_type else
@@ -3855,7 +3855,7 @@ async def simulate_live_alert(
         ev_type = "VIP_SIGNUP_650K"
         target_name = payload.person_name if (payload.person_name and "Laura" not in payload.person_name) else "Daniela Restrepo"
         person = target_name
-        details = f"👑 Nuevo Cliente VIP: {person} se inscribió en el Plan 650k (MPS). Supervisión directa de María Paula."
+        details = f"💎 Nuevo cliente Matchmaking Service: {person} se inscribió en el plan de 650k (MPS). Supervisión directa de María Paula."
         target_link = f"/clientes?q={quote(person)}"
     else:  # STATUS_CHANGE / HECHO
         ev_type = "MARKED_HECHO"
@@ -3926,7 +3926,7 @@ DEFAULT_ALERT_RULES = [
     },
     {
         "code": "VIP_650K",
-        "title": "👑 Nuevo Cliente VIP Plan 650k",
+        "title": "💎 Nuevo Cliente Matchmaking Service",
         "category": "Clientes & Facturación",
         "target_role": "María Paula (MPS)",
         "trigger_event": "Inscripción o pago confirmado de cliente en Plan 650k (MPS)",
@@ -3935,7 +3935,7 @@ DEFAULT_ALERT_RULES = [
         "target_link": "/clientes?q={cliente}",
         "is_active": True,
         "threshold_days": 0,
-        "message_template": "👑 Nuevo Cliente VIP: {cliente} se inscribió en el Plan 650k (MPS). Supervisión directa de María Paula."
+        "message_template": "💎 Nuevo cliente Matchmaking Service: {cliente} se inscribió en el plan de 650k (MPS). Supervisión directa de María Paula."
     },
     {
         "code": "MATCH_HECHO",
@@ -4367,7 +4367,7 @@ async def get_system_manuals(
         {
             "id": "direccion",
             "title": "👑 Manual para Dirección & Supervisión (María Paula)",
-            "subtitle": "Supervisión estratégica: aprobación de matches, clientes VIP 650k, auditorías y configuración.",
+            "subtitle": "Supervisión estratégica: aprobación de matches, clientes Matchmaking Service (650k), auditorías y configuración.",
             "target_role": "Dirección General",
             "badge_color": "#10B981",
             "steps": [
@@ -4381,10 +4381,10 @@ async def get_system_manuals(
                 },
                 {
                     "step": 2,
-                    "title": "Supervisión de Clientes VIP Plan 650k",
+                    "title": "Supervisión de Clientes Matchmaking Service (650k)",
                     "route": "/clientes",
                     "description": "Cada vez que ingresa un cliente de 650k, recibes una alerta inmediata en tu celular. Al abrirla, te lleva directo a su ficha para que supervises su asignación y tiempos.",
-                    "tips": ["El Plan 650k tiene garantía de atención prioritaria y acompañamiento directo."],
+                    "tips": ["El plan Matchmaking Service (650k) tiene garantía de atención prioritaria y acompañamiento directo."],
                     "shortcut_label": "Ver Listado de Clientes"
                 },
                 {
@@ -4428,7 +4428,7 @@ async def get_system_manuals(
                     "step": 2,
                     "title": "Monitoreo de Ingresos & Pagos Stripe",
                     "route": "/ingresos",
-                    "description": "Revisa los pagos ingresados por pasarela y transferencias, segmentados por tipo de membresía (Estándar 65k, VIP 650k, Citas Extras).",
+                    "description": "Revisa los pagos ingresados por pasarela y transferencias, segmentados por tipo de membresía (Estándar 65k, Matchmaking Service 650k, Citas Extras).",
                     "tips": ["El sistema sincroniza automáticamente los webhooks de Stripe en tiempo real."],
                     "shortcut_label": "Ver Ingresos"
                 },
@@ -4525,7 +4525,7 @@ MANUAL OPERATIVO Y PROTOCOLOS POR ÁREA (SSOT OFICIAL):
 
 3. MÓDULO DE DIRECCIÓN & SUPERVISIÓN (MARÍA PAULA SALINAS):
   a. Supervisión & Auditoría María (/matchmaking/supervision-maria y /matchmaking/aprobados-maria): Revisión clínica y visto bueno a las propuestas antes de que CS las agende.
-  b. Clientes VIP Plan 650k (/clientes): Atención preferencial con alerta inmediata al celular.
+  b. Clientes Matchmaking Service 650k (/clientes): Atención preferencial con alerta inmediata al celular.
   c. Tablero de KPIs & Metas (/kpis): Conversión, tiempos de ciclo, volumen de citas y satisfacción.
   d. Configuración de Alertas & Umbrales (/configuracion/alertas): Días de inactividad, canales de notificación y destinatarios.
   e. Auditoría de Psicólogas (/auditoria-psicologas): Supervisión de slots activos y citas concretadas.
@@ -4669,7 +4669,7 @@ Sé amable, profesional, conciso y estructurado. Explica el porqué de los proto
             ai_reply = (
                 "👑 **Manual de Dirección & Supervisión (María Paula):**\n\n"
                 "1. **Supervisión de Matches**: Revisa las parejas en estado HECHO, valida la coherencia y presiona 'Aprobar'.\n"
-                "2. **Clientes VIP 650k**: Supervisa la atención preferente y tiempos de entrega de citas.\n"
+                "2. **Clientes Matchmaking Service (650k)**: Supervisa la atención preferente y tiempos de entrega de citas.\n"
                 "3. **Tablero de KPIs**: Monitorea conversiones, tiempos de atención y satisfacción.\n\n"
                 "[ACTION: /matchmaking/supervision-maria | 🔒 Supervisión María]\n"
                 "[ACTION: /matchmaking/aprobados-maria | 🛡️ Citas por Agendar]\n"

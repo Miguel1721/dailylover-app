@@ -559,7 +559,7 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
     }
 
 
-# ─── AGENDAMIENTO VIP 650K: TERCERO ORGANIZADOR (GOOGLE CALENDAR & MEET) ───────
+# ─── AGENDAMIENTO MATCHMAKING SERVICE (650K): TERCERO ORGANIZADOR (GOOGLE CALENDAR & MEET) ───────
 
 class VipBookingConfirmRequest(BaseModel):
     token: str
@@ -591,7 +591,7 @@ def _parse_vip_token(token: str) -> Dict[str, Any]:
 
 
 async def _resolve_vip_token(db: AsyncSession, token: str) -> Dict[str, Any]:
-    """Del token obtiene el pago VIP 650k asociado y con él los datos de la clienta."""
+    """Del token obtiene el pago Matchmaking Service (650k) asociado y con él los datos de la clienta."""
     parsed = _parse_vip_token(token)
     res = await db.execute(text("""
         SELECT customer_name, customer_email, customer_phone, amount, plan_tier, payment_status
@@ -602,10 +602,10 @@ async def _resolve_vip_token(db: AsyncSession, token: str) -> Dict[str, Any]:
     row = res.fetchone()
     if not row or (row.payment_status or "") != "succeeded":
         raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
-    is_vip = ("650" in str(row.plan_tier or "")) or (row.amount is not None and 640000 <= float(row.amount) <= 660000)
+    is_vip = ("650" in str(row.plan_tier or "")) or ("matchmaking service" in str(row.plan_tier or "").lower()) or (row.amount is not None and 640000 <= float(row.amount) <= 660000)
     if not is_vip or not (row.customer_email and "@" in row.customer_email):
         raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
-    name = (row.customer_name or "").strip() or "Cliente VIP"
+    name = (row.customer_name or "").strip() or "Cliente"
     return {
         "token": token.strip(),
         "client_name": name,
@@ -691,7 +691,7 @@ async def confirm_vip_booking(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Confirma el horario elegido por la clienta VIP (requiere el token del correo de pago).
+    Confirma el horario elegido por la clienta del plan Matchmaking Service (requiere el token del correo de pago).
     Crea el evento en Google Calendar con Meet real (organizador info@), guarda la cita en
     interview_appointments y envía las confirmaciones.
     """
@@ -749,7 +749,7 @@ async def confirm_vip_booking(
     user_id = u_row[0] if u_row else None
 
     # 3. Guardar en interview_appointments (el token queda en notes: un enlace = una cita)
-    base_note = (req.notes or "").strip() or "Entrevista VIP 650k agendada por la clienta desde su enlace"
+    base_note = (req.notes or "").strip() or "Entrevista Matchmaking Service agendada por la clienta desde su enlace"
     notes = f"[token:{info['token']}] {base_note}" + (
         "" if cal_ok else f" | ⚠️ EVENTO DE GOOGLE NO CREADO ({cal_res.get('error') or cal_res.get('mode')}): enviar invitación manualmente"
     )
@@ -783,7 +783,7 @@ async def confirm_vip_booking(
                     INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
                     VALUES (:title, :cname, :cphone, 'URGENTE', 'MPS', 'Hoy (URGENTE)', :notes)
                 """), {
-                    "title": f"⚠️ Cita VIP sin invitación de Google: {client_name}",
+                    "title": f"⚠️ Cita sin invitación de Google: {client_name}",
                     "cname": client_name,
                     "cphone": client_phone,
                     "notes": (
@@ -794,10 +794,10 @@ async def confirm_vip_booking(
         except Exception as e_rem:
             logger.error(f"No se pudo crear el aviso de cita VIP sin invitación: {e_rem}")
 
-    # Si hay user_id, asegurar responsable = 'MPS' y plan_tier = 'Plan VIP 650k'
+    # Si hay user_id, asegurar responsable = 'MPS' y plan_tier = 'Matchmaking Service (3 citas)'
     if user_id:
         await db.execute(text("""
-            UPDATE profiles SET responsable = 'MPS', plan_tier = 'Plan VIP 650k', updated_at = NOW()
+            UPDATE profiles SET responsable = 'MPS', plan_tier = 'Matchmaking Service (3 citas)', updated_at = NOW()
             WHERE user_id = :uid
         """), {"uid": user_id})
 

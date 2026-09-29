@@ -206,7 +206,7 @@ def build_vip_650k_notification_html(
     currency: str = "COP",
     user_id: Optional[int] = None
 ) -> str:
-    """Plantilla de correo de alta prioridad para María Salinas ante nuevo pago del Plan VIP 650k."""
+    """Plantilla de correo de alta prioridad para María Salinas ante nuevo pago del plan Matchmaking Service (650k)."""
     clean_phone = re.sub(r"[^\d]", "", customer_phone or "")
     if clean_phone.startswith("57") and len(clean_phone) == 12:
         wa_link = f"https://wa.me/{clean_phone}"
@@ -224,7 +224,7 @@ def build_vip_650k_notification_html(
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Nuevo Pago VIP 650k — Daily Lover</title>
+      <title>Nuevo Pago Matchmaking Service — Daily Lover</title>
       <style>
         body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #0D0A0B; color: #F5F0F1; margin: 0; padding: 20px; }}
         .card {{ max-width: 600px; margin: 0 auto; background-color: #1A1214; border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
@@ -241,26 +241,26 @@ def build_vip_650k_notification_html(
     <body>
       <div class="card">
         <div class="header">
-          <div class="badge">⭐ NOTIFICACIÓN DE PAGO VIP</div>
+          <div class="badge">⭐ NUEVO PAGO · MATCHMAKING SERVICE</div>
           <div class="logo">DAILY LOVER</div>
           <div class="subtitle">Entrevista Personal Asignada a María Paula Salinas</div>
         </div>
 
         <div class="content">
           <p>Hola <strong>María</strong>,</p>
-          <p>Se acaba de confirmar un nuevo pago en Stripe correspondiente al <strong>Plan VIP 650k</strong> (${amount_cop:,.0f} {currency}).</p>
+          <p>Se acaba de confirmar un nuevo pago en Stripe correspondiente al plan <strong>Matchmaking Service</strong> (${amount_cop:,.0f} {currency}).</p>
           
           <div class="data-box">
             <p style="margin: 4px 0;"><strong>👤 Cliente:</strong> {customer_name}</p>
             <p style="margin: 4px 0;"><strong>✉️ Email:</strong> {customer_email}</p>
             <p style="margin: 4px 0;"><strong>📱 Teléfono:</strong> {customer_phone}</p>
-            <p style="margin: 4px 0;"><strong>💎 Plan:</strong> Plan VIP 650k (${amount_cop:,.0f} {currency})</p>
+            <p style="margin: 4px 0;"><strong>💎 Plan:</strong> Matchmaking Service · 3 citas curadas en 90 días (${amount_cop:,.0f} {currency})</p>
             <p style="margin: 4px 0;"><strong>🎯 Responsable asignada:</strong> MPS (María Paula Salinas)</p>
           </div>
 
           <p>Acciones inmediatas sugeridas:</p>
           <ul>
-            <li>Contactar al cliente para darle la bienvenida VIP.</li>
+            <li>Contactar al cliente para darle la bienvenida al plan Matchmaking Service.</li>
             <li>Agendar su entrevista de evaluación (30 minutos).</li>
           </ul>
 
@@ -290,7 +290,7 @@ def send_vip_650k_alert_to_owner(
 ) -> bool:
     """Envía la alerta inmediata del pago de 650k al correo de la dueña (María Salinas)."""
     to_owner = OWNER_EMAIL
-    subject = f"🌹 NUEVO PAGO PLAN VIP $650.000 COP — Entrevista Requerida: {customer_name}"
+    subject = f"💎 NUEVO PAGO MATCHMAKING SERVICE $650.000 COP — Entrevista Requerida: {customer_name}"
     html = build_vip_650k_notification_html(
         customer_name=customer_name,
         customer_email=customer_email,
@@ -308,9 +308,9 @@ def build_vip_slot_selection_email_html(
     slots: List[Dict[str, Any]],
     booking_token: str
 ) -> str:
-    """Plantilla para que el cliente VIP seleccione su horario preferido entre los huecos disponibles."""
+    """Plantilla para que la clienta seleccione su horario preferido entre los huecos disponibles."""
     # Un solo botón: la clienta elige día y hora en la página de agendamiento (calendario con huecos en vivo).
-    booking_url = f"{APP_BASE_URL}/admin/agendar-vip?token={booking_token}"
+    booking_url = f"{APP_BASE_URL}/admin/agendar-entrevista?token={booking_token}"
     slots_buttons_html = f"""
         <div style="text-align: center; margin: 8px 0;">
           <a href="{booking_url}" style="background: linear-gradient(135deg, #D4AF37 0%, #AA820A 100%); color: #0D0A0B !important; font-weight: 700; font-size: 16px; text-decoration: none; padding: 16px 34px; border-radius: 8px; display: inline-block;">📅 Elegir mi día y hora</a>
@@ -326,7 +326,7 @@ def build_vip_slot_selection_email_html(
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Bienvenido al Plan VIP — Daily Lover</title>
+      <title>Bienvenida a Matchmaking Service — Daily Lover</title>
       <style>
         body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #0D0A0B; color: #F5F0F1; margin: 0; padding: 20px; }}
         .card {{ max-width: 620px; margin: 0 auto; background-color: #1A1214; border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 16px; padding: 32px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
@@ -342,14 +342,15 @@ def build_vip_slot_selection_email_html(
     <body>
       <div class="card">
         <div class="header">
-          <div class="badge">🌹 MEMBRESÍA VIP CONFIRMADA</div>
+          <div class="badge">💎 MATCHMAKING SERVICE CONFIRMADO</div>
           <div class="logo">DAILY LOVER</div>
           <div class="subtitle">Acompañamiento Personalizado con María Paula Salinas</div>
         </div>
 
         <div class="content">
           <p>Hola <strong>{customer_name}</strong>,</p>
-          <p>¡Te damos una cálida bienvenida al <strong>Plan VIP de Daily Lover</strong>! Hemos confirmado tu pago de manera exitosa.</p>
+          <p>¡Te damos una cálida bienvenida a <strong>Matchmaking Service</strong> de Daily Lover! Hemos confirmado tu pago de manera exitosa.</p>
+          <p>Tu plan incluye <strong>3 citas curadas en 90 días</strong> y una sola matchmaker asignada a ti: <strong>María Paula Salinas</strong>.</p>
           
           <div class="info-box">
             📌 <strong>Tu Entrevista Privada:</strong> La sesión de evaluación personalizada tiene una duración de 30 minutos vía <strong>Google Meet</strong> y será conducida directamente por <strong>María Paula Salinas</strong>.
@@ -382,8 +383,8 @@ def send_vip_slot_selection_email(
     slots: List[Dict[str, Any]],
     booking_token: str
 ) -> bool:
-    """Envía el correo de bienvenida y selección de huecos al cliente VIP."""
-    subject = f"🌹 ¡Bienvenido al Plan VIP! Elige tu horario de entrevista con María Salinas"
+    """Envía el correo de bienvenida y selección de huecos a la clienta del plan Matchmaking Service."""
+    subject = f"💎 ¡Bienvenida a Matchmaking Service! Elige tu horario de entrevista con María Salinas"
     html = build_vip_slot_selection_email_html(
         customer_name=customer_name,
         customer_email=customer_email,
@@ -413,11 +414,11 @@ def build_vip_confirmation_email_html(
         meet_block = """<p style="font-size: 14px; color: #E5DFE1; text-align: center; margin: 24px 0;">
             En breve te enviaremos la invitación con el enlace de la videollamada.
           </p>"""
-    title_text = "Cita Confirmada con Cliente VIP" if is_for_owner else "Tu Entrevista VIP Está Confirmada"
+    title_text = "Cita Confirmada · Matchmaking Service" if is_for_owner else "Tu Entrevista Está Confirmada"
     intro_text = (
-        f"El cliente <strong>{customer_name}</strong> ha seleccionado su horario para la entrevista VIP de 30 minutos."
+        f"El cliente <strong>{customer_name}</strong> ha seleccionado su horario para la entrevista de 30 minutos (Matchmaking Service)."
         if is_for_owner else
-        f"Hola <strong>{customer_name}</strong>, tu entrevista VIP con <strong>María Paula Salinas</strong> ha quedado agendada con éxito."
+        f"Hola <strong>{customer_name}</strong>, tu entrevista con <strong>María Paula Salinas</strong> ha quedado agendada con éxito."
     )
 
     return f"""
@@ -476,7 +477,7 @@ def send_vip_confirmation_emails(
 ) -> bool:
     """Envía los correos de confirmación tanto al cliente como a María Salinas."""
     # 1. Al cliente
-    subj_cli = f"✅ Confirmado: Tu Entrevista VIP con María Salinas ({display_date} - {display_time})"
+    subj_cli = f"✅ Confirmado: Tu entrevista con María Salinas ({display_date} - {display_time})"
     html_cli = build_vip_confirmation_email_html(
         customer_name=customer_name,
         display_date=display_date,
@@ -487,7 +488,7 @@ def send_vip_confirmation_emails(
     res_cli = send_email_html(to_email=customer_email, subject=subj_cli, html_content=html_cli)
 
     # 2. A María Salinas
-    subj_owner = f"📅 CITA AGENDADA: Entrevista VIP con {customer_name} ({display_date} - {display_time})"
+    subj_owner = f"📅 CITA AGENDADA: Entrevista Matchmaking Service con {customer_name} ({display_date} - {display_time})"
     html_owner = build_vip_confirmation_email_html(
         customer_name=customer_name,
         display_date=display_date,

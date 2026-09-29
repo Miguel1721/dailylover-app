@@ -271,7 +271,7 @@ export function NotificationProvider({ children }) {
           urgency = 'urgent'
           person = 'Carlos Mendoza'
         } else if (type === 'VIP_650K') {
-          title = '👑 Nuevo Cliente VIP Plan 650k'
+          title = '💎 Nuevo Cliente Matchmaking Service'
           icon_type = 'approval'
           urgency = 'urgent'
           person = 'Daniela Restrepo'

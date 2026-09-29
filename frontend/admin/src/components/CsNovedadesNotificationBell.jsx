@@ -385,9 +385,9 @@ export default function CsNovedadesNotificationBell() {
                     gap: 6,
                     minHeight: 40
                   }}
-                  title="Simular nuevo cliente VIP Plan 650k con redirección y apertura automática de perfil"
+                  title="Simular nuevo cliente Matchmaking Service (650k) con redirección y apertura automática de perfil"
                 >
-                  <Sparkles size={13} /> 👑 VIP Plan 650k
+                  <Sparkles size={13} /> 💎 Matchmaking Service
                 </button>
 
                 <button

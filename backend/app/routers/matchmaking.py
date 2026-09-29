@@ -144,6 +144,9 @@ def is_vip_plan(plan_str: Optional[str]) -> bool:
     if not plan_str:
         return False
     p = str(plan_str).lower()
+    # Matchmaking Service (650k) NO es un plan VIP (el VIP es solo 195k/295k/Oro/Experience)
+    if "matchmaking service" in p or "650k" in p:
+        return False
     return any(k in p for k in ("vip", "195k", "experience"))
 
 def clean_plan_name(plan_str: Optional[str]) -> str:
@@ -175,6 +178,8 @@ def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
             return int(m.group(1))
         except Exception:
             pass
+    if "matchmaking service" in p or "650k" in p:
+        return 3
     if "experience" in p or "mape" in p:
         return 4
     elif "vip" in p:
@@ -5023,7 +5028,11 @@ def normalize_plan(raw_plan: Optional[str]) -> str:
     if not raw_plan:
         return ""
     p = raw_plan.lower().strip()
-    
+
+    # 0. Matchmaking Service 650k (3 citas en 90 días). Incluye el nombre anterior 'Plan VIP 650k'.
+    if "matchmaking service" in p or "650k" in p:
+        return "Matchmaking Service (3 citas)"
+
     # 1. Matchmaking Experience (solo lo hace MAPE)
     if "experience" in p:
         return "Matchmaking Experience"
@@ -6459,7 +6468,9 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         max_dates = None
         if plan_b:
             p_low = plan_b.lower()
-            if "195k" in p_low or "vip" in p_low or "experience" in p_low:
+            if "matchmaking service" in p_low or "650k" in p_low:
+                max_dates = 3
+            elif "195k" in p_low or "vip" in p_low or "experience" in p_low:
                 max_dates = 5 if "5" in p_low else 4
             elif "150k" in p_low or "premium" in p_low:
                 max_dates = 3

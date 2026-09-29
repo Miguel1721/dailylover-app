@@ -335,7 +335,7 @@ export default function ConfiguracionAlertas() {
             {metrics.for_maria || 0}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-            VIP 650k, Matches Hechos, Prioritarios
+            Matchmaking Service, Matches Hechos, Prioritarios
           </div>
         </div>
 

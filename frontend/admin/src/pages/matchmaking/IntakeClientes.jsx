@@ -1226,7 +1226,7 @@ export default function IntakeClientes() {
                         <option value="Estándar 65k (2 citas)">Estándar 65k (2 citas)</option>
                         <option value="Estándar Plus 98k (2 citas)">Estándar Plus 98k (2 citas)</option>
                         <option value="VIP 195k (2 citas)">VIP 195k (2 citas)</option>
-                        <option value="Plan VIP 650k (3 citas)">Plan VIP 650k (3 citas)</option>
+                        <option value="Matchmaking Service (3 citas)">Matchmaking Service (3 citas)</option>
                         <option value="Básico 40k (1 cita)">Básico 40k (1 cita)</option>
                         <option value="Premium (2 citas)">Premium (2 citas)</option>
                       </select>
