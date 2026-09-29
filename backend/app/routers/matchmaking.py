@@ -2708,6 +2708,13 @@ async def reject_match_by_maria(
             LIMIT 1
         """), {"pa": match_row.person_a, "mid": match_id})
         if not open_slot.fetchone():
+            # Se calcula el siguiente slot en un SELECT aparte: reutilizar :pa en VALUES y en la subconsulta
+            # provoca AmbiguousParameterError en asyncpg (text vs varchar).
+            next_slot_row = await db.execute(text("""
+                SELECT COALESCE(MAX(slot_number), 0) + 1 AS n FROM operational_matches
+                WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa_lookup))
+            """), {"pa_lookup": match_row.person_a})
+            next_slot = int(next_slot_row.scalar() or 1)
             await db.execute(text("""
                 INSERT INTO operational_matches (
                     person_a, person_a_crm_id, person_b, psychologist_name,
@@ -2716,13 +2723,14 @@ async def reject_match_by_maria(
                 ) VALUES (
                     :pa, :cid, '', :psyc,
                     :city, :plan, :pref, 'Listo para match',
-                    (SELECT COALESCE(MAX(slot_number), 0) + 1 FROM operational_matches WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa))),
+                    :slot,
                     false, :obs, NOW(), NOW()
                 )
             """), {
                 "pa": match_row.person_a, "cid": match_row.person_a_crm_id or "",
                 "psyc": match_row.psychologist_name, "city": match_row.city or None,
                 "plan": match_row.plan_tier or "", "pref": match_row.pref or None,
+                "slot": next_slot,
                 "obs": f"Reintento automático tras NOT APPROVED de María con {match_row.person_b or 'Candidato B'}"
             })
             retry_created = True
@@ -4771,7 +4779,7 @@ def resolve_active_psychologist(raw_name: Optional[str]) -> Optional[str]:
         return "SILVI"
     if any(k in p for k in ("JENN", "ALEJA")):
         return "JENN"
-    if any(k in p for k in ("ANA", "MPS", "MARI")):
+    if any(k in p for k in ("ANA", "MARI")) and p != "MPS":
         return "ANA"
     if any(k in p for k in ("STEFF", "MANU")):
         return "STEFFY"

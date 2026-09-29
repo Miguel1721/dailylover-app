@@ -15,7 +15,12 @@ PSYCHOLOGIST_ALIASES: Dict[str, List[str]] = {
     'MANU': ['MANU', 'MANUELA', 'MANU 1', 'MANU 2', 'MATCHES MANU'],
     'SOFI': ['SOFI', 'SOFIA ARIAS', 'SOFÍA ARIAS', 'SOFI ARIAS', 'MATCHES SOFI'],
     'MAPE D': ['MAPE D', 'MAPE', 'MARI DE LA E', 'MARI DE LA ESPRIELLA', 'MARIA PAULA', 'MARÍA PAULA', 'MARIA PAULA SALINAS', 'MATCHES MAPE D', 'MATCHES MAPE', 'MATCHES'],
-    'MPS': ['MPS', 'MARI SARMIENTO', 'MARI S', 'MARIS', 'MARI S Y MAPE', 'MARI B', 'MARIB', 'MARI PAZ', 'MARIPAZ', 'MARI PAZ Y MAPE', 'MATCHES MPS'],
+    # Psicólogas retiradas Maripaz / MariB / MariS (cartera heredada por ANA). Antes su clave era 'MPS', pero el código
+    # 'MPS' también se usa para los clientes del plan Matchmaking Service (650k) que atiende María Paula Salinas:
+    # esa colisión los mostraba como cartera heredada de ANA.
+    'MARIPAZ': ['MARIPAZ', 'MARI SARMIENTO', 'MARI S', 'MARIS', 'MARI S Y MAPE', 'MARI B', 'MARIB', 'MARI PAZ', 'MARI PAZ Y MAPE'],
+    # 'MPS' literal = María Paula Salinas (plan 650k). Nunca es cartera heredada.
+    'MPS': ['MPS', 'MATCHES MPS'],
     'LAU': ['LAU', 'LAURA', 'MATCHES LAU']
 }
 
@@ -24,7 +29,7 @@ INHERITED_PSYCHOLOGIST_MAP: Dict[str, List[str]] = {
     'SILVI': ['SOFI'],
     'JENN': ['ALEJA'],
     'ISA': ['LAU'],
-    'ANA': ['MPS'],
+    'ANA': ['MARIPAZ'],
     'STEFFY': ['MANU'],
 }
 
@@ -33,7 +38,7 @@ RETIRED_TO_ACTIVE_PSYCHOLOGIST: Dict[str, str] = {
     'SOFI': 'SILVI',
     'ALEJA': 'JENN',
     'LAU': 'ISA',
-    'MPS': 'ANA',
+    'MARIPAZ': 'ANA',
     'MANU': 'STEFFY',
 }
 
@@ -131,7 +136,7 @@ def classify_psychologist_ownership(
             inherited_from = 'Lau'
         elif orig_canonical == 'MANU':
             inherited_from = 'Manu'
-        elif orig_canonical == 'MPS':
+        elif orig_canonical == 'MARIPAZ':
             if 'PAZ' in upper_raw:
                 inherited_from = 'Maripaz'
             elif 'MARI B' in upper_raw or 'MARIB' in upper_raw:
