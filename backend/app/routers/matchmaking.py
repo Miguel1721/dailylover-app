@@ -2033,10 +2033,12 @@ async def add_match_observation(
     role = current_user.get("role_name") or ("Cliente" if current_user.get("is_client") else "")
 
     ins = await db.execute(text("""
-        INSERT INTO match_observations (match_id, author_id, author_name, author_role, body, source, created_at)
-        VALUES (:mid, :aid, :an, :ar, :body, 'manual', NOW())
+        INSERT INTO match_observations (match_id, author_name, author_role, body, source, created_at)
+        VALUES (:mid, :an, :ar, :body, 'manual', NOW())
         RETURNING id, created_at
-    """), {"mid": match_id, "aid": current_user.get("id"), "an": author, "ar": role, "body": body})
+    """), {"mid": match_id, "an": author, "ar": role, "body": body})
+    # Nota: no se guarda author_id porque user_accounts.id es UUID y la columna es INTEGER.
+    # El autor queda identificado por author_name / author_role.
     row = ins.fetchone()
 
     # Compatibilidad: el campo de texto acumulado se ANEXA (no se sobrescribe) para que
