@@ -228,14 +228,22 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     responsable_name = (responsable or "").replace("MATCHES ", "").strip() or "REVISIÓN MANUAL"
                 obs_note = f"🔔 [PAGO STRIPE] {user_name} adquirió {plan_name} (${amount_cop:,.0f} {currency}). Plan anterior: {old_plan or 'Sin plan'}."
 
-                await db.execute(text("""
-                    INSERT INTO reminders (title, description, due_date, status, assigned_to, created_at)
-                    VALUES (:title, :desc, CURRENT_DATE, 'PENDIENTE', :assigned, NOW())
-                """), {
-                    "title": f"Pago Recibido: {user_name} ({plan_name})",
-                    "desc": obs_note,
-                    "assigned": responsable_name
-                })
+                # El aviso interno NUNCA debe bloquear el plan ni los correos VIP:
+                # va en un savepoint y con las columnas reales de `reminders`.
+                try:
+                    async with db.begin_nested():
+                        await db.execute(text("""
+                            INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+                            VALUES (:title, :cname, :cphone, 'ALTA', :matchmaker, 'Hoy (Pago)', :notes)
+                        """), {
+                            "title": f"Pago Recibido: {user_name} ({plan_name})",
+                            "cname": user_name,
+                            "cphone": customer_phone or "",
+                            "matchmaker": responsable_name,
+                            "notes": obs_note
+                        })
+                except Exception as e_rem_pay:
+                    logger.error(f"No se pudo crear el aviso de pago en reminders: {e_rem_pay}")
 
                 await db.commit()
                 logger.info(f"Plan actualizado en profiles para usuario {user_id} ({user_name}) a {plan_name}")
@@ -308,12 +316,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                             f"Por favor contactar manualmente desde CS/María para agendar su sesión VIP."
                         )
                         await db.execute(text("""
-                            INSERT INTO reminders (title, description, due_date, status, assigned_to, created_at)
-                            VALUES (:title, :desc, CURRENT_DATE, 'PENDIENTE', :assigned, NOW())
+                            INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+                            VALUES (:title, :cname, :cphone, 'URGENTE', 'MPS', 'Hoy (URGENTE)', :notes)
                         """), {
                             "title": f"⚠️ Fallo Correo Agendamiento VIP: {c_err_name}",
-                            "desc": err_note,
-                            "assigned": "MPS"
+                            "cname": c_err_name,
+                            "cphone": customer_phone or "",
+                            "notes": err_note
                         })
                         await db.commit()
                     except Exception as e_rem_vip:
