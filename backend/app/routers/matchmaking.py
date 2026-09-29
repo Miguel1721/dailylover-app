@@ -2391,7 +2391,7 @@ async def get_approval_queue(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna todos los matches en estado 'HECHO' (o 'HECHO POR OTRA PSICÓLOGA') que aún no han sido aprobados por María,
+    Retorna todos los matches en estado 'HECHO', 'HECHO POR MAPE' o 'HECHO POR OTRA PSICÓLOGA' que aún no han sido aprobados por María,
     ordenados de más antiguo a más reciente por defecto con paginación ultrarrápida.
     """
     query = """
@@ -2413,7 +2413,7 @@ async def get_approval_queue(
             WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
             ORDER BY LOWER(TRIM(name)), id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
-        WHERE (m.status IN ('HECHO', 'HECHO POR OTRA PSICÓLOGA', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') OR m.status ILIKE '%APROBA%MARIA%')
+        WHERE (m.status IN ('HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') OR m.status ILIKE '%APROBA%MARIA%')
           AND m.approved_by_maria = false
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
           AND m.person_b IS NOT NULL 
