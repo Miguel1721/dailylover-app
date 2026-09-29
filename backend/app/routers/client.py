@@ -7,6 +7,8 @@ from app.core.permissions import get_current_user
 import json
 import asyncio
 import logging
+import re
+import time
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
@@ -560,26 +562,87 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
 # ─── AGENDAMIENTO VIP 650K: TERCERO ORGANIZADOR (GOOGLE CALENDAR & MEET) ───────
 
 class VipBookingConfirmRequest(BaseModel):
-    client_name: str
-    client_email: str
+    token: str
     slot_iso: str
-    client_phone: Optional[str] = None
     notes: Optional[str] = ""
 
 
-@router.get("/vip-booking/slots")
-async def get_vip_available_slots(
-    days_ahead: int = 7,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Calcula los espacios libres de 30 min para entrevistas VIP con María Salinas.
-    Franjas: 10:00 AM a 1:00 PM y 5:00 PM a 7:00 PM de Lunes a Viernes, a partir del día siguiente.
-    Consulta los bloques ocupados mediante Google Calendar freebusy y citas previas en DB.
-    """
+VIP_TOKEN_MAX_AGE_DAYS = 14
+VIP_DAYS_AHEAD_DEFAULT = 30
+VIP_DAYS_AHEAD_MAX = 60
+_VIP_TOKEN_RE = re.compile(r"^vip_(?P<pi>.+)_(?P<ts>\d{9,11})$")
+
+_MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+_DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+
+def _parse_vip_token(token: str) -> Dict[str, Any]:
+    """Valida el formato y la vigencia del token del correo VIP (vip_<payment_intent>_<timestamp>)."""
+    m = _VIP_TOKEN_RE.match((token or "").strip())
+    if not m or m.group("pi") == "pay":
+        raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
+    ts = int(m.group("ts"))
+    age = time.time() - ts
+    if age < -600:
+        raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
+    if age > VIP_TOKEN_MAX_AGE_DAYS * 86400:
+        raise HTTPException(status_code=410, detail="Este enlace de agendamiento venció. Escríbenos y te enviamos uno nuevo.")
+    return {"pi": m.group("pi"), "ts": ts}
+
+
+async def _resolve_vip_token(db: AsyncSession, token: str) -> Dict[str, Any]:
+    """Del token obtiene el pago VIP 650k asociado y con él los datos de la clienta."""
+    parsed = _parse_vip_token(token)
+    res = await db.execute(text("""
+        SELECT customer_name, customer_email, customer_phone, amount, plan_tier, payment_status
+        FROM stripe_payments
+        WHERE stripe_payment_intent_id = :pi
+        LIMIT 1
+    """), {"pi": parsed["pi"]})
+    row = res.fetchone()
+    if not row or (row.payment_status or "") != "succeeded":
+        raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
+    is_vip = ("650" in str(row.plan_tier or "")) or (row.amount is not None and 640000 <= float(row.amount) <= 660000)
+    if not is_vip or not (row.customer_email and "@" in row.customer_email):
+        raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
+    name = (row.customer_name or "").strip() or "Cliente VIP"
+    return {
+        "token": token.strip(),
+        "client_name": name,
+        "first_name": name.split()[0] if name.split() else name,
+        "client_email": row.customer_email,
+        "client_phone": row.customer_phone or "",
+    }
+
+
+def _fmt_vip_slot(start_dt: datetime):
+    """(Martes 6 de Octubre, 4:00 PM) para mostrar al cliente."""
+    hour, minute = start_dt.hour, start_dt.minute
+    h12 = hour % 12 or 12
+    display_time = f"{h12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
+    display_date = f"{_DIAS_ES[start_dt.weekday()]} {start_dt.day} de {_MESES_ES[start_dt.month - 1]}"
+    return display_date, display_time
+
+
+async def _existing_vip_booking(db: AsyncSession, token: str) -> Optional[Dict[str, Any]]:
+    """Si el token ya fue usado devuelve la cita creada con él (un enlace = una cita)."""
+    res = await db.execute(text("""
+        SELECT id, appointment_date, time_slot, meet_link
+        FROM interview_appointments
+        WHERE POSITION(:tok IN COALESCE(notes, '')) > 0 AND status != 'CANCELADA'
+        ORDER BY id DESC LIMIT 1
+    """), {"tok": f"[token:{token}]"})
+    r = res.fetchone()
+    if not r:
+        return None
+    d_disp, t_disp = _fmt_vip_slot(r.appointment_date) if r.appointment_date else ("", r.time_slot or "")
+    return {"appointment_id": r.id, "display_date": d_disp, "display_time": t_disp, "meet_link": r.meet_link or ""}
+
+
+async def _vip_free_slots(db: AsyncSession, days_ahead: int) -> List[Dict[str, Any]]:
+    """TODOS los huecos libres (sin tope por día) de María: Google freebusy + citas ya guardadas."""
     from app.services.google_calendar_service import calculate_available_vip_slots
 
-    # Obtener citas previas agendadas con MPS
     prev_res = await db.execute(text("""
         SELECT appointment_date, time_slot FROM interview_appointments
         WHERE psychologist_name = 'MPS' AND status != 'CANCELADA'
@@ -587,14 +650,39 @@ async def get_vip_available_slots(
     booked_slots = [
         f"{r.appointment_date.strftime('%Y-%m-%d')} {r.time_slot}" for r in prev_res.fetchall() if r.appointment_date
     ]
-
-    slots = calculate_available_vip_slots(
+    return await asyncio.to_thread(
+        calculate_available_vip_slots,
         days_ahead=days_ahead,
         slot_minutes=30,
-        max_slots=6,
-        existing_booked_slots=booked_slots
+        max_slots=None,
+        max_per_day=None,
+        existing_booked_slots=booked_slots,
     )
-    return {"status": "success", "slots": slots}
+
+
+@router.get("/vip-booking/slots")
+async def get_vip_available_slots(
+    token: str = Query(...),
+    days_ahead: int = VIP_DAYS_AHEAD_DEFAULT,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Página pública de agendamiento VIP: valida el token del correo y devuelve los huecos libres
+    de 30 min de María agrupados por día (Lun-Vie, 10:00-13:00 y 17:00-19:00 hora Colombia).
+    """
+    info = await _resolve_vip_token(db, token)
+    already = await _existing_vip_booking(db, info["token"])
+    base = {"status": "success", "client_name": info["client_name"], "first_name": info["first_name"], "timezone": "America/Bogota"}
+    if already:
+        return {**base, "already_booked": already, "days": []}
+
+    days_ahead = max(1, min(int(days_ahead), VIP_DAYS_AHEAD_MAX))
+    slots = await _vip_free_slots(db, days_ahead)
+    days: Dict[str, Dict[str, Any]] = {}
+    for s in slots:
+        d = days.setdefault(s["date_str"], {"date": s["date_str"], "display_date": s["display_date"], "slots": []})
+        d["slots"].append({"slot_iso": s["slot_iso"], "time_str": s["time_str"], "display_time": s["display_time"]})
+    return {**base, "already_booked": None, "days": list(days.values())}
 
 
 @router.post("/vip-booking/confirm")
@@ -603,29 +691,50 @@ async def confirm_vip_booking(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Confirma el espacio seleccionado por el cliente VIP.
-    El Tercero Organizador crea el evento en Google Calendar con Google Meet
-    e invita a María Salinas y al cliente, registrando la cita en interview_appointments (30 min).
+    Confirma el horario elegido por la clienta VIP (requiere el token del correo de pago).
+    Crea el evento en Google Calendar con Meet real (organizador info@), guarda la cita en
+    interview_appointments y envía las confirmaciones.
     """
     from app.services.google_calendar_service import create_third_party_vip_event
     from app.services.email_service import send_vip_confirmation_emails
+
+    info = await _resolve_vip_token(db, req.token)
 
     try:
         start_dt = datetime.fromisoformat(req.slot_iso)
     except Exception:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido (slot_iso).")
+    if start_dt.tzinfo is not None:
+        from app.services.google_calendar_service import get_colombia_tz
+        start_dt = start_dt.astimezone(get_colombia_tz()).replace(tzinfo=None)
+    start_dt = start_dt.replace(second=0, microsecond=0)
 
+    # Serializa los agendamientos VIP para que dos personas no tomen el mismo hueco a la vez.
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('dl_vip_booking'))"))
+
+    already = await _existing_vip_booking(db, info["token"])
+    if already:
+        raise HTTPException(status_code=409, detail=f"Ya agendaste tu entrevista para el {already['display_date']} a las {already['display_time']}.")
+
+    free = await _vip_free_slots(db, VIP_DAYS_AHEAD_MAX)
+    if start_dt.isoformat() not in {s["slot_iso"] for s in free}:
+        raise HTTPException(status_code=409, detail="Ese horario ya no está disponible. Por favor elige otro.")
+
+    client_name = info["client_name"]
+    client_email = info["client_email"]
+    client_phone = info["client_phone"]
     end_dt = start_dt + timedelta(minutes=30)
     time_str = start_dt.strftime("%H:%M")
     date_str = start_dt.strftime("%Y-%m-%d")
 
-    # 1. Crear evento mediante el Tercero Organizador en Google Calendar
-    cal_res = create_third_party_vip_event(
-        client_name=req.client_name,
-        client_email=req.client_email,
+    # 1. Evento real en Google Calendar (organizador info@) con Meet e invitaciones oficiales
+    cal_res = await asyncio.to_thread(
+        create_third_party_vip_event,
+        client_name=client_name,
+        client_email=client_email,
         start_dt=start_dt,
         end_dt=end_dt,
-        client_phone=req.client_phone
+        client_phone=client_phone,
     )
     # Nunca se entrega un enlace de Meet inventado: si Google no creó el evento real, meet_link queda vacío
     # y se deja un aviso URGENTE para MPS (más abajo) para que envíen la invitación a mano.
@@ -635,11 +744,15 @@ async def confirm_vip_booking(
     # 2. Buscar user_id si ya existe en la DB
     user_res = await db.execute(text("""
         SELECT id FROM users WHERE lower(email) = lower(:e) LIMIT 1
-    """), {"e": req.client_email})
+    """), {"e": client_email})
     u_row = user_res.fetchone()
     user_id = u_row[0] if u_row else None
 
-    # 3. Guardar en interview_appointments
+    # 3. Guardar en interview_appointments (el token queda en notes: un enlace = una cita)
+    base_note = (req.notes or "").strip() or "Entrevista VIP 650k agendada por la clienta desde su enlace"
+    notes = f"[token:{info['token']}] {base_note}" + (
+        "" if cal_ok else f" | ⚠️ EVENTO DE GOOGLE NO CREADO ({cal_res.get('error') or cal_res.get('mode')}): enviar invitación manualmente"
+    )
     ins_res = await db.execute(text("""
         INSERT INTO interview_appointments (
             user_id, client_name, client_email, client_phone,
@@ -653,15 +766,13 @@ async def confirm_vip_booking(
         RETURNING id;
     """), {
         "uid": user_id,
-        "cname": req.client_name,
-        "cemail": req.client_email,
-        "cphone": req.client_phone or "",
+        "cname": client_name,
+        "cemail": client_email,
+        "cphone": client_phone,
         "adate": start_dt,
         "tslot": time_str,
         "mlink": meet_link,
-        "notes": (req.notes or "Entrevista VIP 650k agendada por Tercero Organizador") + (
-            "" if cal_ok else f" | ⚠️ EVENTO DE GOOGLE NO CREADO ({cal_res.get('error') or cal_res.get('mode')}): enviar invitación manualmente"
-        )
+        "notes": notes,
     })
     appt_id = ins_res.scalar()
 
@@ -672,11 +783,11 @@ async def confirm_vip_booking(
                     INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
                     VALUES (:title, :cname, :cphone, 'URGENTE', 'MPS', 'Hoy (URGENTE)', :notes)
                 """), {
-                    "title": f"⚠️ Cita VIP sin invitación de Google: {req.client_name}",
-                    "cname": req.client_name,
-                    "cphone": req.client_phone or "",
+                    "title": f"⚠️ Cita VIP sin invitación de Google: {client_name}",
+                    "cname": client_name,
+                    "cphone": client_phone,
                     "notes": (
-                        f"{req.client_name} ({req.client_email}) eligió {req.slot_iso}, pero Google Calendar no pudo crear el evento "
+                        f"{client_name} ({client_email}) eligió {start_dt.strftime('%Y-%m-%d %H:%M')}, pero Google Calendar no pudo crear el evento "
                         f"({cal_res.get('error') or cal_res.get('mode')}). Crear la invitación con Meet manualmente y enviársela."
                     ),
                 })
@@ -692,29 +803,22 @@ async def confirm_vip_booking(
 
     await db.commit()
 
-    # 4. Formatear nombres de fecha para el correo
-    meses_es = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    dias_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-    dow = dias_es[start_dt.weekday()]
-    mes = meses_es[start_dt.month - 1]
-    display_date = f"{dow} {start_dt.day} de {mes}"
-    hour = start_dt.hour
-    minute = start_dt.minute
-    display_time = f"{hour if hour <= 12 else hour - 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
+    # 4. Fecha/hora legibles
+    display_date, display_time = _fmt_vip_slot(start_dt)
 
-    # 5. Despachar correos de confirmación en background
+    # 5. Correos de confirmación (clienta y María) en background
     try:
         asyncio.create_task(
             asyncio.to_thread(
                 send_vip_confirmation_emails,
-                customer_name=req.client_name,
-                customer_email=req.client_email,
+                customer_name=client_name,
+                customer_email=client_email,
                 display_date=display_date,
                 display_time=display_time,
                 meet_link=meet_link
             )
         )
-        logger.info(f"💌 Correos de confirmación VIP agendada enviados a {req.client_email} y María Salinas")
+        logger.info(f"💌 Correos de confirmación VIP agendada enviados a {client_email} y María Salinas")
     except Exception as e_conf:
         logger.warning(f"No se pudo programar el envío de correos de confirmación VIP: {e_conf}")
 
@@ -726,8 +830,6 @@ async def confirm_vip_booking(
         "time_slot": time_str,
         "display_date": display_date,
         "display_time": display_time,
-        "meet_link": meet_link
+        "meet_link": meet_link,
+        "calendar_invite_sent": cal_ok,
     }
-
-
-

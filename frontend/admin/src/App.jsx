@@ -55,6 +55,7 @@ import SupervisionMaria from './pages/matchmaking/SupervisionMaria'
 import Prioritarios from './pages/matchmaking/Prioritarios'
 import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
+import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import TroubleMatches from './pages/matchmaking/TroubleMatches'
@@ -698,6 +699,7 @@ function AppContent() {
       <Route path="/agendar/:psicologaSlug" element={<AgendadorCalendly />} />
       <Route path="/agendar" element={<AgendadorCalendly />} />
       <Route path="/reservar" element={<AgendadorCalendly />} />
+      <Route path="/agendar-vip" element={<AgendarVip />} />
       <Route path="/sala/:sessionId" element={<SalaVideollamada />} />
       <Route
         path="/*"

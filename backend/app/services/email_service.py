@@ -309,20 +309,17 @@ def build_vip_slot_selection_email_html(
     booking_token: str
 ) -> str:
     """Plantilla para que el cliente VIP seleccione su horario preferido entre los huecos disponibles."""
-    slots_buttons_html = ""
-    for s in slots:
-        slot_url = f"{APP_BASE_URL}/agendar-vip?token={booking_token}&slot={s.get('slot_iso')}"
-        slots_buttons_html += f"""
-        <div style="margin: 12px 0; padding: 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
-          <div style="text-align: left;">
-            <div style="font-weight: 700; color: #FFFFFF; font-size: 15px;">📅 {s.get('display_date')}</div>
-            <div style="color: #D4AF37; font-size: 14px; margin-top: 2px;">⏰ {s.get('display_time')} (Hora Colombia)</div>
-          </div>
-          <div>
-            <a href="{slot_url}" style="background: linear-gradient(135deg, #D4AF37 0%, #AA820A 100%); color: #0D0A0B !important; font-weight: 700; font-size: 13px; text-decoration: none; padding: 10px 18px; border-radius: 6px; display: inline-block;">Seleccionar</a>
-          </div>
+    # Un solo botón: la clienta elige día y hora en la página de agendamiento (calendario con huecos en vivo).
+    booking_url = f"{APP_BASE_URL}/admin/agendar-vip?token={booking_token}"
+    slots_buttons_html = f"""
+        <div style="text-align: center; margin: 8px 0;">
+          <a href="{booking_url}" style="background: linear-gradient(135deg, #D4AF37 0%, #AA820A 100%); color: #0D0A0B !important; font-weight: 700; font-size: 16px; text-decoration: none; padding: 16px 34px; border-radius: 8px; display: inline-block;">📅 Elegir mi día y hora</a>
         </div>
-        """
+        <p style="font-size: 12px; color: #9A8A8D; text-align: center; margin: 12px 0 0;">
+          Si el botón no abre, copia y pega este enlace en tu navegador:<br>
+          <span style="word-break: break-all; color: #C5B083;">{booking_url}</span>
+        </p>
+    """
 
     return f"""
     <!DOCTYPE html>
@@ -358,14 +355,14 @@ def build_vip_slot_selection_email_html(
             📌 <strong>Tu Entrevista Privada:</strong> La sesión de evaluación personalizada tiene una duración de 30 minutos vía <strong>Google Meet</strong> y será conducida directamente por <strong>María Paula Salinas</strong>.
           </div>
 
-          <p>Para tu comodidad, hemos analizado los espacios disponibles en la agenda para los próximos días. <strong>Por favor selecciona el horario que mejor se adapte a tu día:</strong></p>
+          <p>Para tu comodidad, la agenda de María está conectada en tiempo real. <strong>Entra al enlace, elige el día en el calendario y luego la hora que mejor se adapte a ti:</strong></p>
 
           <div style="margin: 20px 0;">
             {slots_buttons_html}
           </div>
 
           <p style="font-size: 13px; color: #9A8A8D; text-align: center; margin-top: 20px;">
-            Al hacer clic en tu horario preferido, recibirás automáticamente la invitación oficial en tu Google Calendar con el enlace directo de Google Meet.
+            Al confirmar tu horario recibirás automáticamente la invitación oficial en tu Google Calendar con el enlace directo de Google Meet. Este enlace es personal y vence en 14 días.
           </p>
         </div>
 
