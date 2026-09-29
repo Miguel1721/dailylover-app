@@ -132,21 +132,28 @@ async def startup_seed():
             if atrasados_row:
                 app.state.atrasados_role_id = str(atrasados_row)
 
-            # Ensure maria.atrasados user account
-            h_atrasados = hash_password('MariaAtrasados2026!*')
+            # Cuentas base: SOLO se crean si faltan y la contraseña inicial viene del entorno
+            # (DL_SEED_ATRASADOS_PASSWORD / DL_SEED_ADMIN_PASSWORD). Nunca se reescribe la contraseña de
+            # una cuenta que ya existe, para que cada persona conserve la suya al reiniciar el servidor.
+            seed_pass_atrasados = os.getenv("DL_SEED_ATRASADOS_PASSWORD", "")
+            if seed_pass_atrasados:
+                await db.execute(text("""
+                    INSERT INTO user_accounts (email, password_hash, role_id, status, must_change_password)
+                    VALUES ('maria.atrasados@dailylover.com', :pass, :rid, 'active', true)
+                    ON CONFLICT (email) DO NOTHING;
+                """), {'pass': hash_password(seed_pass_atrasados), 'rid': atrasados_row})
+            # El rol restringido sí se mantiene aunque la cuenta ya exista
             await db.execute(text("""
-                INSERT INTO user_accounts (email, password_hash, role_id, status, must_change_password)
-                VALUES ('maria.atrasados@dailylover.com', :pass, :rid, 'active', false)
-                ON CONFLICT (email) DO UPDATE SET password_hash = :pass, role_id = :rid;
-            """), {'pass': h_atrasados, 'rid': atrasados_row})
+                UPDATE user_accounts SET role_id = :rid WHERE email = 'maria.atrasados@dailylover.com'
+            """), {'rid': atrasados_row})
 
-            h_pass = hash_password('Daily2026!')
-            # Ensure Maria Paula in user_accounts
-            await db.execute(text("""
-                INSERT INTO user_accounts (email, password_hash, status, must_change_password)
-                VALUES ('mariapaula@dailylover.com', :pass, 'active', false)
-                ON CONFLICT (email) DO UPDATE SET password_hash = :pass;
-            """), {'pass': h_pass})
+            seed_pass_admin = os.getenv("DL_SEED_ADMIN_PASSWORD", "")
+            if seed_pass_admin:
+                await db.execute(text("""
+                    INSERT INTO user_accounts (email, password_hash, status, must_change_password)
+                    VALUES ('mariapaula@dailylover.com', :pass, 'active', true)
+                    ON CONFLICT (email) DO NOTHING;
+                """), {'pass': hash_password(seed_pass_admin)})
             # Ensure tables webhook_events_raw and client_notes exist
             await db.execute(text("""
                 CREATE TABLE IF NOT EXISTS webhook_events_raw (

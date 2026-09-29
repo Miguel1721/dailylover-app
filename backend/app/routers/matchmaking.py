@@ -3482,7 +3482,8 @@ async def _register_cs_rejection(db, match_row, eff_ca, eff_cb, new_status, moti
 async def update_match_schedule_details(
     match_id: int,
     payload: UpdateMatchScheduleRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """
     Actualiza los detalles de agendamiento y confirmación de la cita desde la mesa oficial de MATCHES.
@@ -15646,7 +15647,9 @@ async def register_interview_no_show(
     """
     'No se presentó' a la ENTREVISTA clínica (solo entrevistas; no aplica a citas en restaurante).
     - Suma 1 al contador y deja constancia en las notas.
-    - Envía correo para reprogramar (enlace general de Calendly).
+    - Si la persona tiene una cita en interview_appointments (PROGRAMADA/CONFIRMADA) la pasa a NO_SHOW.
+    - Envía correo para reprogramar: enlace nuevo del agendador propio (plan Matchmaking Service) o, si la persona
+      no viene de ese plan, el enlace de respaldo de Calendly.
     - Con la 3ª inasistencia: la persona sale de la lista activa (DESCARTADO) y recibe el correo de política.
     """
     import asyncio
@@ -15685,16 +15688,53 @@ async def register_interview_no_show(
     """), {"n": new_n, "st": new_status, "notes": new_notes, "uid": user_id})
     await db.commit()
 
+    # Conexión con la cita real (interview_appointments): se marca NO_SHOW y, si era del plan Matchmaking
+    # Service (lleva token), el correo de reprogramación apunta al agendador propio con un token nuevo.
+    appointment_id = None
+    reschedule_url = ""
+    interviewer = ""
+    try:
+        async with db.begin_nested():
+            ap_res = await db.execute(text("""
+                SELECT id, COALESCE(notes, '') AS notes, psychologist_name
+                FROM interview_appointments
+                WHERE status IN ('PROGRAMADA', 'CONFIRMADA')
+                  AND (user_id = :uid OR (COALESCE(client_email, '') <> '' AND lower(client_email) = lower(:em) AND :em <> ''))
+                ORDER BY appointment_date DESC NULLS LAST, id DESC
+                LIMIT 1
+            """), {"uid": user_id, "em": lead.email or ""})
+            ap = ap_res.fetchone()
+            if ap:
+                appointment_id = ap.id
+                await db.execute(text("""
+                    UPDATE interview_appointments
+                    SET status = 'NO_SHOW',
+                        notes = COALESCE(notes, '') || :extra
+                    WHERE id = :aid
+                """), {"aid": ap.id, "extra": f" | [{stamp}] NO_SHOW registrado por {author}"})
+                tok = re.search(r"\[token:(vip_[^\]\s]+)\]", ap.notes or "")
+                if tok and not removed:
+                    from app.services.email_service import vip_reschedule_url
+                    reschedule_url = vip_reschedule_url(tok.group(1))
+                    interviewer = "María Paula Salinas" if (ap.psychologist_name or "").upper() == "MPS" else ""
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"[ENTREVISTA-NOSHOW] No se pudo enlazar con interview_appointments (user {user_id}): {e}")
+
     email_sent = False
     if lead.email:
         try:
-            email_sent = await asyncio.to_thread(send_interview_no_show_email, lead.email, lead.name, new_n, removed)
+            email_sent = await asyncio.to_thread(
+                send_interview_no_show_email, lead.email, lead.name, new_n, removed, reschedule_url, interviewer
+            )
         except Exception as e:
             logger.warning(f"[ENTREVISTA-NOSHOW] Correo no enviado a user {user_id}: {e}")
 
     return {
         "status": "success",
         "user_id": user_id,
+        "appointment_id": appointment_id,
+        "reschedule_link_type": "matchmaking_service" if reschedule_url else "calendly",
         "interview_no_shows": new_n,
         "removed_from_list": removed,
         "contact_status": new_status,

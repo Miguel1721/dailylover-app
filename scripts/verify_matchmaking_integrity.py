@@ -51,7 +51,7 @@ def check_matchmaking_invariants() -> None:
         ("Advertencia no bloqueante para 'Ya presentado/a antes' en extractor", 'warnings.append(f"Historial previo:' in ext_src),
         ("Conexión de opportunity_reason en EntrevistaResultados.jsx", "cand.opportunity_reason" in jsx_src or "c.opportunity_reason" in jsx_src),
         ("Importación de datetime a nivel de módulo en webhooks.py", "\nfrom datetime import datetime\n" in wh_src),
-        ("Reminder visible en fallo de correo VIP 650k (except Exception as e_vip_mail)", "Fallo Correo Agendamiento VIP:" in wh_src),
+        ("Reminder visible en fallo de correo Matchmaking Service 650k (except Exception as e_vip_mail)", "Fallo Correo Agendamiento Matchmaking Service:" in wh_src),
         ("Cascada centralizada F2 -> CRM (resolve_physical_activity_level / resolve_education_level)", mm_src.count("resolve_physical_activity_level(") >= 5 and mm_src.count("resolve_education_level(") >= 5),
         ("Sincronización completa _sync_crm_id_from_webhooks conectada en process_webhook_payload (webhooks.py)", "_sync_crm_id_from_webhooks" in wh_src and '"income_range"' in mm_src and '"partner_red_flags"' in mm_src and '"min_age"' in mm_src),
         ("Constructor diferenciado strict vs relaxed (build_candidate_pool_queries) y síntesis bio_notes (synthesize_structured_bio_notes)", "def build_candidate_pool_queries(" in mm_src and "def synthesize_structured_bio_notes(" in mm_src and "LENGTH(TRIM(p.bio_notes)) > 40" not in mm_src),
