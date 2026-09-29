@@ -126,7 +126,7 @@ STATUS_COLORS = {
 }
 
 ALLOWED_STATUSES = [
-    "APROBADO", "HECHO", "HECHO POR MAPE", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
+    "APROBADO", "HECHO", "HECHO POR MAPE", "HECHO POR OTRA PSICÓLOGA", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
     "REFUND", "REFUND DONE", "REFUND APROBADO", "REFUND RECHAZADO", "REFUND PENDIENTE", "REFUND PROCESADO",
     "DESCALIFICADO", "NO HAY GENTE", "ESPERA O REFUND", "REVISAR",
     "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
@@ -620,6 +620,8 @@ async def get_my_matches(
             query += " AND (UPPER(COALESCE(m.status, '')) LIKE '%PAUSA%' OR mc.stage IN ('en pausa', 'en_pausa') OR mc.person_a_confirmation IN ('De viaje', 'Pausa', 'Problema personal') OR mc.person_b_confirmation IN ('De viaje', 'Pausa', 'Problema personal'))"
         elif qf == "aprobados":
             query += " AND (m.approved_by_maria = true OR UPPER(COALESCE(m.status, '')) LIKE '%APROBADO%')"
+        elif qf == "hechos":
+            query += " AND UPPER(COALESCE(m.status, '')) LIKE 'HECHO%' AND COALESCE(m.approved_by_maria, false) = false"
         elif qf == "no_vip_agendar":
             query += " AND m.approved_by_maria = true AND (sd.venue IS NULL OR TRIM(sd.venue) = '' OR sd.venue ILIKE '%por definir%') AND (sd.date_time IS NULL OR TRIM(sd.date_time) = '' OR sd.date_time ILIKE '%por definir%') AND UPPER(COALESCE(m.plan_tier, '')) NOT LIKE '%VIP%'"
         elif qf == "vip":
@@ -657,7 +659,7 @@ async def get_my_matches(
     # Conteo rápido para las píldoras de filtros
     pills_counts = {
         "all": 0, "sin_b": 0, "listos": 0, "prioritarios": 0,
-        "novedades": 0, "pausa": 0, "aprobados": 0,
+        "novedades": 0, "pausa": 0, "aprobados": 0, "hechos": 0,
         "no_vip_agendar": 0, "vip": 0
     }
     try:
@@ -668,6 +670,7 @@ async def get_my_matches(
                 COUNT(DISTINCT m.id) FILTER (WHERE LOWER(COALESCE(m.status, '')) LIKE '%listo%' AND m.person_b IS NOT NULL AND TRIM(m.person_b) != '') AS listos,
                 COUNT(DISTINCT m.id) FILTER (WHERE m.is_priority = true) AS prioritarios,
                 COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true OR UPPER(COALESCE(m.status, '')) LIKE '%APROBADO%') AS aprobados,
+                COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE 'HECHO%' AND COALESCE(m.approved_by_maria, false) = false) AS hechos,
                 COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE '%PAUSA%' OR mc.stage IN ('en pausa', 'en_pausa')) AS pausa,
                 COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true AND (sd.venue IS NULL OR TRIM(sd.venue) = '' OR sd.venue ILIKE '%por definir%') AND UPPER(COALESCE(m.plan_tier, '')) NOT LIKE '%VIP%') AS no_vip_agendar,
                 COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true AND UPPER(COALESCE(m.plan_tier, '')) LIKE '%VIP%') AS vip
@@ -695,6 +698,7 @@ async def get_my_matches(
                 "prioritarios": cd.get("prioritarios") or 0,
                 "pausa": cd.get("pausa") or 0,
                 "aprobados": cd.get("aprobados") or 0,
+                "hechos": cd.get("hechos") or 0,
                 "no_vip_agendar": cd.get("no_vip_agendar") or 0,
                 "vip": cd.get("vip") or 0
             }
@@ -2022,7 +2026,7 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
             raise HTTPException(status_code=400, detail=f"Estado no válido: {st_clean}")
 
         # Validación estricta para HECHO: Persona A y Persona B requeridas
-        if st_clean in ("HECHO", "HECHO POR MAPE"):
+        if st_clean in ("HECHO", "HECHO POR MAPE", "HECHO POR OTRA PSICÓLOGA"):
             effective_person_b = params.get("pb") or match_row.person_b
             if not match_row.person_a or not effective_person_b:
                 raise HTTPException(

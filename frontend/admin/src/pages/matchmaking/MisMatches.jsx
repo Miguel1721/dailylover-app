@@ -153,14 +153,15 @@ export const STATUS_GROUPS = [
       'NO HAY GENTE',
       'REQUEST PROFILE UPDATE',
       'PENDIENTE PLAN',
+      'HECHO',
+      'HECHO POR MAPE',
+      'HECHO POR OTRA PSICÓLOGA',
     ]
   },
   {
     area: 'Supervisión & Aprobación (María)',
     icon: '🛡️',
     options: [
-      'HECHO',
-      'HECHO POR MAPE',
       'APROBADO',
       'NOT APPROVED',
     ]
@@ -1903,6 +1904,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== ''
     if (quickFilter === 'pausa') return (m.status || '').toUpperCase().includes('PAUSA')
     if (quickFilter === 'aprobados') return Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')
+    if (quickFilter === 'hechos') return (m.status || '').toUpperCase().startsWith('HECHO') && !m.approved_by_maria
     return true
   })
 
@@ -1916,6 +1918,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const sinBCount = serverCounts?.sin_b ?? ownershipFilteredMatches.filter(m => !m.person_b || m.person_b.trim() === '').length
   const listosCount = serverCounts?.listos ?? ownershipFilteredMatches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
   const enPausaCount = serverCounts?.pausa ?? ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
+  const hechosCount = serverCounts?.hechos ?? ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().startsWith('HECHO') && !m.approved_by_maria).length
   const aprobadosCount = serverCounts?.aprobados ?? ownershipFilteredMatches.filter(m => Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')).length
 
   const [isLight, setIsLight] = useState(() => {
@@ -2751,6 +2754,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
               { id: 'listos', icon: '🟡', label: 'Listos para Match', count: listosCount, activeBg: '#CA8A04', activeColor: '#FFFFFF' },
               { id: 'sin_b', icon: '⏳', label: 'Sin Persona B', count: sinBCount, activeBg: '#7C3AED', activeColor: '#FFFFFF' },
               { id: 'pausa', icon: '⏸️', label: 'En Pausa', count: enPausaCount, activeBg: '#EA580C', activeColor: '#FFFFFF' },
+              { id: 'hechos', icon: '✅', label: 'Hechos', count: hechosCount, activeBg: '#0891B2', activeColor: '#FFFFFF' },
               { id: 'aprobados', icon: '🔒', label: 'Aprobados', count: aprobadosCount, activeBg: '#16A34A', activeColor: '#FFFFFF' },
             ].map(pill => {
               const isActive = quickFilter === pill.id
