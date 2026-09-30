@@ -206,6 +206,12 @@ export default function CalendarioTurnos7shifts() {
     fetch(`${API}/api/v1/shifts/readiness`, { headers: authHeaders }).then(r => (r.ok ? r.json() : null)).then(d => d && setReadiness(d)).catch(() => {})
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!simple) fetchTeam() }, [simple, fetchTeam])
+  const [coverage, setCoverage] = useState(null)
+  useEffect(() => {
+    if (simple) return
+    fetch(`${API}/api/v1/shifts/coverage?week_date=${currentDate}`, { headers: authHeaders })
+      .then(r => (r.ok ? r.json() : null)).then(d => d && setCoverage(d)).catch(() => {})
+  }, [simple, currentDate, weekData]) // eslint-disable-line react-hooks/exhaustive-deps
   const updateMember = async (id, body) => {
     const res = await fetch(`${API}/api/v1/shifts/team/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
     if (!res.ok) { setNotification('No se pudo actualizar a la persona.'); setTimeout(() => setNotification(''), 4000); return }
@@ -910,6 +916,21 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
               </button>
             </div>
           )}
+          {!simple && coverage && (() => {
+            const open = coverage.days.filter(d => !d.is_past && d.gaps.length)
+            return (
+              <div role={open.length ? 'alert' : 'status'} style={{ background: open.length ? '#fef2f2' : '#ecfdf5', borderBottom: `1px solid ${open.length ? '#fecaca' : '#a7f3d0'}`, color: open.length ? '#991b1b' : '#065f46', fontSize: 13, fontWeight: 600, padding: '10px 20px' }}>
+                {open.length ? (
+                  <>
+                    <div>🚨 Hay {coverage.total_gaps} tramo(s) sin nadie en entrevistas esta semana:</div>
+                    <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontWeight: 500 }}>
+                      {open.map(d => (<li key={d.date}><b>{d.weekday} {d.date.slice(8)}/{d.date.slice(5, 7)}</b>: {d.gaps.map(g => g.label).join(', ')}</li>))}
+                    </ul>
+                  </>
+                ) : '✅ Todas las horas de entrevistas de esta semana tienen cobertura.'}
+              </div>
+            )
+          })()}
           {showTeam && (
             <div role="dialog" aria-label="Equipo" onClick={() => setShowTeam(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
               <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto', padding: 20 }}>

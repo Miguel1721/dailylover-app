@@ -380,6 +380,76 @@ async def update_team_member(member_id: int, payload: TeamUpdateRequest, db: Asy
     return {"status": "success", "name": row[0], "is_active": bool(row[1]), "weekly_hours": float(row[2]) if row[2] is not None else None}
 
 
+# Ventana en la que SIEMPRE debe haber alguien en entrevistas (Jorge, 30-sep-2026). Domingo: sin cobertura.
+COVERAGE_WINDOWS = {0: (time(9, 0), time(20, 0)), 1: (time(9, 0), time(20, 0)), 2: (time(9, 0), time(20, 0)),
+                    3: (time(9, 0), time(20, 0)), 4: (time(9, 0), time(20, 0)), 5: (time(9, 0), time(13, 0))}
+MIN_COVERAGE = 1
+
+
+@router.get("/shifts/coverage")
+async def weekly_coverage(
+    week_date: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff),
+):
+    """Tramos de la ventana de entrevistas que quedan sin nadie cubriendo (solo personas activas; descuenta permisos aprobados)."""
+    await ensure_shift_tables(db)
+    target = date.today()
+    if week_date:
+        try:
+            target = datetime.strptime(week_date, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    monday = local_monday(target)
+    sunday = monday + timedelta(days=6)
+
+    active = {r[0].lower() for r in (await db.execute(text(
+        "SELECT name FROM staff_team WHERE is_active = true AND weekly_hours IS NOT NULL"))).fetchall()}
+    shifts = (await db.execute(text("""
+        SELECT LOWER(psychologist_name) AS p, shift_date, start_time, end_time FROM staff_shifts
+        WHERE shift_date BETWEEN :mon AND :sun AND shift_type IN ('ENTREVISTAS', 'DISPONIBLE')
+    """), {"mon": monday, "sun": sunday})).fetchall()
+    offs = (await db.execute(text("""
+        SELECT LOWER(psychologist_name) AS p, start_date, end_date FROM staff_time_off
+        WHERE start_date <= :sun AND end_date >= :mon AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
+    """), {"mon": monday, "sun": sunday})).fetchall()
+
+    def on_leave(p: str, d: date) -> bool:
+        return any(o.p == p and o.start_date <= d <= o.end_date for o in offs)
+
+    days, total_future = [], 0
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        win = COVERAGE_WINDOWS.get(i)
+        gaps = []
+        if win:
+            cur = datetime.combine(d, win[0])
+            end = datetime.combine(d, win[1])
+            gap_start = None
+            while cur < end:
+                nxt = cur + timedelta(minutes=30)
+                n = len({sh.p for sh in shifts
+                         if sh.shift_date == d and sh.p in active and not on_leave(sh.p, d)
+                         and datetime.combine(d, sh.start_time) <= cur and nxt <= datetime.combine(d, sh.end_time)})
+                if n < MIN_COVERAGE and gap_start is None:
+                    gap_start = cur
+                if n >= MIN_COVERAGE and gap_start is not None:
+                    gaps.append((gap_start, cur)); gap_start = None
+                cur = nxt
+            if gap_start is not None:
+                gaps.append((gap_start, end))
+        is_past = d < date.today()
+        if not is_past:
+            total_future += len(gaps)
+        days.append({
+            "date": d.isoformat(), "weekday": DAY_LABELS_ES[i], "is_past": is_past,
+            "window": f"{fmt_12_short(win[0])}–{fmt_12_short(win[1])}" if win else None,
+            "gaps": [{"start": a.strftime("%H:%M"), "end": b.strftime("%H:%M"),
+                      "label": f"{fmt_12_short(a.time())}–{fmt_12_short(b.time())}"} for a, b in gaps],
+        })
+    return {"min_coverage": MIN_COVERAGE, "week_monday": monday.isoformat(), "total_gaps": total_future, "days": days}
+
+
 @router.get("/shifts/readiness")
 async def generation_readiness(db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
     """¿Ya pusieron su disponibilidad todas las personas ACTIVAS? El horario solo se genera cuando todas están listas."""
