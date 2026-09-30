@@ -254,6 +254,20 @@ async def ensure_shift_tables(db: AsyncSession) -> None:
             )
         """))
         await db.execute(text("CREATE INDEX IF NOT EXISTS idx_staff_availability_emp ON staff_availability(LOWER(employee_name))"))
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS staff_time_off (
+                id SERIAL PRIMARY KEY,
+                psychologist_name VARCHAR(150) NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                reason TEXT,
+                status VARCHAR(20) DEFAULT 'APPROVED'
+            )
+        """))
+        await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()"))
+        await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS requested_by TEXT"))
+        await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS decided_by TEXT"))
+        await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ"))
         await db.commit()
         _shift_tables_ready = True
 
@@ -326,6 +340,7 @@ async def get_weekly_shifts(
         SELECT id, psychologist_name, start_date, end_date, reason, status
         FROM staff_time_off
         WHERE (start_date <= :sun AND end_date >= :mon)
+          AND UPPER(COALESCE(status, 'APPROVED')) IN ('APPROVED', 'PENDING')
     """), {"mon": monday, "sun": sunday})
     time_off_rows = to_res.fetchall()
 
@@ -446,7 +461,8 @@ async def get_weekly_shifts(
 
                     to_badge = None
                     if t_off:
-                        to_badge = "TIME OFF" if (t_off.status or "").upper() == "APPROVED" else "PENDING TIME OFF"
+                        st = (t_off.status or "APPROVED").upper()
+                        to_badge = "TIME OFF" if st == "APPROVED" else ("PENDING TIME OFF" if st == "PENDING" else None)
 
                     days_map[d_str] = {
                         "date": d_str,
@@ -511,12 +527,12 @@ def _fmt_day(d: date) -> str:
     return d.strftime("%b %d, %Y")
 
 
-@router.get("/shifts/time-off/requests", dependencies=[Depends(require_staff)])
-async def get_time_off_requests(db: AsyncSession = Depends(get_db)):
-    """Permisos / bloqueos registrados en staff_time_off (ya no son datos de ejemplo)."""
+@router.get("/shifts/time-off/requests")
+async def get_time_off_requests(db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Permisos / bloqueos de la gente del equipo (pendientes, aprobados, rechazados)."""
     await ensure_shift_tables(db)
     res = await db.execute(text("""
-        SELECT id, psychologist_name, start_date, end_date, reason, status
+        SELECT id, psychologist_name, start_date, end_date, reason, status, created_at
         FROM staff_time_off
         ORDER BY start_date DESC, id DESC
         LIMIT 300
@@ -524,28 +540,39 @@ async def get_time_off_requests(db: AsyncSession = Depends(get_db)):
     rows = res.fetchall()
     team_res = await db.execute(text("SELECT name, avatar FROM staff_team"))
     avatars = {t.name.lower(): t.avatar for t in team_res.fetchall()}
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Bogota")
+    except Exception:
+        tz = None
 
     year = date.today().year
     ytd: Dict[str, int] = {}
     for r in rows:
-        if (r.status or "").upper() == "APPROVED" and r.start_date.year == year:
-            ytd[r.psychologist_name.lower()] = ytd.get(r.psychologist_name.lower(), 0) + ((r.end_date - r.start_date).days + 1)
+        if (r.status or "APPROVED").upper() == "APPROVED" and r.start_date.year == year:
+            k = r.psychologist_name.lower()
+            ytd[k] = ytd.get(k, 0) + ((r.end_date - r.start_date).days + 1)
 
     out = []
     for r in rows:
         when = _fmt_day(r.start_date) if r.start_date == r.end_date else f"{_fmt_day(r.start_date)} - {_fmt_day(r.end_date)}"
-        if r.reason:
-            when = f"{when} · {r.reason}"
+        st = (r.status or "APPROVED").upper()
+        ca = r.created_at
+        if ca and tz and ca.tzinfo:
+            ca = ca.astimezone(tz)
         out.append({
             "id": r.id,
             "employee_name": ROSTER_BY_LOWER.get(r.psychologist_name.lower(), r.psychologist_name),
             "avatar": avatars.get(r.psychologist_name.lower()) or "",
-            "date_submitted": "—",
+            "date_submitted": ca.strftime("%b %d, %Y") if ca else "—",
             "approved_ytd": f"{ytd.get(r.psychologist_name.lower(), 0)} días",
             "time_off_requested": when,
-            "status": "Approved" if (r.status or "").upper() == "APPROVED" else "Pending"
+            "reason": r.reason or "",
+            "start_date": r.start_date.isoformat(),
+            "end_date": r.end_date.isoformat(),
+            "status": {"APPROVED": "Approved", "PENDING": "Pending", "DENIED": "Denied"}.get(st, "Pending")
         })
-    return {"requests": out}
+    return {"requests": out, "can_decide": not hides_costs(user)}
 
 
 # ==============================================================================
@@ -884,23 +911,91 @@ async def publish_week_schedule(
 
 
 
-@router.post("/shifts/time-off", dependencies=[Depends(require_staff)])
+@router.post("/shifts/time-off")
 async def request_time_off(
     payload: TimeOffRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff)
 ):
-    """Registra una solicitud o bloqueo de Time-Off para una psicóloga."""
-    await db.execute(text("""
-        INSERT INTO staff_time_off (psychologist_name, start_date, end_date, reason, status)
-        VALUES (:p, :s, :e, :r, 'APPROVED')
-    """), {
-        "p": payload.psychologist_name.upper().strip(),
-        "s": payload.start_date,
-        "e": payload.end_date,
-        "r": payload.reason
-    })
+    """
+    Pide un permiso (días completos). Si lo registra una psicóloga/matchmaker queda PENDIENTE hasta que María lo
+    apruebe; si lo registra administración queda APROBADO. Solo los permisos aprobados bloquean el agendador de clientes.
+    """
+    await ensure_shift_tables(db)
+    name = canonical_name(payload.psychologist_name)
+    if payload.end_date < payload.start_date:
+        raise HTTPException(status_code=422, detail="La fecha final no puede ser anterior a la inicial.")
+    if (payload.end_date - payload.start_date).days > 60:
+        raise HTTPException(status_code=422, detail="Un permiso no puede durar más de 60 días; divídelo.")
+    reason = (payload.reason or "").strip()[:250]
+
+    dup = await db.execute(text("""
+        SELECT 1 FROM staff_time_off
+        WHERE LOWER(psychologist_name) = LOWER(:p) AND start_date <= :e AND end_date >= :s
+          AND UPPER(COALESCE(status, 'APPROVED')) IN ('APPROVED', 'PENDING')
+        LIMIT 1
+    """), {"p": name, "s": payload.start_date, "e": payload.end_date})
+    if dup.fetchone():
+        raise HTTPException(status_code=409, detail="Esa persona ya tiene un permiso que se cruza con esas fechas.")
+
+    status = "PENDING" if hides_costs(user) else "APPROVED"
+    actor = str(user.get("email") or user.get("id"))
+    ins = await db.execute(text("""
+        INSERT INTO staff_time_off (psychologist_name, start_date, end_date, reason, status, requested_by, decided_by, decided_at)
+        VALUES (:p, :s, :e, :r, :st, :rb, :db, CASE WHEN :ok THEN NOW() ELSE NULL END)
+        RETURNING id
+    """), {"p": name, "s": payload.start_date, "e": payload.end_date, "r": reason, "st": status,
+           "rb": actor, "db": actor if status == "APPROVED" else None, "ok": status == "APPROVED"})
+    new_id = ins.scalar()
     await db.commit()
-    return {"status": "success", "message": f"Permiso / bloqueo registrado para {payload.psychologist_name}."}
+    msg = "Permiso solicitado: queda pendiente de aprobación." if status == "PENDING" else "Permiso registrado y aprobado."
+    return {"status": "success", "id": new_id, "time_off_status": status, "message": msg}
+
+
+class TimeOffDecision(BaseModel):
+    status: str  # APPROVED | DENIED | PENDING
+
+
+@router.patch("/shifts/time-off/{time_off_id}")
+async def decide_time_off(
+    time_off_id: int,
+    payload: TimeOffDecision,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff)
+):
+    """Aprobar o rechazar un permiso (solo administración)."""
+    if hides_costs(user):
+        raise HTTPException(status_code=403, detail="Solo administración puede aprobar o rechazar permisos.")
+    st = (payload.status or "").upper()
+    if st not in ("APPROVED", "DENIED", "PENDING"):
+        raise HTTPException(status_code=422, detail="Estado inválido.")
+    await ensure_shift_tables(db)
+    res = await db.execute(text("""
+        UPDATE staff_time_off SET status = :st, decided_by = :u, decided_at = NOW() WHERE id = :id RETURNING id
+    """), {"st": st, "u": str(user.get("email") or user.get("id")), "id": time_off_id})
+    if not res.fetchone():
+        await db.rollback()
+        raise HTTPException(status_code=404, detail="Permiso no encontrado.")
+    await db.commit()
+    return {"status": "success", "time_off_status": st}
+
+
+@router.delete("/shifts/time-off/{time_off_id}")
+async def delete_time_off(
+    time_off_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff)
+):
+    """Elimina un permiso. Administración puede eliminar cualquiera; el equipo solo cancela los pendientes."""
+    await ensure_shift_tables(db)
+    row = (await db.execute(text("SELECT status FROM staff_time_off WHERE id = :id"), {"id": time_off_id})).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Permiso no encontrado.")
+    if hides_costs(user) and (row.status or "APPROVED").upper() != "PENDING":
+        raise HTTPException(status_code=403, detail="Solo puedes cancelar permisos pendientes. Pídele a administración el cambio.")
+    await db.execute(text("DELETE FROM staff_time_off WHERE id = :id"), {"id": time_off_id})
+    await db.commit()
+    return {"status": "success"}
 
 
 # ==============================================================================
@@ -950,6 +1045,7 @@ async def get_global_availability(
         SELECT UPPER(psychologist_name) as p, start_date, end_date
         FROM staff_time_off
         WHERE end_date >= :t AND start_date <= :md
+          AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
     """), {"t": today, "md": max_date})
     time_offs = to_res.fetchall()
 
@@ -1045,6 +1141,7 @@ async def get_psychologist_availability(
         FROM staff_time_off
         WHERE UPPER(psychologist_name) = :p
           AND end_date >= :t AND start_date <= :md
+          AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
     """), {"p": p_name, "t": today, "md": max_date})
     time_offs = to_res.fetchall()
 
@@ -1124,6 +1221,7 @@ async def reserve_booking_slot(
               AND UPPER(psychologist_name) NOT IN (
                   SELECT UPPER(psychologist_name) FROM staff_time_off
                   WHERE start_date <= :d AND end_date >= :d
+                    AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
               )
               AND UPPER(psychologist_name) NOT IN (
                   SELECT UPPER(psychologist_name) FROM interview_appointments

@@ -175,6 +175,12 @@ export default function CalendarioTurnos7shifts() {
   const [shiftError, setShiftError] = useState('')
 
   // Modal de disponibilidad semanal (varias franjas por día)
+  // Permisos (time off)
+  const [timeOffModal, setTimeOffModal] = useState(null)
+  const [timeOffSaving, setTimeOffSaving] = useState(false)
+  const [timeOffError, setTimeOffError] = useState('')
+  const [canDecideTimeOff, setCanDecideTimeOff] = useState(false)
+
   const [availModal, setAvailModal] = useState(null)
   const [availSaving, setAvailSaving] = useState(false)
   const [availError, setAvailError] = useState('')
@@ -216,7 +222,7 @@ export default function CalendarioTurnos7shifts() {
   const fetchTimeOff = useCallback(() => {
     fetch(`${API}/api/v1/shifts/time-off/requests`, { headers: authHeaders })
       .then(r => r.ok ? r.json() : { requests: [] })
-      .then(d => setTimeOffRequests(d.requests || []))
+      .then(d => { setTimeOffRequests(d.requests || []); setCanDecideTimeOff(!!d.can_decide) })
       .catch(err => console.error('Error fetching time-off:', err))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
@@ -419,6 +425,82 @@ export default function CalendarioTurnos7shifts() {
     }
   }
 
+  // ---------- Permisos (time off) ----------
+  const openTimeOffModal = (employeeName) => {
+    const today = todayLocal()
+    setTimeOffModal({
+      employee_name: employeeName || myRosterName || (glanceData?.roster || ALL_STAFF_MEMBERS)[0] || ALL_STAFF_MEMBERS[0],
+      start_date: today,
+      end_date: today,
+      reason: ''
+    })
+    setTimeOffError('')
+  }
+
+  const timeOffFetch = async (path, method, body) => {
+    const res = await fetch(`${API}/api/v1/shifts/time-off${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: body ? JSON.stringify(body) : undefined
+    })
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'No se pudo completar la acción.')
+    return j
+  }
+
+  const flashNotice = (msg, ms = 4000) => {
+    setNotification(msg)
+    setTimeout(() => setNotification(''), ms)
+  }
+
+  const handleSaveTimeOff = async (e) => {
+    e.preventDefault()
+    if (!timeOffModal) return
+    if (!timeOffModal.start_date || !timeOffModal.end_date) { setTimeOffError('Elige las fechas.'); return }
+    if (timeOffModal.end_date < timeOffModal.start_date) { setTimeOffError('La fecha final no puede ser anterior a la inicial.'); return }
+    setTimeOffSaving(true)
+    setTimeOffError('')
+    try {
+      const j = await timeOffFetch('', 'POST', {
+        psychologist_name: timeOffModal.employee_name,
+        start_date: timeOffModal.start_date,
+        end_date: timeOffModal.end_date,
+        reason: timeOffModal.reason || 'Permiso'
+      })
+      flashNotice(j.message || 'Permiso guardado.', 5000)
+      setTimeOffModal(null)
+      fetchTimeOff()
+      fetchWeek()
+    } catch (err) {
+      setTimeOffError(err.message)
+    } finally {
+      setTimeOffSaving(false)
+    }
+  }
+
+  const handleDecideTimeOff = async (id, status) => {
+    try {
+      await timeOffFetch(`/${id}`, 'PATCH', { status })
+      flashNotice(status === 'APPROVED' ? 'Permiso aprobado.' : (status === 'DENIED' ? 'Permiso rechazado.' : 'Permiso en pendiente.'))
+      fetchTimeOff()
+      fetchWeek()
+    } catch (err) {
+      flashNotice(err.message, 5000)
+    }
+  }
+
+  const handleDeleteTimeOff = async (id) => {
+    if (!window.confirm('¿Eliminar este permiso?')) return
+    try {
+      await timeOffFetch(`/${id}`, 'DELETE')
+      flashNotice('Permiso eliminado.')
+      fetchTimeOff()
+      fetchWeek()
+    } catch (err) {
+      flashNotice(err.message, 5000)
+    }
+  }
+
   // ---------- Disponibilidad semanal ----------
   const openAvailModal = (employeeName) => {
     const row = (glanceData?.glance_matrix || []).find(e => e.name === employeeName)
@@ -604,7 +686,6 @@ export default function CalendarioTurnos7shifts() {
             >
               <CalendarIcon size={14} /> Horario
             </button>
-            {!simple && (
             <button 
               onClick={() => setActiveTab('timeoff')}
               style={{
@@ -624,7 +705,6 @@ export default function CalendarioTurnos7shifts() {
             >
               <CalendarDays size={14} /> Permisos
             </button>
-            )}
             <button 
               onClick={() => setActiveTab('availability')}
               style={{
@@ -1125,318 +1205,108 @@ export default function CalendarioTurnos7shifts() {
       )}
 
       {/* =========================================================================
-          VISTA 2: TIME OFF (REQUESTS & CALENDAR - IMÁGENES 5 Y 8)
+          VISTA 2: PERMISOS (TIME OFF) — pedir, aprobar / rechazar
           ========================================================================= */}
       {activeTab === 'timeoff' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: 'calc(100vh - 60px)', background: '#fafafa' }}>
-          <div style={{ background: '#ffffff', borderRight: '1px solid #e2e8f0', padding: '24px 16px' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#1e293b', marginBottom: 16 }}>
-              Time off
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <button 
-                onClick={() => setTimeOffSubTab('requests')}
-                style={{
-                  border: 'none',
-                  background: timeOffSubTab === 'requests' ? '#f3f2ef' : 'transparent',
-                  color: timeOffSubTab === 'requests' ? '#1e293b' : '#64748b',
-                  fontWeight: timeOffSubTab === 'requests' ? 700 : 500,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  textAlign: 'left',
-                  fontSize: 13,
-                  cursor: 'pointer'
-                }}
+        <div style={{ padding: '32px 40px', background: '#fafafa', minHeight: 'calc(100vh - 60px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 12, flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', margin: 0 }}>Permisos</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <select
+                value={timeOffStatusFilter}
+                onChange={(e) => setTimeOffStatusFilter(e.target.value)}
+                aria-label="Filtrar por estado"
+                style={{ height: 34, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, color: '#1e293b', background: '#ffffff' }}
               >
-                Requests
-              </button>
-              <button 
-                onClick={() => setTimeOffSubTab('calendar')}
-                style={{
-                  border: 'none',
-                  background: timeOffSubTab === 'calendar' ? '#f3f2ef' : 'transparent',
-                  color: timeOffSubTab === 'calendar' ? '#1e293b' : '#64748b',
-                  fontWeight: timeOffSubTab === 'calendar' ? 700 : 500,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  textAlign: 'left',
-                  fontSize: 13,
-                  cursor: 'pointer'
-                }}
+                <option value="All">Todos</option>
+                <option value="Pending">Pendientes</option>
+                <option value="Approved">Aprobados</option>
+                <option value="Denied">Rechazados</option>
+              </select>
+              <button
+                onClick={() => openTimeOffModal(simple && myRosterName ? myRosterName : null)}
+                style={{ background: '#2563eb', color: '#ffffff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
               >
-                Calendar
-              </button>
-              <button 
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: '#64748b',
-                  fontWeight: 500,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  textAlign: 'left',
-                  fontSize: 13,
-                  cursor: 'pointer'
-                }}
-              >
-                Blocked Days
+                {simple ? 'Solicitar permiso' : '+ Agregar permiso'}
               </button>
             </div>
           </div>
+          <p style={{ margin: '0 0 20px', fontSize: 13, color: '#475569' }}>
+            {canDecideTimeOff
+              ? 'Los permisos pendientes los decides tú. Solo los aprobados bloquean el agendador de clientes y aparecen como TIME OFF en el horario.'
+              : 'Pide tus días libres aquí. María los aprueba o rechaza; hasta entonces quedan pendientes.'}
+          </p>
 
-          <div style={{ padding: '32px 40px' }}>
-            {timeOffSubTab === 'requests' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                  <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', margin: 0 }}>
-                    Requests
-                  </h1>
-
-                  <button 
-                    style={{
-                      background: '#2563eb',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 6,
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6
-                    }}
-                  >
-                    + Add time off
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <MapPin size={13} style={{ color: '#64748b' }} />
-                    <span>All locations</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <User size={13} style={{ color: '#64748b' }} />
-                    <span>All employees</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <span style={{ width: 12, height: 12, borderRadius: '50%', border: '1px solid #64748b', display: 'inline-block' }} />
-                    <select 
-                      value={timeOffStatusFilter}
-                      onChange={(e) => setTimeOffStatusFilter(e.target.value)}
-                      style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, cursor: 'pointer' }}
-                    >
-                      <option value="All">All statuses</option>
-                      <option value="Pending">Pending</option>
-                      <option value="Approved">Approved</option>
-                    </select>
-                  </div>
-
-                  <span style={{ color: '#2563eb', fontSize: 13, cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}>
-                    Reset filters
-                  </span>
-                </div>
-
-                <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Employee</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Date submitted ˅</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Approved (YTD)</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Time off requested ↕</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Status</th>
-                        <th style={{ width: 40 }} />
+          <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
+                  <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Persona</th>
+                  <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Fechas y motivo</th>
+                  <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Pedido</th>
+                  <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Aprobados este año</th>
+                  <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Estado</th>
+                  <th style={{ width: 60 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {timeOffRequests.filter(r => timeOffStatusFilter === 'All' || r.status === timeOffStatusFilter).length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '28px 20px', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
+                      No hay permisos en esta lista.
+                    </td>
+                  </tr>
+                )}
+                {timeOffRequests
+                  .filter(r => timeOffStatusFilter === 'All' || r.status === timeOffStatusFilter)
+                  .map((req) => {
+                    const badge = req.status === 'Approved'
+                      ? { bg: '#ecfdf5', fg: '#047857', label: 'Aprobado' }
+                      : (req.status === 'Denied' ? { bg: '#fef2f2', fg: '#b91c1c', label: 'Rechazado' } : { bg: '#fef9c3', fg: '#a16207', label: 'Pendiente' })
+                    return (
+                      <tr key={req.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '14px 20px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
+                          {req.employee_name}{simple && isMe(req.employee_name) ? ' (tú)' : ''}
+                        </td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#1e293b' }}>
+                          <div style={{ fontWeight: 600 }}>{req.time_off_requested}</div>
+                          {req.reason && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{req.reason}</div>}
+                        </td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#475569' }}>{req.date_submitted}</td>
+                        <td style={{ padding: '14px 20px', fontSize: 13, color: '#475569', fontWeight: 600 }}>{req.approved_ytd}</td>
+                        <td style={{ padding: '14px 20px' }}>
+                          {canDecideTimeOff ? (
+                            <select
+                              value={req.status === 'Approved' ? 'APPROVED' : (req.status === 'Denied' ? 'DENIED' : 'PENDING')}
+                              onChange={(e) => handleDecideTimeOff(req.id, e.target.value)}
+                              aria-label={`Estado del permiso de ${req.employee_name}`}
+                              style={{ height: 30, padding: '0 8px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, fontWeight: 700, background: badge.bg, color: badge.fg }}
+                            >
+                              <option value="PENDING">Pendiente</option>
+                              <option value="APPROVED">Aprobado</option>
+                              <option value="DENIED">Rechazado</option>
+                            </select>
+                          ) : (
+                            <span style={{ background: badge.bg, color: badge.fg, fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 6 }}>{badge.label}</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '14px 20px', textAlign: 'right' }}>
+                          {(canDecideTimeOff || req.status === 'Pending') && (
+                            <button
+                              onClick={() => handleDeleteTimeOff(req.id)}
+                              title={canDecideTimeOff ? 'Eliminar' : 'Cancelar solicitud'}
+                              aria-label={`${canDecideTimeOff ? 'Eliminar' : 'Cancelar'} permiso de ${req.employee_name}`}
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#dc2626', fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}
+                            >
+                              {canDecideTimeOff ? 'Eliminar' : 'Cancelar'}
+                            </button>
+                          )}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {timeOffRequests.length === 0 && (
-                        <tr>
-                          <td colSpan={6} style={{ padding: '28px 20px', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
-                            No hay permisos registrados todavía.
-                          </td>
-                        </tr>
-                      )}
-                      {timeOffRequests
-                        .filter(r => timeOffStatusFilter === 'All' || r.status === timeOffStatusFilter)
-                        .map((req) => (
-                          <tr key={req.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                            <td style={{ padding: '14px 20px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                {req.avatar ? (
-                                  <img src={req.avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                                ) : (
-                                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                                    <User size={16} />
-                                  </div>
-                                )}
-                                <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
-                                  {req.employee_name}
-                                </span>
-                              </div>
-                            </td>
-                            <td style={{ padding: '14px 20px', fontSize: 13, color: '#475569' }}>
-                              {req.date_submitted}
-                            </td>
-                            <td style={{ padding: '14px 20px', fontSize: 13, color: '#475569', fontWeight: 600 }}>
-                              {req.approved_ytd}
-                            </td>
-                            <td style={{ padding: '14px 20px', fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
-                              {req.time_off_requested}
-                            </td>
-                            <td style={{ padding: '14px 20px' }}>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, background: req.status === 'Approved' ? '#ecfdf5' : '#ffffff', color: req.status === 'Approved' ? '#059669' : '#1e293b' }}>
-                                {req.status} ▾
-                              </div>
-                            </td>
-                            <td style={{ padding: '14px 20px', textAlign: 'right', color: '#94a3b8' }}>
-                              <MoreVertical size={16} style={{ cursor: 'pointer' }} />
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {timeOffSubTab === 'calendar' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <button style={{ border: '1px solid #cbd5e1', background: '#fff', padding: '6px 8px', borderRadius: 6 }}>
-                      <ChevronLeft size={14} />
-                    </button>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 700, color: '#1e293b' }}>
-                      <CalendarIcon size={16} /> September, 2026
-                    </div>
-                    <button style={{ border: '1px solid #cbd5e1', background: '#fff', padding: '6px 8px', borderRadius: 6 }}>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-
-                  <button 
-                    style={{
-                      background: '#2563eb',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 6,
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    + Add time off
-                  </button>
-                </div>
-
-                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-                      <div key={d} style={{ padding: '10px', fontSize: 12, fontWeight: 700, color: '#64748b', textAlign: 'left' }}>
-                        {d}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minHeight: 400 }}>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8, minHeight: 90 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>31</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>🟡 Ana Maria Tolosa</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>🟢 Valentina Prieto</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>Sep 1</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>🟡 Ana Maria Tolosa</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>🟢 Catalina Cely Rueda</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>2</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>3</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>🟡 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>4</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>🟡 Ana Maria Tolosa</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>5</div>
-                      <div style={{ fontSize: 10, color: '#475569', marginTop: 4 }}>🟡 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>6</div>
-                    </div>
-
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8, minHeight: 90 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>7</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4, fontWeight: 600 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>8</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4, fontWeight: 600 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>9</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4, fontWeight: 600 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>10</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4, fontWeight: 600 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>11</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4, fontWeight: 600 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9', padding: 8, background: '#f8fafc' }}>
-                      <div style={{ display: 'inline-block', width: 20, height: 20, borderRadius: '50%', background: '#2563eb', color: '#fff', textAlign: 'center', lineHeight: '20px', fontSize: 11, fontWeight: 700 }}>12</div>
-                      <div style={{ fontSize: 10, color: '#a16207', marginTop: 4, fontWeight: 600 }}>🟡 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderBottom: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>13</div>
-                    </div>
-
-                    <div style={{ borderRight: '1px solid #f1f5f9', padding: 8, minHeight: 90 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>14</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>15</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>16</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4 }}>🟢 Ana Maria Tolosa</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>17</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>18</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ borderRight: '1px solid #f1f5f9', padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>19</div>
-                      <div style={{ fontSize: 10, color: '#059669', marginTop: 4 }}>🟢 Estefania Rodriguez</div>
-                    </div>
-                    <div style={{ padding: 8, background: '#ecfdf5' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700 }}>20</div>
-                      <div style={{ fontSize: 10, color: '#059669', fontWeight: 700, marginTop: 4 }}>Catalina Cely Rueda</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+                    )
+                  })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -2083,6 +1953,92 @@ export default function CalendarioTurnos7shifts() {
         </div>
       )}
 
+
+      {/* =========================================================================
+          MODAL: SOLICITAR / AGREGAR PERMISO
+          ========================================================================= */}
+      {timeOffModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, overflowY: 'auto' }}
+          onClick={() => setTimeOffModal(null)}
+        >
+          <div
+            style={{ background: '#ffffff', borderRadius: 12, width: 440, maxWidth: '100%', boxShadow: '0 20px 30px -5px rgba(0, 0, 0, 0.35)', overflow: 'hidden', margin: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '14px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>{simple ? 'Solicitar permiso' : 'Agregar permiso'}</h2>
+              <button type="button" onClick={() => setTimeOffModal(null)} aria-label="Cerrar" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 4, display: 'flex' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleSaveTimeOff}>
+              <div style={{ padding: '16px 20px' }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Persona</label>
+                <select
+                  value={timeOffModal.employee_name}
+                  disabled={simple && !!myRosterName}
+                  onChange={(e) => setTimeOffModal({ ...timeOffModal, employee_name: e.target.value })}
+                  style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff', marginBottom: 12 }}
+                >
+                  {(glanceData?.roster || ALL_STAFF_MEMBERS).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+
+                <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Desde</label>
+                    <input
+                      type="date"
+                      value={timeOffModal.start_date}
+                      onChange={(e) => setTimeOffModal({ ...timeOffModal, start_date: e.target.value, end_date: timeOffModal.end_date < e.target.value ? e.target.value : timeOffModal.end_date })}
+                      style={{ width: '100%', boxSizing: 'border-box', height: 38, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Hasta</label>
+                    <input
+                      type="date"
+                      value={timeOffModal.end_date}
+                      min={timeOffModal.start_date}
+                      onChange={(e) => setTimeOffModal({ ...timeOffModal, end_date: e.target.value })}
+                      style={{ width: '100%', boxSizing: 'border-box', height: 38, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff' }}
+                    />
+                  </div>
+                </div>
+
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Motivo (opcional)</label>
+                <input
+                  type="text"
+                  value={timeOffModal.reason}
+                  maxLength={250}
+                  onChange={(e) => setTimeOffModal({ ...timeOffModal, reason: e.target.value })}
+                  placeholder="Ej. cita médica, vacaciones"
+                  style={{ width: '100%', boxSizing: 'border-box', height: 38, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff' }}
+                />
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
+                  {simple ? 'Quedará pendiente hasta que María lo apruebe.' : 'Como administración, el permiso se guarda ya aprobado.'} Son días completos.
+                </div>
+
+                {timeOffError && (
+                  <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 600, padding: '8px 10px', borderRadius: 8, marginTop: 10 }}>
+                    {timeOffError}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #e2e8f0', padding: '12px 20px' }}>
+                <button type="button" onClick={() => setTimeOffModal(null)} style={{ padding: '7px 16px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#ffffff', color: '#334155', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={timeOffSaving} style={{ padding: '7px 22px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#ffffff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  {timeOffSaving ? 'Guardando...' : (simple ? 'Enviar solicitud' : 'Guardar')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* =========================================================================
           MODAL: DISPONIBILIDAD SEMANAL (VARIAS FRANJAS POR DÍA)
