@@ -109,6 +109,32 @@ async def add_security_headers(request, call_next):
 
 # ─── API ROUTES ───────────────────────────────────────────────────────────────
 
+
+async def _is_background_leader() -> bool:
+    """Con varios procesos del API, solo uno (el que gana el candado de Postgres) ejecuta las tareas de fondo.
+    El candado vive mientras viva la conexión dedicada que se guarda en app.state."""
+    try:
+        from app.database import engine
+        from sqlalchemy import text as _t
+        conn = await engine.connect()
+        got = (await conn.execute(_t("SELECT pg_try_advisory_lock(481516234)"))).scalar()
+        if got:
+            app.state.background_leader_conn = conn
+            return True
+        await conn.close()
+    except Exception as exc:
+        logger.warning(f"No se pudo elegir líder de tareas de fondo: {exc}")
+    return False
+
+_leader_checked = {"done": False, "val": False}
+
+
+async def _is_background_leader_once() -> bool:
+    if not _leader_checked["done"]:
+        _leader_checked["val"] = await _is_background_leader()
+        _leader_checked["done"] = True
+    return _leader_checked["val"]
+
 @app.on_event("startup")
 async def startup_seed():
     """Ensure system roles and admin user account exist for María Paula."""
@@ -321,7 +347,8 @@ async def startup_seed():
                     # Revisa cada 12 horas (43,200 segundos)
                     await asyncio.sleep(43200)
 
-            asyncio.create_task(daily_priority_reviewer())
+            if await _is_background_leader_once():
+                asyncio.create_task(daily_priority_reviewer())
 
             # Tarea periódica: avisar de posibles matches nuevos para quienes están en 'NO HAY GENTE'
             async def possible_match_scanner():
@@ -337,11 +364,16 @@ async def startup_seed():
                         logger.warning(f"Error en possible_match_scanner: {ex_pm}")
                     await asyncio.sleep(6 * 3600)
 
-            asyncio.create_task(possible_match_scanner())
+            if await _is_background_leader_once():
+                asyncio.create_task(possible_match_scanner())
 
             # Tarea periódica: recordatorio diario de disponibilidad del equipo (apagado hasta que el admin lo active)
             from app.services.shift_planning import availability_reminder_loop
-            asyncio.create_task(availability_reminder_loop())
+            if await _is_background_leader_once():
+                asyncio.create_task(availability_reminder_loop())
+            if await _is_background_leader_once():
+                from app.services.ops_watch import ops_watch_loop
+                asyncio.create_task(ops_watch_loop())
 
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")
@@ -383,6 +415,10 @@ app.include_router(matchmaking.router)
 app.include_router(scheduling.router)
 from app.routers import shift_changes_api
 app.include_router(shift_changes_api.router)
+from app.routers import calls as calls_router
+app.include_router(calls_router.router)
+from app.routers import ops as ops_router
+app.include_router(ops_router.router)
 app.include_router(form_builder.router)
 app.include_router(work_time.router)
 

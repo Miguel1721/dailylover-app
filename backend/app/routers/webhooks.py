@@ -112,6 +112,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         # Determinar el plan de forma dinámica (soportando links preferenciales o únicos de María)
         meta = data_object.get("metadata", {}) or {}
         meta_plan = meta.get("plan_tier") or meta.get("plan") or meta.get("producto") or ""
+        # Tickets de eventos (p. ej. "HOT & SINGLE", cobrados vía Luma): se registran como pago, pero NO deben
+        # cambiar el plan del cliente, su fecha de pago de plan, ni generar avisos o escrituras en Sheets de plan.
+        is_event_ticket = any(str(k).lower().startswith("luma") or str(k).lower() == "event_api_id" for k in meta.keys())
         desc = str(data_object.get("description") or "").strip()
 
         # Detección específica del plan Matchmaking Service 650k (Link directo https://buy.stripe.com/4gMcN4aqI87p4no2O48EM1g o monto 650k)
@@ -177,8 +180,12 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 "plan": plan_name,
                 "meta": json.dumps(meta)
             })
+            # Confirmar YA el registro del pago: antes solo se confirmaba si el comprador existía en `users`,
+            # y los pagos de personas nuevas se perdían en silencio (se respondía "success" sin guardar).
+            await db.commit()
         except Exception as e:
             logger.error(f"Error guardando en stripe_payments: {e}")
+            await db.rollback()
 
         # Buscar usuario en el CRM por correo, teléfono o nombre
         if customer_email or customer_phone or customer_name:
@@ -213,13 +220,14 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                         last_payment_amount = :amt,
                         last_payment_date = NOW(),
                         updated_at = NOW()
-                    WHERE user_id = :user_id
+                    WHERE user_id = :user_id AND NOT CAST(:is_event AS BOOLEAN)
                 """), {
                     "plan_tier": plan_name,
                     "cust_id": stripe_cust_id,
                     "pi_id": pi_id,
                     "amt": amount_cop,
-                    "user_id": user_id
+                    "user_id": user_id,
+                    "is_event": bool(is_event_ticket)
                 })
 
                 # Vincular user_id en stripe_payments
@@ -242,8 +250,10 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     async with db.begin_nested():
                         await db.execute(text("""
                             INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
-                            VALUES (:title, :cname, :cphone, 'ALTA', :matchmaker, 'Hoy (Pago)', :notes)
+                            SELECT :title, :cname, :cphone, 'ALTA', :matchmaker, 'Hoy (Pago)', :notes
+                            WHERE NOT CAST(:is_event AS BOOLEAN)
                         """), {
+                            "is_event": bool(is_event_ticket),
                             "title": f"Pago Recibido: {user_name} ({plan_name})",
                             "cname": user_name,
                             "cphone": customer_phone or "",
@@ -259,7 +269,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             # Disparador en tiempo real hacia Google Sheets (apuntando al Sheet configurado en GOOGLE_SHEETS_SPREADSHEET_ID)
             target_name = (user_row.name if user_row else None) or customer_name or ""
             target_resp = ("MPS" if is_vip_650k else (user_row.responsable if user_row else None))
-            if target_name and plan_name:
+            if target_name and plan_name and not is_event_ticket:
                 try:
                     from app.services.google_sheets import update_client_plan_in_sheet
                     asyncio.create_task(
