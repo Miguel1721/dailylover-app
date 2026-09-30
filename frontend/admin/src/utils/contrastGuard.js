@@ -1,11 +1,11 @@
 /**
- * Guardián de contraste para el modo claro.
+ * Guardián de contraste (modo claro y oscuro).
  *
  * Muchas pantallas escriben colores a mano pensando en el tema oscuro (letras claras, verdes/amarillos/rosados
- * pastel, fondos oscuros fijos). En modo claro esas letras quedan casi invisibles. En vez de tocar cientos de
+ * pastel, fondos oscuros fijos). En el otro tema esas letras quedan casi invisibles. En vez de tocar cientos de
  * estilos, este módulo revisa el texto visible y, SOLO si el contraste es insuficiente, ajusta el color de la
- * letra (conservando su tono) hasta que se lea. No cambia fondos, no toca imágenes ni degradados y se apaga
- * solo al volver al modo oscuro.
+ * letra (conservando su tono) hasta que se lea: en claro la oscurece, en oscuro la aclara. No cambia fondos ni
+ * toca imágenes o degradados, y se reinicia al cambiar de tema.
  */
 
 const MIN_RATIO = 3.5      // por debajo de esto se corrige

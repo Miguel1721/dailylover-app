@@ -638,11 +638,13 @@ function AppContent() {
   useEffect(() => {
     if (theme === 'light') {
       document.body.classList.add('light-mode')
-      startContrastGuard()   // corrige letras ilegibles de colores escritos a mano para el tema oscuro
     } else {
       document.body.classList.remove('light-mode')
-      stopContrastGuard()
     }
+    // Corrige letras ilegibles de colores escritos a mano (en claro se oscurecen, en oscuro se aclaran).
+    // Se reinicia al cambiar de tema para no arrastrar correcciones hechas contra el fondo anterior.
+    stopContrastGuard()
+    startContrastGuard()
     localStorage.setItem('theme', theme)
   }, [theme])
 

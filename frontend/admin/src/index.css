@@ -14,7 +14,7 @@
   --border-color: rgba(150, 21, 0, 0.2);
   --text-primary: #F5F0F1;
   --text-secondary: #9A8A8D;
-  --text-muted: #5A4A4D;
+  --text-muted: #8A7A7D;
   --font-family: 'Inter Tight', 'Inter', system-ui, sans-serif;
 }
 
@@ -659,7 +659,7 @@ body.light-mode {
   --border-color: rgba(150, 21, 0, 0.12);
   --text-primary: #1F1012;
   --text-secondary: #5C4A4D;
-  --text-muted: #8E7A7D;
+  --text-muted: #7A666A;
 }
 
 body.light-mode ::placeholder {
