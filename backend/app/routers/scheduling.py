@@ -114,6 +114,7 @@ class ShiftDayRequest(BaseModel):
     is_published: Optional[bool] = True
     notes: Optional[str] = ""
     shift_flag: Optional[str] = "None"
+    force: Optional[bool] = False         # confirmar aunque queden entrevistas agendadas sin cobertura
 
 
 class ShiftCreateRequest(BaseModel):
@@ -759,6 +760,13 @@ async def save_shift_day(payload: ShiftDayRequest, db: AsyncSession = Depends(ge
     notes = (payload.notes or "")[:250]
     published = True if payload.is_published is None else bool(payload.is_published)
 
+    if not payload.force:
+        orphans = []
+        for d in dates:
+            orphans += await orphaned_appointments(db, name, d, ranges)
+        if orphans:
+            raise appointments_conflict(orphans)
+
     try:
         for d in dates:
             await db.execute(text("""
@@ -780,6 +788,36 @@ async def save_shift_day(payload: ShiftDayRequest, db: AsyncSession = Depends(ge
         "days": len(dates),
         "ranges_per_day": len(ranges)
     }
+
+
+async def orphaned_appointments(db: AsyncSession, name: str, d: date, ranges) -> list:
+    """Entrevistas agendadas (futuras, no canceladas) de esa persona ese día que quedarían fuera de las franjas `ranges`."""
+    if d < date.today():
+        return []
+    rows = (await db.execute(text("""
+        SELECT id, time_slot, client_name FROM interview_appointments
+        WHERE UPPER(psychologist_name) = UPPER(:p) AND DATE(appointment_date) = :d AND status != 'CANCELADA'
+        ORDER BY time_slot
+    """), {"p": name, "d": d})).fetchall()
+    out = []
+    for r in rows:
+        try:
+            t = datetime.strptime(str(r.time_slot).strip()[:5], "%H:%M").time()
+        except ValueError:
+            continue
+        te = (datetime.combine(d, t) + timedelta(minutes=45)).time()
+        if not any(s <= t and e >= te for s, e in ranges):
+            out.append({"id": r.id, "date": d.isoformat(), "time": str(r.time_slot).strip()[:5], "client": r.client_name})
+    return out
+
+
+def appointments_conflict(orphans: list) -> HTTPException:
+    lines = ", ".join(f"{o['date']} {o['time']} ({o['client'] or 'cliente'})" for o in orphans[:8])
+    return HTTPException(status_code=409, detail={
+        "code": "HAS_APPOINTMENTS",
+        "message": f"Hay {len(orphans)} entrevista(s) agendada(s) que quedarían sin turno: {lines}.",
+        "appointments": orphans,
+    })
 
 
 def parse_flexible_time(t_str: str) -> time:
@@ -858,8 +896,18 @@ async def create_or_update_shift(payload: ShiftCreateRequest, db: AsyncSession =
 
 
 @router.delete("/shifts/{shift_id}", dependencies=[Depends(require_staff)])
-async def delete_shift(shift_id: int, db: AsyncSession = Depends(get_db)):
-    """Elimina una franja de staff_shifts."""
+async def delete_shift(shift_id: int, force: bool = False, db: AsyncSession = Depends(get_db)):
+    """Elimina una franja de staff_shifts. Avisa (409) si deja entrevistas agendadas sin turno, salvo force=true."""
+    if not force:
+        cur = (await db.execute(text("SELECT psychologist_name, shift_date FROM staff_shifts WHERE id = :id"), {"id": shift_id})).fetchone()
+        if cur:
+            rest = (await db.execute(text("""
+                SELECT start_time, end_time FROM staff_shifts
+                WHERE LOWER(psychologist_name) = LOWER(:p) AND shift_date = :d AND id <> :id
+            """), {"p": cur[0], "d": cur[1], "id": shift_id})).fetchall()
+            orphans = await orphaned_appointments(db, cur[0], cur[1], [(r[0], r[1]) for r in rest])
+            if orphans:
+                raise appointments_conflict(orphans)
     await db.execute(text("DELETE FROM staff_shifts WHERE id = :id"), {"id": shift_id})
     await db.commit()
     return {"status": "success", "message": f"Turno {shift_id} eliminado exitosamente."}

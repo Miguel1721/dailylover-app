@@ -334,7 +334,7 @@ export default function CalendarioTurnos7shifts() {
     return r.includes('matchmaker') ? 'MATCHMAKING' : (r.includes('interviewer') ? 'ENTREVISTAS' : 'CS')
   }
 
-  const saveDayRequest = async (ranges, dates) => {
+  const saveDayRequest = async (ranges, dates, force = false) => {
     const res = await fetch(`${API}/api/v1/shifts/day`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...authHeaders },
@@ -345,12 +345,24 @@ export default function CalendarioTurnos7shifts() {
         shift_type: shiftTypeForRole(editModal.role),
         is_published: true,
         notes: editModal.notes,
-        shift_flag: editModal.flag
+        shift_flag: editModal.flag,
+        force
       })
     })
     if (!res.ok) {
       let detail = 'No se pudo guardar el turno.'
-      try { const j = await res.json(); if (typeof j.detail === 'string') detail = j.detail } catch (_) {}
+      try {
+        const j = await res.json()
+        if (typeof j.detail === 'string') detail = j.detail
+        else if (j.detail?.code === 'HAS_APPOINTMENTS') {
+          if (window.confirm(`${j.detail.message}
+
+El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar igual?`)) {
+            return saveDayRequest(ranges, dates, true)
+          }
+          throw new Error('Cambio cancelado: hay entrevistas agendadas en ese horario.')
+        }
+      } catch (e) { if (e instanceof Error && e.message.startsWith('Cambio cancelado')) throw e }
       throw new Error(detail)
     }
   }
