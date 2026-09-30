@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Daily Lover — Carga de catálogo de restaurantes desde Oferta_Restaurantes_Variada_3.xlsx
--- Generado automáticamente. 188 filas listas para insertar
+-- Generado automáticamente. 188 filas de origen (v2 las filtra: no inserta las que ya existen ni las repetidas).
 -- (41 advertencias — ver import_restaurantes_REVISAR_ANTES_DE_CORRER.md).
 -- Ejecutar contra la BD de producción DESPUÉS de revisar ese archivo.
 -- No borra ni modifica restaurantes existentes — solo inserta filas nuevas.
@@ -14,7 +14,12 @@ INSERT INTO restaurants (
     name, city, food_type, price_range_raw, price_num_cop, budget_category,
     available_days, hours_raw, zone, detailed_location, accepts_reservations,
     max_slots_per_time, is_active, notes, created_at, updated_at
-) VALUES
+)
+SELECT DISTINCT ON (LOWER(TRIM(v.name)), LOWER(TRIM(v.city)), LOWER(TRIM(v.detailed_location)))
+    v.name, v.city, v.food_type, v.price_range_raw, v.price_num_cop, v.budget_category,
+    v.available_days, v.hours_raw, v.zone, v.detailed_location, v.accepts_reservations,
+    v.max_slots_per_time, v.is_active, v.notes, v.created_at, v.updated_at
+FROM (VALUES
     ('Devoto', 'Barranquilla', 'Italiano', '150-250k', 200000, '200k-300k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Dom 12:00pm-10:00pm', 'Norte', 'Zona norte, C.C Meridiem Golf 2 Piso', 'Sí', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no.', NOW(), NOW()),
     ('Nena Lela Trattoria', 'Barranquilla', 'Italiano romántico', '150-250k', 200000, '200k-300k', 'Mar,Dom', 'Mar-Dom 12:30-3:00pm y 7:00-11:00pm · Cerrado lunes', 'Norte', 'Zona norte, cra 52 #76-66', 'Sí', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no.', NOW(), NOW()),
     ('Noa', 'Barranquilla', 'Fusión: sushi, mar, carnes, arroces, moderno y romántico', '150-250k', 200000, '200k-300k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Dom 12:00pm-10:00pm', 'Norte', 'Riomar, Cra 52 # 76-208', 'Sí', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no.', NOW(), NOW()),
@@ -212,10 +217,22 @@ domingo 12-5:30 p. m.', 'zona G-chapinero', 'cl 72 #5-22', 'No', 3, true, 'I
     ('Osteria Bianco (Cerritos)', 'Pereira', 'Italiano', '150-200k', 175000, '100k-200k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Dom 12:00pm-10:00pm', 'Sur/Occidente', 'Cerritos', 'Sí', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no .', NOW(), NOW()),
     ('Osteria Bianco (Circunvalar (mejor ubicación: Circunvalar))', 'Pereira', 'Italiano', '150-200k', 175000, '100k-200k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Dom 12:00pm-10:00pm', 'Sur/Occidente', 'Circunvalar (mejor ubicación: Circunvalar)', 'Sí', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no .', NOW(), NOW()),
     ('B612', 'Pereira', 'Café de especialidad', '80-150k', 115000, '100k-200k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm', 'Centro', 'Pereira', 'No', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no .', NOW(), NOW()),
-    ('Amarillo Limón Repostería', 'Pereira', 'Café de especialidad', '40-100k', 70000, 'Menos de 100k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm', 'Centro', 'Pereira', 'No', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no .', NOW(), NOW());
+    ('Amarillo Limón Repostería', 'Pereira', 'Café de especialidad', '40-100k', 70000, 'Menos de 100k', 'Lun,Mar,Mié,Jue,Vie,Sáb,Dom', 'Lun-Sáb 8:00am-7:00pm · Dom 9:00am-6:00pm', 'Centro', 'Pereira', 'No', 3, true, 'Importado de Oferta_Restaurantes_Variada_3.xlsx. Horario confirmado: No. Se repite: no .', NOW(), NOW())
+) AS v(
+    name, city, food_type, price_range_raw, price_num_cop, budget_category,
+    available_days, hours_raw, zone, detailed_location, accepts_reservations,
+    max_slots_per_time, is_active, notes, created_at, updated_at
+)
+-- Idempotente: no inserta lo que ya existe en la tabla con el mismo nombre y ciudad
+-- (v1 traía 68 filas idénticas a restaurantes ya cargados) y descarta repetidas dentro del propio archivo.
+WHERE NOT EXISTS (
+    SELECT 1 FROM restaurants r
+    WHERE LOWER(TRIM(r.name)) = LOWER(TRIM(v.name)) AND LOWER(TRIM(r.city)) = LOWER(TRIM(v.city))
+)
+ORDER BY LOWER(TRIM(v.name)), LOWER(TRIM(v.city)), LOWER(TRIM(v.detailed_location));
 
 COMMIT;
 
 -- Verificación rápida post-carga:
 -- SELECT city, COUNT(*) FROM restaurants GROUP BY city ORDER BY city;
--- Se esperan 188 filas nuevas en total (revisar por ciudad arriba).
+-- v2: el número de filas insertadas ('INSERT 0 N') es menor a 188 porque se omiten duplicados; N lo decide la base.
