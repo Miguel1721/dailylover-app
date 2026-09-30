@@ -3,8 +3,13 @@
 # Uso: locust -f scripts/stress_test.py --host=https://prueba-daily.agentesia.cloud --users 5000 --spawn-rate 100
 
 from locust import HttpUser, task, between, events
+import os
 import random
 import json
+
+# Credenciales de la cuenta de prueba: se leen del entorno, nunca del repositorio.
+STRESS_EMAIL = os.environ.get("STRESS_EMAIL", "")
+STRESS_PASSWORD = os.environ.get("STRESS_PASSWORD", "")
 
 class DailyLoverUser(HttpUser):
     wait_time = between(2, 6)
@@ -14,8 +19,8 @@ class DailyLoverUser(HttpUser):
         self.headers = {"Content-Type": "application/json"}
         # Intenta login simulado
         res = self.client.post("/api/v1/auth/client-login", json={
-            "email": "mariapaula@dailylover.com",
-            "password": "Daily2026!"
+            "email": STRESS_EMAIL,
+            "password": STRESS_PASSWORD
         }, headers=self.headers)
         if res.status_code == 200:
             token = res.json().get("access_token")

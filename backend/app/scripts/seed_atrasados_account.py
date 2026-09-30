@@ -3,6 +3,8 @@ Seed script to create/ensure the 'atrasados_only' role and the restricted user a
 'maria.atrasados@dailylover.com' in the PostgreSQL database.
 """
 import asyncio
+import os
+import sys
 from sqlalchemy import text
 from app.database import AsyncSessionLocal
 from app.services.auth_service import hash_password
@@ -21,12 +23,15 @@ async def seed_atrasados():
         print(f"[SEED] Role 'atrasados_only' ID: {role_id}")
 
         print("[SEED] Creating/updating user 'maria.atrasados@dailylover.com'...")
-        pwd_hash = hash_password('MariaAtrasados2026!*')
+        pwd = os.environ.get("SEED_ATRASADOS_PASSWORD", "")
+        if not pwd:
+            sys.exit("Falta la variable de entorno SEED_ATRASADOS_PASSWORD (no se guarda ninguna contraseña en el código).")
+        pwd_hash = hash_password(pwd)
         await db.execute(text("""
             INSERT INTO user_accounts (email, password_hash, role_id, status, must_change_password)
-            VALUES ('maria.atrasados@dailylover.com', :pwd, :rid, 'active', false)
+            VALUES ('maria.atrasados@dailylover.com', :pwd, :rid, 'active', true)
             ON CONFLICT (email) DO UPDATE 
-            SET password_hash = :pwd, role_id = :rid, status = 'active', must_change_password = false;
+            SET password_hash = :pwd, role_id = :rid, status = 'active', must_change_password = true;
         """), {'pwd': pwd_hash, 'rid': role_id})
 
         await db.commit()
