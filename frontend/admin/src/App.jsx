@@ -54,6 +54,7 @@ import EntrevistaHub from './pages/matchmaking/EntrevistaHub'
 import SupervisionMaria from './pages/matchmaking/SupervisionMaria'
 import Prioritarios from './pages/matchmaking/Prioritarios'
 import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
+import MisTurnos from './pages/matchmaking/MisTurnos'
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
@@ -296,6 +297,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
       visible: isMaria || isPsyc,
       items: [
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '🗓️ Calendario & Turnos' : '📅 Mi Calendario de Turnos' }] : []),
+        ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-turnos', icon: Calendar, label: '🔁 Mis turnos y cambios' }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' }] : []),
         ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: '💖 Mi Panel Clínico', end: true }] : []),
         ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES (Ingreso)' }] : []),
@@ -913,6 +915,7 @@ function AppContent() {
                     <Route path="/matchmaking/todos-los-matches" element={<AreaErrorBoundary areaName="Matriz Global de Matches"><ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/agenda" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/calendario" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/mis-turnos" element={<AreaErrorBoundary areaName="Mis turnos"><ProtectedRoute module="matching" action="view"><MisTurnos /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/sala/:sessionId" element={<AreaErrorBoundary areaName="Sala de Videollamada"><ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/horas-psicologas" element={<AreaErrorBoundary areaName="Control de Horas Clínicas"><ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
 
