@@ -5,12 +5,13 @@ and real-time event sync from SmartMatchApp into Postgres DB.
 """
 
 from fastapi import APIRouter, Request, HTTPException, Depends, Header, BackgroundTasks
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
 from datetime import datetime
 import json
+import os
 import logging
 import hmac
 import hashlib
@@ -932,7 +933,8 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
     params = dict(request.query_params)
     for key in ["challenge", "hub.challenge", "token", "secret", "verify", "code"]:
         if key in params and params[key]:
-            return PlainTextResponse(str(params[key]))
+            logger.warning(f"[SMARTMATCH-HANDSHAKE] {request.method} por query: clave={key} ct={request.headers.get('content-type')} ua={request.headers.get('user-agent')}")
+            return JSONResponse({"challenge": str(params[key]), key: str(params[key])})
 
     body_bytes = await request.body()
 
@@ -943,7 +945,8 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
             if isinstance(payload_check, dict):
                 for k in ["challenge", "verification_token", "hub.challenge", "code", "token"]:
                     if k in payload_check and payload_check[k]:
-                        return PlainTextResponse(str(payload_check[k]))
+                        logger.warning(f"[SMARTMATCH-HANDSHAKE] {request.method} por cuerpo: clave={k} ct={request.headers.get('content-type')} ua={request.headers.get('user-agent')} cuerpo={body_bytes[:300]!r}")
+                        return JSONResponse({"challenge": str(payload_check[k]), k: str(payload_check[k])})
         except Exception:
             pass
 
@@ -973,8 +976,13 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
                 logger.info(f"Encontrada cabecera de firma alternativa: '{h_k}': '{h_v}'")
                 break
 
-    if not verify_signature(body_bytes, sig_header, secret):
-        logger.warning(f"Firma HMAC difiere pero evento recibido de SmartMatchApp — procesando webhook. sig_header='{sig_header}'")
+    sig_ok = verify_signature(body_bytes, sig_header, secret)
+    logger.warning(f"[SMARTMATCH-SIG] firma {'VÁLIDA' if sig_ok else 'NO coincide'} (cabecera presente: {bool(sig_header)}, longitud: {len(sig_header or '')})")
+    if not sig_ok:
+        # Con SMARTMATCHAPP_ENFORCE_SIGNATURE=1 solo se aceptan eventos auténticos del CRM (firma HMAC válida).
+        if os.environ.get("SMARTMATCHAPP_ENFORCE_SIGNATURE", "0") == "1":
+            raise HTTPException(status_code=401, detail="Invalid signature")
+        logger.warning("Firma HMAC difiere pero evento recibido de SmartMatchApp — procesando webhook (modo permisivo).")
 
 
     # 4. Parsear Payload y Registrar Evento Raw en DB
