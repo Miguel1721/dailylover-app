@@ -212,6 +212,40 @@ export default function CalendarioTurnos7shifts() {
     fetch(`${API}/api/v1/shifts/coverage?week_date=${currentDate}`, { headers: authHeaders })
       .then(r => (r.ok ? r.json() : null)).then(d => d && setCoverage(d)).catch(() => {})
   }, [simple, currentDate, weekData]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Fase 4: generar la semana siguiente, aprobar y enviar correos, recordatorios (solo administración)
+  const [weekStatus, setWeekStatus] = useState(null)
+  const [planSettings, setPlanSettings] = useState(null)
+  const [planMsg, setPlanMsg] = useState('')
+  const [planBusy, setPlanBusy] = useState(false)
+  const fetchPlanning = useCallback(() => {
+    fetch(`${API}/api/v1/shifts/week-status?week_date=${currentDate}`, { headers: authHeaders }).then(r => (r.ok ? r.json() : null)).then(d => d && setWeekStatus(d)).catch(() => {})
+    fetch(`${API}/api/v1/shifts/planning-settings`, { headers: authHeaders }).then(r => (r.ok ? r.json() : null)).then(d => setPlanSettings(d)).catch(() => {})
+  }, [currentDate, token]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!simple) fetchPlanning() }, [simple, fetchPlanning, weekData])
+  const callPlan = async (path, body, okMsg) => {
+    setPlanBusy(true); setPlanMsg('')
+    try {
+      const res = await fetch(`${API}/api/v1/shifts/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const d = j.detail
+        if (d?.code === 'HAS_SHIFTS' && window.confirm(`${d.message}\n\n¿Reemplazarlos?`)) { setPlanBusy(false); return callPlan(path, { ...body, replace: true }, okMsg) }
+        if (d?.code === 'ALREADY_SENT' && window.confirm(`${d.message}\n\n¿Reenviar los correos?`)) { setPlanBusy(false); return callPlan(path, { ...body, resend: true }, okMsg) }
+        setPlanMsg(typeof d === 'string' ? d : (d?.message || 'No se pudo completar la acción.'))
+        return
+      }
+      setPlanMsg(okMsg(j))
+      fetchWeek(); fetchTeam(); fetchPlanning()
+    } catch (e) {
+      setPlanMsg('No se pudo completar la acción.')
+    } finally { setPlanBusy(false) }
+  }
+  const patchSettings = async (body) => {
+    const res = await fetch(`${API}/api/v1/shifts/planning-settings`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
+    const j = await res.json().catch(() => ({}))
+    if (!res.ok) { setPlanMsg(typeof j.detail === 'string' ? j.detail : 'No se pudo guardar el ajuste.'); return }
+    setPlanSettings(j)
+  }
   const updateMember = async (id, body) => {
     const res = await fetch(`${API}/api/v1/shifts/team/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
     if (!res.ok) { setNotification('No se pudo actualizar a la persona.'); setTimeout(() => setNotification(''), 4000); return }
@@ -931,6 +965,35 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
               </div>
             )
           })()}
+          {!simple && planSettings && weekStatus && (() => {
+            const future = weekStatus.week_monday >= weekStatus.next_monday
+            const st = weekStatus.status
+            const label = st === 'APROBADA' ? 'Aprobada' : (st === 'BORRADOR' ? 'Borrador (aún no publicado)' : 'Sin generar')
+            const btn = { border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#fff' }
+            return (
+              <div style={{ background: '#eff6ff', borderBottom: '1px solid #bfdbfe', color: '#1e3a8a', fontSize: 13, fontWeight: 600, padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span>Semana del {weekStatus.week_monday.slice(8)}/{weekStatus.week_monday.slice(5, 7)}: <b>{label}</b>{st === 'APROBADA' && weekStatus.approved_by ? ` · por ${weekStatus.approved_by}` : ''}</span>
+                {future && st !== 'APROBADA' && (
+                  <button type="button" disabled={planBusy || !readiness?.ready} title={readiness?.ready ? 'Crea el borrador con las reglas y las disponibilidades' : 'Falta la disponibilidad de alguna persona activa'}
+                    onClick={() => callPlan('generate', { week_monday: weekStatus.week_monday }, r => `Borrador generado: ${r.shifts} turnos.${r.uncovered?.length ? ` Quedan ${r.uncovered.length} tramo(s) sin cobertura.` : ' Cobertura completa.'}`)}
+                    style={{ ...btn, background: readiness?.ready ? '#2563eb' : '#94a3b8', cursor: readiness?.ready && !planBusy ? 'pointer' : 'not-allowed' }}>
+                    {planBusy ? 'Trabajando…' : 'Generar horario de esta semana'}
+                  </button>
+                )}
+                {st === 'BORRADOR' && (
+                  <button type="button" disabled={planBusy}
+                    onClick={() => { if (window.confirm(`Se publicará esta semana y se enviará a cada persona activa su horario por correo${planSettings.email_test_to ? ` (MODO PRUEBA: todos a ${planSettings.email_test_to})` : ''}. ¿Aprobar?`)) callPlan('week/approve', { week_monday: weekStatus.week_monday }, r => `Semana aprobada. Correos enviados: ${r.sent.filter(x => x.ok).length} de ${r.sent.length}.`) }}
+                    style={{ ...btn, background: '#16a34a' }}>
+                    Aprobar y enviar correos
+                  </button>
+                )}
+                {!future && (
+                  <button type="button" onClick={() => setCurrentDate(weekStatus.next_monday)} style={{ ...btn, background: '#475569' }}>Ir a la semana siguiente</button>
+                )}
+                {planMsg && <span role="status" style={{ fontWeight: 500 }}>{planMsg}</span>}
+              </div>
+            )
+          })()}
           {showTeam && (
             <div role="dialog" aria-label="Equipo" onClick={() => setShowTeam(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
               <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto', padding: 20 }}>
@@ -939,6 +1002,28 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
                   <button type="button" onClick={() => setShowTeam(false)} aria-label="Cerrar" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#475569' }}><X size={18} /></button>
                 </div>
                 <p style={{ margin: '0 0 12px', fontSize: 12, color: '#475569' }}>Solo las personas activas cuentan para las horas, la cobertura y la generación del horario.</p>
+                {planSettings && (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 12, fontSize: 12, color: '#334155' }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>Correos del horario</div>
+                    <label style={{ display: 'block', marginBottom: 8 }}>Enviar todo a esta dirección de prueba (vacío = a cada persona):
+                      <input type="email" defaultValue={planSettings.email_test_to} aria-label="Correo de prueba"
+                        onBlur={(e) => { if (e.target.value.trim() !== (planSettings.email_test_to || '')) patchSettings({ email_test_to: e.target.value.trim() }) }}
+                        style={{ display: 'block', width: '100%', marginTop: 4, border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 8px', fontSize: 13 }} />
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" aria-pressed={planSettings.reminders_enabled} onClick={() => patchSettings({ reminders_enabled: !planSettings.reminders_enabled })}
+                        style={{ border: 'none', borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: planSettings.reminders_enabled ? '#16a34a' : '#94a3b8', color: '#fff' }}>
+                        Recordatorio diario: {planSettings.reminders_enabled ? 'ACTIVADO' : 'apagado'}
+                      </button>
+                      <button type="button" disabled={planBusy || !planSettings.missing_availability?.length}
+                        onClick={() => callPlan('reminders/run', {}, r => `Recordatorios enviados hoy: ${r.sent.length}.`)}
+                        style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: 6, padding: '6px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#334155' }}>
+                        Enviar recordatorio ahora
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 6, color: '#64748b' }}>Con el recordatorio activado, cada día desde las 9:00 (Bogotá) se avisa por correo a quien aún no puso su disponibilidad.</div>
+                  </div>
+                )}
                 {teamCfg.filter(m => m.weekly_hours != null || m.is_active).map(m => (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #e2e8f0', opacity: m.is_active ? 1 : 0.55 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>

@@ -339,6 +339,10 @@ async def startup_seed():
 
             asyncio.create_task(possible_match_scanner())
 
+            # Tarea periódica: recordatorio diario de disponibilidad del equipo (apagado hasta que el admin lo active)
+            from app.services.shift_planning import availability_reminder_loop
+            asyncio.create_task(availability_reminder_loop())
+
     except Exception as e:
         logger.warning(f"Startup seed warning: {e}")
 

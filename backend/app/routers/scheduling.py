@@ -468,6 +468,208 @@ async def generation_readiness(db: AsyncSession = Depends(get_db), user: dict = 
     return {"ready": bool(people) and not missing, "active_people": len(people), "missing": missing, "people": people}
 
 
+# ==============================================================================
+# FASE 4: GENERAR LA SEMANA SIGUIENTE, APROBAR Y ENVIAR CORREOS
+# ==============================================================================
+
+def next_monday() -> date:
+    today = date.today()
+    return today + timedelta(days=7 - today.weekday())
+
+
+def _parse_monday(raw: Optional[str]) -> date:
+    if not raw:
+        return next_monday()
+    try:
+        return local_monday(datetime.strptime(raw, "%Y-%m-%d").date())
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha inválida (usa AAAA-MM-DD).")
+
+
+def _who(user: dict) -> str:
+    return str(user.get("email") or user.get("name") or user.get("full_name") or "admin")
+
+
+class GenerateRequest(BaseModel):
+    week_monday: Optional[str] = None
+    replace: Optional[bool] = False
+
+
+class ApproveRequest(BaseModel):
+    week_monday: Optional[str] = None
+    resend: Optional[bool] = False
+
+
+class PlanningSettingsRequest(BaseModel):
+    email_test_to: Optional[str] = None       # "" = enviar al correo de cada persona
+    reminders_enabled: Optional[bool] = None
+
+
+@router.get("/shifts/week-status")
+async def week_status(week_date: Optional[str] = Query(None), db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    from app.services import shift_planning as SP
+    await ensure_shift_tables(db); await SP.ensure_planning_tables(db)
+    monday = _parse_monday(week_date) if week_date else local_monday(date.today())
+    row = (await db.execute(text("SELECT status, generated_at, generated_by, approved_at, approved_by, emails_sent_at FROM staff_weeks WHERE week_monday = :m"), {"m": monday})).fetchone()
+    n = (await db.execute(text("SELECT COUNT(*) FROM staff_shifts WHERE shift_date BETWEEN :a AND :b"), {"a": monday, "b": monday + timedelta(days=6)})).scalar()
+    return {
+        "week_monday": monday.isoformat(), "status": row[0] if row else "SIN_GENERAR", "shifts": int(n or 0),
+        "generated_by": row[2] if row else None, "approved_by": row[4] if row else None,
+        "approved_at": row[3].isoformat() if row and row[3] else None,
+        "emails_sent_at": row[5].isoformat() if row and row[5] else None,
+        "next_monday": next_monday().isoformat(),
+    }
+
+
+@router.get("/shifts/planning-settings")
+async def get_planning_settings(db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    from app.services import shift_planning as SP
+    await SP.ensure_planning_tables(db)
+    return {"email_test_to": await SP.get_setting(db, "email_test_to", SP.TEST_EMAIL_DEFAULT),
+            "reminders_enabled": (await SP.get_setting(db, "reminders_enabled", "0")) == "1",
+            "missing_availability": await SP.missing_availability(db)}
+
+
+@router.patch("/shifts/planning-settings")
+async def patch_planning_settings(payload: PlanningSettingsRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    from app.services import shift_planning as SP
+    await SP.ensure_planning_tables(db)
+    if payload.email_test_to is not None:
+        v = payload.email_test_to.strip()
+        if v and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise HTTPException(status_code=422, detail="Correo de prueba inválido.")
+        await SP.set_setting(db, "email_test_to", v)
+    if payload.reminders_enabled is not None:
+        await SP.set_setting(db, "reminders_enabled", "1" if payload.reminders_enabled else "0")
+    return await get_planning_settings(db, user)
+
+
+@router.post("/shifts/reminders/run")
+async def run_reminders_now(db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    """Envía ya el recordatorio de disponibilidad a quien falte (máximo uno por persona y día)."""
+    from app.services import shift_planning as SP
+    return await SP.run_availability_reminders(db, force=True)
+
+
+@router.post("/shifts/generate")
+async def generate_next_week(payload: GenerateRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    """Genera el BORRADOR (sin publicar) de la semana siguiente. Solo si todas las personas activas ya pusieron su disponibilidad."""
+    from app.services import shift_planning as SP
+    from app.services.shift_generator import generate_week
+    await ensure_shift_tables(db); await SP.ensure_planning_tables(db)
+    monday = _parse_monday(payload.week_monday)
+    if monday <= local_monday(date.today()):
+        raise HTTPException(status_code=422, detail="Solo se puede generar una semana futura.")
+    sunday = monday + timedelta(days=6)
+
+    missing = await SP.missing_availability(db)
+    if missing:
+        raise HTTPException(status_code=409, detail={"code": "MISSING_AVAILABILITY", "missing": missing,
+            "message": "No se genera el horario: falta la disponibilidad de " + ", ".join(missing) + "."})
+
+    team = (await db.execute(text("SELECT name, weekly_hours FROM staff_team WHERE is_active = true AND weekly_hours IS NOT NULL ORDER BY id"))).fetchall()
+    people = [{"name": t[0], "weekly_hours": float(t[1]), "active": True} for t in team]
+    names_lower = [p["name"].lower() for p in people]
+
+    av: Dict[str, dict] = {}
+    for r in (await db.execute(text("SELECT LOWER(employee_name) n, weekday, mode, start_time, end_time FROM staff_availability ORDER BY weekday, start_time"))).fetchall():
+        slot = av.setdefault(r.n, {}).setdefault(int(r.weekday), {"mode": r.mode, "ranges": []})
+        if r.mode == "RANGES" and r.start_time and r.end_time:
+            slot["ranges"].append((r.start_time.strftime("%H:%M"), r.end_time.strftime("%H:%M")))
+    off = [{"name": o.psychologist_name, "start": o.start_date, "end": o.end_date} for o in (await db.execute(text("""
+        SELECT psychologist_name, start_date, end_date FROM staff_time_off
+        WHERE start_date <= :b AND end_date >= :a AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
+    """), {"a": monday, "b": sunday})).fetchall()]
+
+    existing = (await db.execute(text("""
+        SELECT COUNT(*) FROM staff_shifts WHERE shift_date BETWEEN :a AND :b AND LOWER(psychologist_name) = ANY(:n)
+    """), {"a": monday, "b": sunday, "n": names_lower})).scalar()
+    if existing and not payload.replace:
+        raise HTTPException(status_code=409, detail={"code": "HAS_SHIFTS", "existing": int(existing),
+            "message": f"Esa semana ya tiene {existing} turno(s). Generar de nuevo los reemplaza."})
+    if existing:
+        booked = (await db.execute(text("""
+            SELECT COUNT(*) FROM interview_appointments
+            WHERE DATE(appointment_date) BETWEEN :a AND :b AND status != 'CANCELADA' AND LOWER(psychologist_name) = ANY(:n)
+        """), {"a": monday, "b": sunday, "n": names_lower})).scalar()
+        if booked:
+            raise HTTPException(status_code=409, detail={"code": "HAS_APPOINTMENTS", "message":
+                f"Esa semana ya tiene {booked} entrevista(s) agendada(s); no se puede regenerar sin revisarlas a mano."})
+
+    result = generate_week(monday, people, av, off)
+    if result["report"].get("blocked_by_missing_availability"):
+        raise HTTPException(status_code=409, detail={"code": "MISSING_AVAILABILITY", "missing": result["report"]["blocked_by_missing_availability"],
+            "message": "Falta disponibilidad de alguna persona activa."})
+
+    try:
+        if existing:
+            await db.execute(text("DELETE FROM staff_shifts WHERE shift_date BETWEEN :a AND :b AND LOWER(psychologist_name) = ANY(:n)"),
+                             {"a": monday, "b": sunday, "n": names_lower})
+        for sh in result["shifts"]:
+            await db.execute(text("""
+                INSERT INTO staff_shifts (psychologist_name, shift_date, start_time, end_time, shift_type, is_published, max_interviews, notes)
+                VALUES (:p, :d, :s, :e, :t, false, 5, 'Generado automático')
+            """), {"p": sh["name"], "d": sh["date"], "s": parse_time_strict(sh["start"]), "e": parse_time_strict(sh["end"]), "t": sh["type"]})
+        await db.execute(text("""
+            INSERT INTO staff_weeks (week_monday, status, generated_at, generated_by, approved_at, approved_by, emails_sent_at)
+            VALUES (:m, 'BORRADOR', NOW(), :u, NULL, NULL, NULL)
+            ON CONFLICT (week_monday) DO UPDATE SET status = 'BORRADOR', generated_at = NOW(), generated_by = :u,
+                approved_at = NULL, approved_by = NULL, emails_sent_at = NULL
+        """), {"m": monday, "u": _who(user)})
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    rep = result["report"]
+    return {
+        "status": "success", "week_monday": monday.isoformat(), "shifts": len(result["shifts"]),
+        "feasible": bool(rep.get("feasible")),
+        "uncovered": [{"date": str(u["date"]), "start": u["start"], "end": u["end"]} for u in rep.get("uncovered", [])],
+        "warnings": rep.get("warnings", []),
+        "per_person": rep.get("per_person", {}),
+    }
+
+
+@router.post("/shifts/week/approve")
+async def approve_week(payload: ApproveRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    """Aprueba la semana: publica los turnos y envía a cada persona activa su horario. Solo administración; una sola vez salvo reenvío."""
+    from app.services import shift_planning as SP
+    await ensure_shift_tables(db); await SP.ensure_planning_tables(db)
+    monday = _parse_monday(payload.week_monday)
+    sunday = monday + timedelta(days=6)
+    row = (await db.execute(text("SELECT status, emails_sent_at FROM staff_weeks WHERE week_monday = :m"), {"m": monday})).fetchone()
+    if row and row[1] and not payload.resend:
+        raise HTTPException(status_code=409, detail={"code": "ALREADY_SENT", "message": "Esta semana ya fue aprobada y los correos ya se enviaron."})
+
+    active = {r[0].lower(): r[0] for r in (await db.execute(text("SELECT name FROM staff_team WHERE is_active = true AND weekly_hours IS NOT NULL"))).fetchall()}
+    rows = (await db.execute(text("""
+        SELECT psychologist_name, shift_date, start_time, end_time, shift_type FROM staff_shifts
+        WHERE shift_date BETWEEN :a AND :b ORDER BY shift_date, start_time
+    """), {"a": monday, "b": sunday})).fetchall()
+    mine = [r for r in rows if r.psychologist_name.lower() in active]
+    if not mine:
+        raise HTTPException(status_code=422, detail="La semana no tiene turnos del equipo para aprobar.")
+
+    await db.execute(text("UPDATE staff_shifts SET is_published = true WHERE shift_date BETWEEN :a AND :b AND LOWER(psychologist_name) = ANY(:n)"),
+                     {"a": monday, "b": sunday, "n": list(active.keys())})
+    await db.execute(text("""
+        INSERT INTO staff_weeks (week_monday, status, approved_at, approved_by) VALUES (:m, 'APROBADA', NOW(), :u)
+        ON CONFLICT (week_monday) DO UPDATE SET status = 'APROBADA', approved_at = NOW(), approved_by = :u
+    """), {"m": monday, "u": _who(user)})
+    await db.commit()
+
+    by_person: Dict[str, List[dict]] = {}
+    for r in mine:
+        by_person.setdefault(active[r.psychologist_name.lower()], []).append(
+            {"date": r.shift_date, "start": r.start_time, "end": r.end_time, "type": r.shift_type})
+    sent = [await SP.send_schedule_email(db, name, monday, sh) for name, sh in by_person.items()]
+    await db.execute(text("UPDATE staff_weeks SET emails_sent_at = NOW() WHERE week_monday = :m"), {"m": monday})
+    await db.commit()
+    return {"status": "success", "week_monday": monday.isoformat(), "approved_by": _who(user), "sent": sent,
+            "failed": [x["name"] for x in sent if not x["ok"]]}
+
+
 @router.get("/shifts/week")
 async def get_weekly_shifts(
     week_date: Optional[str] = Query(None, description="Fecha dentro de la semana YYYY-MM-DD"),
