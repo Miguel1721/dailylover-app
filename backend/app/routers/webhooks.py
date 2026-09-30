@@ -431,6 +431,38 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
 # ─── SMARTMATCHAPP INTEGRACIÓN EN TIEMPO REAL ─────────────────────────
 
+
+def verify_signature_with_timestamp(body_bytes: bytes, signature: str, timestamp: str, secret: str):
+    """El CRM firma con HMAC-SHA256 incluyendo X-Timestamp. Se prueban las combinaciones habituales y se devuelve
+    el nombre de la que coincide (o None). Usa comparación en tiempo constante."""
+    import hmac as _hmac, hashlib as _hl
+    if not (signature and timestamp and secret):
+        return None
+    sig = signature.strip().lower()
+    if sig.startswith("sha256="):
+        sig = sig[7:]
+    keys = [secret.encode("utf-8")]
+    try:
+        keys.append(bytes.fromhex(secret))
+    except Exception:
+        pass
+    ts = timestamp.strip().encode()
+    schemes = {
+        "timestamp.cuerpo": ts + b"." + body_bytes,
+        "timestamp+cuerpo": ts + body_bytes,
+        "cuerpo.timestamp": body_bytes + b"." + ts,
+        "cuerpo+timestamp": body_bytes + ts,
+        "timestamp:cuerpo": ts + b":" + body_bytes,
+        "timestamp\ncuerpo": ts + b"\n" + body_bytes,
+    }
+    for kname, key in (("secreto-texto", keys[0]), ("secreto-hex", keys[1] if len(keys) > 1 else None)):
+        if key is None:
+            continue
+        for sname, msg in schemes.items():
+            if _hmac.compare_digest(_hl.new("sha256", msg, digestmod=None).hexdigest() if False else _hmac.new(key, msg, _hl.sha256).hexdigest(), sig):
+                return f"{sname} / {kname}"
+    return None
+
 def verify_signature(body_bytes: bytes, signature_header: str, secret: str) -> bool:
     """
     Valida la firma HMAC-SHA256 enviada en los webhooks de SmartMatchApp.
@@ -977,8 +1009,22 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
                 break
 
     sig_ok = verify_signature(body_bytes, sig_header, secret)
+    _ts_hdr = request.headers.get("X-Timestamp") or request.headers.get("x-timestamp") or ""
+    if not sig_ok and _ts_hdr:
+        _scheme = verify_signature_with_timestamp(body_bytes, sig_header or "", _ts_hdr, secret)
+        if _scheme:
+            sig_ok = True
+            logger.warning(f"[SMARTMATCH-SIG] firma válida con marca de tiempo: esquema = {_scheme}")
     logger.warning(f"[SMARTMATCH-SIG] firma {'VÁLIDA' if sig_ok else 'NO coincide'} (cabecera presente: {bool(sig_header)}, longitud: {len(sig_header or '')})")
     if not sig_ok:
+        # Diagnóstico (solo cuando la firma no coincide): nombres de cabeceras, cabeceras de tiempo/id y el cuerpo recortado
+        try:
+            _names = sorted(headers_dict.keys())
+            _meta = {k: v[:40] for k, v in headers_dict.items() if any(w in k.lower() for w in ("time", "date", "id", "event", "delivery", "user-agent", "content-type", "content-length"))}
+            _sig_hdrs = {k: f"len={len(v)}" for k, v in headers_dict.items() if any(w in k.lower() for w in ("sig", "hmac", "token", "auth"))}
+            logger.warning(f"[SMARTMATCH-SIG-DIAG] ts={_ts_hdr} firma_recibida={(sig_header or '')} cabeceras={_names} | firma={_sig_hdrs} | meta={_meta} | longitud_cuerpo={len(body_bytes)} | cuerpo={body_bytes[:260]!r}")
+        except Exception as _e_diag:
+            logger.warning(f"[SMARTMATCH-SIG-DIAG] error: {_e_diag}")
         # Con SMARTMATCHAPP_ENFORCE_SIGNATURE=1 solo se aceptan eventos auténticos del CRM (firma HMAC válida).
         if os.environ.get("SMARTMATCHAPP_ENFORCE_SIGNATURE", "0") == "1":
             raise HTTPException(status_code=401, detail="Invalid signature")
@@ -1006,6 +1052,12 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
             "payload": json.dumps(payload, ensure_ascii=False)
         })
         raw_id = res_raw.scalar()
+        try:
+            from app.services.crm_fields import ingest_webhook_payload
+            await db.commit()
+            await ingest_webhook_payload(db, payload)
+        except Exception as _e_cf:
+            logger.warning(f"Copia fiel de campos CRM omitida: {_e_cf}")
         await db.commit()
     except Exception as e:
         logger.warning(f"No se pudo guardar raw event: {e}")
