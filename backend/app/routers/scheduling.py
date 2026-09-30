@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.database import get_db
+from app.core.permissions import get_current_user
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import date, datetime, timedelta, time
 from uuid import uuid4
+import asyncio
 import json
 import re
 
@@ -28,6 +30,66 @@ PSYCHOLOGISTS_METADATA = {
 # 1. MÓDULO 7SHIFTS: MATRIZ SEMANAL DE TURNOS & DISPONIBILIDAD
 # ==============================================================================
 
+async def require_staff(user: dict = Depends(get_current_user)) -> dict:
+    """Solo el equipo (cuentas del panel admin) puede ver o editar turnos y disponibilidad."""
+    if user.get("is_client"):
+        raise HTTPException(status_code=403, detail="Solo el equipo puede gestionar turnos.")
+    return user
+
+
+DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+DAY_LABELS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+MAX_RANGES_PER_DAY = 6
+SHIFT_TYPES = {"ENTREVISTAS", "MATCHMAKING", "CS", "DISPONIBLE"}
+AVAIL_MODES = {"UNSET", "ALL_DAY", "UNAVAILABLE", "RANGES"}
+
+# Departamentos, roles y personas que muestra la matriz (misma estructura de 7shifts).
+DEPARTMENT_DEFS = [
+    {
+        "name": "Customer Service",
+        "bg_header": "#2b2b2b",
+        "roles": [
+            {"role_name": "Head of Operations", "color": "#00a4b8", "code": "ho", "allow_add": True, "employee_names": []},
+            {
+                "role_name": "Customer Service Assistant", "color": "#f38218", "code": "c", "allow_add": False,
+                "employee_names": ["Valentina Ospina", "Catalina Cely Rueda", "Valentina Prieto", "Nina Andrade Carrizosa", "Monica Ospina"],
+            },
+        ],
+    },
+    {
+        "name": "Matchamking",
+        "bg_header": "#2b2b2b",
+        "roles": [
+            {"role_name": "matchmaker", "color": "#f78a8a", "code": "m", "allow_add": False, "employee_names": ["Maria Pia Cottrino"]},
+            {
+                "role_name": "interviewer", "color": "#4a6977", "code": "i", "allow_add": False,
+                "employee_names": ["Mara Paula de la Espriella", "Estefania Rodriguez", "Jennifer Pimiento", "Ana Maria Tolosa", "Silvana Manrique", "Isabela Marquez"],
+            },
+            {"role_name": "VIP INTERVIEWER", "color": "#961500", "code": "v", "allow_add": True, "employee_names": []},
+            {"role_name": "Horas extra", "color": "#0066ff", "code": "o", "allow_add": True, "employee_names": []},
+        ],
+    },
+]
+STAFF_ROSTER = [n for d in DEPARTMENT_DEFS for r in d["roles"] for n in r["employee_names"]]
+ROSTER_BY_LOWER = {n.lower(): n for n in STAFF_ROSTER}
+
+
+class ShiftRange(BaseModel):
+    start_time: str  # "HH:MM" (24 h) o "7:00 AM"
+    end_time: str
+
+
+class ShiftDayRequest(BaseModel):
+    """Guarda TODOS los turnos (franjas) de una persona en uno o varios días. Sin franjas = borrar el día."""
+    psychologist_name: str
+    dates: List[str]                      # YYYY-MM-DD
+    ranges: List[ShiftRange] = []         # varias franjas = turno partido
+    shift_type: Optional[str] = "ENTREVISTAS"
+    is_published: Optional[bool] = True
+    notes: Optional[str] = ""
+    shift_flag: Optional[str] = "None"
+
+
 class ShiftCreateRequest(BaseModel):
     id: Optional[int] = None
     psychologist_name: str
@@ -42,8 +104,24 @@ class ShiftCreateRequest(BaseModel):
     shift_flag: Optional[str] = "None"
 
 
+class CopyWeekRequest(BaseModel):
+    from_monday: date
+    to_monday: date
+
+
 class PublishWeekRequest(BaseModel):
     week_monday: date
+
+
+class AvailabilityDay(BaseModel):
+    mode: str = "UNSET"                   # UNSET | ALL_DAY | UNAVAILABLE | RANGES
+    ranges: List[ShiftRange] = []
+
+
+class AvailabilityRequest(BaseModel):
+    employee_name: str
+    days: Dict[str, AvailabilityDay]      # claves mon..sun
+
 
 class TimeOffRequest(BaseModel):
     psychologist_name: str
@@ -53,66 +131,188 @@ class TimeOffRequest(BaseModel):
     end_time: Optional[str] = None
     reason: str
 
-@router.get("/shifts/week")
+
+# ---------- Utilidades de hora ----------
+
+def parse_time_strict(value: str) -> time:
+    s = (value or "").strip().upper().replace(".", "")
+    for fmt in ("%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M%p", "%I %p", "%I%p"):
+        try:
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            pass
+    raise HTTPException(status_code=422, detail=f"Hora inválida: '{value}'. Usa el formato HH:MM (ej. 09:00) o 6:00 PM.")
+
+
+def fmt_12(t: time) -> str:
+    """9:00 AM / 6:30 PM"""
+    return t.strftime("%I:%M %p").lstrip("0")
+
+
+def fmt_12_short(t: time) -> str:
+    """9am / 6:30pm"""
+    return t.strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
+
+
+def normalize_ranges(raw: List[ShiftRange]) -> List[tuple]:
+    """Valida franjas: hora fin > inicio, sin cruces, máximo MAX_RANGES_PER_DAY. Devuelve lista ordenada [(ini, fin)]."""
+    out = []
+    for r in raw:
+        s = parse_time_strict(r.start_time)
+        e = parse_time_strict(r.end_time)
+        if e <= s:
+            raise HTTPException(status_code=422, detail=f"En la franja {fmt_12(s)} → {fmt_12(e)} la hora de fin debe ser posterior a la de inicio.")
+        out.append((s, e))
+    out.sort()
+    for a, b in zip(out, out[1:]):
+        if b[0] < a[1]:
+            raise HTTPException(status_code=422, detail=f"Las franjas {fmt_12(a[0])}–{fmt_12(a[1])} y {fmt_12(b[0])}–{fmt_12(b[1])} se cruzan.")
+    if len(out) > MAX_RANGES_PER_DAY:
+        raise HTTPException(status_code=422, detail=f"Máximo {MAX_RANGES_PER_DAY} franjas por día.")
+    return out
+
+
+def canonical_name(name: str) -> str:
+    n = (name or "").strip()
+    if not n:
+        raise HTTPException(status_code=422, detail="Falta el nombre de la persona.")
+    return ROSTER_BY_LOWER.get(n.lower(), n)
+
+
+# ---------- Tablas (se aseguran una sola vez por proceso, sin tocar main.py) ----------
+
+_shift_tables_ready = False
+_shift_tables_lock = asyncio.Lock()
+
+
+async def ensure_shift_tables(db: AsyncSession) -> None:
+    """Crea/ajusta tablas de turnos: permite varias franjas por persona y día y agrega disponibilidad semanal."""
+    global _shift_tables_ready
+    if _shift_tables_ready:
+        return
+    async with _shift_tables_lock:
+        if _shift_tables_ready:
+            return
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS staff_shifts (
+                id SERIAL PRIMARY KEY,
+                psychologist_name VARCHAR(150) NOT NULL,
+                shift_date DATE NOT NULL,
+                start_time TIME NOT NULL,
+                end_time TIME NOT NULL,
+                shift_type VARCHAR(30) DEFAULT 'ENTREVISTAS',
+                is_published BOOLEAN DEFAULT TRUE,
+                max_interviews INT DEFAULT 5,
+                notes TEXT DEFAULT '',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await db.execute(text("ALTER TABLE staff_shifts ADD COLUMN IF NOT EXISTS shift_flag VARCHAR(10) DEFAULT 'None'"))
+        await db.execute(text("CREATE INDEX IF NOT EXISTS idx_staff_shifts_date ON staff_shifts(shift_date)"))
+        # Si alguna vez se creó una restricción UNIQUE (persona, fecha), impediría el turno partido: se elimina.
+        await db.execute(text("""
+            DO $$
+            DECLARE r record;
+            BEGIN
+              FOR r IN
+                SELECT i.relname AS idx, c.conname AS con
+                FROM pg_index x
+                JOIN pg_class t ON t.oid = x.indrelid
+                JOIN pg_class i ON i.oid = x.indexrelid
+                LEFT JOIN pg_constraint c ON c.conindid = i.oid AND c.contype = 'u'
+                WHERE t.relname = 'staff_shifts' AND x.indisunique AND NOT x.indisprimary
+                  AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = t.oid AND a.attnum = ANY (x.indkey) AND a.attname = 'shift_date')
+                  AND NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = t.oid AND a.attnum = ANY (x.indkey) AND a.attname IN ('start_time', 'end_time'))
+              LOOP
+                IF r.con IS NOT NULL THEN
+                  EXECUTE format('ALTER TABLE staff_shifts DROP CONSTRAINT %I', r.con);
+                ELSE
+                  EXECUTE format('DROP INDEX IF EXISTS %I', r.idx);
+                END IF;
+              END LOOP;
+            END $$;
+        """))
+        await db.execute(text("""
+            CREATE TABLE IF NOT EXISTS staff_availability (
+                id SERIAL PRIMARY KEY,
+                employee_name VARCHAR(150) NOT NULL,
+                weekday SMALLINT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+                mode VARCHAR(12) NOT NULL DEFAULT 'RANGES',
+                start_time TIME,
+                end_time TIME,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_by TEXT
+            )
+        """))
+        await db.execute(text("CREATE INDEX IF NOT EXISTS idx_staff_availability_emp ON staff_availability(LOWER(employee_name))"))
+        await db.commit()
+        _shift_tables_ready = True
+
+
+def outside_availability(av: Optional[dict], s: time, e: time) -> bool:
+    """True si el turno queda fuera de la disponibilidad declarada de esa persona ese día."""
+    if not av:
+        return False
+    if av["mode"] == "UNAVAILABLE":
+        return True
+    if av["mode"] == "ALL_DAY":
+        return False
+    return not any(rs <= s and e <= re for rs, re in av["ranges"])
+
+
+async def load_availability(db: AsyncSession) -> Dict[tuple, dict]:
+    res = await db.execute(text("""
+        SELECT employee_name, weekday, mode, start_time, end_time
+        FROM staff_availability ORDER BY weekday, start_time
+    """))
+    out: Dict[tuple, dict] = {}
+    for r in res.fetchall():
+        key = (r.employee_name.lower(), int(r.weekday))
+        slot = out.setdefault(key, {"mode": r.mode, "ranges": []})
+        if r.mode == "RANGES" and r.start_time and r.end_time:
+            slot["ranges"].append((r.start_time, r.end_time))
+    return out
+
+
+def local_monday(target: date) -> date:
+    return target - timedelta(days=target.weekday())
+
+
+@router.get("/shifts/week", dependencies=[Depends(require_staff)])
 async def get_weekly_shifts(
     week_date: Optional[str] = Query(None, description="Fecha dentro de la semana YYYY-MM-DD"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Retorna la Matriz Semanal idéntica a 7shifts:
-    - Agrupación por departamentos: Customer Service, Matchamking
-    - Sub-roles con colores: Head of Operations, Customer Service Assistant, matchmaker, interviewer, VIP INTERVIEWER, Horas extra
-    - 7 columnas (Mon Sep 7 a Sun Sep 13) con conteo de personal (11, 14, 14, 11, 11, 5, 1)
-    - Píldoras de turnos [c], [m], [i], etiquetas de tiempo, rayo ⚡, flags rojos/amarillos, time-off
-    - Budget Tool inferior con horas y costo laboral diario y semanal
+    Matriz semanal de turnos (estilo 7shifts) con datos reales:
+    - varias franjas por persona y día (turno partido),
+    - conteo de personas, horas y costo por día calculados de los turnos guardados,
+    - aviso por turno cuando queda fuera de la disponibilidad declarada.
     """
+    await ensure_shift_tables(db)
+    target = date.today()
     if week_date:
         try:
             target = datetime.strptime(week_date, "%Y-%m-%d").date()
         except ValueError:
-            target = date(2026, 9, 7)
-    else:
-        target = date(2026, 9, 7)
+            pass
 
-    # Lunes de esa semana
-    monday = target - timedelta(days=target.weekday())
+    monday = local_monday(target)
     sunday = monday + timedelta(days=6)
 
-    # Columnas exactas de 7shifts
     day_names_en = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     month_names_en = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    
-    # Conteos reales de 7shifts por día
-    default_emp_counts = [11, 14, 14, 11, 11, 5, 1]
-    default_budget_hours = [290.5, 55.0, 53.0, 64.0, 41.5, 49.0, 7.0]
-    default_budget_labor = [1163.50, 234.00, 188.50, 234.00, 195.00, 195.00, 0.00]
 
-    week_columns = []
-    for i in range(7):
-        d = monday + timedelta(days=i)
-        m_name = month_names_en[d.month - 1]
-        week_columns.append({
-            "date": d.strftime("%Y-%m-%d"),
-            "day_short": day_names_en[i],
-            "day_label": f"{day_names_en[i]} {m_name} {d.day}",
-            "day_number": d.day,
-            "month_name": m_name,
-            "is_today": d == date.today(),
-            "scheduled_count": default_emp_counts[i],
-            "budget_hours": default_budget_hours[i],
-            "budget_labor": default_budget_labor[i]
-        })
-
-    # 1. Obtener todos los turnos de la semana
     shift_res = await db.execute(text("""
-        SELECT id, psychologist_name, shift_date, start_time, end_time, shift_type, is_published, max_interviews, notes
+        SELECT id, psychologist_name, shift_date, start_time, end_time, shift_type, is_published, max_interviews,
+               notes, COALESCE(shift_flag, 'None') AS shift_flag
         FROM staff_shifts
         WHERE shift_date >= :mon AND shift_date <= :sun
-        ORDER BY start_time ASC
+        ORDER BY shift_date ASC, start_time ASC
     """), {"mon": monday, "sun": sunday})
     shifts_rows = shift_res.fetchall()
 
-    # 2. Obtener Time-Off
     to_res = await db.execute(text("""
         SELECT id, psychologist_name, start_date, end_date, reason, status
         FROM staff_time_off
@@ -120,7 +320,6 @@ async def get_weekly_shifts(
     """), {"mon": monday, "sun": sunday})
     time_off_rows = to_res.fetchall()
 
-    # 3. Obtener el equipo desde staff_team
     team_res = await db.execute(text("""
         SELECT id, name, slug, role, department, hourly_rate, avatar
         FROM staff_team
@@ -128,92 +327,55 @@ async def get_weekly_shifts(
         ORDER BY id ASC
     """))
     team_rows = team_res.fetchall()
+    team_by_lower = {t.name.lower(): t for t in team_rows}
+    availability = await load_availability(db)
 
-    # Estructura de departamentos y roles idénticos a 7shifts
-    department_defs = [
-        {
-            "name": "Customer Service",
-            "bg_header": "#2b2b2b",
-            "roles": [
-                {
-                    "role_name": "Head of Operations",
-                    "color": "#00a4b8",
-                    "code": "ho",
-                    "allow_add": True,
-                    "employees": [] # Empty/Placeholder en 7shifts
-                },
-                {
-                    "role_name": "Customer Service Assistant",
-                    "color": "#f38218",
-                    "code": "c",
-                    "allow_add": False,
-                    "employee_names": [
-                        "Valentina Ospina",
-                        "Catalina Cely Rueda",
-                        "Valentina Prieto",
-                        "Nina Andrade Carrizosa",
-                        "Monica Ospina"
-                    ]
-                }
-            ]
-        },
-        {
-            "name": "Matchamking",
-            "bg_header": "#2b2b2b",
-            "roles": [
-                {
-                    "role_name": "matchmaker",
-                    "color": "#f78a8a",
-                    "code": "m",
-                    "allow_add": False,
-                    "employee_names": [
-                        "Maria Pia Cottrino"
-                    ]
-                },
-                {
-                    "role_name": "interviewer",
-                    "color": "#4a6977",
-                    "code": "i",
-                    "allow_add": False,
-                    "employee_names": [
-                        "Mara Paula de la Espriella",
-                        "Estefania Rodriguez",
-                        "Jennifer Pimiento",
-                        "Ana Maria Tolosa",
-                        "Silvana Manrique",
-                        "Isabela Marquez"
-                    ]
-                },
-                {
-                    "role_name": "VIP INTERVIEWER",
-                    "color": "#961500",
-                    "code": "v",
-                    "allow_add": True,
-                    "employees": []
-                },
-                {
-                    "role_name": "Horas extra",
-                    "color": "#0066ff",
-                    "code": "o",
-                    "allow_add": True,
-                    "employees": []
-                }
-            ]
-        }
-    ]
+    def rate_of(name: str) -> float:
+        t = team_by_lower.get(name.lower())
+        return float(t.hourly_rate) if t and t.hourly_rate else 0.0
 
-    team_dict = {t.name: t for t in team_rows}
+    def hours_of(sh) -> float:
+        s_h = sh.start_time.hour + sh.start_time.minute / 60.0
+        e_h = sh.end_time.hour + sh.end_time.minute / 60.0
+        return max(0.0, e_h - s_h)
+
+    # Totales reales por día (solo personas que aparecen en la matriz)
+    day_hours: Dict[str, float] = {}
+    day_cost: Dict[str, float] = {}
+    day_people: Dict[str, set] = {}
+    for sh in shifts_rows:
+        nm = ROSTER_BY_LOWER.get(sh.psychologist_name.lower())
+        if not nm:
+            continue
+        d_str = str(sh.shift_date)
+        dur = hours_of(sh)
+        day_hours[d_str] = day_hours.get(d_str, 0.0) + dur
+        day_cost[d_str] = day_cost.get(d_str, 0.0) + dur * rate_of(nm)
+        day_people.setdefault(d_str, set()).add(nm)
+
+    week_columns = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        d_str = d.strftime("%Y-%m-%d")
+        m_name = month_names_en[d.month - 1]
+        week_columns.append({
+            "date": d_str,
+            "day_short": day_names_en[i],
+            "day_label": f"{day_names_en[i]} {m_name} {d.day}",
+            "day_number": d.day,
+            "month_name": m_name,
+            "is_today": d == date.today(),
+            "scheduled_count": len(day_people.get(d_str, set())),
+            "budget_hours": round(day_hours.get(d_str, 0.0), 1),
+            "budget_labor": round(day_cost.get(d_str, 0.0), 2)
+        })
+
     total_week_hours = 0.0
     total_week_cost = 0.0
-
     departments_output = []
 
-    for dept in department_defs:
-        dept_obj = {
-            "name": dept["name"],
-            "bg_header": dept["bg_header"],
-            "roles": []
-        }
+    for dept in DEPARTMENT_DEFS:
+        dept_obj = {"name": dept["name"], "bg_header": dept["bg_header"], "roles": []}
 
         for r_def in dept["roles"]:
             role_obj = {
@@ -224,13 +386,11 @@ async def get_weekly_shifts(
                 "employees": []
             }
 
-            emp_names = r_def.get("employee_names", [])
-            for e_name in emp_names:
-                t_info = team_dict.get(e_name)
-                rate = float(t_info.hourly_rate) if t_info and t_info.hourly_rate else 0.0
+            for e_name in r_def["employee_names"]:
+                t_info = team_by_lower.get(e_name.lower())
+                rate = rate_of(e_name)
                 avatar = t_info.avatar if t_info and t_info.avatar else ""
 
-                # Buscar turnos del empleado
                 p_shifts = [s for s in shifts_rows if s.psychologist_name.lower() == e_name.lower()]
                 p_time_offs = [to for to in time_off_rows if to.psychologist_name.lower() == e_name.lower()]
 
@@ -241,30 +401,20 @@ async def get_weekly_shifts(
                     d_str = col["date"]
                     cur_d = datetime.strptime(d_str, "%Y-%m-%d").date()
 
-                    # Turnos de este día
                     day_shifts = [s for s in p_shifts if str(s.shift_date) == d_str]
                     t_off = next((to for to in p_time_offs if to.start_date <= cur_d <= to.end_date), None)
+                    av = availability.get((e_name.lower(), cur_d.weekday()))
 
                     shifts_data = []
+                    corner_flag = None
                     for sh in day_shifts:
-                        s_h = sh.start_time.hour + sh.start_time.minute / 60.0
-                        e_h = sh.end_time.hour + sh.end_time.minute / 60.0
-                        duration = max(0.0, e_h - s_h)
+                        duration = hours_of(sh)
                         total_emp_hours += duration
 
-                        # Formato am/pm
-                        s_12 = sh.start_time.strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
-                        e_12 = sh.end_time.strftime("%I:%M%p").lstrip("0").lower().replace(":00", "")
-                        time_label = f"{s_12} - {e_12}"
-
-                        # Determinar código
+                        time_label = f"{fmt_12_short(sh.start_time)} - {fmt_12_short(sh.end_time)}"
                         code = "c" if dept["name"] == "Customer Service" else ("m" if sh.shift_type == "MATCHMAKING" else "i")
-                        if "OT" in (sh.notes or "") or "extra" in (sh.notes or "").lower():
-                            code = "c"
-
-                        # Rayo si tiene turno activo clave
-                        has_lightning = ("True" in str(sh.notes) or "⚡" in str(sh.notes) or 
-                                         e_name in ["Estefania Rodriguez", "Jennifer Pimiento", "Ana Maria Tolosa", "Silvana"] and sh.shift_type == "MATCHMAKING")
+                        if sh.shift_flag in ("red", "yellow") and not corner_flag:
+                            corner_flag = sh.shift_flag
 
                         shifts_data.append({
                             "id": sh.id,
@@ -275,50 +425,31 @@ async def get_weekly_shifts(
                             "hours": round(duration, 1),
                             "shift_type": sh.shift_type,
                             "is_published": sh.is_published,
-                            "is_lightning": has_lightning,
+                            "is_lightning": "⚡" in (sh.notes or ""),
+                            "shift_flag": sh.shift_flag,
+                            "outside_availability": outside_availability(av, sh.start_time, sh.end_time),
                             "notes": sh.notes or ""
                         })
 
-                    # Time-off badges en celda
                     to_badge = None
-                    if e_name == "Estefania Rodriguez":
-                        if cur_d.weekday() < 5:
-                            to_badge = "TIME OFF"
-                        elif cur_d.weekday() == 5:
-                            to_badge = "PENDING TIME OFF"
-                    elif t_off:
-                        to_badge = "TIME OFF" if t_off.status == "APPROVED" else "PENDING TIME OFF"
-
-                    # Corner flags
-                    corner_flag = None
-                    if e_name == "Valentina Prieto" and cur_d.weekday() in [5, 6]:
-                        corner_flag = "red"
-                    elif e_name == "Mara Paula de la Espriella" and cur_d.weekday() < 5:
-                        corner_flag = "yellow"
-                    elif e_name in ["Maria Pia Cottrino", "Silvana Manrique", "Jennifer Pimiento"] and cur_d.weekday() in [5, 6]:
-                        corner_flag = "red"
-
-                    # Overtime info
-                    ot_note = None
-                    if e_name == "Nina Andrade Carrizosa" and cur_d.weekday() in [0, 2]:
-                        ot_note = "2h Overtime"
+                    if t_off:
+                        to_badge = "TIME OFF" if (t_off.status or "").upper() == "APPROVED" else "PENDING TIME OFF"
 
                     days_map[d_str] = {
                         "date": d_str,
                         "has_shifts": len(shifts_data) > 0,
+                        "is_split": len(shifts_data) > 1,
+                        "day_hours": round(sum(x["hours"] for x in shifts_data), 1),
                         "shifts": shifts_data,
                         "time_off_badge": to_badge,
                         "corner_flag": corner_flag,
-                        "overtime_note": ot_note,
-                        "is_available_hover": (e_name == "Silvana Manrique" and cur_d.weekday() == 4)
+                        "overtime_note": None,
+                        "is_available_hover": False
                     }
 
                 emp_cost = round(total_emp_hours * rate, 2)
                 total_week_hours += total_emp_hours
                 total_week_cost += emp_cost
-
-                # Overtime badge total para Nina
-                total_ot_badge = "4h Total OT" if e_name == "Nina Andrade Carrizosa" else None
 
                 role_obj["employees"].append({
                     "name": e_name,
@@ -327,7 +458,7 @@ async def get_weekly_shifts(
                     "hourly_rate": rate,
                     "total_hours": round(total_emp_hours, 2),
                     "total_cost": emp_cost,
-                    "total_ot_badge": total_ot_badge,
+                    "total_ot_badge": None,
                     "days": days_map
                 })
 
@@ -345,437 +476,382 @@ async def get_weekly_shifts(
         "kpis": {
             "total_scheduled_hours": round(total_week_hours, 1),
             "total_labor_cost": round(total_week_cost, 2),
-            "total_employees": len(team_rows)
+            "total_employees": len(STAFF_ROSTER)
         },
         "budget_totals": {
-            "weekly_hours": 560.5,
-            "weekly_cost": 2132.00,
+            "weekly_hours": round(total_week_hours, 1),
+            "weekly_cost": round(total_week_cost, 2),
             "days": [
-                {"day": "Mon", "hours": 290.5, "cost": 1163.50},
-                {"day": "Tue", "hours": 55.0, "cost": 234.00},
-                {"day": "Wed", "hours": 53.0, "cost": 188.50},
-                {"day": "Thu", "hours": 64.0, "cost": 234.00},
-                {"day": "Fri", "hours": 41.5, "cost": 195.00},
-                {"day": "Sat", "hours": 49.0, "cost": 195.00},
-                {"day": "Sun", "hours": 7.0, "cost": 0.00}
+                {"day": c["day_short"], "hours": c["budget_hours"], "cost": c["budget_labor"]} for c in week_columns
             ]
         },
         "departments": departments_output
     }
 
 
+
 # ==============================================================================
-# SUB-MÓDULO 7SHIFTS: TIME-OFF (REQUESTS & CALENDAR)
+# SUB-MÓDULO 7SHIFTS: TIME-OFF (SOLICITUDES REALES)
 # ==============================================================================
 
-@router.get("/shifts/time-off/requests")
-async def get_time_off_requests(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Retorna la lista de solicitudes de Time-Off (idéntica a la Imagen 5 de 7shifts):
-    - Estefania Rodriguez (287.50 hrs YTD)
-    - Ana Maria Tolosa (50.50 hrs YTD)
-    - Catalina Cely Rueda (120.00 hrs YTD)
-    """
-    requests_data = [
-        {
-            "id": 1,
-            "employee_name": "Estefania Rodriguez",
-            "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-            "date_submitted": "Sep 3, 2026",
-            "approved_ytd": "287.50 Hours",
-            "time_off_requested": "Sep 12, 2026 · 12:00pm - 5:00pm",
-            "status": "Pending"
-        },
-        {
-            "id": 2,
-            "employee_name": "Ana Maria Tolosa",
-            "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150",
-            "date_submitted": "Aug 27, 2026",
-            "approved_ytd": "50.50 Hours",
-            "time_off_requested": "Sep 01, 2026 · 7:00pm - 8:00pm",
-            "status": "Pending"
-        },
-        {
-            "id": 3,
-            "employee_name": "Ana Maria Tolosa",
-            "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150",
-            "date_submitted": "Aug 27, 2026",
-            "approved_ytd": "50.50 Hours",
-            "time_off_requested": "Aug 31, 2026 · 2:00pm - 8:00pm",
-            "status": "Pending"
-        },
-        {
-            "id": 4,
-            "employee_name": "Ana Maria Tolosa",
-            "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150",
-            "date_submitted": "Aug 27, 2026",
-            "approved_ytd": "50.50 Hours",
-            "time_off_requested": "Sep 04, 2026 · 9:00am - 4:00pm",
-            "status": "Pending"
-        },
-        {
-            "id": 5,
-            "employee_name": "Estefania Rodriguez",
-            "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-            "date_submitted": "Aug 27, 2026",
-            "approved_ytd": "287.50 Hours",
-            "time_off_requested": "Sep 05, 2026 · 1:00pm - 5:00pm",
-            "status": "Pending"
-        },
-        {
-            "id": 6,
-            "employee_name": "Estefania Rodriguez",
-            "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-            "date_submitted": "Aug 27, 2026",
-            "approved_ytd": "287.50 Hours",
-            "time_off_requested": "Sep 03, 2026 · 9:00am - 2:00pm",
-            "status": "Pending"
-        },
-        {
-            "id": 7,
-            "employee_name": "Catalina Cely Rueda",
-            "avatar": "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150",
-            "date_submitted": "Aug 25, 2026",
-            "approved_ytd": "120.00 Hours",
-            "time_off_requested": "Sep 20, 2026 - Sep 24, 2026",
-            "status": "Approved"
-        }
-    ]
-    return {"requests": requests_data}
+def _fmt_day(d: date) -> str:
+    return d.strftime("%b %d, %Y")
+
+
+@router.get("/shifts/time-off/requests", dependencies=[Depends(require_staff)])
+async def get_time_off_requests(db: AsyncSession = Depends(get_db)):
+    """Permisos / bloqueos registrados en staff_time_off (ya no son datos de ejemplo)."""
+    await ensure_shift_tables(db)
+    res = await db.execute(text("""
+        SELECT id, psychologist_name, start_date, end_date, reason, status
+        FROM staff_time_off
+        ORDER BY start_date DESC, id DESC
+        LIMIT 300
+    """))
+    rows = res.fetchall()
+    team_res = await db.execute(text("SELECT name, avatar FROM staff_team"))
+    avatars = {t.name.lower(): t.avatar for t in team_res.fetchall()}
+
+    year = date.today().year
+    ytd: Dict[str, int] = {}
+    for r in rows:
+        if (r.status or "").upper() == "APPROVED" and r.start_date.year == year:
+            ytd[r.psychologist_name.lower()] = ytd.get(r.psychologist_name.lower(), 0) + ((r.end_date - r.start_date).days + 1)
+
+    out = []
+    for r in rows:
+        when = _fmt_day(r.start_date) if r.start_date == r.end_date else f"{_fmt_day(r.start_date)} - {_fmt_day(r.end_date)}"
+        if r.reason:
+            when = f"{when} · {r.reason}"
+        out.append({
+            "id": r.id,
+            "employee_name": ROSTER_BY_LOWER.get(r.psychologist_name.lower(), r.psychologist_name),
+            "avatar": avatars.get(r.psychologist_name.lower()) or "",
+            "date_submitted": "—",
+            "approved_ytd": f"{ytd.get(r.psychologist_name.lower(), 0)} días",
+            "time_off_requested": when,
+            "status": "Approved" if (r.status or "").upper() == "APPROVED" else "Pending"
+        })
+    return {"requests": out}
 
 
 # ==============================================================================
-# SUB-MÓDULO 7SHIFTS: AVAILABILITY (REQUESTS & GLANCE VIEW)
+# SUB-MÓDULO 7SHIFTS: DISPONIBILIDAD SEMANAL (VARIAS FRANJAS POR DÍA)
 # ==============================================================================
 
-@router.get("/shifts/availability/requests")
-async def get_availability_requests(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Retorna la lista de solicitudes de Disponibilidad (idéntica a la Imagen 6):
-    - Isabela Marquez (Temporary) Sep 14 - Sep 20 2026
-    - Jennifer Pimiento (Recurring)
-    - Maria Pia Cottrino (Recurring)
-    - Silvana Manrique (Recurring)
-    - Isabela Marquez (Temporary) Sep 7 - Sep 13 2026
-    - Isabela Marquez (Temporary) Aug 31 - Sep 6 2026
-    """
-    reqs = [
-        {
-            "id": 1,
-            "employee_name": "Isabela Marquez",
-            "type_label": "Temporary availability request",
-            "effective_dates": "Sep 14 - Sep 20 2026",
-            "date_submitted": "Sep 11, 2026, 3:29 PM",
-            "status": "Approved"
-        },
-        {
-            "id": 2,
-            "employee_name": "Jennifer Pimiento",
-            "type_label": "Recurring availability request",
-            "effective_dates": "Recurring",
-            "date_submitted": "Sep 11, 2026, 8:52 AM",
-            "status": "Approved"
-        },
-        {
-            "id": 3,
-            "employee_name": "Maria Pia Cottrino",
-            "type_label": "Recurring availability request",
-            "effective_dates": "Recurring",
-            "date_submitted": "Sep 10, 2026, 1:37 PM",
-            "status": "Approved"
-        },
-        {
-            "id": 4,
-            "employee_name": "Silvana Manrique",
-            "type_label": "Recurring availability request",
-            "effective_dates": "Recurring",
-            "date_submitted": "Sep 10, 2026, 1:19 PM",
-            "status": "Approved"
-        },
-        {
-            "id": 5,
-            "employee_name": "Isabela Marquez",
-            "type_label": "Temporary availability request",
-            "effective_dates": "Sep 7 - Sep 13 2026",
-            "date_submitted": "Sep 3, 2026, 9:48 AM",
-            "status": "Approved"
-        },
-        {
-            "id": 6,
-            "employee_name": "Isabela Marquez",
-            "type_label": "Temporary availability request",
-            "effective_dates": "Aug 31 - Sep 6 2026",
-            "date_submitted": "Aug 27, 2026, 10:08 AM",
-            "status": "Approved"
-        }
+def _availability_cell(entry: Optional[dict]) -> dict:
+    if not entry:
+        return {"mode": "UNSET", "state": "undefined", "text": "Sin definir", "ranges": []}
+    if entry["mode"] == "ALL_DAY":
+        return {"mode": "ALL_DAY", "state": "available", "text": "Todo el día", "ranges": []}
+    if entry["mode"] == "UNAVAILABLE":
+        return {"mode": "UNAVAILABLE", "state": "unavailable", "text": "No disponible", "ranges": []}
+    ranges = [
+        {"start_time": s.strftime("%H:%M"), "end_time": e.strftime("%H:%M"), "label": f"{fmt_12(s)} – {fmt_12(e)}"}
+        for s, e in entry["ranges"]
     ]
-    return {"requests": reqs}
+    if not ranges:
+        return {"mode": "UNSET", "state": "undefined", "text": "Sin definir", "ranges": []}
+    return {"mode": "RANGES", "state": "hours", "text": " · ".join(r["label"] for r in ranges), "ranges": ranges}
 
 
-@router.get("/shifts/availability/glance")
-async def get_availability_glance(
-    date_filter: Optional[str] = Query("2026-09-07"),
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Retorna la Matriz Glance View semanal (idéntica a la Imagen 7 de 7shifts):
-    - Estados:
-      - available_hours (durazno #fff4e6): Horas específicas (ej. 8:00 AM - 3:00 PM)
-      - available_all_day (verde menta #d4f3e9): "Available" todo el día
-      - not_available (rosa suave #fde7e7): "Not available"
-    """
-    glance_matrix = [
-        {
-            "name": "Ana Maria Tolosa",
-            "type": "Recurring",
-            "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150",
-            "days": {
-                "mon": {"state": "hours", "text": "8:00 AM - 3:00 PM"},
-                "tue": {"state": "hours", "text": "8:00 AM - 4:00 PM"},
-                "wed": {"state": "hours", "text": "9:00 AM - 6:00 PM"},
-                "thu": {"state": "available", "text": "Available"},
-                "fri": {"state": "hours", "text": "8:00 AM - 6:00 PM"},
-                "sat": {"state": "available", "text": "Available"},
-                "sun": {"state": "available", "text": "Available"}
-            }
-        },
-        {
-            "name": "Estefania Rodriguez",
-            "type": "Recurring",
-            "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-            "days": {
-                "mon": {"state": "available", "text": "Available"},
-                "tue": {"state": "available", "text": "Available"},
-                "wed": {"state": "available", "text": "Available"},
-                "thu": {"state": "available", "text": "Available"},
-                "fri": {"state": "available", "text": "Available"},
-                "sat": {"state": "available", "text": "Available"},
-                "sun": {"state": "hours", "text": "9:00 AM - 5:00 PM"}
-            }
-        },
-        {
-            "name": "Isabela Marquez",
-            "type": "Temporary",
-            "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150",
-            "days": {
-                "mon": {"state": "hours", "text": "9:00 AM - 4:00 PM"},
-                "tue": {"state": "available", "text": "Available"},
-                "wed": {"state": "available", "text": "Available"},
-                "thu": {"state": "unavailable", "text": "Not available"},
-                "fri": {"state": "available", "text": "Available"},
-                "sat": {"state": "unavailable", "text": "Not available"},
-                "sun": {"state": "unavailable", "text": "Not available"}
-            }
-        },
-        {
-            "name": "Jennifer Pimiento",
-            "type": "Recurring",
-            "avatar": "https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=150",
-            "days": {
-                "mon": {"state": "hours", "text": "11:00 AM - 5:00 PM"},
-                "tue": {"state": "hours", "text": "11:00 AM - 5:00 PM"},
-                "wed": {"state": "unavailable", "text": "Not available"},
-                "thu": {"state": "hours", "text": "11:00 AM - 1:00 PM"},
-                "fri": {"state": "hours", "text": "9:00 AM - 12:00 PM"},
-                "sat": {"state": "unavailable", "text": "Not available"},
-                "sun": {"state": "unavailable", "text": "Not available"}
-            }
-        },
-        {
-            "name": "Mara Paula de la Espriella",
-            "type": "Recurring",
-            "avatar": "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150",
-            "days": {
-                "mon": {"state": "hours", "text": "4:30 PM - 8:00 PM"},
-                "tue": {"state": "unavailable", "text": "Not available"},
-                "wed": {"state": "hours", "text": "3:00 PM - 8:00 PM"},
-                "thu": {"state": "unavailable", "text": "Not available"},
-                "fri": {"state": "unavailable", "text": "Not available"},
-                "sat": {"state": "hours", "text": "11:00 AM - 1:00 PM"},
-                "sun": {"state": "unavailable", "text": "Not available"}
-            }
-        },
-        {
-            "name": "Maria Pia Cottrino",
-            "type": "Recurring",
-            "avatar": "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=150",
-            "days": {
-                "mon": {"state": "available", "text": "Available"},
-                "tue": {"state": "available", "text": "Available"},
-                "wed": {"state": "available", "text": "Available"},
-                "thu": {"state": "available", "text": "Available"},
-                "fri": {"state": "unavailable", "text": "Not available"},
-                "sat": {"state": "unavailable", "text": "Not available"},
-                "sun": {"state": "available", "text": "Available"}
-            }
-        },
-        {
-            "name": "Silvana Manrique",
-            "type": "Recurring",
-            "avatar": "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=150",
-            "days": {
-                "mon": {"state": "available", "text": "Available"},
-                "tue": {"state": "available", "text": "Available"},
-                "wed": {"state": "available", "text": "Available"},
-                "thu": {"state": "hours", "text": "8:00 AM - 8:00 PM"},
-                "fri": {"state": "available", "text": "Available"},
-                "sat": {"state": "unavailable", "text": "Not available"},
-                "sun": {"state": "unavailable", "text": "Not available"}
-            }
-        }
-    ]
+@router.get("/shifts/availability/requests", dependencies=[Depends(require_staff)])
+async def get_availability_requests(db: AsyncSession = Depends(get_db)):
+    """Personas con disponibilidad semanal registrada y cuándo se actualizó por última vez."""
+    await ensure_shift_tables(db)
+    res = await db.execute(text("""
+        SELECT employee_name, MAX(updated_at) AS last_update, COUNT(DISTINCT weekday) AS days_set
+        FROM staff_availability
+        GROUP BY employee_name
+        ORDER BY MAX(updated_at) DESC
+    """))
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Bogota")
+    except Exception:
+        tz = None
+    out = []
+    for i, r in enumerate(res.fetchall(), start=1):
+        lu = r.last_update
+        if lu and tz and lu.tzinfo:
+            lu = lu.astimezone(tz)
+        out.append({
+            "id": i,
+            "employee_name": ROSTER_BY_LOWER.get(r.employee_name.lower(), r.employee_name),
+            "type_label": f"Disponibilidad semanal · {r.days_set} de 7 días definidos",
+            "effective_dates": "Cada semana",
+            "date_submitted": lu.strftime("%b %d, %Y, %I:%M %p") if lu else "—",
+            "status": "Activa"
+        })
+    return {"requests": out}
 
-    columns = [
-        {"key": "mon", "label": "Mon Sep 7"},
-        {"key": "tue", "label": "Tue Sep 8"},
-        {"key": "wed", "label": "Wed Sep 9"},
-        {"key": "thu", "label": "Thu Sep 10"},
-        {"key": "fri", "label": "Fri Sep 11"},
-        {"key": "sat", "label": "Sat Sep 12"},
-        {"key": "sun", "label": "Sun Sep 13"}
-    ]
+
+@router.get("/shifts/availability/glance", dependencies=[Depends(require_staff)])
+async def get_availability_glance(db: AsyncSession = Depends(get_db)):
+    """Matriz semanal de disponibilidad: por persona y día, todo el día / no disponible / varias franjas."""
+    await ensure_shift_tables(db)
+    availability = await load_availability(db)
+    team_res = await db.execute(text("SELECT name, avatar FROM staff_team"))
+    avatars = {t.name.lower(): t.avatar for t in team_res.fetchall()}
+
+    names = list(STAFF_ROSTER)
+    for (lower_name, _wd) in availability.keys():
+        canon = ROSTER_BY_LOWER.get(lower_name, lower_name)
+        if canon not in names:
+            names.append(canon)
+
+    matrix = []
+    for name in names:
+        days = {}
+        any_set = False
+        for wd, key in enumerate(DAY_KEYS):
+            cell = _availability_cell(availability.get((name.lower(), wd)))
+            if cell["state"] != "undefined":
+                any_set = True
+            days[key] = cell
+        matrix.append({
+            "name": name,
+            "type": "Recurring" if any_set else "Sin definir",
+            "avatar": avatars.get(name.lower()) or "",
+            "days": days
+        })
 
     return {
-        "date_filter": date_filter,
-        "columns": columns,
-        "glance_matrix": glance_matrix
+        "columns": [{"key": k, "label": DAY_LABELS_ES[i]} for i, k in enumerate(DAY_KEYS)],
+        "roster": STAFF_ROSTER,
+        "glance_matrix": matrix
+    }
+
+
+@router.put("/shifts/availability")
+async def save_availability(
+    payload: AvailabilityRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff)
+):
+    """Reemplaza la disponibilidad semanal recurrente de una persona (cada día: sin definir, todo el día, no disponible o varias franjas)."""
+    await ensure_shift_tables(db)
+    name = canonical_name(payload.employee_name)
+
+    to_insert = []  # (weekday, mode, start, end)
+    for key, day in payload.days.items():
+        if key not in DAY_KEYS:
+            raise HTTPException(status_code=422, detail=f"Día inválido: {key}")
+        mode = (day.mode or "UNSET").upper()
+        if mode not in AVAIL_MODES:
+            raise HTTPException(status_code=422, detail=f"Modo inválido para {key}: {day.mode}")
+        wd = DAY_KEYS.index(key)
+        if mode == "RANGES":
+            rngs = normalize_ranges(day.ranges)
+            if not rngs:
+                raise HTTPException(status_code=422, detail=f"{DAY_LABELS_ES[wd]}: agrega al menos una franja o elige otra opción.")
+            for s, e in rngs:
+                to_insert.append((wd, "RANGES", s, e))
+        elif mode in ("ALL_DAY", "UNAVAILABLE"):
+            to_insert.append((wd, mode, None, None))
+
+    try:
+        await db.execute(text("DELETE FROM staff_availability WHERE LOWER(employee_name) = LOWER(:n)"), {"n": name})
+        for wd, mode, s, e in to_insert:
+            await db.execute(text("""
+                INSERT INTO staff_availability (employee_name, weekday, mode, start_time, end_time, updated_by)
+                VALUES (:n, :wd, :m, :s, :e, :u)
+            """), {"n": name, "wd": wd, "m": mode, "s": s, "e": e, "u": str(user.get("email") or user.get("id"))})
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {"status": "success", "employee_name": name, "rows": len(to_insert)}
+
+
+# ==============================================================================
+# SUB-MÓDULO 7SHIFTS: GUARDAR TURNOS (VARIAS FRANJAS POR DÍA)
+# ==============================================================================
+
+def _parse_dates(values: List[str], max_n: int = 31) -> List[date]:
+    out: List[date] = []
+    for v in values or []:
+        try:
+            d = datetime.strptime(v, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Fecha inválida: {v}")
+        if d not in out:
+            out.append(d)
+    if not out:
+        raise HTTPException(status_code=422, detail="Selecciona al menos un día.")
+    if len(out) > max_n:
+        raise HTTPException(status_code=422, detail=f"Máximo {max_n} días por guardado.")
+    return out
+
+
+@router.put("/shifts/day", dependencies=[Depends(require_staff)])
+async def save_shift_day(payload: ShiftDayRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Guarda los turnos de una persona en uno o varios días. Cada día queda con EXACTAMENTE las franjas enviadas
+    (turno partido = varias franjas). Sin franjas se borra el día de esa persona.
+    """
+    await ensure_shift_tables(db)
+    name = canonical_name(payload.psychologist_name)
+    dates = _parse_dates(payload.dates)
+    ranges = normalize_ranges(payload.ranges)
+    stype = (payload.shift_type or "ENTREVISTAS").upper()
+    if stype not in SHIFT_TYPES:
+        stype = "ENTREVISTAS"
+    flag = payload.shift_flag if payload.shift_flag in ("red", "yellow") else "None"
+    notes = (payload.notes or "")[:250]
+    published = True if payload.is_published is None else bool(payload.is_published)
+
+    try:
+        for d in dates:
+            await db.execute(text("""
+                DELETE FROM staff_shifts WHERE LOWER(psychologist_name) = LOWER(:p) AND shift_date = :d
+            """), {"p": name, "d": d})
+            for s, e in ranges:
+                await db.execute(text("""
+                    INSERT INTO staff_shifts (psychologist_name, shift_date, start_time, end_time, shift_type,
+                                              is_published, max_interviews, notes, shift_flag)
+                    VALUES (:p, :d, :s, :e, :t, :pub, 5, :notes, :flag)
+                """), {"p": name, "d": d, "s": s, "e": e, "t": stype, "pub": published, "notes": notes, "flag": flag})
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {
+        "status": "success",
+        "message": "Turnos guardados." if ranges else "Día borrado.",
+        "days": len(dates),
+        "ranges_per_day": len(ranges)
     }
 
 
 def parse_flexible_time(t_str: str) -> time:
-    t_clean = t_str.strip().upper()
-    for fmt in ("%H:%M", "%I:%M %p", "%I:%M%p", "%H:%M:%S", "%I %p"):
-        try:
-            return datetime.strptime(t_clean, fmt).time()
-        except ValueError:
-            pass
-    try:
-        # Fallback simple HH:MM
-        parts = t_clean.replace("AM", "").replace("PM", "").strip().split(":")
-        h = int(parts[0])
-        m = int(parts[1]) if len(parts) > 1 else 0
-        if "PM" in t_clean and h < 12:
-            h += 12
-        elif "AM" in t_clean and h == 12:
-            h = 0
-        return time(h, m)
-    except Exception:
-        return time(9, 0)
+    return parse_time_strict(t_str)
 
-@router.post("/shifts")
-async def create_or_update_shift(
-    payload: ShiftCreateRequest,
-    db: AsyncSession = Depends(get_db)
-):
-    """Crea o actualiza un turno en la matriz 7shifts (soporta repetición en múltiples días vía apply_to_dates)."""
-    s_time = parse_flexible_time(payload.start_time)
-    e_time = parse_flexible_time(payload.end_time)
 
-    # Determinar lista de fechas a procesar
+async def _overlapping_shift(db: AsyncSession, name: str, d: date, s: time, e: time, exclude_id: Optional[int]) -> bool:
+    res = await db.execute(text("""
+        SELECT 1 FROM staff_shifts
+        WHERE LOWER(psychologist_name) = LOWER(:p) AND shift_date = :d
+          AND start_time < :e AND end_time > :s
+          AND (CAST(:ex AS INT) IS NULL OR id <> CAST(:ex AS INT))
+        LIMIT 1
+    """), {"p": name, "d": d, "s": s, "e": e, "ex": exclude_id})
+    return res.fetchone() is not None
+
+
+@router.post("/shifts", dependencies=[Depends(require_staff)])
+async def create_or_update_shift(payload: ShiftCreateRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Agrega UNA franja (o edita la franja con `id`). Ya no sobrescribe otros turnos del mismo día:
+    para turno partido se llama varias veces (o se usa PUT /shifts/day con todas las franjas).
+    """
+    await ensure_shift_tables(db)
+    name = canonical_name(payload.psychologist_name)
+    s_time = parse_time_strict(payload.start_time)
+    e_time = parse_time_strict(payload.end_time)
+    if e_time <= s_time:
+        raise HTTPException(status_code=422, detail="La hora de fin debe ser posterior a la de inicio.")
+
     target_dates = [payload.shift_date]
-    if payload.apply_to_dates:
-        for dt_str in payload.apply_to_dates:
-            try:
-                parsed_d = datetime.strptime(dt_str, "%Y-%m-%d").date()
-                if parsed_d not in target_dates:
-                    target_dates.append(parsed_d)
-            except ValueError:
-                pass
+    for dt_str in (payload.apply_to_dates or []):
+        try:
+            parsed_d = datetime.strptime(dt_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if parsed_d not in target_dates:
+            target_dates.append(parsed_d)
+
+    stype = (payload.shift_type or "ENTREVISTAS").upper()
+    if stype not in SHIFT_TYPES:
+        stype = "ENTREVISTAS"
+    flag = payload.shift_flag if payload.shift_flag in ("red", "yellow") else "None"
+    pub = True if payload.is_published is None else bool(payload.is_published)
+    params = {"st": s_time, "et": e_time, "stype": stype, "pub": pub, "max_i": payload.max_interviews or 5,
+              "notes": (payload.notes or "")[:250], "flag": flag}
 
     final_shift_id = payload.id
-
-    for t_date in target_dates:
-        # Si tiene ID específico y es la fecha principal, actualizar ese ID
-        if payload.id and t_date == payload.shift_date:
-            await db.execute(text("""
-                UPDATE staff_shifts
-                SET start_time = :st,
-                    end_time = :et,
-                    shift_type = :stype,
-                    is_published = :pub,
-                    max_interviews = :max_i,
-                    notes = :notes,
-                    updated_at = NOW()
-                WHERE id = :id
-            """), {
-                "st": s_time,
-                "et": e_time,
-                "stype": payload.shift_type or "ENTREVISTAS",
-                "pub": payload.is_published if payload.is_published is not None else True,
-                "max_i": payload.max_interviews or 5,
-                "notes": payload.notes or "",
-                "id": payload.id
-            })
-        else:
-            # Verificar si ya existe para este empleado y fecha
-            exist_res = await db.execute(text("""
-                SELECT id FROM staff_shifts
-                WHERE LOWER(psychologist_name) = LOWER(:p) AND shift_date = :d
-            """), {"p": payload.psychologist_name.strip(), "d": t_date})
-            row = exist_res.fetchone()
-
-            if row:
+    try:
+        for t_date in target_dates:
+            is_main = t_date == payload.shift_date
+            exclude = payload.id if (payload.id and is_main) else None
+            if await _overlapping_shift(db, name, t_date, s_time, e_time, exclude):
+                raise HTTPException(status_code=409, detail=f"{t_date}: ya hay un turno que se cruza con {fmt_12(s_time)}–{fmt_12(e_time)}.")
+            if payload.id and is_main:
                 await db.execute(text("""
                     UPDATE staff_shifts
-                    SET start_time = :st,
-                        end_time = :et,
-                        shift_type = :stype,
-                        is_published = :pub,
-                        max_interviews = :max_i,
-                        notes = :notes,
-                        updated_at = NOW()
+                    SET start_time = :st, end_time = :et, shift_type = :stype, is_published = :pub,
+                        max_interviews = :max_i, notes = :notes, shift_flag = :flag, updated_at = NOW()
                     WHERE id = :id
-                """), {
-                    "st": s_time,
-                    "et": e_time,
-                    "stype": payload.shift_type or "ENTREVISTAS",
-                    "pub": payload.is_published if payload.is_published is not None else True,
-                    "max_i": payload.max_interviews or 5,
-                    "notes": payload.notes or "",
-                    "id": row[0]
-                })
-                if t_date == payload.shift_date:
-                    final_shift_id = row[0]
+                """), {**params, "id": payload.id})
             else:
                 ins = await db.execute(text("""
-                    INSERT INTO staff_shifts (
-                        psychologist_name, shift_date, start_time, end_time, shift_type, is_published, max_interviews, notes
-                    ) VALUES (
-                        :p, :d, :st, :et, :stype, :pub, :max_i, :notes
-                    ) RETURNING id
-                """), {
-                    "p": payload.psychologist_name.strip(),
-                    "d": t_date,
-                    "st": s_time,
-                    "et": e_time,
-                    "stype": payload.shift_type or "ENTREVISTAS",
-                    "pub": payload.is_published if payload.is_published is not None else True,
-                    "max_i": payload.max_interviews or 5,
-                    "notes": payload.notes or ""
-                })
-                if t_date == payload.shift_date:
+                    INSERT INTO staff_shifts (psychologist_name, shift_date, start_time, end_time, shift_type,
+                                              is_published, max_interviews, notes, shift_flag)
+                    VALUES (:p, :d, :st, :et, :stype, :pub, :max_i, :notes, :flag) RETURNING id
+                """), {**params, "p": name, "d": t_date})
+                if is_main:
                     final_shift_id = ins.scalar()
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
-    await db.commit()
-    return {"status": "success", "message": "Turno guardado exitosamente en 7shifts.", "shift_id": final_shift_id}
+    return {"status": "success", "message": "Turno guardado exitosamente.", "shift_id": final_shift_id}
 
 
-@router.delete("/shifts/{shift_id}")
-async def delete_shift(
-    shift_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Elimina un turno de staff_shifts."""
+@router.delete("/shifts/{shift_id}", dependencies=[Depends(require_staff)])
+async def delete_shift(shift_id: int, db: AsyncSession = Depends(get_db)):
+    """Elimina una franja de staff_shifts."""
     await db.execute(text("DELETE FROM staff_shifts WHERE id = :id"), {"id": shift_id})
     await db.commit()
     return {"status": "success", "message": f"Turno {shift_id} eliminado exitosamente."}
 
 
-@router.post("/shifts/publish-week")
+@router.post("/shifts/copy-week", dependencies=[Depends(require_staff)])
+async def copy_week(payload: CopyWeekRequest, db: AsyncSession = Depends(get_db)):
+    """Copia los turnos (con todas sus franjas) de una semana a otra. No toca los días de la semana destino que ya tienen turnos."""
+    await ensure_shift_tables(db)
+    src = local_monday(payload.from_monday)
+    dst = local_monday(payload.to_monday)
+    if src == dst:
+        raise HTTPException(status_code=422, detail="La semana de origen y la de destino son la misma.")
+    delta = dst - src
+
+    rows = (await db.execute(text("""
+        SELECT psychologist_name, shift_date, start_time, end_time, shift_type, is_published, max_interviews, notes,
+               COALESCE(shift_flag, 'None') AS shift_flag
+        FROM staff_shifts WHERE shift_date >= :a AND shift_date <= :b
+        ORDER BY shift_date, start_time
+    """), {"a": src, "b": src + timedelta(days=6)})).fetchall()
+    existing = (await db.execute(text("""
+        SELECT LOWER(psychologist_name) AS p, shift_date FROM staff_shifts WHERE shift_date >= :a AND shift_date <= :b
+    """), {"a": dst, "b": dst + timedelta(days=6)})).fetchall()
+    busy = {(r.p, r.shift_date) for r in existing}
+
+    copied = 0
+    skipped_days = set()
+    try:
+        for r in rows:
+            new_date = r.shift_date + delta
+            if (r.psychologist_name.lower(), new_date) in busy:
+                skipped_days.add((r.psychologist_name.lower(), new_date))
+                continue
+            await db.execute(text("""
+                INSERT INTO staff_shifts (psychologist_name, shift_date, start_time, end_time, shift_type,
+                                          is_published, max_interviews, notes, shift_flag)
+                VALUES (:p, :d, :s, :e, :t, :pub, :mx, :n, :f)
+            """), {"p": r.psychologist_name, "d": new_date, "s": r.start_time, "e": r.end_time, "t": r.shift_type,
+                   "pub": r.is_published, "mx": r.max_interviews, "n": r.notes or "", "f": r.shift_flag})
+            copied += 1
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {"status": "success", "copied": copied, "skipped_days": len(skipped_days),
+            "message": f"Se copiaron {copied} franjas. {len(skipped_days)} día(s) ya tenían turnos y no se tocaron."}
+
+
+@router.post("/shifts/publish-week", dependencies=[Depends(require_staff)])
 async def publish_week_schedule(
     payload: PublishWeekRequest,
     db: AsyncSession = Depends(get_db)
@@ -783,7 +859,7 @@ async def publish_week_schedule(
     """Pasa todos los turnos de la semana de modo Borrador a Publicado (sincronizando con Calendly)."""
     monday = payload.week_monday
     sunday = monday + timedelta(days=6)
-    
+
     res = await db.execute(text("""
         UPDATE staff_shifts
         SET is_published = true, updated_at = NOW()
@@ -794,7 +870,8 @@ async def publish_week_schedule(
     return {"status": "success", "message": f"Horario publicado exitosamente. Los turnos ya están disponibles en el agendador de clientes."}
 
 
-@router.post("/shifts/time-off")
+
+@router.post("/shifts/time-off", dependencies=[Depends(require_staff)])
 async def request_time_off(
     payload: TimeOffRequest,
     db: AsyncSession = Depends(get_db)

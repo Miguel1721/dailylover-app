@@ -82,6 +82,46 @@ function calculateShiftDurationHours(startTime, endTime) {
   return Math.max(0, Math.round(diff * 10) / 10)
 }
 
+const pad2 = (n) => String(n).padStart(2, '0')
+const fmtDateLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+const todayLocal = () => fmtDateLocal(new Date())
+
+// "7:00 AM" | "07:00" -> "07:00" (formato que entiende <input type="time">)
+function to24(timeStr) {
+  const dec = parseTimeToDecimal(timeStr)
+  const h = Math.floor(dec)
+  const m = Math.round((dec - h) * 60)
+  return `${pad2(h)}:${pad2(m)}`
+}
+
+function rangeHours(start, end) {
+  if (!start || !end) return 0
+  return Math.max(0, Math.round((parseTimeToDecimal(end) - parseTimeToDecimal(start)) * 10) / 10)
+}
+
+// Devuelve '' si las franjas son válidas, o el mensaje de error en español.
+function validateRanges(ranges, { allowEmpty = false } = {}) {
+  if (!ranges.length) return allowEmpty ? '' : 'Agrega al menos una franja.'
+  for (const r of ranges) {
+    if (!r.start_time || !r.end_time) return 'Completa la hora de inicio y de fin de cada franja.'
+    if (parseTimeToDecimal(r.end_time) <= parseTimeToDecimal(r.start_time)) {
+      return `En la franja ${formatTo12Hour(r.start_time)} → ${formatTo12Hour(r.end_time)} la hora de fin debe ser posterior a la de inicio.`
+    }
+  }
+  const sorted = [...ranges].sort((a, b) => parseTimeToDecimal(a.start_time) - parseTimeToDecimal(b.start_time))
+  for (let i = 1; i < sorted.length; i++) {
+    if (parseTimeToDecimal(sorted[i].start_time) < parseTimeToDecimal(sorted[i - 1].end_time)) {
+      return `Las franjas ${formatTo12Hour(sorted[i - 1].start_time)}–${formatTo12Hour(sorted[i - 1].end_time)} y ${formatTo12Hour(sorted[i].start_time)}–${formatTo12Hour(sorted[i].end_time)} se cruzan.`
+    }
+  }
+  return ''
+}
+
+const AVAIL_DAYS = [
+  { key: 'mon', label: 'Lunes' }, { key: 'tue', label: 'Martes' }, { key: 'wed', label: 'Miércoles' },
+  { key: 'thu', label: 'Jueves' }, { key: 'fri', label: 'Viernes' }, { key: 'sat', label: 'Sábado' }, { key: 'sun', label: 'Domingo' }
+]
+
 export default function CalendarioTurnos7shifts() {
   const { token, user } = useAuth()
   const navigate = useNavigate()
@@ -96,17 +136,17 @@ export default function CalendarioTurnos7shifts() {
   // Estados de Schedule
   const [weekData, setWeekData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [currentDate, setCurrentDate] = useState('2026-09-07')
+  const [currentDate, setCurrentDate] = useState(todayLocal())
   const [searchQuery, setSearchQuery] = useState('')
   const [viewMode, setViewMode] = useState('week')
   const [departmentFilter, setDepartmentFilter] = useState('all')
 
   // Celda seleccionada en la matriz
-  const [selectedShiftKey, setSelectedShiftKey] = useState('Valentina Ospina_2026-09-07')
+  const [selectedShiftKey, setSelectedShiftKey] = useState('')
 
   // Estados de Time-Off
   const [timeOffRequests, setTimeOffRequests] = useState([])
-  const [timeOffStatusFilter, setTimeOffStatusFilter] = useState('Pending')
+  const [timeOffStatusFilter, setTimeOffStatusFilter] = useState('All')
 
   // Estados de Availability
   const [availRequests, setAvailRequests] = useState([])
@@ -120,42 +160,60 @@ export default function CalendarioTurnos7shifts() {
   const [deletingShift, setDeletingShift] = useState(false)
   const [notification, setNotification] = useState('')
   const [publishing, setPublishing] = useState(false)
+  const [copying, setCopying] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [shiftError, setShiftError] = useState('')
+
+  // Modal de disponibilidad semanal (varias franjas por día)
+  const [availModal, setAvailModal] = useState(null)
+  const [availSaving, setAvailSaving] = useState(false)
+  const [availError, setAvailError] = useState('')
+
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
 
   // Cargar datos de la semana (Schedule)
   const fetchWeek = useCallback(() => {
     setLoading(true)
-    fetch(`${API}/api/v1/shifts/week?week_date=${currentDate}`)
-      .then(r => r.json())
+    fetch(`${API}/api/v1/shifts/week?week_date=${currentDate}`, { headers: authHeaders })
+      .then(r => {
+        if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'Tu sesión no tiene acceso a los turnos. Vuelve a iniciar sesión.' : 'No se pudieron cargar los turnos.')
+        return r.json()
+      })
       .then(data => {
         setWeekData(data)
+        setLoadError('')
         setLoading(false)
       })
       .catch(err => {
         console.error('Error fetching weekly shifts:', err)
+        setLoadError(err.message || 'No se pudieron cargar los turnos.')
         setLoading(false)
       })
-  }, [currentDate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDate, token])
 
   // Cargar datos de Time-Off
   const fetchTimeOff = useCallback(() => {
-    fetch(`${API}/api/v1/shifts/time-off/requests`)
-      .then(r => r.json())
+    fetch(`${API}/api/v1/shifts/time-off/requests`, { headers: authHeaders })
+      .then(r => r.ok ? r.json() : { requests: [] })
       .then(d => setTimeOffRequests(d.requests || []))
       .catch(err => console.error('Error fetching time-off:', err))
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
   // Cargar datos de Availability
   const fetchAvailability = useCallback(() => {
-    fetch(`${API}/api/v1/shifts/availability/requests`)
-      .then(r => r.json())
+    fetch(`${API}/api/v1/shifts/availability/requests`, { headers: authHeaders })
+      .then(r => r.ok ? r.json() : { requests: [] })
       .then(d => setAvailRequests(d.requests || []))
       .catch(err => console.error('Error fetching avail requests:', err))
 
-    fetch(`${API}/api/v1/shifts/availability/glance`)
-      .then(r => r.json())
+    fetch(`${API}/api/v1/shifts/availability/glance`, { headers: authHeaders })
+      .then(r => r.ok ? r.json() : null)
       .then(d => setGlanceData(d))
       .catch(err => console.error('Error fetching glance:', err))
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
 
   useEffect(() => {
     fetchWeek()
@@ -175,113 +233,260 @@ export default function CalendarioTurnos7shifts() {
     setCurrentDate(d.toISOString().split('T')[0])
   }
 
-  // Abrir Modal de Turno estilo 7shifts
-  const openEditShiftModal = (empName, dateStr, shift = null, roleName = "Customer Service Assistant") => {
+  // Abrir Modal de Turno estilo 7shifts. Recibe TODOS los turnos (franjas) de la celda: turno partido = varias franjas.
+  const openEditShiftModal = (empName, dateStr, dayShifts = [], roleName = "Customer Service Assistant") => {
     setSelectedShiftKey(`${empName}_${dateStr}`)
-    
+
     // Calcular día de la semana para el Apply to inicial
     const dObj = new Date(dateStr + "T00:00:00")
     const dayIndex = (dObj.getDay() + 6) % 7 // 0=Mon, 6=Sun
     const daysAbbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     const initialDay = daysAbbr[dayIndex] || 'Mon'
 
-    const startTimeFormatted = shift?.start_time ? formatTo12Hour(shift.start_time) : "7:00 AM"
-    const endTimeFormatted = shift?.end_time ? formatTo12Hour(shift.end_time) : "2:00 PM"
+    const existing = (dayShifts || []).filter(Boolean)
+    const ranges = existing.length
+      ? existing.map(sh => ({ start_time: to24(sh.start_time), end_time: to24(sh.end_time) }))
+      : [{ start_time: '09:00', end_time: '13:00' }]
 
     setEditModal({
-      id: shift?.id || null,
+      has_existing: existing.length > 0,
       employee_name: empName,
       role: roleName,
       date: dateStr,
-      start_time: startTimeFormatted,
-      end_time: endTimeFormatted,
+      ranges,
       is_close: false,
       is_bd: false,
-      notes: shift?.notes || "",
+      notes: existing[0]?.notes || "",
       apply_to_days: [initialDay],
-      flag: shift?.flag || "None"
+      flag: existing.find(sh => sh.shift_flag && sh.shift_flag !== 'None')?.shift_flag || "None"
     })
+    setShiftError('')
     setModalTab('details')
     setShowCommonTimes(false)
   }
 
-  // Guardar Turno
+  // Franjas del turno partido: agregar / editar / quitar
+  const updateRange = (idx, field, value) => {
+    if (!editModal) return
+    const ranges = editModal.ranges.map((r, i) => i === idx ? { ...r, [field]: value } : r)
+    setEditModal({ ...editModal, ranges })
+    setShiftError('')
+  }
+
+  const addRange = () => {
+    if (!editModal || editModal.ranges.length >= 6) return
+    const last = editModal.ranges[editModal.ranges.length - 1]
+    const startDec = last?.end_time ? Math.min(parseTimeToDecimal(last.end_time) + 1, 22) : 14
+    const endDec = Math.min(startDec + 2, 23)
+    const toHHMM = (dec) => `${pad2(Math.floor(dec))}:${pad2(Math.round((dec - Math.floor(dec)) * 60))}`
+    setEditModal({ ...editModal, ranges: [...editModal.ranges, { start_time: toHHMM(startDec), end_time: toHHMM(endDec) }] })
+    setShiftError('')
+  }
+
+  const removeRange = (idx) => {
+    if (!editModal || editModal.ranges.length <= 1) return
+    setEditModal({ ...editModal, ranges: editModal.ranges.filter((_, i) => i !== idx) })
+    setShiftError('')
+  }
+
+  // Convierte los días marcados en "Apply to" en fechas reales de la semana que se está viendo
+  const applyDatesFromModal = () => {
+    const daysAbbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const mondayObj = new Date((weekData?.week_monday || currentDate) + "T00:00:00")
+    const dates = (editModal.apply_to_days || []).map(dayStr => {
+      const offset = daysAbbr.indexOf(dayStr)
+      if (offset < 0) return editModal.date
+      const d = new Date(mondayObj)
+      d.setDate(d.getDate() + offset)
+      return fmtDateLocal(d)
+    })
+    return dates.length ? dates : [editModal.date]
+  }
+
+  const shiftTypeForRole = (role) => {
+    const r = (role || '').toLowerCase()
+    return r.includes('matchmaker') ? 'MATCHMAKING' : (r.includes('interviewer') ? 'ENTREVISTAS' : 'CS')
+  }
+
+  const saveDayRequest = async (ranges, dates) => {
+    const res = await fetch(`${API}/api/v1/shifts/day`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({
+        psychologist_name: editModal.employee_name,
+        dates,
+        ranges,
+        shift_type: shiftTypeForRole(editModal.role),
+        is_published: true,
+        notes: editModal.notes,
+        shift_flag: editModal.flag
+      })
+    })
+    if (!res.ok) {
+      let detail = 'No se pudo guardar el turno.'
+      try { const j = await res.json(); if (typeof j.detail === 'string') detail = j.detail } catch (_) {}
+      throw new Error(detail)
+    }
+  }
+
+  // Guardar Turno (todas las franjas del día)
   const handleSaveShiftModal = async (e) => {
     e.preventDefault()
     if (!editModal) return
+    const err = validateRanges(editModal.ranges)
+    if (err) { setShiftError(err); return }
     setSavingShift(true)
-
-    // Convertir días seleccionados en fechas de la semana actual
-    const daysAbbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    const mondayObj = new Date((weekData?.week_monday || currentDate) + "T00:00:00")
-    
-    const targetDates = (editModal.apply_to_days || []).map(dayStr => {
-      const offset = daysAbbr.indexOf(dayStr)
-      if (offset >= 0) {
-        const d = new Date(mondayObj)
-        d.setDate(d.getDate() + offset)
-        return d.toISOString().split('T')[0]
-      }
-      return editModal.date
-    })
-
-    const payload = {
-      id: editModal.id,
-      psychologist_name: editModal.employee_name,
-      shift_date: editModal.date,
-      start_time: editModal.start_time,
-      end_time: editModal.end_time,
-      shift_type: editModal.role.toLowerCase().includes('matchmaker') ? 'MATCHMAKING' : (editModal.role.toLowerCase().includes('interviewer') ? 'ENTREVISTAS' : 'CS'),
-      is_published: true,
-      notes: editModal.notes,
-      apply_to_dates: targetDates,
-      shift_flag: editModal.flag
-    }
-
+    setShiftError('')
     try {
-      const res = await fetch(`${API}/api/v1/shifts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      })
-      if (res.ok) {
-        setNotification('Turno actualizado exitosamente en 7shifts.')
-        setEditModal(null)
-        fetchWeek()
-        setTimeout(() => setNotification(''), 4000)
-      }
-    } catch (err) {
-      alert('Error al guardar el turno')
+      await saveDayRequest(editModal.ranges, applyDatesFromModal())
+      setNotification(editModal.ranges.length > 1 ? 'Turno partido guardado.' : 'Turno guardado.')
+      setEditModal(null)
+      fetchWeek()
+      fetchAvailability()
+      setTimeout(() => setNotification(''), 4000)
+    } catch (error) {
+      setShiftError(error.message || 'Error al guardar el turno')
     } finally {
       setSavingShift(false)
     }
   }
 
-  // Eliminar Turno
+  // Borrar el día (todas las franjas) de esa persona
   const handleDeleteShiftModal = async () => {
-    if (!editModal?.id) {
+    if (!editModal?.has_existing) {
       setEditModal(null)
       return
     }
-    if (!window.confirm(`¿Estás seguro de eliminar este turno de ${editModal.employee_name}?`)) {
+    if (!window.confirm(`¿Borrar todos los turnos de ${editModal.employee_name} el ${editModal.date}?`)) {
       return
     }
     setDeletingShift(true)
+    setShiftError('')
     try {
-      const res = await fetch(`${API}/api/v1/shifts/${editModal.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setNotification('Turno eliminado exitosamente.')
-        setEditModal(null)
-        fetchWeek()
-        setTimeout(() => setNotification(''), 4000)
-      }
-    } catch (err) {
-      alert('Error al eliminar turno')
+      await saveDayRequest([], [editModal.date])
+      setNotification('Turnos del día eliminados.')
+      setEditModal(null)
+      fetchWeek()
+      setTimeout(() => setNotification(''), 4000)
+    } catch (error) {
+      setShiftError(error.message || 'Error al eliminar el turno')
     } finally {
       setDeletingShift(false)
+    }
+  }
+
+  // Copiar la semana anterior a la semana que se está viendo (no toca días que ya tienen turnos)
+  const handleCopyPreviousWeek = async () => {
+    if (!weekData?.week_monday) return
+    if (!window.confirm('¿Copiar los turnos de la semana anterior a esta semana? Los días que ya tienen turnos no se modifican.')) return
+    const prev = new Date(weekData.week_monday + 'T00:00:00')
+    prev.setDate(prev.getDate() - 7)
+    setCopying(true)
+    try {
+      const res = await fetch(`${API}/api/v1/shifts/copy-week`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ from_monday: fmtDateLocal(prev), to_monday: weekData.week_monday })
+      })
+      const j = await res.json().catch(() => ({}))
+      setNotification(res.ok ? (j.message || 'Semana copiada.') : (j.detail || 'No se pudo copiar la semana.'))
+      fetchWeek()
+      setTimeout(() => setNotification(''), 5000)
+    } catch (err) {
+      setNotification('No se pudo copiar la semana.')
+    } finally {
+      setCopying(false)
+    }
+  }
+
+  // ---------- Disponibilidad semanal ----------
+  const openAvailModal = (employeeName) => {
+    const row = (glanceData?.glance_matrix || []).find(e => e.name === employeeName)
+    const days = {}
+    AVAIL_DAYS.forEach(({ key }) => {
+      const cell = row?.days?.[key]
+      days[key] = {
+        mode: cell?.mode || 'UNSET',
+        ranges: (cell?.ranges || []).map(r => ({ start_time: r.start_time, end_time: r.end_time }))
+      }
+    })
+    setAvailModal({ employee_name: employeeName || (glanceData?.roster || [])[0] || ALL_STAFF_MEMBERS[0], days })
+    setAvailError('')
+  }
+
+  const changeAvailEmployee = (name) => {
+    openAvailModal(name)
+  }
+
+  const setAvailMode = (key, mode) => {
+    const cur = availModal.days[key]
+    const ranges = mode === 'RANGES' && cur.ranges.length === 0 ? [{ start_time: '09:00', end_time: '12:00' }] : cur.ranges
+    setAvailModal({ ...availModal, days: { ...availModal.days, [key]: { mode, ranges } } })
+    setAvailError('')
+  }
+
+  const setAvailRange = (key, idx, field, value) => {
+    const cur = availModal.days[key]
+    const ranges = cur.ranges.map((r, i) => i === idx ? { ...r, [field]: value } : r)
+    setAvailModal({ ...availModal, days: { ...availModal.days, [key]: { ...cur, ranges } } })
+    setAvailError('')
+  }
+
+  const addAvailRange = (key) => {
+    const cur = availModal.days[key]
+    if (cur.ranges.length >= 6) return
+    const last = cur.ranges[cur.ranges.length - 1]
+    const startDec = last?.end_time ? Math.min(parseTimeToDecimal(last.end_time) + 1, 22) : 14
+    const endDec = Math.min(startDec + 2, 23)
+    const toHHMM = (dec) => `${pad2(Math.floor(dec))}:${pad2(Math.round((dec - Math.floor(dec)) * 60))}`
+    setAvailModal({ ...availModal, days: { ...availModal.days, [key]: { ...cur, ranges: [...cur.ranges, { start_time: toHHMM(startDec), end_time: toHHMM(endDec) }] } } })
+    setAvailError('')
+  }
+
+  const removeAvailRange = (key, idx) => {
+    const cur = availModal.days[key]
+    const ranges = cur.ranges.filter((_, i) => i !== idx)
+    setAvailModal({ ...availModal, days: { ...availModal.days, [key]: { mode: ranges.length ? 'RANGES' : 'UNSET', ranges } } })
+    setAvailError('')
+  }
+
+  const handleSaveAvailability = async (e) => {
+    e.preventDefault()
+    if (!availModal) return
+    for (const { key, label } of AVAIL_DAYS) {
+      const d = availModal.days[key]
+      if (d.mode === 'RANGES') {
+        const err = validateRanges(d.ranges)
+        if (err) { setAvailError(`${label}: ${err}`); return }
+      }
+    }
+    setAvailSaving(true)
+    setAvailError('')
+    try {
+      const days = {}
+      AVAIL_DAYS.forEach(({ key }) => {
+        const d = availModal.days[key]
+        days[key] = { mode: d.mode, ranges: d.mode === 'RANGES' ? d.ranges : [] }
+      })
+      const res = await fetch(`${API}/api/v1/shifts/availability`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ employee_name: availModal.employee_name, days })
+      })
+      if (!res.ok) {
+        let detail = 'No se pudo guardar la disponibilidad.'
+        try { const j = await res.json(); if (typeof j.detail === 'string') detail = j.detail } catch (_) {}
+        throw new Error(detail)
+      }
+      setNotification(`Disponibilidad de ${availModal.employee_name} guardada.`)
+      setAvailModal(null)
+      fetchAvailability()
+      fetchWeek()
+      setTimeout(() => setNotification(''), 4000)
+    } catch (error) {
+      setAvailError(error.message || 'Error al guardar la disponibilidad')
+    } finally {
+      setAvailSaving(false)
     }
   }
 
@@ -338,9 +543,9 @@ export default function CalendarioTurnos7shifts() {
   })
 
   // Duración calculada para el modal
-  const modalDuration = editModal 
-    ? calculateShiftDurationHours(editModal.start_time, editModal.end_time)
-    : 7
+  const modalDuration = editModal
+    ? Math.round(editModal.ranges.reduce((acc, r) => acc + rangeHours(r.start_time, r.end_time), 0) * 10) / 10
+    : 0
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh', color: '#1a1f2c', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
@@ -491,6 +696,30 @@ export default function CalendarioTurnos7shifts() {
           </button>
 
           {activeTab === 'schedule' && (
+            <button
+              onClick={handleCopyPreviousWeek}
+              disabled={copying}
+              title="Copia los turnos de la semana anterior a esta semana (no toca días que ya tienen turnos)"
+              style={{
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#334155',
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              {copying ? <RefreshCw size={13} className="animate-spin" /> : <Copy size={13} />}
+              Copiar semana anterior
+            </button>
+          )}
+
+          {activeTab === 'schedule' && (
             <button 
               onClick={handlePublishWeek}
               disabled={publishing}
@@ -520,6 +749,11 @@ export default function CalendarioTurnos7shifts() {
           ========================================================================= */}
       {activeTab === 'schedule' && (
         <div>
+          {loadError && (
+            <div role="alert" style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#b91c1c', fontSize: 13, fontWeight: 600, padding: '10px 20px' }}>
+              {loadError}
+            </div>
+          )}
           {/* Sub-barra de Controles y Filtros 7shifts */}
           <div style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             {/* Lado Izquierdo: Dropdowns */}
@@ -549,8 +783,11 @@ export default function CalendarioTurnos7shifts() {
                   <ChevronLeft size={14} />
                 </button>
                 <span style={{ fontSize: 13, fontWeight: 700, padding: '0 8px', color: '#1e293b' }}>
-                  {weekData?.week_label || 'Mon Sep 7 - Sun Sep 13, 2026'}
+                  {weekData?.week_label || ''}
                 </span>
+                <button onClick={() => setCurrentDate(todayLocal())} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '6px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#334155', marginRight: 4 }}>
+                  Hoy
+                </button>
                 <button onClick={handleNextWeek} style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '6px 8px', borderRadius: 6, cursor: 'pointer' }}>
                   <ChevronRight size={14} />
                 </button>
@@ -698,7 +935,7 @@ export default function CalendarioTurnos7shifts() {
                                 <User size={14} />
                               </div>
                               <span 
-                                onClick={() => openEditShiftModal(ALL_STAFF_MEMBERS[0], currentDate, null, role.role_name)}
+                                onClick={() => openEditShiftModal(ALL_STAFF_MEMBERS[0], currentDate, [], role.role_name)}
                                 style={{ fontSize: 11, color: '#2563eb', cursor: 'pointer', fontWeight: 600 }}
                               >
                                 + Add employee
@@ -749,10 +986,8 @@ export default function CalendarioTurnos7shifts() {
                               return (
                                 <td 
                                   key={col.date}
-                                  onClick={() => {
-                                    const primaryShift = shifts[0] || null
-                                    openEditShiftModal(emp.name, col.date, primaryShift, role.role_name)
-                                  }}
+                                  onClick={() => openEditShiftModal(emp.name, col.date, shifts, role.role_name)}
+                                  title={hasShifts ? (shifts.length > 1 ? 'Turno partido: clic para editar las franjas' : 'Clic para editar') : 'Clic para agregar turno'}
                                   style={{
                                     borderRight: '1px solid #e2e8f0',
                                     padding: '4px 6px',
@@ -826,6 +1061,9 @@ export default function CalendarioTurnos7shifts() {
                                             </span>
                                           </div>
 
+                                          {sh.outside_availability && (
+                                            <span title="Este turno queda fuera de la disponibilidad declarada de esta persona" style={{ color: '#d97706', fontSize: 11, marginLeft: 2 }}>⚠</span>
+                                          )}
                                           {sh.is_lightning && (
                                             <span style={{ color: '#e02424', fontSize: 11, marginLeft: 2 }}>⚡</span>
                                           )}
@@ -1052,13 +1290,26 @@ export default function CalendarioTurnos7shifts() {
                       </tr>
                     </thead>
                     <tbody>
+                      {timeOffRequests.length === 0 && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: '28px 20px', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
+                            No hay permisos registrados todavía.
+                          </td>
+                        </tr>
+                      )}
                       {timeOffRequests
                         .filter(r => timeOffStatusFilter === 'All' || r.status === timeOffStatusFilter)
                         .map((req) => (
                           <tr key={req.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <td style={{ padding: '14px 20px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <img src={req.avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                                {req.avatar ? (
+                                  <img src={req.avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                                ) : (
+                                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                                    <User size={16} />
+                                  </div>
+                                )}
                                 <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>
                                   {req.employee_name}
                                 </span>
@@ -1236,22 +1487,6 @@ export default function CalendarioTurnos7shifts() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <button 
-                onClick={() => setAvailSubTab('requests')}
-                style={{
-                  border: 'none',
-                  background: availSubTab === 'requests' ? '#f3f2ef' : 'transparent',
-                  color: availSubTab === 'requests' ? '#1e293b' : '#64748b',
-                  fontWeight: availSubTab === 'requests' ? 700 : 500,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  textAlign: 'left',
-                  fontSize: 13,
-                  cursor: 'pointer'
-                }}
-              >
-                Requests
-              </button>
-              <button 
                 onClick={() => setAvailSubTab('glance')}
                 style={{
                   border: 'none',
@@ -1268,11 +1503,12 @@ export default function CalendarioTurnos7shifts() {
                 Glance View
               </button>
               <button 
+                onClick={() => setAvailSubTab('requests')}
                 style={{
                   border: 'none',
-                  background: 'transparent',
-                  color: '#64748b',
-                  fontWeight: 500,
+                  background: availSubTab === 'requests' ? '#f3f2ef' : 'transparent',
+                  color: availSubTab === 'requests' ? '#1e293b' : '#64748b',
+                  fontWeight: availSubTab === 'requests' ? 700 : 500,
                   padding: '10px 14px',
                   borderRadius: 8,
                   textAlign: 'left',
@@ -1280,7 +1516,7 @@ export default function CalendarioTurnos7shifts() {
                   cursor: 'pointer'
                 }}
               >
-                Reasons
+                Registro
               </button>
             </div>
           </div>
@@ -1290,10 +1526,11 @@ export default function CalendarioTurnos7shifts() {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
                   <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', margin: 0 }}>
-                    Availability requests
+                    Disponibilidad registrada
                   </h1>
 
                   <button 
+                    onClick={() => openAvailModal(null)}
                     style={{
                       background: '#2563eb',
                       color: '#ffffff',
@@ -1309,43 +1546,25 @@ export default function CalendarioTurnos7shifts() {
                   </button>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <MapPin size={13} style={{ color: '#64748b' }} />
-                    <span>All locations</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <User size={13} style={{ color: '#64748b' }} />
-                    <span>All Employees</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <span style={{ width: 12, height: 12, borderRadius: '50%', border: '1px solid #64748b', display: 'inline-block' }} />
-                    <span>All Types</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <span>Select...</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-                </div>
-
                 <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
                         <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Employee</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Effective dates ↕</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Date submitted ↕</th>
-                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Status ↕</th>
+                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Vigencia</th>
+                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Última actualización</th>
+                        <th style={{ textAlign: 'left', padding: '12px 20px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>Estado</th>
                         <th style={{ width: 60 }} />
                       </tr>
                     </thead>
                     <tbody>
+                      {availRequests.length === 0 && (
+                        <tr>
+                          <td colSpan={5} style={{ padding: '28px 20px', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
+                            Aún nadie tiene disponibilidad registrada. Usa “+ Add availability” o haz clic en una celda de Glance View.
+                          </td>
+                        </tr>
+                      )}
                       {availRequests.map((req) => (
                         <tr key={req.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '14px 20px' }}>
@@ -1355,7 +1574,7 @@ export default function CalendarioTurnos7shifts() {
                               </div>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{req.employee_name}</div>
-                                <div style={{ fontSize: 11, color: '#94a3b8' }}>{req.type_label}</div>
+                                <div style={{ fontSize: 11, color: '#64748b' }}>{req.type_label}</div>
                               </div>
                             </div>
                           </td>
@@ -1370,11 +1589,15 @@ export default function CalendarioTurnos7shifts() {
                               {req.status}
                             </span>
                           </td>
-                          <td style={{ padding: '14px 20px', textAlign: 'right', color: '#94a3b8' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                              <Edit2 size={15} style={{ cursor: 'pointer' }} />
-                              <MoreVertical size={16} style={{ cursor: 'pointer' }} />
-                            </div>
+                          <td style={{ padding: '14px 20px', textAlign: 'right', color: '#64748b' }}>
+                            <button
+                              onClick={() => openAvailModal(req.employee_name)}
+                              title="Editar disponibilidad"
+                              aria-label={`Editar disponibilidad de ${req.employee_name}`}
+                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}
+                            >
+                              <Edit2 size={15} />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1386,55 +1609,33 @@ export default function CalendarioTurnos7shifts() {
 
             {availSubTab === 'glance' && (
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 12, flexWrap: 'wrap' }}>
                   <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1e293b', margin: 0 }}>
                     Glance View
                   </h1>
 
                   <button 
+                    onClick={() => openAvailModal(null)}
                     style={{
-                      background: '#ffffff',
-                      border: '1px solid #cbd5e1',
-                      color: '#334155',
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      border: 'none',
                       borderRadius: 6,
                       padding: '8px 16px',
                       fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6
+                      fontWeight: 700,
+                      cursor: 'pointer'
                     }}
                   >
-                    <Download size={14} /> Print / Download
+                    + Add availability
                   </button>
                 </div>
+                <p style={{ margin: '0 0 20px', fontSize: 13, color: '#475569' }}>
+                  Disponibilidad semanal recurrente. Cada día puede tener varias franjas (ej. 9:00–12:00 y 6:00–8:00 pm). Haz clic en una celda para editar a esa persona.
+                </p>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <CalendarIcon size={14} style={{ color: '#64748b' }} />
-                    <input 
-                      type="text" 
-                      defaultValue="09/07/2026"
-                      style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, width: 90 }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <MapPin size={13} style={{ color: '#64748b' }} />
-                    <span>All locations</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                    <span style={{ width: 12, height: 12, borderRadius: '50%', border: '1px solid #64748b', display: 'inline-block' }} />
-                    <span>All Types</span>
-                    <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-                  </div>
-                </div>
-
-                <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
                         <th style={{ width: 220, textAlign: 'left', padding: '12px 18px', fontSize: 12, fontWeight: 700, color: '#64748b' }}>
@@ -1452,51 +1653,56 @@ export default function CalendarioTurnos7shifts() {
                         <tr key={emp.name} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '12px 18px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <img src={emp.avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                              {emp.avatar ? (
+                                <img src={emp.avatar} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                              ) : (
+                                <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                                  <User size={16} />
+                                </div>
+                              )}
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{emp.name}</div>
-                                <div style={{ fontSize: 11, color: '#94a3b8' }}>{emp.type}</div>
+                                <div style={{ fontSize: 11, color: '#64748b' }}>{emp.type}</div>
                               </div>
                             </div>
                           </td>
 
-                          {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((dKey) => {
-                            const dInfo = emp.days[dKey] || { state: 'available', text: 'Available' }
-                            let cellBg = '#d4f3e9'
-                            let cellText = '#065f46'
-                            let mainTitle = 'Available'
-                            let subHours = null
+                          {AVAIL_DAYS.map(({ key: dKey }) => {
+                            const dInfo = emp.days[dKey] || { state: 'undefined', text: 'Sin definir', ranges: [] }
+                            let cellBg = '#f1f5f9'
+                            let cellText = '#475569'
+                            let mainTitle = 'Sin definir'
 
-                            if (dInfo.state === 'hours') {
-                              cellBg = '#fff4e6'
-                              cellText = '#9a3412'
-                              mainTitle = 'Available'
-                              subHours = dInfo.text
+                            if (dInfo.state === 'available') {
+                              cellBg = '#d4f3e9'; cellText = '#065f46'; mainTitle = 'Todo el día'
+                            } else if (dInfo.state === 'hours') {
+                              cellBg = '#fff4e6'; cellText = '#9a3412'; mainTitle = dInfo.ranges.length > 1 ? 'Turno partido' : 'Franja'
                             } else if (dInfo.state === 'unavailable') {
-                              cellBg = '#fde7e7'
-                              cellText = '#991b1b'
-                              mainTitle = 'Not available'
+                              cellBg = '#fde7e7'; cellText = '#991b1b'; mainTitle = 'No disponible'
                             }
 
                             return (
                               <td 
                                 key={dKey}
+                                onClick={() => openAvailModal(emp.name)}
+                                title={`Editar disponibilidad de ${emp.name}`}
                                 style={{
                                   padding: '8px',
                                   borderLeft: '1px solid #e2e8f0',
                                   textAlign: 'center',
                                   verticalAlign: 'middle',
-                                  background: cellBg
+                                  background: cellBg,
+                                  cursor: 'pointer'
                                 }}
                               >
                                 <div style={{ fontSize: 11, fontWeight: 700, color: cellText }}>
                                   {mainTitle}
                                 </div>
-                                {subHours && (
-                                  <div style={{ fontSize: 9, color: cellText, marginTop: 2, fontWeight: 600 }}>
-                                    {subHours}
+                                {dInfo.state === 'hours' && dInfo.ranges.map((r, i) => (
+                                  <div key={i} style={{ fontSize: 10, color: cellText, marginTop: 2, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                    {r.label}
                                   </div>
-                                )}
+                                ))}
                               </td>
                             )
                           })}
@@ -1547,7 +1753,7 @@ export default function CalendarioTurnos7shifts() {
             {/* 1. Header fijo */}
             <div style={{ padding: '14px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>
-                {editModal.id ? 'Edit shift' : 'Add shift'}
+                {editModal.has_existing ? 'Edit shift' : 'Add shift'}
               </h2>
               <button 
                 type="button"
@@ -1667,50 +1873,72 @@ export default function CalendarioTurnos7shifts() {
                   </select>
                 </div>
 
-                {/* 3. Fila de Horarios */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-                  <div 
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      border: '1px solid #cbd5e1',
-                      borderRadius: 8,
-                      padding: '6px 10px',
-                      background: '#ffffff',
-                      flex: '1 1 auto'
-                    }}
-                  >
-                    <Clock size={15} style={{ color: '#64748b' }} />
-                    
-                    {/* Start time */}
-                    <input 
-                      type="text" 
-                      value={editModal.start_time}
-                      onChange={(e) => setEditModal({ ...editModal, start_time: e.target.value })}
-                      style={{ width: 75, border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: '#1e293b', background: 'transparent' }}
-                      placeholder="7:00 AM"
-                    />
+                {/* 3. Franjas del día (turno partido = varias franjas) */}
+                <div style={{ marginBottom: 6 }}>
+                  {editModal.ranges.map((rg, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          border: '1px solid #cbd5e1',
+                          borderRadius: 8,
+                          padding: '6px 10px',
+                          background: '#ffffff',
+                          flex: '1 1 auto'
+                        }}
+                      >
+                        <Clock size={15} style={{ color: '#64748b' }} />
+                        <input
+                          type="time"
+                          value={rg.start_time}
+                          onChange={(e) => updateRange(idx, 'start_time', e.target.value)}
+                          aria-label={`Inicio franja ${idx + 1}`}
+                          style={{ width: 96, border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: '#1e293b', background: 'transparent' }}
+                        />
+                        <span style={{ color: '#94a3b8' }}>→</span>
+                        <input
+                          type="time"
+                          value={rg.end_time}
+                          onChange={(e) => updateRange(idx, 'end_time', e.target.value)}
+                          aria-label={`Fin franja ${idx + 1}`}
+                          style={{ width: 96, border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: '#1e293b', background: 'transparent' }}
+                        />
+                        <span style={{ color: '#64748b', fontSize: 12, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                          ({rangeHours(rg.start_time, rg.end_time)} hrs)
+                        </span>
+                      </div>
+                      {editModal.ranges.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeRange(idx)}
+                          title="Quitar esta franja"
+                          aria-label={`Quitar franja ${idx + 1}`}
+                          style={{ border: '1px solid #fecaca', background: '#fff5f5', color: '#dc2626', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
 
-                    <span style={{ color: '#94a3b8' }}>→</span>
-
-                    {/* End time */}
-                    <input 
-                      type="text" 
-                      value={editModal.end_time}
-                      onChange={(e) => setEditModal({ ...editModal, end_time: e.target.value })}
-                      style={{ width: 75, border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: '#1e293b', background: 'transparent' }}
-                      placeholder="2:00 PM"
-                    />
-
-                    {/* Duración calculada */}
-                    <span style={{ color: '#64748b', fontSize: 12, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
-                      ({modalDuration} hrs)
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={addRange}
+                      disabled={editModal.ranges.length >= 6}
+                      style={{ border: 'none', background: 'transparent', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <Plus size={13} /> Agregar otra franja (turno partido)
+                    </button>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>
+                      Total del día: {modalDuration} hrs{editModal.ranges.length > 1 ? ` · ${editModal.ranges.length} franjas` : ''}
                     </span>
                   </div>
 
                   {/* Checkboxes Close & BD */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
                       <input 
                         type="checkbox" 
@@ -1732,13 +1960,19 @@ export default function CalendarioTurnos7shifts() {
                   </div>
                 </div>
 
+                {shiftError && (
+                  <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 600, padding: '8px 10px', borderRadius: 8, marginBottom: 8 }}>
+                    {shiftError}
+                  </div>
+                )}
+
                 {/* Enlace rápido "or use common shift times" */}
                 <div style={{ marginBottom: 10 }}>
                   <span 
                     onClick={() => setShowCommonTimes(!showCommonTimes)}
                     style={{ color: '#2563eb', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontWeight: 500 }}
                   >
-                    or use common shift times
+                    or use common shift times (se aplica a la última franja)
                   </span>
 
                   {showCommonTimes && (
@@ -1748,11 +1982,12 @@ export default function CalendarioTurnos7shifts() {
                           key={preset.label}
                           type="button"
                           onClick={() => {
+                            const last = editModal.ranges.length - 1
                             setEditModal({
                               ...editModal,
-                              start_time: preset.start,
-                              end_time: preset.end
+                              ranges: editModal.ranges.map((r, i) => i === last ? { start_time: to24(preset.start), end_time: to24(preset.end) } : r)
                             })
+                            setShiftError('')
                             setShowCommonTimes(false)
                           }}
                           style={{
@@ -1884,7 +2119,7 @@ export default function CalendarioTurnos7shifts() {
                 }}
               >
                 <div>
-                  {editModal.id && (
+                  {editModal.has_existing && (
                     <button 
                       type="button"
                       onClick={handleDeleteShiftModal}
@@ -1899,7 +2134,7 @@ export default function CalendarioTurnos7shifts() {
                         textDecoration: 'underline'
                       }}
                     >
-                      {deletingShift ? 'Deleting...' : 'Delete'}
+                      {deletingShift ? 'Deleting...' : 'Delete day'}
                     </button>
                   )}
                 </div>
@@ -1940,6 +2175,106 @@ export default function CalendarioTurnos7shifts() {
                     {savingShift ? 'Saving...' : 'Save'}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+      {/* =========================================================================
+          MODAL: DISPONIBILIDAD SEMANAL (VARIAS FRANJAS POR DÍA)
+          ========================================================================= */}
+      {availModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16, overflowY: 'auto' }}
+          onClick={() => setAvailModal(null)}
+        >
+          <div
+            style={{ background: '#ffffff', borderRadius: 12, width: 640, maxWidth: '100%', maxHeight: 'calc(100vh - 32px)', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 30px -5px rgba(0, 0, 0, 0.35)', overflow: 'hidden', margin: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '14px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>Disponibilidad semanal</h2>
+              <button type="button" onClick={() => setAvailModal(null)} aria-label="Cerrar" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 4, display: 'flex' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAvailability} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Persona</label>
+                <select
+                  value={availModal.employee_name}
+                  onChange={(e) => changeAvailEmployee(e.target.value)}
+                  style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff', fontWeight: 500, marginBottom: 14 }}
+                >
+                  {(glanceData?.roster || ALL_STAFF_MEMBERS).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+
+                <div style={{ fontSize: 12, color: '#475569', marginBottom: 10 }}>
+                  Para cada día elige: sin definir, todo el día, no disponible u “Horas específicas” (puedes agregar varias franjas, por ejemplo 9:00–12:00 y 6:00–8:00 pm).
+                </div>
+
+                {AVAIL_DAYS.map(({ key, label }) => {
+                  const d = availModal.days[key]
+                  return (
+                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: 10, alignItems: 'start', padding: '10px 0', borderTop: '1px solid #f1f5f9' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', paddingTop: 8 }}>{label}</div>
+                      <div>
+                        <select
+                          value={d.mode}
+                          onChange={(e) => setAvailMode(key, e.target.value)}
+                          aria-label={`Disponibilidad del ${label}`}
+                          style={{ height: 34, padding: '0 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff', marginBottom: d.mode === 'RANGES' ? 8 : 0 }}
+                        >
+                          <option value="UNSET">Sin definir</option>
+                          <option value="ALL_DAY">Todo el día</option>
+                          <option value="UNAVAILABLE">No disponible</option>
+                          <option value="RANGES">Horas específicas</option>
+                        </select>
+
+                        {d.mode === 'RANGES' && (
+                          <div>
+                            {d.ranges.map((rg, idx) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #cbd5e1', borderRadius: 8, padding: '4px 10px', background: '#ffffff' }}>
+                                  <Clock size={14} style={{ color: '#64748b' }} />
+                                  <input type="time" value={rg.start_time} onChange={(e) => setAvailRange(key, idx, 'start_time', e.target.value)} aria-label={`Inicio franja ${idx + 1} ${label}`} style={{ width: 96, border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: '#1e293b', background: 'transparent' }} />
+                                  <span style={{ color: '#94a3b8' }}>→</span>
+                                  <input type="time" value={rg.end_time} onChange={(e) => setAvailRange(key, idx, 'end_time', e.target.value)} aria-label={`Fin franja ${idx + 1} ${label}`} style={{ width: 96, border: 'none', outline: 'none', fontSize: 13, fontWeight: 600, color: '#1e293b', background: 'transparent' }} />
+                                </div>
+                                <button type="button" onClick={() => removeAvailRange(key, idx)} title="Quitar franja" aria-label={`Quitar franja ${idx + 1} ${label}`} style={{ border: '1px solid #fecaca', background: '#fff5f5', color: '#dc2626', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <X size={13} />
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button" onClick={() => addAvailRange(key)} disabled={d.ranges.length >= 6} style={{ border: 'none', background: 'transparent', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Plus size={13} /> Agregar otra franja
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {availError && (
+                  <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12, fontWeight: 600, padding: '8px 10px', borderRadius: 8, marginTop: 10 }}>
+                    {availError}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #e2e8f0', padding: '12px 20px', background: '#ffffff', flexShrink: 0 }}>
+                <button type="button" onClick={() => setAvailModal(null)} style={{ padding: '7px 16px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#ffffff', color: '#334155', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={availSaving} style={{ padding: '7px 22px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#ffffff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  {availSaving ? 'Saving...' : 'Save'}
+                </button>
               </div>
             </form>
           </div>
