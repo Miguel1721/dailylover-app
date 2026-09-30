@@ -26,6 +26,24 @@ PSYCHOLOGISTS_METADATA = {
     "ISA": {"name": "Isabella V.", "slug": "isa", "role": "Matchmaker", "city": "Barranquilla", "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150"}
 }
 
+
+DEFAULT_AVATAR = "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150"
+
+
+async def person_meta(db: AsyncSession, p_name: str) -> dict:
+    """Ficha pública de la persona del turno: claves cortas heredadas, o el equipo real (staff_team)."""
+    key = (p_name or "").upper().strip()
+    if key in PSYCHOLOGISTS_METADATA:
+        return PSYCHOLOGISTS_METADATA[key]
+    row = (await db.execute(
+        text("SELECT name, slug, role, avatar FROM staff_team WHERE UPPER(name) = :n LIMIT 1"), {"n": key}
+    )).fetchone()
+    if row:
+        role = "Matchmaker" if (row[2] or "").lower() in ("interviewer", "matchmaker") else (row[2] or "Equipo Daily Lover")
+        return {"name": row[0], "slug": row[1], "role": role, "city": "Bogotá", "avatar": row[3] or DEFAULT_AVATAR}
+    nice = (p_name or "Equipo Daily Lover").strip().title()
+    return {"name": nice, "slug": re.sub(r"[^a-z0-9]+", "-", nice.lower()).strip("-"), "role": "Equipo Daily Lover", "city": "Bogotá", "avatar": DEFAULT_AVATAR}
+
 # ==============================================================================
 # 1. MÓDULO 7SHIFTS: MATRIZ SEMANAL DE TURNOS & DISPONIBILIDAD
 # ==============================================================================
@@ -1117,9 +1135,12 @@ async def get_psychologist_availability(
     """
     p_name = next((k for k, v in PSYCHOLOGISTS_METADATA.items() if v["slug"].lower() == slug.lower()), None)
     if not p_name:
+        trow = (await db.execute(text("SELECT UPPER(name) FROM staff_team WHERE LOWER(slug) = :s LIMIT 1"), {"s": slug.lower()})).fetchone()
+        p_name = trow[0] if trow else None
+    if not p_name:
         raise HTTPException(status_code=404, detail=f"Psicóloga con slug '{slug}' no encontrada.")
 
-    meta = PSYCHOLOGISTS_METADATA[p_name]
+    meta = await person_meta(db, p_name)
     today = date.today()
     max_date = today + timedelta(days=14)
 
@@ -1207,7 +1228,7 @@ async def reserve_booking_slot(
     """
     # Auto-asignación de psicóloga si no se especifica o viene 'AUTO'
     p_name = (payload.psychologist_name or "").upper().strip()
-    if not p_name or p_name == "AUTO" or p_name not in PSYCHOLOGISTS_METADATA:
+    if not p_name or p_name == "AUTO":
         t_start = datetime.strptime(payload.time_slot, "%H:%M").time()
         t_end = (datetime.combine(payload.date, t_start) + timedelta(minutes=45)).time()
         
@@ -1234,7 +1255,7 @@ async def reserve_booking_slot(
         if row:
             p_name = row[0].upper().strip()
         else:
-            p_name = "ANA"
+            raise HTTPException(status_code=409, detail="No hay disponibilidad en ese horario. Por favor selecciona otro.")
 
     # Verificar si el slot específico de esa psicóloga sigue libre
     check = await db.execute(text("""
@@ -1308,7 +1329,7 @@ async def reserve_booking_slot(
     appt_id = ins_res.scalar()
     await db.commit()
 
-    meta = PSYCHOLOGISTS_METADATA[p_name]
+    meta = await person_meta(db, p_name)
     videocall_url = f"https://daily-lover.agentesia.cloud/admin/matchmaking/sala/{token}"
 
     # Contenido de archivo .ICS (Google / Apple Calendar)
