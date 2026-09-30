@@ -9,7 +9,8 @@ Reemplaza a execute_merge_luis_felipe_correa.py, que traía los ids fijos (prima
 Qué hace (mismo patrón ya probado en brief23/26):
   · Transaccional, todo o nada. NUNCA borra filas: redirige user_id / nombres y marca cada duplicado con
     merged_into_id / merged_at.
-  · Redirige historical_matches, operational_matches, person_history (por nombre) y client_notes (si existe).
+  · Redirige historical_matches, operational_matches (persona A y persona B), person_history y scheduled_dates (por nombre),
+    client_notes y, con un barrido automático, toda llave foránea hacia users(id) (stripe_payments, priority_client_tracking...).
   · Completa profiles del primary con COALESCE (jamás sobrescribe un dato que el primary ya tenía).
 
 Uso (desde el contenedor/servidor con POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_HOST):
@@ -46,7 +47,7 @@ async def show_person(conn, uid: int, label: str):
     r = await conn.fetchrow("""
         SELECT u.id, u.name, u.crm_id, u.client_code, u.phone, u.email, u.created_at, u.merged_into_id,
                p.plan_tier, p.responsable, p.city, p.age,
-               (SELECT COUNT(*) FROM operational_matches WHERE user_id_a = u.id) AS om,
+               (SELECT COUNT(*) FROM operational_matches WHERE user_id_a = u.id OR user_id_b = u.id) AS om,
                (SELECT COUNT(*) FROM historical_matches WHERE user_id_a = u.id OR user_id_b = u.id) AS hm
         FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id = $1
     """, uid)
@@ -106,6 +107,8 @@ async def main():
                     ("historical_matches (solo nombre B)", "UPDATE historical_matches SET person_b = $1 WHERE user_id_b IS NULL AND LOWER(TRIM(person_b)) = LOWER(TRIM($2))", (canonical, s["name"])),
                     ("operational_matches (por user_id_a)", "UPDATE operational_matches SET user_id_a = $1, person_a_crm_id = $3, person_a = $4 WHERE user_id_a = $2", (a.primary, sid, primary["crm_id"], canonical)),
                     ("operational_matches (solo nombre)", "UPDATE operational_matches SET person_a = $1, person_a_crm_id = COALESCE(person_a_crm_id, $3) WHERE user_id_a IS NULL AND LOWER(TRIM(person_a)) = LOWER(TRIM($2))", (canonical, s["name"], primary["crm_id"])),
+                    ("operational_matches (persona B por user_id_b)", "UPDATE operational_matches SET user_id_b = $1, person_b = $3, person_b_crm_id = $4 WHERE user_id_b = $2", (a.primary, sid, canonical, primary["crm_id"])),
+                    ("operational_matches (persona B solo nombre)", "UPDATE operational_matches SET person_b = $1, person_b_crm_id = COALESCE(NULLIF(person_b_crm_id, ''), $3) WHERE user_id_b IS NULL AND LOWER(TRIM(person_b)) = LOWER(TRIM($2))", (canonical, s["name"], primary["crm_id"])),
                     ("person_history (nombre)", "UPDATE person_history SET person_name = $1 WHERE LOWER(TRIM(person_name)) = LOWER(TRIM($2))", (canonical, s["name"])),
                 ]
                 if has_notes:
@@ -113,6 +116,35 @@ async def main():
                 for label, sql, args in steps:
                     res = await conn.execute(sql, *args)
                     print(f"     {label:<38} {res}")
+                # Barrido genérico: toda columna con llave foránea hacia users(id) (pagos, seguimiento prioritario, etc.),
+                # salvo users.merged_into_id y profiles (que se completa aparte con COALESCE).
+                fk_cols = await conn.fetch("""
+                    SELECT c.conrelid::regclass::text AS tbl, a.attname AS col
+                    FROM pg_constraint c
+                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+                    WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass AND array_length(c.conkey, 1) = 1
+                    ORDER BY 1, 2
+                """)
+                handled = {("operational_matches", "user_id_a"), ("operational_matches", "user_id_b"),
+                           ("historical_matches", "user_id_a"), ("historical_matches", "user_id_b"),
+                           ("client_notes", "user_id"), ("users", "merged_into_id"), ("profiles", "user_id")}
+                for fk in fk_cols:
+                    if (fk["tbl"], fk["col"]) in handled:
+                        continue
+                    if fk["col"] == "psychologist_id":
+                        continue  # apunta a la psicóloga, no a la persona: no se toca
+                    res = await conn.execute(f'UPDATE {fk["tbl"]} SET "{fk["col"]}" = $1 WHERE "{fk["col"]}" = $2', a.primary, sid)
+                    if res != "UPDATE 0":
+                        print(f"     {fk['tbl'] + '.' + fk['col'] + ' (FK)':<38} {res}")
+                # Tablas que identifican a la persona solo por nombre
+                for tbl, col in (("scheduled_dates", "person_a"), ("scheduled_dates", "person_b"),
+                                 ("priority_client_tracking", "client_name"), ("cs_novedades", "client_name")):
+                    exists = await conn.fetchval("SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2", tbl, col)
+                    if not exists:
+                        continue
+                    res = await conn.execute(f'UPDATE {tbl} SET "{col}" = $1 WHERE LOWER(TRIM("{col}")) = LOWER(TRIM($2))', canonical, s["name"])
+                    if res != "UPDATE 0":
+                        print(f"     {tbl + '.' + col + ' (nombre)':<38} {res}")
                 res = await conn.execute("""
                     UPDATE profiles p1 SET
                         city = COALESCE(p1.city, p2.city), estatura = COALESCE(p1.estatura, p2.estatura),
@@ -135,14 +167,14 @@ async def main():
             bad = False
             for s in secondaries:
                 sid = s["id"]
-                om = await conn.fetchval("SELECT COUNT(*) FROM operational_matches WHERE user_id_a = $1", sid)
+                om = await conn.fetchval("SELECT COUNT(*) FROM operational_matches WHERE user_id_a = $1 OR user_id_b = $1", sid)
                 hm = await conn.fetchval("SELECT COUNT(*) FROM historical_matches WHERE user_id_a = $1 OR user_id_b = $1", sid)
                 ph = await conn.fetchval("SELECT COUNT(*) FROM person_history WHERE LOWER(TRIM(person_name)) = LOWER(TRIM($1))", s["name"])
                 mg = await conn.fetchval("SELECT merged_into_id FROM users WHERE id = $1", sid)
                 ok = om == 0 and hm == 0 and mg == a.primary and (ph == 0 or (s["name"] or "").strip().lower() == (canonical or "").strip().lower())
                 bad = bad or not ok
                 print(f"  id={sid}: operational={om} historical={hm} person_history={ph} merged_into={mg} → {'OK' if ok else 'REVISAR'}")
-            print(f"  Bajo el primary {a.primary}: operational={await conn.fetchval('SELECT COUNT(*) FROM operational_matches WHERE user_id_a = $1', a.primary)}"
+            print(f"  Bajo el primary {a.primary}: operational={await conn.fetchval('SELECT COUNT(*) FROM operational_matches WHERE user_id_a = $1 OR user_id_b = $1', a.primary)}"
                   f" historical={await conn.fetchval('SELECT COUNT(*) FROM historical_matches WHERE user_id_a = $1 OR user_id_b = $1', a.primary)}")
             if bad:
                 raise RuntimeError("Quedaron referencias sueltas: se revierte todo.")
