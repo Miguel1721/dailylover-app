@@ -197,6 +197,22 @@ export default function CalendarioTurnos7shifts() {
   const myRosterName = (glanceData?.roster || ALL_STAFF_MEMBERS).find(n => isSamePerson(n, loginName)) || null
   const lockToMe = simple && !!myRosterName
 
+  // Equipo: horas semanales, activar / desactivar personas y si ya pusieron su disponibilidad (solo administración).
+  const [showTeam, setShowTeam] = useState(false)
+  const [teamCfg, setTeamCfg] = useState([])
+  const [readiness, setReadiness] = useState(null)
+  const fetchTeam = useCallback(() => {
+    fetch(`${API}/api/v1/shifts/team-config`, { headers: authHeaders }).then(r => (r.ok ? r.json() : null)).then(d => d && setTeamCfg(d.team || [])).catch(() => {})
+    fetch(`${API}/api/v1/shifts/readiness`, { headers: authHeaders }).then(r => (r.ok ? r.json() : null)).then(d => d && setReadiness(d)).catch(() => {})
+  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!simple) fetchTeam() }, [simple, fetchTeam])
+  const updateMember = async (id, body) => {
+    const res = await fetch(`${API}/api/v1/shifts/team/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders }, body: JSON.stringify(body) })
+    if (!res.ok) { setNotification('No se pudo actualizar a la persona.'); setTimeout(() => setNotification(''), 4000); return }
+    fetchTeam()
+    fetchWeek()
+  }
+
   // Cargar datos de la semana (Schedule)
   const fetchWeek = useCallback(() => {
     setLoading(true)
@@ -271,8 +287,8 @@ export default function CalendarioTurnos7shifts() {
 
     const existing = (dayShifts || []).filter(Boolean)
     const ranges = existing.length
-      ? existing.map(sh => ({ start_time: to24(sh.start_time), end_time: to24(sh.end_time) }))
-      : [{ start_time: '09:00', end_time: '13:00' }]
+      ? existing.map(sh => ({ start_time: to24(sh.start_time), end_time: to24(sh.end_time), shift_type: sh.shift_type === 'MATCHMAKING' ? 'MATCHMAKING' : 'ENTREVISTAS' }))
+      : [{ start_time: '09:00', end_time: '13:00', shift_type: 'ENTREVISTAS' }]
 
     setEditModal({
       has_existing: existing.length > 0,
@@ -305,7 +321,7 @@ export default function CalendarioTurnos7shifts() {
     const startDec = last?.end_time ? Math.min(parseTimeToDecimal(last.end_time) + 1, 22) : 14
     const endDec = Math.min(startDec + 2, 23)
     const toHHMM = (dec) => `${pad2(Math.floor(dec))}:${pad2(Math.round((dec - Math.floor(dec)) * 60))}`
-    setEditModal({ ...editModal, ranges: [...editModal.ranges, { start_time: toHHMM(startDec), end_time: toHHMM(endDec) }] })
+    setEditModal({ ...editModal, ranges: [...editModal.ranges, { start_time: toHHMM(startDec), end_time: toHHMM(endDec), shift_type: last?.shift_type === 'MATCHMAKING' ? 'ENTREVISTAS' : 'MATCHMAKING' }] })
     setShiftError('')
   }
 
@@ -882,6 +898,46 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
               {loadError}
             </div>
           )}
+          {!simple && readiness && (
+            <div style={{ background: readiness.ready ? '#ecfdf5' : '#fffbeb', borderBottom: `1px solid ${readiness.ready ? '#a7f3d0' : '#fde68a'}`, color: readiness.ready ? '#065f46' : '#92400e', fontSize: 13, fontWeight: 600, padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <span>
+                {readiness.ready
+                  ? `✅ Disponibilidad completa (${readiness.active_people} personas activas). Ya se puede generar el horario.`
+                  : `⏳ Falta la disponibilidad de: ${readiness.missing.join(', ')}. El horario se genera cuando todas las personas activas la pongan.`}
+              </span>
+              <button type="button" onClick={() => setShowTeam(true)} style={{ border: '1px solid currentColor', background: 'transparent', color: 'inherit', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                Equipo (activar / horas)
+              </button>
+            </div>
+          )}
+          {showTeam && (
+            <div role="dialog" aria-label="Equipo" onClick={() => setShowTeam(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.55)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto', padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>Equipo de matchmaking</h3>
+                  <button type="button" onClick={() => setShowTeam(false)} aria-label="Cerrar" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#475569' }}><X size={18} /></button>
+                </div>
+                <p style={{ margin: '0 0 12px', fontSize: 12, color: '#475569' }}>Solo las personas activas cuentan para las horas, la cobertura y la generación del horario.</p>
+                {teamCfg.filter(m => m.weekly_hours != null || m.is_active).map(m => (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #e2e8f0', opacity: m.is_active ? 1 : 0.55 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{m.name}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{readiness?.people?.find(p => p.name === m.name)?.ready ? 'Disponibilidad puesta' : (m.is_active ? 'Falta su disponibilidad' : 'Inactiva')}</div>
+                    </div>
+                    <label style={{ fontSize: 12, color: '#334155', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="number" min="0" max="60" step="0.5" defaultValue={m.weekly_hours ?? ''} aria-label={`Horas por semana de ${m.name}`}
+                        onBlur={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v) && v !== m.weekly_hours) updateMember(m.id, { weekly_hours: v }) }}
+                        style={{ width: 56, border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 6px', fontSize: 13 }} /> h/sem
+                    </label>
+                    <button type="button" onClick={() => updateMember(m.id, { is_active: !m.is_active })} aria-pressed={m.is_active}
+                      style={{ border: 'none', borderRadius: 999, padding: '6px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: m.is_active ? '#16a34a' : '#94a3b8', color: '#fff', minWidth: 84 }}>
+                      {m.is_active ? 'Activa' : 'Inactiva'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Sub-barra de Controles y Filtros 7shifts */}
           <div style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             {/* Lado Izquierdo: Dropdowns */}
@@ -1007,7 +1063,7 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
                         )}
 
                         {role.employees.map((emp) => (
-                          <tr key={emp.name} style={{ borderBottom: '1px solid #e2e8f0', background: simple && isMe(emp.name) ? '#fff7ed' : undefined }}>
+                          <tr key={emp.name} style={{ borderBottom: '1px solid #e2e8f0', background: simple && isMe(emp.name) ? '#fff7ed' : undefined, opacity: emp.is_active === false ? 0.45 : 1 }}>
                             {/* Columna Empleado con Drag Handle ::: (Imagen 2) */}
                             <td style={{ padding: '10px 12px', borderRight: '1px solid #e2e8f0', background: '#ffffff', verticalAlign: 'middle' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1022,8 +1078,13 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
                                     {emp.name}{simple && isMe(emp.name) ? ' (tú)' : ''}
                                   </div>
                                   <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
-                                    {emp.total_hours.toFixed(1)} hrs{simple ? '' : ` · $${emp.total_cost.toFixed(2)}`}
+                                    {emp.total_hours.toFixed(1)}{emp.weekly_hours != null ? ` / ${emp.weekly_hours}` : ''} hrs{simple ? '' : ` · $${emp.total_cost.toFixed(2)}`}
                                   </div>
+                                  {emp.weekly_hours != null && (
+                                    <div style={{ fontSize: 10, color: '#64748b' }}>
+                                      Entrevistas {emp.interview_hours.toFixed(1)} · Matches {emp.matches_hours.toFixed(1)} (meta {(emp.weekly_hours / 3).toFixed(1)})
+                                    </div>
+                                  )}
                                   {!simple && emp.total_ot_badge && (
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#fee2e2', color: '#dc2626', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, marginTop: 2 }}>
                                       ⏰ {emp.total_ot_badge}
@@ -1720,6 +1781,19 @@ El cliente seguirá con su cita agendada pero sin turno que la cubra. ¿Guardar 
                           ({rangeHours(rg.start_time, rg.end_time)} hrs)
                         </span>
                       </div>
+                      {!/customer|assistant/i.test(editModal.role || '') && (
+                        <div role="group" aria-label={`Tipo de la franja ${idx + 1}`} style={{ display: 'flex', border: '1px solid #cbd5e1', borderRadius: 8, overflow: 'hidden' }}>
+                          {[['ENTREVISTAS', 'Entrevistas', '#0f766e'], ['MATCHMAKING', 'Matches', '#be185d']].map(([v, l, c]) => {
+                            const on = (rg.shift_type || 'ENTREVISTAS') === v
+                            return (
+                              <button key={v} type="button" onClick={() => updateRange(idx, 'shift_type', v)} aria-pressed={on}
+                                style={{ border: 'none', padding: '6px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: on ? c : '#ffffff', color: on ? '#ffffff' : '#475569' }}>
+                                {l}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                       {editModal.ranges.length > 1 && (
                         <button
                           type="button"

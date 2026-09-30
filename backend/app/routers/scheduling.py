@@ -100,9 +100,18 @@ STAFF_ROSTER = [n for d in DEPARTMENT_DEFS for r in d["roles"] for n in r["emplo
 ROSTER_BY_LOWER = {n.lower(): n for n in STAFF_ROSTER}
 
 
+# Horas semanales acordadas (Jorge, 30-sep-2026). Solo se siembran si la persona aún no tiene valor.
+DEFAULT_WEEKLY_HOURS = {
+    "Estefania Rodriguez": 20, "Ana Maria Tolosa": 20, "Isabela Marquez": 17, "Jennifer Pimiento": 15,
+    "Silvana Manrique": 15, "Maria Pia Cottrino": 15, "Mara Paula de la Espriella": 15,
+}
+INTERVIEW_TYPES = ("ENTREVISTAS", "DISPONIBLE")
+
+
 class ShiftRange(BaseModel):
     start_time: str  # "HH:MM" (24 h) o "7:00 AM"
     end_time: str
+    shift_type: Optional[str] = None  # ENTREVISTAS / MATCHMAKING por franja (si falta, usa el del día)
 
 
 class ShiftDayRequest(BaseModel):
@@ -287,6 +296,9 @@ async def ensure_shift_tables(db: AsyncSession) -> None:
         await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS requested_by TEXT"))
         await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS decided_by TEXT"))
         await db.execute(text("ALTER TABLE staff_time_off ADD COLUMN IF NOT EXISTS decided_at TIMESTAMPTZ"))
+        await db.execute(text("ALTER TABLE staff_team ADD COLUMN IF NOT EXISTS weekly_hours NUMERIC(5,1)"))
+        for nm, hrs in DEFAULT_WEEKLY_HOURS.items():
+            await db.execute(text("UPDATE staff_team SET weekly_hours = :h WHERE LOWER(name) = LOWER(:n) AND weekly_hours IS NULL"), {"h": hrs, "n": nm})
         await db.commit()
         _shift_tables_ready = True
 
@@ -318,6 +330,72 @@ async def load_availability(db: AsyncSession) -> Dict[tuple, dict]:
 
 def local_monday(target: date) -> date:
     return target - timedelta(days=target.weekday())
+
+
+async def require_admin(user: dict = Depends(require_staff)) -> dict:
+    """Solo administración (no psicólogas / matchmakers / servicio al cliente)."""
+    if hides_costs(user):
+        raise HTTPException(status_code=403, detail="Solo administración puede cambiar esto.")
+    return user
+
+
+class TeamUpdateRequest(BaseModel):
+    is_active: Optional[bool] = None
+    weekly_hours: Optional[float] = None
+
+
+@router.get("/shifts/team-config")
+async def team_config(db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Personas de matchmaking con sus horas semanales y si están activas (las inactivas no cuentan para horas ni cobertura)."""
+    await ensure_shift_tables(db)
+    rows = (await db.execute(text("""
+        SELECT id, name, role, is_active, weekly_hours FROM staff_team
+        WHERE weekly_hours IS NOT NULL OR LOWER(department) = 'matchmaking'
+        ORDER BY id
+    """))).fetchall()
+    return {"team": [
+        {"id": r.id, "name": r.name, "role": r.role, "is_active": bool(r.is_active),
+         "weekly_hours": float(r.weekly_hours) if r.weekly_hours is not None else None} for r in rows
+    ]}
+
+
+@router.patch("/shifts/team/{member_id}")
+async def update_team_member(member_id: int, payload: TeamUpdateRequest, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    await ensure_shift_tables(db)
+    if payload.weekly_hours is not None and not (0 <= payload.weekly_hours <= 60):
+        raise HTTPException(status_code=422, detail="Las horas semanales deben estar entre 0 y 60.")
+    sets, params = [], {"id": member_id}
+    if payload.is_active is not None:
+        sets.append("is_active = :a"); params["a"] = payload.is_active
+    if payload.weekly_hours is not None:
+        sets.append("weekly_hours = :h"); params["h"] = payload.weekly_hours
+    if not sets:
+        raise HTTPException(status_code=422, detail="Nada que actualizar.")
+    res = await db.execute(text(f"UPDATE staff_team SET {', '.join(sets)} WHERE id = :id RETURNING name, is_active, weekly_hours"), params)
+    row = res.fetchone()
+    if not row:
+        await db.rollback()
+        raise HTTPException(status_code=404, detail="Persona no encontrada.")
+    await db.commit()
+    return {"status": "success", "name": row[0], "is_active": bool(row[1]), "weekly_hours": float(row[2]) if row[2] is not None else None}
+
+
+@router.get("/shifts/readiness")
+async def generation_readiness(db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """¿Ya pusieron su disponibilidad todas las personas ACTIVAS? El horario solo se genera cuando todas están listas."""
+    await ensure_shift_tables(db)
+    team = (await db.execute(text("""
+        SELECT name, weekly_hours FROM staff_team
+        WHERE is_active = true AND weekly_hours IS NOT NULL ORDER BY id
+    """))).fetchall()
+    days = (await db.execute(text("""
+        SELECT LOWER(employee_name) AS n, COUNT(DISTINCT weekday) AS d FROM staff_availability GROUP BY 1
+    """))).fetchall()
+    defined = {r.n: int(r.d) for r in days}
+    people = [{"name": t.name, "weekly_hours": float(t.weekly_hours), "days_defined": defined.get(t.name.lower(), 0),
+               "ready": defined.get(t.name.lower(), 0) > 0} for t in team]
+    missing = [p["name"] for p in people if not p["ready"]]
+    return {"ready": bool(people) and not missing, "active_people": len(people), "missing": missing, "people": people}
 
 
 @router.get("/shifts/week")
@@ -364,9 +442,8 @@ async def get_weekly_shifts(
     time_off_rows = to_res.fetchall()
 
     team_res = await db.execute(text("""
-        SELECT id, name, slug, role, department, hourly_rate, avatar
+        SELECT id, name, slug, role, department, hourly_rate, avatar, is_active, weekly_hours
         FROM staff_team
-        WHERE is_active = true
         ORDER BY id ASC
     """))
     team_rows = team_res.fetchall()
@@ -442,6 +519,8 @@ async def get_weekly_shifts(
                 p_time_offs = [to for to in time_off_rows if to.psychologist_name.lower() == e_name.lower()]
 
                 total_emp_hours = 0.0
+                interview_hours = 0.0
+                matches_hours = 0.0
                 days_map = {}
 
                 for col in week_columns:
@@ -457,6 +536,10 @@ async def get_weekly_shifts(
                     for sh in day_shifts:
                         duration = hours_of(sh)
                         total_emp_hours += duration
+                        if sh.shift_type == "MATCHMAKING":
+                            matches_hours += duration
+                        else:
+                            interview_hours += duration
 
                         time_label = f"{fmt_12_short(sh.start_time)} - {fmt_12_short(sh.end_time)}"
                         code = "c" if dept["name"] == "Customer Service" else ("m" if sh.shift_type == "MATCHMAKING" else "i")
@@ -505,6 +588,10 @@ async def get_weekly_shifts(
                     "avatar": avatar,
                     "hourly_rate": rate,
                     "total_hours": round(total_emp_hours, 2),
+                    "interview_hours": round(interview_hours, 2),
+                    "matches_hours": round(matches_hours, 2),
+                    "weekly_hours": float(t_info.weekly_hours) if t_info and t_info.weekly_hours is not None else None,
+                    "is_active": bool(t_info.is_active) if t_info else True,
                     "total_cost": emp_cost,
                     "total_ot_badge": None,
                     "days": days_map
@@ -760,10 +847,17 @@ async def save_shift_day(payload: ShiftDayRequest, db: AsyncSession = Depends(ge
     notes = (payload.notes or "")[:250]
     published = True if payload.is_published is None else bool(payload.is_published)
 
+    # Tipo por franja (Entrevistas / Matches); si una franja no lo trae, usa el del día.
+    type_by_start = {}
+    for r in payload.ranges:
+        t = (r.shift_type or stype).upper()
+        type_by_start[parse_time_strict(r.start_time)] = t if t in SHIFT_TYPES else stype
+    interview_ranges = [(a, b) for a, b in ranges if type_by_start.get(a, stype) in INTERVIEW_TYPES]
+
     if not payload.force:
         orphans = []
         for d in dates:
-            orphans += await orphaned_appointments(db, name, d, ranges)
+            orphans += await orphaned_appointments(db, name, d, interview_ranges)
         if orphans:
             raise appointments_conflict(orphans)
 
@@ -777,7 +871,7 @@ async def save_shift_day(payload: ShiftDayRequest, db: AsyncSession = Depends(ge
                     INSERT INTO staff_shifts (psychologist_name, shift_date, start_time, end_time, shift_type,
                                               is_published, max_interviews, notes, shift_flag)
                     VALUES (:p, :d, :s, :e, :t, :pub, 5, :notes, :flag)
-                """), {"p": name, "d": d, "s": s, "e": e, "t": stype, "pub": published, "notes": notes, "flag": flag})
+                """), {"p": name, "d": d, "s": s, "e": e, "t": type_by_start.get(s, stype), "pub": published, "notes": notes, "flag": flag})
         await db.commit()
     except Exception:
         await db.rollback()
