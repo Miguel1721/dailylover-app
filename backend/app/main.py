@@ -381,6 +381,8 @@ app.include_router(reports.router)
 app.include_router(webhooks.router)
 app.include_router(matchmaking.router)
 app.include_router(scheduling.router)
+from app.routers import shift_changes_api
+app.include_router(shift_changes_api.router)
 app.include_router(form_builder.router)
 app.include_router(work_time.router)
 
