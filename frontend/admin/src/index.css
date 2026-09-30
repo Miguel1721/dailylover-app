@@ -662,6 +662,11 @@ body.light-mode {
   --text-muted: #8E7A7D;
 }
 
+body.light-mode ::placeholder {
+  color: #8E7A7D !important;
+  opacity: 1;
+}
+
 body.light-mode option {
   background-color: #FFFFFF !important;
   color: #1F1012 !important;

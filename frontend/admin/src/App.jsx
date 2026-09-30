@@ -69,6 +69,7 @@ import { NotificationProvider } from './context/NotificationContext'
 import NotificationToastContainer from './components/NotificationToastContainer'
 
 import './index.css'
+import { startContrastGuard, stopContrastGuard } from './utils/contrastGuard'
 
 function GlobalSearch() {
   const { token } = useAuth()
@@ -637,8 +638,10 @@ function AppContent() {
   useEffect(() => {
     if (theme === 'light') {
       document.body.classList.add('light-mode')
+      startContrastGuard()   // corrige letras ilegibles de colores escritos a mano para el tema oscuro
     } else {
       document.body.classList.remove('light-mode')
+      stopContrastGuard()
     }
     localStorage.setItem('theme', theme)
   }, [theme])

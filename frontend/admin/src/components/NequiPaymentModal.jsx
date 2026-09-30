@@ -232,7 +232,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
               {/* Nombre y Celular */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                     Nombre del Cliente *
                   </label>
                   <input
@@ -249,7 +249,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                     Celular (WhatsApp) *
                   </label>
                   <input
@@ -270,7 +270,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
               {/* Ciudad y Género (Sin psicóloga, ya que no se asigna en esta fase) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                     Ciudad
                   </label>
                   <select
@@ -286,7 +286,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                     Género
                   </label>
                   <select
@@ -307,7 +307,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
               {/* Plan y Monto */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                     Plan Adquirido
                   </label>
                   <select
@@ -323,7 +323,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                   </select>
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: '#DDD' }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-primary)' }}>
                     Monto COP *
                   </label>
                   <input
@@ -342,7 +342,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
 
               {/* Cargar Comprobante de Pago (Imagen) */}
               <div>
-                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 6, color: '#DDD' }}>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>
                   Comprobante de Pago Nequi (Captura de Pantalla)
                 </label>
                 <input
@@ -518,7 +518,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
                 <h3 style={{ margin: 0, fontSize: 16, color: '#10B981', fontWeight: 700 }}>
                   ¡Pago Registrado Exitosamente!
                 </h3>
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: '#DDD' }}>
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-primary)' }}>
                   Cliente: <strong>{successData.name}</strong> • Código: <span style={{ color: '#F59E0B', fontWeight: 800 }}>{successData.client_code}</span>
                 </p>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#999' }}>
@@ -533,7 +533,7 @@ export default function NequiPaymentModal({ isOpen, onClose, onSuccess }) {
 
               {/* Mensaje WhatsApp generado */}
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: '#DDD' }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6, color: 'var(--text-primary)' }}>
                   Mensaje listo para enviar por WhatsApp o Instagram:
                 </label>
                 <div style={{
