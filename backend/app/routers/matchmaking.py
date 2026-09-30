@@ -1866,7 +1866,8 @@ async def get_intake_list(
             p.age,
             p.responsable as profile_responsable,
             u.phone,
-            u.email
+            u.email,
+            u.id AS user_id
         FROM client_summary cs
         LEFT JOIN LATERAL (
             SELECT u1.id, u1.crm_id, u1.phone, u1.email
@@ -1922,6 +1923,7 @@ async def get_intake_list(
             "quick_notes": r.quick_notes or "",
             "phone": r.phone or "",
             "email": r.email or "",
+            "user_id": r.user_id,
             "total_slots": r.total_slots,
             "filled_slots": r.filled_slots,
             "approved_slots": r.approved_slots,

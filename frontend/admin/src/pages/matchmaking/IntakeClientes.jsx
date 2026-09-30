@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
   Users, Plus, Search, Filter, RefreshCw, CheckCircle,
-  Clock, Heart, ShieldCheck, ArrowRight, UserPlus, X, Layers, MapPin, Tag,
+  Clock, Heart, ShieldCheck, ArrowRight, UserPlus, X, MapPin, Tag, Mail,
   ExternalLink, FileSpreadsheet, FileText, Sparkles, Eye, Edit3, FolderOpen, AlertCircle
 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import CrmPersonLink from '../../components/CrmPersonLink'
+import ClientEmailModal from '../../components/ClientEmailModal'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
@@ -82,6 +83,7 @@ export default function IntakeClientes() {
   const [searchTerm, setSearchTerm] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [quickNoteModalTarget, setQuickNoteModalTarget] = useState(null)
+  const [emailTarget, setEmailTarget] = useState(null) // persona a la que se le enviará un correo (modal)
   const [feedback, setFeedback] = useState(null)
   const [psycList, setPsycList] = useState(PSYCHOLOGIST_LIST)
 
@@ -643,7 +645,7 @@ export default function IntakeClientes() {
         overflowX: 'auto',
         WebkitOverflowScrolling: 'touch'
       }}>
-        <table style={{ width: '100%', minWidth: 1050, borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-base)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left', whiteSpace: 'nowrap' }}>
               <th style={{ padding: '12px 16px', fontWeight: 700 }}>CLIENTE (PROFILES)</th>
@@ -651,21 +653,19 @@ export default function IntakeClientes() {
               <th style={{ padding: '12px 16px', fontWeight: 700 }}>PSICÓLOGA ASIGNADA</th>
               <th style={{ padding: '12px 16px', fontWeight: 700 }}>CIUDAD & EDAD</th>
               <th style={{ padding: '12px 16px', fontWeight: 700 }}>QUICK NOTE / NOTAS CLÍNICAS</th>
-              <th style={{ padding: '12px 16px', fontWeight: 700 }}>PLAN</th>
-              <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'center' }}>SLOTS MATCHES</th>
               <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>ACCIONES</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                   Cargando lista de PROFILES...
                 </td>
               </tr>
             ) : clients.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
                   No se encontraron perfiles para los filtros seleccionados.
                 </td>
               </tr>
@@ -786,37 +786,31 @@ export default function IntakeClientes() {
                       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Sin notas</span>
                     )}
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{
-                      display: 'inline-block',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      background: c.plan_color || '#B6D7A8',
-                      color: '#274E13'
-                    }}>
-                      {c.plan_tier || 'Pendiente Plan'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                      <span style={{
+                  <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {/* Enviar correo prearmado (modal con plantillas) */}
+                    <button
+                      onClick={() => setEmailTarget({ user_id: c.user_id, name: c.person_a, email: c.email })}
+                      disabled={!c.user_id}
+                      style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 4,
+                        background: 'rgba(212, 175, 55, 0.12)',
+                        border: '1px solid rgba(212, 175, 55, 0.45)',
+                        borderRadius: 6,
+                        padding: '5px 10px',
                         fontSize: 12,
                         fontWeight: 700,
-                        color: 'var(--text-primary)'
-                      }}>
-                        <Layers size={13} color="#3B82F6" /> {c.total_slots} slots
-                      </span>
-                      <span style={{ fontSize: 10, color: c.filled_slots > 0 ? '#10B981' : '#F59E0B', fontWeight: 600 }}>
-                        {c.filled_slots}/{c.total_slots} asignados
-                      </span>
-                    </div>
-                  </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        color: '#D4AF37',
+                        cursor: c.user_id ? 'pointer' : 'not-allowed',
+                        opacity: c.user_id ? 1 : 0.4,
+                        marginRight: 6
+                      }}
+                      title={c.user_id ? (c.email ? `Enviar correo a ${c.email}` : 'Esta persona no tiene correo registrado') : 'Esta persona aún no tiene ficha de usuario'}
+                    >
+                      <Mail size={13} /> Correo
+                    </button>
+
                     {/* Botón directo a Matches de la Psicóloga */}
                     <button
                       onClick={() => navigate(`/matchmaking/mis-matches?psychologist=${encodeURIComponent(c.psychologist_name)}&search=${encodeURIComponent(c.person_a)}`)}
@@ -1320,6 +1314,8 @@ export default function IntakeClientes() {
           </div>
         </div>
       )}
+
+      <ClientEmailModal person={emailTarget} onClose={() => setEmailTarget(null)} />
     </div>
   )
 }
