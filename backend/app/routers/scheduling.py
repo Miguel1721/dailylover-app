@@ -1787,10 +1787,14 @@ class CompleteCallRequest(BaseModel):
     duration_seconds: Optional[int] = 2700
     psychologist_observations: Optional[str] = ""
 
+INJECT_DEMO_ANALYSIS = False
+
+
 @router.get("/videocall/session/{token_or_id}")
 async def get_videocall_session(
     token_or_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff),
 ):
     """
     Retorna el expediente clínico del cliente y el estado de la sesión de videollamada.
@@ -1870,7 +1874,8 @@ async def get_videocall_session(
 async def complete_and_analyze_session(
     session_id: int,
     payload: CompleteCallRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff),
 ):
     """
     COPILOTO CLÍNICO IA:
@@ -1947,8 +1952,10 @@ INNEGOCIABLES & DEALBREAKERS: Conexión mandatoria con el amor hacia los animale
         "id": session_id
     })
 
-    # Si hay usuario vinculado, inyectar directamente en profiles y client_extended_profile
-    if uid:
+    # Si hay usuario vinculado, inyectar directamente en profiles y client_extended_profile.
+    # DESACTIVADO (30-sep-2026): este "análisis" son palabras clave con texto enlatado y puntajes fijos, no IA real;
+    # escribirlo en el perfil del cliente inventa datos. Se reemplaza por la extracción con evidencia y revisión humana.
+    if uid and INJECT_DEMO_ANALYSIS:
         await db.execute(text("""
             UPDATE profiles
             SET bio_notes = :qn,
