@@ -30,6 +30,14 @@ PSYCHOLOGISTS_METADATA = {
 # 1. MÓDULO 7SHIFTS: MATRIZ SEMANAL DE TURNOS & DISPONIBILIDAD
 # ==============================================================================
 
+TEAM_ROLE_RE = re.compile(r"psic[oó]log|matchmaker|interview|customer|servicio", re.IGNORECASE)
+
+
+def hides_costs(user: dict) -> bool:
+    """Psicólogas / matchmakers / servicio al cliente no ven tarifas ni presupuesto (solo administración)."""
+    return bool(TEAM_ROLE_RE.search(str(user.get("role_name") or "")))
+
+
 async def require_staff(user: dict = Depends(get_current_user)) -> dict:
     """Solo el equipo (cuentas del panel admin) puede ver o editar turnos y disponibilidad."""
     if user.get("is_client"):
@@ -57,7 +65,7 @@ DEPARTMENT_DEFS = [
         ],
     },
     {
-        "name": "Matchamking",
+        "name": "Matchmaking",
         "bg_header": "#2b2b2b",
         "roles": [
             {"role_name": "matchmaker", "color": "#f78a8a", "code": "m", "allow_add": False, "employee_names": ["Maria Pia Cottrino"]},
@@ -279,10 +287,11 @@ def local_monday(target: date) -> date:
     return target - timedelta(days=target.weekday())
 
 
-@router.get("/shifts/week", dependencies=[Depends(require_staff)])
+@router.get("/shifts/week")
 async def get_weekly_shifts(
     week_date: Optional[str] = Query(None, description="Fecha dentro de la semana YYYY-MM-DD"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_staff)
 ):
     """
     Matriz semanal de turnos (estilo 7shifts) con datos reales:
@@ -330,7 +339,11 @@ async def get_weekly_shifts(
     team_by_lower = {t.name.lower(): t for t in team_rows}
     availability = await load_availability(db)
 
+    no_costs = hides_costs(user)
+
     def rate_of(name: str) -> float:
+        if no_costs:
+            return 0.0
         t = team_by_lower.get(name.lower())
         return float(t.hourly_rate) if t and t.hourly_rate else 0.0
 

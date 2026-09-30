@@ -117,6 +117,16 @@ function validateRanges(ranges, { allowEmpty = false } = {}) {
   return ''
 }
 
+const normName = (v) => (v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean)
+
+// ¿Este nombre del equipo corresponde a la persona que inició sesión? (coincidencia por palabras del nombre)
+function isSamePerson(staffName, loginName) {
+  const a = normName(staffName), b = normName(loginName)
+  if (!a.length || !b.length) return false
+  const common = a.filter(t => t.length > 2 && b.includes(t)).length
+  return common >= 2 || (a.length === 1 && common === 1)
+}
+
 const AVAIL_DAYS = [
   { key: 'mon', label: 'Lunes' }, { key: 'tue', label: 'Martes' }, { key: 'wed', label: 'Miércoles' },
   { key: 'thu', label: 'Jueves' }, { key: 'fri', label: 'Viernes' }, { key: 'sat', label: 'Sábado' }, { key: 'sun', label: 'Domingo' }
@@ -170,6 +180,16 @@ export default function CalendarioTurnos7shifts() {
   const [availError, setAvailError] = useState('')
 
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+
+  // Vista simple: para psicólogas / matchmakers (sin costos ni botones de administración). María puede activarla para ver lo mismo que ellas.
+  const isTeamView = /psic[oó]log|matchmaker/i.test(user?.role || '')
+  const [simplePreview, setSimplePreview] = useState(false)
+  const simple = isTeamView || simplePreview
+  const loginName = user?.name || user?.full_name || ''
+  const isMe = (staffName) => isSamePerson(staffName, loginName)
+  // En vista simple cada persona edita solo su propia disponibilidad (si no se reconoce su nombre, puede elegir).
+  const myRosterName = (glanceData?.roster || ALL_STAFF_MEMBERS).find(n => isSamePerson(n, loginName)) || null
+  const lockToMe = simple && !!myRosterName
 
   // Cargar datos de la semana (Schedule)
   const fetchWeek = useCallback(() => {
@@ -554,12 +574,12 @@ export default function CalendarioTurnos7shifts() {
       <div style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 6, background: '#e02424', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>
-              7
+            <div style={{ width: 28, height: 28, borderRadius: 6, background: '#961500', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CalendarIcon size={15} />
             </div>
             <div>
-              <span style={{ fontWeight: 800, fontSize: 16, color: '#1a1f2c', letterSpacing: '-0.3px' }}>7shifts</span>
-              <span style={{ fontSize: 12, color: '#64748b', marginLeft: 8 }}>Daily Lover (Company 408848)</span>
+              <span style={{ fontWeight: 800, fontSize: 16, color: '#1a1f2c', letterSpacing: '-0.3px' }}>Agenda y turnos</span>
+              <span style={{ fontSize: 12, color: '#64748b', marginLeft: 8 }}>Daily Lover</span>
             </div>
           </div>
 
@@ -582,8 +602,9 @@ export default function CalendarioTurnos7shifts() {
                 gap: 6
               }}
             >
-              <CalendarIcon size={14} /> Schedule (Horario)
+              <CalendarIcon size={14} /> Horario
             </button>
+            {!simple && (
             <button 
               onClick={() => setActiveTab('timeoff')}
               style={{
@@ -601,8 +622,9 @@ export default function CalendarioTurnos7shifts() {
                 gap: 6
               }}
             >
-              <CalendarDays size={14} /> Time off
+              <CalendarDays size={14} /> Permisos
             </button>
+            )}
             <button 
               onClick={() => setActiveTab('availability')}
               style={{
@@ -620,7 +642,7 @@ export default function CalendarioTurnos7shifts() {
                 gap: 6
               }}
             >
-              <Clock size={14} /> Availability
+              <Clock size={14} /> {simple ? 'Mi disponibilidad' : 'Disponibilidad'}
             </button>
           </div>
         </div>
@@ -633,6 +655,8 @@ export default function CalendarioTurnos7shifts() {
             </div>
           )}
 
+          {!simple && (
+            <>
           <button 
             onClick={() => navigate('/agendar')}
             style={{
@@ -694,8 +718,20 @@ export default function CalendarioTurnos7shifts() {
             <Video size={13} />
             Sala Videollamada & IA
           </button>
+            </>
+          )}
 
-          {activeTab === 'schedule' && (
+          {!isTeamView && (
+            <label
+              title="Mira esta pantalla como la ven las psicólogas y matchmakers"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#334155', cursor: 'pointer', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 10px', background: simplePreview ? '#fef3c7' : '#ffffff' }}
+            >
+              <input type="checkbox" checked={simplePreview} onChange={(e) => setSimplePreview(e.target.checked)} />
+              Vista simple
+            </label>
+          )}
+
+          {activeTab === 'schedule' && !simple && (
             <button
               onClick={handleCopyPreviousWeek}
               disabled={copying}
@@ -719,7 +755,7 @@ export default function CalendarioTurnos7shifts() {
             </button>
           )}
 
-          {activeTab === 'schedule' && (
+          {activeTab === 'schedule' && !simple && (
             <button 
               onClick={handlePublishWeek}
               disabled={publishing}
@@ -738,7 +774,7 @@ export default function CalendarioTurnos7shifts() {
               }}
             >
               {publishing ? <RefreshCw size={13} className="animate-spin" /> : <Check size={13} />}
-              Publish
+              Publicar semana
             </button>
           )}
         </div>
@@ -758,12 +794,7 @@ export default function CalendarioTurnos7shifts() {
           <div style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             {/* Lado Izquierdo: Dropdowns */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff', cursor: 'pointer' }}>
-                <MapPin size={14} style={{ color: '#64748b' }} />
-                <span style={{ fontWeight: 600 }}>Daily Lover</span>
-                <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-              </div>
-
+              {!simple && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff', cursor: 'pointer' }}>
                 <Building2 size={14} style={{ color: '#64748b' }} />
                 <select 
@@ -773,9 +804,10 @@ export default function CalendarioTurnos7shifts() {
                 >
                   <option value="all">All departments</option>
                   <option value="Customer Service">Customer Service</option>
-                  <option value="Matchamking">Matchmaking</option>
+                  <option value="Matchmaking">Matchmaking</option>
                 </select>
               </div>
+              )}
 
               {/* Navegación Semanal */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 10 }}>
@@ -794,55 +826,10 @@ export default function CalendarioTurnos7shifts() {
               </div>
             </div>
 
-            {/* Lado Derecho */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                <ArrowUpDown size={14} style={{ color: '#64748b' }} />
-                <span>Sorted by First name</span>
-                <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: 6, fontSize: 13, background: '#fff' }}>
-                <Grid size={14} style={{ color: '#64748b' }} />
-                <span>Roles view</span>
-                <span style={{ color: '#94a3b8', fontSize: 10 }}>▾</span>
-              </div>
-
-              <div style={{ display: 'flex', border: '1px solid #cbd5e1', borderRadius: 6, overflow: 'hidden' }}>
-                <button 
-                  onClick={() => setViewMode('day')}
-                  style={{
-                    border: 'none',
-                    background: viewMode === 'day' ? '#2b2b2b' : '#ffffff',
-                    color: viewMode === 'day' ? '#ffffff' : '#64748b',
-                    padding: '6px 14px',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Day
-                </button>
-                <button 
-                  onClick={() => setViewMode('week')}
-                  style={{
-                    border: 'none',
-                    background: viewMode === 'week' ? '#2b2b2b' : '#ffffff',
-                    color: viewMode === 'week' ? '#ffffff' : '#64748b',
-                    padding: '6px 14px',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Week
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* MATRIZ SEMANAL */}
-          <div style={{ overflowX: 'auto', paddingBottom: 60 }}>
+          <div style={{ overflowX: 'auto', paddingBottom: simple ? 16 : 60 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200, background: '#ffffff' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#fafafa' }}>
@@ -857,6 +844,7 @@ export default function CalendarioTurnos7shifts() {
                           onChange={(e) => setSearchQuery(e.target.value)}
                           style={{
                             width: '100%',
+                            boxSizing: 'border-box',
                             padding: '6px 8px 6px 28px',
                             border: '1px solid #cbd5e1',
                             borderRadius: 6,
@@ -866,13 +854,10 @@ export default function CalendarioTurnos7shifts() {
                           }}
                         />
                       </div>
-                      <button style={{ border: '1px solid #cbd5e1', background: '#f8fafc', padding: '6px 8px', borderRadius: 6, cursor: 'pointer', color: '#475569' }}>
-                        <Users size={14} />
-                      </button>
                     </div>
                   </th>
 
-                  {(weekData?.week_columns || []).map((col, idx) => (
+                  {(weekData?.week_columns || []).map((col) => (
                     <th key={col.date} style={{ padding: '8px 12px', borderRight: '1px solid #e2e8f0', textAlign: 'left', verticalAlign: 'top', minWidth: 140 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
@@ -881,7 +866,6 @@ export default function CalendarioTurnos7shifts() {
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          {idx === 0 && <span style={{ fontSize: 13 }} title="Clima / Óptimo">🌡️</span>}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#475569', fontWeight: 600 }}>
                             <User size={12} />
                             <span>{col.scheduled_count}</span>
@@ -892,14 +876,6 @@ export default function CalendarioTurnos7shifts() {
                   ))}
                 </tr>
 
-                <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#ffffff' }}>
-                  <td style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0', fontSize: 12, color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontWeight: 600 }}>
-                    Events
-                  </td>
-                  {Array.from({ length: 7 }).map((_, i) => (
-                    <td key={i} style={{ borderRight: '1px solid #e2e8f0', background: '#fafafa', height: 28 }} />
-                  ))}
-                </tr>
               </thead>
 
               <tbody>
@@ -911,16 +887,7 @@ export default function CalendarioTurnos7shifts() {
                       </td>
                     </tr>
 
-                    <tr style={{ background: '#eef2f6', borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '6px 14px', borderRight: '1px solid #cbd5e1', fontSize: 11, fontWeight: 600, color: '#475569' }}>
-                        Open Shifts
-                      </td>
-                      {Array.from({ length: 7 }).map((_, i) => (
-                        <td key={i} style={{ borderRight: '1px solid #cbd5e1', height: 26 }} />
-                      ))}
-                    </tr>
-
-                    {dept.roles.map((role) => (
+                    {dept.roles.filter(role => !simple || role.employees.length > 0).map((role) => (
                       <React.Fragment key={role.role_name}>
                         <tr>
                           <td colSpan={8} style={{ background: role.color, color: '#ffffff', padding: '5px 14px', fontWeight: 700, fontSize: 11, letterSpacing: '0.2px' }}>
@@ -928,7 +895,7 @@ export default function CalendarioTurnos7shifts() {
                           </td>
                         </tr>
 
-                        {role.allow_add && role.employees.length === 0 && (
+                        {!simple && role.allow_add && role.employees.length === 0 && (
                           <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
                             <td style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
@@ -948,11 +915,11 @@ export default function CalendarioTurnos7shifts() {
                         )}
 
                         {role.employees.map((emp) => (
-                          <tr key={emp.name} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <tr key={emp.name} style={{ borderBottom: '1px solid #e2e8f0', background: simple && isMe(emp.name) ? '#fff7ed' : undefined }}>
                             {/* Columna Empleado con Drag Handle ::: (Imagen 2) */}
                             <td style={{ padding: '10px 12px', borderRight: '1px solid #e2e8f0', background: '#ffffff', verticalAlign: 'middle' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <GripVertical size={14} style={{ color: '#94a3b8', cursor: 'grab' }} />
+                                {!simple && <GripVertical size={14} style={{ color: '#94a3b8', cursor: 'grab' }} />}
                                 <img 
                                   src={emp.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'} 
                                   alt={emp.name}
@@ -960,12 +927,12 @@ export default function CalendarioTurnos7shifts() {
                                 />
                                 <div>
                                   <div style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', textDecoration: 'underline', cursor: 'pointer' }}>
-                                    {emp.name}
+                                    {emp.name}{simple && isMe(emp.name) ? ' (tú)' : ''}
                                   </div>
                                   <div style={{ fontSize: 10, color: '#64748b', marginTop: 1 }}>
-                                    {emp.total_hours.toFixed(2)} hrs · ${emp.total_cost.toFixed(2)}
+                                    {emp.total_hours.toFixed(1)} hrs{simple ? '' : ` · $${emp.total_cost.toFixed(2)}`}
                                   </div>
-                                  {emp.total_ot_badge && (
+                                  {!simple && emp.total_ot_badge && (
                                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#fee2e2', color: '#dc2626', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, marginTop: 2 }}>
                                       ⏰ {emp.total_ot_badge}
                                     </div>
@@ -986,19 +953,19 @@ export default function CalendarioTurnos7shifts() {
                               return (
                                 <td 
                                   key={col.date}
-                                  onClick={() => openEditShiftModal(emp.name, col.date, shifts, role.role_name)}
-                                  title={hasShifts ? (shifts.length > 1 ? 'Turno partido: clic para editar las franjas' : 'Clic para editar') : 'Clic para agregar turno'}
+                                  onClick={simple ? undefined : () => openEditShiftModal(emp.name, col.date, shifts, role.role_name)}
+                                  title={simple ? undefined : (hasShifts ? (shifts.length > 1 ? 'Turno partido: clic para editar las franjas' : 'Clic para editar') : 'Clic para agregar turno')}
                                   style={{
                                     borderRight: '1px solid #e2e8f0',
                                     padding: '4px 6px',
                                     verticalAlign: 'top',
                                     position: 'relative',
                                     background: isSelectedCell ? '#f8fafc' : '#ffffff',
-                                    cursor: 'pointer',
+                                    cursor: simple ? 'default' : 'pointer',
                                     height: 54
                                   }}
                                 >
-                                  {cell.corner_flag && (
+                                  {!simple && cell.corner_flag && (
                                     <div 
                                       style={{
                                         position: 'absolute',
@@ -1061,7 +1028,7 @@ export default function CalendarioTurnos7shifts() {
                                             </span>
                                           </div>
 
-                                          {sh.outside_availability && (
+                                          {!simple && sh.outside_availability && (
                                             <span title="Este turno queda fuera de la disponibilidad declarada de esta persona" style={{ color: '#d97706', fontSize: 11, marginLeft: 2 }}>⚠</span>
                                           )}
                                           {sh.is_lightning && (
@@ -1114,7 +1081,8 @@ export default function CalendarioTurnos7shifts() {
             </table>
           </div>
 
-          {/* 7SHIFTS BUDGET TOOL (BARRA INFERIOR FIJA) */}
+          {/* PRESUPUESTO DE HORAS Y COSTO (solo administración) */}
+          {!simple && (
           <div 
             style={{
               position: 'fixed',
@@ -1132,10 +1100,7 @@ export default function CalendarioTurnos7shifts() {
           >
             <div style={{ width: 230, minWidth: 230, display: 'flex', borderRight: '1px solid #e2e8f0', height: '100%' }}>
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#ffffff', fontWeight: 700, fontSize: 12, color: '#1e293b', borderBottom: '2px solid #2563eb' }}>
-                Budget Tool
-              </div>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontWeight: 600, fontSize: 11, color: '#8b5cf6', gap: 4 }}>
-                <Award size={12} /> Optimal Labor
+                Horas y costo
               </div>
             </div>
 
@@ -1155,6 +1120,7 @@ export default function CalendarioTurnos7shifts() {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -1502,6 +1468,7 @@ export default function CalendarioTurnos7shifts() {
               >
                 Glance View
               </button>
+              {!simple && (
               <button 
                 onClick={() => setAvailSubTab('requests')}
                 style={{
@@ -1518,6 +1485,7 @@ export default function CalendarioTurnos7shifts() {
               >
                 Registro
               </button>
+              )}
             </div>
           </div>
 
@@ -1530,7 +1498,7 @@ export default function CalendarioTurnos7shifts() {
                   </h1>
 
                   <button 
-                    onClick={() => openAvailModal(null)}
+                    onClick={() => openAvailModal(lockToMe ? myRosterName : null)}
                     style={{
                       background: '#2563eb',
                       color: '#ffffff',
@@ -1542,7 +1510,7 @@ export default function CalendarioTurnos7shifts() {
                       cursor: 'pointer'
                     }}
                   >
-                    + Add availability
+                    {lockToMe ? 'Editar mi disponibilidad' : '+ Add availability'}
                   </button>
                 </div>
 
@@ -1615,7 +1583,7 @@ export default function CalendarioTurnos7shifts() {
                   </h1>
 
                   <button 
-                    onClick={() => openAvailModal(null)}
+                    onClick={() => openAvailModal(lockToMe ? myRosterName : null)}
                     style={{
                       background: '#2563eb',
                       color: '#ffffff',
@@ -1627,11 +1595,11 @@ export default function CalendarioTurnos7shifts() {
                       cursor: 'pointer'
                     }}
                   >
-                    + Add availability
+                    {lockToMe ? 'Editar mi disponibilidad' : '+ Add availability'}
                   </button>
                 </div>
                 <p style={{ margin: '0 0 20px', fontSize: 13, color: '#475569' }}>
-                  Disponibilidad semanal recurrente. Cada día puede tener varias franjas (ej. 9:00–12:00 y 6:00–8:00 pm). Haz clic en una celda para editar a esa persona.
+                  Disponibilidad semanal recurrente. Cada día puede tener varias franjas (ej. 9:00–12:00 y 6:00–8:00 pm). {lockToMe ? 'Solo puedes editar tu propia fila (clic en tus celdas).' : 'Haz clic en una celda para editar a esa persona.'}
                 </p>
 
                 <div style={{ background: '#ffffff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'auto' }}>
@@ -1684,15 +1652,15 @@ export default function CalendarioTurnos7shifts() {
                             return (
                               <td 
                                 key={dKey}
-                                onClick={() => openAvailModal(emp.name)}
-                                title={`Editar disponibilidad de ${emp.name}`}
+                                onClick={(!lockToMe || emp.name === myRosterName) ? () => openAvailModal(emp.name) : undefined}
+                                title={(!lockToMe || emp.name === myRosterName) ? `Editar disponibilidad de ${emp.name}` : undefined}
                                 style={{
                                   padding: '8px',
                                   borderLeft: '1px solid #e2e8f0',
                                   textAlign: 'center',
                                   verticalAlign: 'middle',
                                   background: cellBg,
-                                  cursor: 'pointer'
+                                  cursor: (!lockToMe || emp.name === myRosterName) ? 'pointer' : 'default'
                                 }}
                               >
                                 <div style={{ fontSize: 11, fontWeight: 700, color: cellText }}>
@@ -1753,7 +1721,7 @@ export default function CalendarioTurnos7shifts() {
             {/* 1. Header fijo */}
             <div style={{ padding: '14px 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1e293b' }}>
-                {editModal.has_existing ? 'Edit shift' : 'Add shift'}
+                {editModal.has_existing ? 'Editar turno' : 'Agregar turno'}
               </h2>
               <button 
                 type="button"
@@ -1761,42 +1729,6 @@ export default function CalendarioTurnos7shifts() {
                 style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 <X size={18} />
-              </button>
-            </div>
-
-            {/* 2. Pestañas fijas: Shift details | Time punch */}
-            <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', padding: '0 20px', flexShrink: 0, background: '#fafafa' }}>
-              <button 
-                type="button"
-                onClick={() => setModalTab('details')}
-                style={{
-                  border: 'none',
-                  borderBottom: modalTab === 'details' ? '2px solid #0f172a' : '2px solid transparent',
-                  background: modalTab === 'details' ? '#ffffff' : 'transparent',
-                  color: modalTab === 'details' ? '#0f172a' : '#64748b',
-                  fontWeight: modalTab === 'details' ? 700 : 500,
-                  fontSize: 13,
-                  padding: '9px 16px',
-                  cursor: 'pointer'
-                }}
-              >
-                Shift details
-              </button>
-              <button 
-                type="button"
-                onClick={() => setModalTab('punch')}
-                style={{
-                  border: 'none',
-                  borderBottom: modalTab === 'punch' ? '2px solid #0f172a' : '2px solid transparent',
-                  background: modalTab === 'punch' ? '#ffffff' : 'transparent',
-                  color: modalTab === 'punch' ? '#0f172a' : '#64748b',
-                  fontWeight: modalTab === 'punch' ? 700 : 500,
-                  fontSize: 13,
-                  padding: '9px 16px',
-                  cursor: 'pointer'
-                }}
-              >
-                Time punch
               </button>
             </div>
 
@@ -1819,9 +1751,6 @@ export default function CalendarioTurnos7shifts() {
                   padding: '16px 20px' 
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
-                  Shift details
-                </div>
 
                 {/* 1. Selector de Empleado */}
                 <div style={{ marginBottom: 10 }}>
@@ -1937,27 +1866,6 @@ export default function CalendarioTurnos7shifts() {
                     </span>
                   </div>
 
-                  {/* Checkboxes Close & BD */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={editModal.is_close}
-                        onChange={(e) => setEditModal({ ...editModal, is_close: e.target.checked })}
-                      />
-                      <span>Close</span>
-                    </label>
-
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={editModal.is_bd}
-                        onChange={(e) => setEditModal({ ...editModal, is_bd: e.target.checked })}
-                      />
-                      <span>BD</span>
-                      <HelpCircle size={13} style={{ color: '#64748b' }} />
-                    </label>
-                  </div>
                 </div>
 
                 {shiftError && (
@@ -1972,7 +1880,7 @@ export default function CalendarioTurnos7shifts() {
                     onClick={() => setShowCommonTimes(!showCommonTimes)}
                     style={{ color: '#2563eb', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontWeight: 500 }}
                   >
-                    or use common shift times (se aplica a la última franja)
+                    o usa un horario común (se aplica a la última franja)
                   </span>
 
                   {showCommonTimes && (
@@ -2008,18 +1916,12 @@ export default function CalendarioTurnos7shifts() {
                   )}
                 </div>
 
-                {/* Ribbon 🎖️ 0 free shift notes remaining */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color: '#a855f7' }}>
-                  <Award size={14} />
-                  <span style={{ fontSize: 11, fontWeight: 600 }}>0 free shift notes remaining</span>
-                </div>
-
                 {/* Textarea para Notas */}
                 <div style={{ marginBottom: 10 }}>
                   <textarea 
                     value={editModal.notes}
                     onChange={(e) => setEditModal({ ...editModal, notes: e.target.value.slice(0, 250) })}
-                    placeholder="Add notes the employee needs to know about this shift."
+                    placeholder="Notas para la persona sobre este turno (opcional)"
                     rows={2}
                     style={{
                       width: '100%',
@@ -2042,7 +1944,7 @@ export default function CalendarioTurnos7shifts() {
                 {/* 4. Sección "Apply to" con Círculos Mon a Sun */}
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
-                    Apply to
+                    Aplicar a estos días
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
@@ -2078,7 +1980,7 @@ export default function CalendarioTurnos7shifts() {
                 {/* 5. Sección "Shift flag" */}
                 <div style={{ marginBottom: 6 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                    Shift flag
+                    Marca del turno
                   </div>
                   <div style={{ position: 'relative' }}>
                     <select 
@@ -2134,7 +2036,7 @@ export default function CalendarioTurnos7shifts() {
                         textDecoration: 'underline'
                       }}
                     >
-                      {deletingShift ? 'Deleting...' : 'Delete day'}
+                      {deletingShift ? 'Borrando...' : 'Borrar día'}
                     </button>
                   )}
                 </div>
@@ -2154,7 +2056,7 @@ export default function CalendarioTurnos7shifts() {
                       cursor: 'pointer'
                     }}
                   >
-                    Cancel
+                    Cancelar
                   </button>
 
                   <button 
@@ -2172,7 +2074,7 @@ export default function CalendarioTurnos7shifts() {
                       boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
                     }}
                   >
-                    {savingShift ? 'Saving...' : 'Save'}
+                    {savingShift ? 'Guardando...' : 'Guardar'}
                   </button>
                 </div>
               </div>
@@ -2206,6 +2108,7 @@ export default function CalendarioTurnos7shifts() {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 4 }}>Persona</label>
                 <select
                   value={availModal.employee_name}
+                  disabled={lockToMe}
                   onChange={(e) => changeAvailEmployee(e.target.value)}
                   style={{ width: '100%', height: 38, padding: '0 12px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#ffffff', fontWeight: 500, marginBottom: 14 }}
                 >
@@ -2270,10 +2173,10 @@ export default function CalendarioTurnos7shifts() {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid #e2e8f0', padding: '12px 20px', background: '#ffffff', flexShrink: 0 }}>
                 <button type="button" onClick={() => setAvailModal(null)} style={{ padding: '7px 16px', border: '1px solid #cbd5e1', borderRadius: 8, background: '#ffffff', color: '#334155', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                  Cancel
+                  Cancelar
                 </button>
                 <button type="submit" disabled={availSaving} style={{ padding: '7px 22px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#ffffff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                  {availSaving ? 'Saving...' : 'Save'}
+                  {availSaving ? 'Guardando...' : 'Guardar'}
                 </button>
               </div>
             </form>
