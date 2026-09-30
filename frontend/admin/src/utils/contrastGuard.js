@@ -15,7 +15,6 @@ const ATTR = 'data-cg'
 let observer = null
 let timer = null
 let running = false
-let applying = false
 let queue = new Set()
 
 const parseColor = (c) => {
@@ -101,13 +100,15 @@ const hslToRgb = ({ h, s, l }) => {
 const fixColor = (fg, bg) => {
   const bgL = luminance(bg)
   const hsl = rgbToHsl(fg)
-  const darker = bgL > 0.4          // fondo claro -> se oscurece la letra; fondo oscuro -> se aclara
+  // Se oscurece o se aclara la letra según con cuál extremo (negro o blanco) el fondo tiene mejor contraste.
+  // Así los fondos de tono medio (verde WhatsApp, ámbar, celeste) quedan con letra oscura y se leen.
+  const darker = ratioOf(0, bgL) >= ratioOf(1, bgL)
   for (let i = 0; i < 30; i++) {
     hsl.l = darker ? Math.max(0, hsl.l - 0.03) : Math.min(1, hsl.l + 0.03)
     const c = hslToRgb(hsl)
     if (ratioOf(luminance(c), bgL) >= TARGET_RATIO) return c
   }
-  return darker ? { r: 31, g: 16, b: 18 } : { r: 245, g: 240, b: 241 }
+  return darker ? { r: 20, g: 10, b: 12 } : { r: 255, g: 255, b: 255 }
 }
 
 const hasOwnText = (el) => {
@@ -146,9 +147,8 @@ const flush = () => {
   if (!running) return
   const batch = Array.from(queue)
   queue = new Set()
-  applying = true
   const step = (i) => {
-    if (!running) { applying = false; return }
+    if (!running) return
     const end = Math.min(i + 400, batch.length)
     for (let k = i; k < end; k++) {
       const root = batch[k]
@@ -156,12 +156,7 @@ const flush = () => {
       checkElement(root)
       root.querySelectorAll && root.querySelectorAll('*').forEach(checkElement)
     }
-    if (end < batch.length) {
-      requestAnimationFrame(() => step(end))
-    } else {
-      // deja pasar los eventos que generaron nuestros propios cambios
-      setTimeout(() => { applying = false }, 50)
-    }
+    if (end < batch.length) requestAnimationFrame(() => step(end))
   }
   step(0)
 }
@@ -176,7 +171,8 @@ export function startContrastGuard() {
   running = true
   schedule(document.body)
   observer = new MutationObserver((mutations) => {
-    if (applying) return
+    // Los cambios que hace el propio guardián llegan con data-cg="1" y se ignoran más abajo;
+    // lo que aparece mientras se procesa un lote (filas que llegan tarde) sí se encola.
     for (const m of mutations) {
       if (m.type === 'childList') {
         m.addedNodes.forEach((n) => { if (n.nodeType === 1) schedule(n) })
