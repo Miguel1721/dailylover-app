@@ -646,6 +646,32 @@ async def get_my_matches(
             query += " AND (m.approved_by_maria = true OR UPPER(COALESCE(m.status, '')) LIKE '%APROBADO%')"
         elif qf == "hechos":
             query += " AND UPPER(COALESCE(m.status, '')) LIKE 'HECHO%' AND COALESCE(m.approved_by_maria, false) = false"
+        elif qf == "troublemaker":
+            query += " AND UPPER(COALESCE(m.status, '')) LIKE '%TROUBLE%'"
+        elif qf in ("rechazado_psicologa", "rechazado_psicologas"):
+            query += " AND (UPPER(COALESCE(m.status, '')) LIKE '%PSICÓLOGA%' OR UPPER(COALESCE(m.status, '')) LIKE '%PSICOLOGA%')"
+        elif qf == "rechazado_maria":
+            query += " AND (UPPER(COALESCE(m.status, '')) LIKE '%NOT APPROVED%' OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR MAR%' OR m.observations LIKE '%[DEVUELTO MAR%')"
+        elif qf in ("rechazado_cs", "rechazado_servicio_al_cliente"):
+            query += """ AND (
+                mc.person_a_confirmation = 'Rechazó' OR mc.person_b_confirmation = 'Rechazó'
+                OR (
+                    (
+                        UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR PERSONA%'
+                        OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO AMBOS%'
+                        OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZÓ A LA OTRA PERSONA%'
+                        OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR LA OTRA PERSONA%'
+                        OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR CLIENTE%'
+                        OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO EN CS%'
+                        OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR CS%'
+                        OR UPPER(TRIM(COALESCE(m.status, ''))) IN ('RECHAZADO', 'RECHAZADA')
+                    )
+                    AND UPPER(COALESCE(m.status, '')) NOT LIKE '%PSICÓLOGA%'
+                    AND UPPER(COALESCE(m.status, '')) NOT LIKE '%PSICOLOGA%'
+                    AND UPPER(COALESCE(m.status, '')) NOT LIKE '%NOT APPROVED%'
+                    AND UPPER(COALESCE(m.status, '')) NOT LIKE '%MAR%'
+                )
+            )"""
         elif qf == "no_vip_agendar":
             query += " AND m.approved_by_maria = true AND (sd.venue IS NULL OR TRIM(sd.venue) = '' OR sd.venue ILIKE '%por definir%') AND (sd.date_time IS NULL OR TRIM(sd.date_time) = '' OR sd.date_time ILIKE '%por definir%') AND UPPER(COALESCE(m.plan_tier, '')) NOT LIKE '%VIP%'"
         elif qf == "vip":
@@ -684,7 +710,9 @@ async def get_my_matches(
     pills_counts = {
         "all": 0, "sin_b": 0, "listos": 0, "prioritarios": 0,
         "novedades": 0, "pausa": 0, "aprobados": 0, "hechos": 0,
-        "no_vip_agendar": 0, "vip": 0
+        "no_vip_agendar": 0, "vip": 0,
+        "troublemaker": 0, "rechazado_psicologa": 0,
+        "rechazado_maria": 0, "rechazado_cs": 0
     }
     try:
         cnt_sql = """
@@ -696,6 +724,28 @@ async def get_my_matches(
                 COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true OR UPPER(COALESCE(m.status, '')) LIKE '%APROBADO%') AS aprobados,
                 COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE 'HECHO%' AND COALESCE(m.approved_by_maria, false) = false) AS hechos,
                 COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE '%PAUSA%' OR mc.stage IN ('en pausa', 'en_pausa')) AS pausa,
+                COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE '%TROUBLE%') AS troublemaker,
+                COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE '%PSICÓLOGA%' OR UPPER(COALESCE(m.status, '')) LIKE '%PSICOLOGA%') AS rechazado_psicologa,
+                COUNT(DISTINCT m.id) FILTER (WHERE UPPER(COALESCE(m.status, '')) LIKE '%NOT APPROVED%' OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR MAR%' OR m.observations LIKE '%[DEVUELTO MAR%') AS rechazado_maria,
+                COUNT(DISTINCT m.id) FILTER (WHERE 
+                    mc.person_a_confirmation = 'Rechazó' OR mc.person_b_confirmation = 'Rechazó'
+                    OR (
+                        (
+                            UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR PERSONA%'
+                            OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO AMBOS%'
+                            OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZÓ A LA OTRA PERSONA%'
+                            OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR LA OTRA PERSONA%'
+                            OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR CLIENTE%'
+                            OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO EN CS%'
+                            OR UPPER(COALESCE(m.status, '')) LIKE '%RECHAZADO POR CS%'
+                            OR UPPER(TRIM(COALESCE(m.status, ''))) IN ('RECHAZADO', 'RECHAZADA')
+                        )
+                        AND UPPER(COALESCE(m.status, '')) NOT LIKE '%PSICÓLOGA%'
+                        AND UPPER(COALESCE(m.status, '')) NOT LIKE '%PSICOLOGA%'
+                        AND UPPER(COALESCE(m.status, '')) NOT LIKE '%NOT APPROVED%'
+                        AND UPPER(COALESCE(m.status, '')) NOT LIKE '%MAR%'
+                    )
+                ) AS rechazado_cs,
                 COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true AND (sd.venue IS NULL OR TRIM(sd.venue) = '' OR sd.venue ILIKE '%por definir%') AND UPPER(COALESCE(m.plan_tier, '')) NOT LIKE '%VIP%') AS no_vip_agendar,
                 COUNT(DISTINCT m.id) FILTER (WHERE m.approved_by_maria = true AND UPPER(COALESCE(m.plan_tier, '')) LIKE '%VIP%') AS vip
             FROM operational_matches m
@@ -723,6 +773,10 @@ async def get_my_matches(
                 "pausa": cd.get("pausa") or 0,
                 "aprobados": cd.get("aprobados") or 0,
                 "hechos": cd.get("hechos") or 0,
+                "troublemaker": cd.get("troublemaker") or 0,
+                "rechazado_psicologa": cd.get("rechazado_psicologa") or 0,
+                "rechazado_maria": cd.get("rechazado_maria") or 0,
+                "rechazado_cs": cd.get("rechazado_cs") or 0,
                 "no_vip_agendar": cd.get("no_vip_agendar") or 0,
                 "vip": cd.get("vip") or 0
             }

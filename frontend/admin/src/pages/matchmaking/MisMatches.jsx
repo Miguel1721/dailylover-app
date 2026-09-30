@@ -2032,6 +2032,39 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
     )
   }
 
+  const checkIsTroublemakerMatch = (m) => {
+    const stUpper = (m.status || '').toUpperCase()
+    return stUpper.includes('TROUBLE') || stUpper.includes('TROUBLEMAKER')
+  }
+
+  const checkIsRechazadoPsicologaMatch = (m) => {
+    const stUpper = (m.status || '').toUpperCase()
+    return stUpper.includes('PSICÓLOGA') || stUpper.includes('PSICOLOGA')
+  }
+
+  const checkIsRechazadoMariaMatch = (m) => {
+    const stUpper = (m.status || '').toUpperCase()
+    const obsUpper = (m.observations || '').toUpperCase()
+    return stUpper.includes('NOT APPROVED') || stUpper.includes('RECHAZADO POR MAR') || obsUpper.includes('[DEVUELTO MAR')
+  }
+
+  const checkIsRechazadoCsMatch = (m) => {
+    if (m.person_a_confirmation === 'Rechazó' || m.person_b_confirmation === 'Rechazó') return true
+    const stUpper = (m.status || '').toUpperCase().trim()
+    if (stUpper.includes('PSICÓLOGA') || stUpper.includes('PSICOLOGA') || stUpper.includes('NOT APPROVED') || stUpper.includes('MARIA') || stUpper.includes('MARÍA')) return false
+    return (
+      stUpper.includes('RECHAZADO POR PERSONA') ||
+      stUpper.includes('RECHAZADO AMBOS') ||
+      stUpper.includes('RECHAZÓ A LA OTRA PERSONA') ||
+      stUpper.includes('RECHAZADO POR LA OTRA PERSONA') ||
+      stUpper.includes('RECHAZADO POR CLIENTE') ||
+      stUpper.includes('RECHAZADO EN CS') ||
+      stUpper.includes('RECHAZADO POR CS') ||
+      stUpper === 'RECHAZADO' ||
+      stUpper === 'RECHAZADA'
+    )
+  }
+
   const checkHasScheduledVenueOrDate = (m) => {
     const v = (m.scheduled_venue || '').trim()
     const dt = (m.scheduled_date_time || '').trim()
@@ -2081,12 +2114,12 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       return true
     }
     if (quickFilter === 'prioritarios') return m.is_priority
-    if (quickFilter === 'novedades') return Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)
     if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
-    if (quickFilter === 'listos') return (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== ''
-    if (quickFilter === 'pausa') return (m.status || '').toUpperCase().includes('PAUSA')
-    if (quickFilter === 'aprobados') return Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')
     if (quickFilter === 'hechos') return (m.status || '').toUpperCase().startsWith('HECHO') && !m.approved_by_maria
+    if (quickFilter === 'troublemaker') return checkIsTroublemakerMatch(m)
+    if (quickFilter === 'rechazado_psicologa') return checkIsRechazadoPsicologaMatch(m)
+    if (quickFilter === 'rechazado_maria') return checkIsRechazadoMariaMatch(m)
+    if (quickFilter === 'rechazado_cs') return checkIsRechazadoCsMatch(m)
     return true
   })
 
@@ -2096,12 +2129,12 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   // Métricas para píldoras de acceso rápido (en vista de Psicóloga respetan Propios vs Heredados)
   const totalCount = serverCounts?.all ?? ownershipFilteredMatches.length
   const prioritariosCount = serverCounts?.prioritarios ?? ownershipFilteredMatches.filter(m => m.is_priority).length
-  const conNovedadCount = ownershipFilteredMatches.filter(m => Boolean(m.cs_novedades_count && m.cs_novedades_count > 0)).length
   const sinBCount = serverCounts?.sin_b ?? ownershipFilteredMatches.filter(m => !m.person_b || m.person_b.trim() === '').length
-  const listosCount = serverCounts?.listos ?? ownershipFilteredMatches.filter(m => (m.status || '').toLowerCase().includes('listo') && m.person_b && m.person_b.trim() !== '').length
-  const enPausaCount = serverCounts?.pausa ?? ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().includes('PAUSA')).length
   const hechosCount = serverCounts?.hechos ?? ownershipFilteredMatches.filter(m => (m.status || '').toUpperCase().startsWith('HECHO') && !m.approved_by_maria).length
-  const aprobadosCount = serverCounts?.aprobados ?? ownershipFilteredMatches.filter(m => Boolean(m.approved_by_maria) || (m.status || '').toUpperCase().includes('APROBADO')).length
+  const troublemakerCount = serverCounts?.troublemaker ?? ownershipFilteredMatches.filter(checkIsTroublemakerMatch).length
+  const rechazadoPsicologaCount = serverCounts?.rechazado_psicologa ?? ownershipFilteredMatches.filter(checkIsRechazadoPsicologaMatch).length
+  const rechazadoMariaCount = serverCounts?.rechazado_maria ?? ownershipFilteredMatches.filter(checkIsRechazadoMariaMatch).length
+  const rechazadoCsCount = serverCounts?.rechazado_cs ?? ownershipFilteredMatches.filter(checkIsRechazadoCsMatch).length
 
   const [isLight, setIsLight] = useState(() => {
     if (typeof document !== 'undefined') {
@@ -2957,12 +2990,12 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
             {[
               { id: 'all', icon: '👥', label: 'Todos', count: totalCount, activeBg: '#B8324F', activeColor: '#FFFFFF' },
               { id: 'prioritarios', icon: '⚡', label: 'Prioritarios', count: prioritariosCount, activeBg: '#D97706', activeColor: '#FFFFFF' },
-              { id: 'novedades', icon: '📢', label: 'Con Novedad CS', count: conNovedadCount, activeBg: '#EA580C', activeColor: '#FFFFFF' },
-              { id: 'listos', icon: '🟡', label: 'Listos para Match', count: listosCount, activeBg: '#CA8A04', activeColor: '#FFFFFF' },
               { id: 'sin_b', icon: '⏳', label: 'Sin Persona B', count: sinBCount, activeBg: '#7C3AED', activeColor: '#FFFFFF' },
-              { id: 'pausa', icon: '⏸️', label: 'En Pausa', count: enPausaCount, activeBg: '#EA580C', activeColor: '#FFFFFF' },
               { id: 'hechos', icon: '✅', label: 'Hechos', count: hechosCount, activeBg: '#0891B2', activeColor: '#FFFFFF' },
-              { id: 'aprobados', icon: '🔒', label: 'Aprobados', count: aprobadosCount, activeBg: '#16A34A', activeColor: '#FFFFFF' },
+              { id: 'troublemaker', icon: '⚠️', label: 'Troublemaker', count: troublemakerCount, activeBg: '#FF6B35', activeColor: '#FFFFFF' },
+              { id: 'rechazado_psicologa', icon: '🚫', label: 'Rechazado por Psicóloga', count: rechazadoPsicologaCount, activeBg: '#E11D48', activeColor: '#FFFFFF' },
+              { id: 'rechazado_maria', icon: '🛑', label: 'Rechazado por María', count: rechazadoMariaCount, activeBg: '#9333EA', activeColor: '#FFFFFF' },
+              { id: 'rechazado_cs', icon: '📞', label: 'Rechazado en Servicio al Cliente', count: rechazadoCsCount, activeBg: '#475569', activeColor: '#FFFFFF' },
             ].map(pill => {
               const isActive = quickFilter === pill.id
               return (
