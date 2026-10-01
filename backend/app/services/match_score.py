@@ -178,6 +178,10 @@ def unified_score(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "score": score, "veredicto": veredicto, "cobertura_pct": cobertura, "parcial": cobertura < 100,
+        # Con datos insuficientes NO se muestra porcentaje (evita "100 %" con dos datos) y la candidata va al final.
+        "mostrar_porcentaje": veredicto != "DATOS INSUFICIENTES",
+        # Clave para ordenar candidatas: el puntaje pesa por la cobertura (90 % con 40 % de datos < 85 % con 90 % de datos).
+        "orden": 0 if bloqueos else round(score * (0.4 + 0.6 * cobertura / 100), 1) if veredicto != "DATOS INSUFICIENTES" else round(score * cobertura / 1000, 1),
         "bloqueos": bloqueos, "discrepancias_fuertes": fuertes, "observaciones": notas,
         "dimensiones": [{"dimension": k, "peso": WEIGHTS[k], "puntaje": None if v is None else round(v, 2),
                          "puntos": None if v is None else round(WEIGHTS[k] * v, 1)} for k, v in dims.items()],
@@ -290,4 +294,3 @@ def canonical_to_score_input(canon: Optional[Dict[str, Any]] = None, p_row: Opti
         "rumba": rumba,
         "educacion": educacion,
     }
-

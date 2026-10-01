@@ -12063,6 +12063,31 @@ async def find_candidate_matches_engine(
             })
             continue
 
+        # Filtrar candidatos cuyo nombre sea un usuario de Instagram / red social (@handle)
+        is_social_handle = (
+            "(@" in cand_name
+            or cand_name.strip().startswith("@")
+            or "instagram.com" in cand_name.lower()
+            or "facebook.com" in cand_name.lower()
+            or bool(re.search(r'@[a-zA-Z0-9_.]+', cand_name))
+        )
+        if is_social_handle:
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": cand_age,
+                "occupation": cand_occ,
+                "reasons": ["Perfil con nombre de usuario de red social (@handle) no apto para sugerencias"],
+                "warnings": ["Requiere limpieza de nombre en CRM"],
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "handle_filter",
+                    "rule": "no_social_handles_as_name",
+                    "reasons": ["Perfil con nombre de usuario de red social (@handle)"]
+                }
+            })
+            continue
+
         input_cand = canonical_to_score_input(None, r)
         u_cand = unified_score(input_client, input_cand)
         cand_score = u_cand["score"]
@@ -12112,6 +12137,8 @@ async def find_candidate_matches_engine(
             "score": cand_score,
             "veredicto": cand_veredicto,
             "cobertura_pct": cand_cobertura,
+            "mostrar_porcentaje": u_cand.get("mostrar_porcentaje", True),
+            "orden": u_cand.get("orden", 0.0),
             "dimensiones": u_cand["dimensiones"],
             "pendientes": u_cand["pendientes"],
             "compatibility_pct": cand_score,
@@ -12209,7 +12236,7 @@ async def find_candidate_matches_engine(
     suggested_matches.sort(
         key=lambda x: (
             (x.get("dates_remaining") or 0) > 0,
-            x.get("score") is not None,
+            x.get("orden") or 0.0,
             x.get("score") or 0,
             x.get("cobertura_pct") or 0,
             x.get("dealbreakers_clean", True),
@@ -12484,12 +12511,21 @@ async def find_candidate_matches_engine(
             reverse=True
         )
 
-        evaluated_viable = [c for c in evaluated_sorted if c.get("ai_veredicto") != "NO RECOMENDADO"]
-        evaluated_non_viable = [c for c in evaluated_sorted if c.get("ai_veredicto") == "NO RECOMENDADO"]
-
-        # Los candidatos del lote prioritario evaluados por IA van SIEMPRE al inicio,
-        # seguidos por los mejores candidatos con score estructural para completar la parrilla de 8.
-        suggested_matches = evaluated_viable + remaining_sorted + evaluated_non_viable
+        all_viable = [c for c in (safe_evaluated + remaining_candidates) if c.get("ai_veredicto") != "NO RECOMENDADO" and c.get("veredicto") != "NO RECOMENDADO"]
+        all_viable.sort(
+            key=lambda x: (
+                (x.get("dates_remaining") or 0) > 0,
+                x.get("orden") or 0.0,
+                x.get("score") or 0,
+                x.get("cobertura_pct") or 0,
+                x.get("dealbreakers_clean", True),
+                x["user_id"]
+            ),
+            reverse=True
+        )
+        all_non_viable = [c for c in (safe_evaluated + remaining_candidates) if c.get("ai_veredicto") == "NO RECOMENDADO" or c.get("veredicto") == "NO RECOMENDADO"]
+        all_non_viable.sort(key=lambda x: (x.get("orden") or 0.0, x.get("score") or 0), reverse=True)
+        suggested_matches = all_viable + all_non_viable
 
     elif suggested_matches and not client_has_notes:
         for c in suggested_matches:
@@ -12499,12 +12535,17 @@ async def find_candidate_matches_engine(
 
     for c in suggested_matches:
         is_insufficient = (
-            c.get("ai_veredicto") == "SIN DATOS SUFICIENTES"
+            c.get("veredicto") == "DATOS INSUFICIENTES"
+            or c.get("mostrar_porcentaje") is False
+            or c.get("ai_veredicto") == "SIN DATOS SUFICIENTES"
             or c.get("compatibility_pct") is None
             or (c.get("campos_evaluados_pts") or 0) < 15.0
             or c.get("ai_notes_quality") == "NULA"
         )
         c["insufficient_data"] = is_insufficient
+        if c.get("veredicto") == "DATOS INSUFICIENTES" or c.get("mostrar_porcentaje") is False:
+            c["ai_veredicto"] = "DATOS INSUFICIENTES"
+            c["mostrar_porcentaje"] = False
         c["match_category"] = "insufficient_data" if is_insufficient else "viable"
         if isinstance(c.get("decision_trace"), dict):
             c["decision_trace"]["ai_evaluation"] = {
@@ -12815,10 +12856,9 @@ async def get_interview_results(
         force_refresh=force_refresh
     )
 
-    top_matches = suggested_matches[:8]
-
-    viable_matches = [m for m in top_matches if not m.get("insufficient_data")]
-    insufficient_matches = [m for m in top_matches if m.get("insufficient_data")]
+    viable_matches = [m for m in suggested_matches if not m.get("insufficient_data")][:8]
+    insufficient_matches = [m for m in suggested_matches if m.get("insufficient_data")][:8]
+    top_matches = (viable_matches + insufficient_matches)[:8]
 
     print(f"\n>>> [AUDIT LIVE INTERVIEW-RESULTS 360] Request identifier='{crm_id_or_user_id}' -> Client='{client_summary.get('name')}' (UID: {client_summary.get('user_id')})", flush=True)
     print(f"    Dealbreakers 360 Cliente: Mascotas='{client_profile_360.get('mascotas')}' | Creencias='{client_profile_360.get('creencias', {}).get('etiqueta_principal')}' | Total descartadas por dealbreakers={len(discarded_matches)}", flush=True)
@@ -12827,8 +12867,13 @@ async def get_interview_results(
         print(f"    #{idx+1}: {cand.get('name')} | comp={cand.get('compatibility_pct')}% | struct={cand.get('structural_score')} | ai={cand.get('ai_score')}% | verdict={cand.get('ai_veredicto')}", flush=True)
     print(f">>> [AUDIT LIVE INTERVIEW-RESULTS 360] Returning {len(top_matches)} candidates & {len(discarded_matches)} discarded.\n", flush=True)
 
+    plan_cumplido_aviso = None
+    if client_slots_total > 0 and client_used >= client_slots_total:
+        plan_cumplido_aviso = f"Aviso de plan: {user_row.name} ya tiene {client_used} de {client_slots_total} citas — Plan cumplido. Cualquier nueva asignación requiere compra de citas adicionales o aprobación expresa."
+
     warning_msg = (
-        client_profile_360.get("motivo_bloqueo")
+        plan_cumplido_aviso
+        or client_profile_360.get("motivo_bloqueo")
         or client_profile_360.get("warning")
         or ("No se encontraron candidatos viables en este momento debido a filtros de edad, ciudad o dealbreakers (ver descartados)." if len(viable_matches) == 0 and len(discarded_matches) > 0 else None)
     )

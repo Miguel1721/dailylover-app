@@ -247,13 +247,14 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
 
   const { client, suggested_matches = [] } = data
 
-  const viableMatches = (data?.viable_matches || []).length > 0
+  const viableMatches = ((data?.viable_matches || []).length > 0
     ? data.viable_matches
-    : suggested_matches.filter(c => !c.insufficient_data && c.compatibility_pct != null && c.ai_veredicto !== 'SIN DATOS SUFICIENTES' && (c.campos_evaluados_pts || 0) >= 15)
+    : suggested_matches.filter(c => !c.insufficient_data && c.mostrar_porcentaje !== false && c.veredicto !== 'DATOS INSUFICIENTES' && c.compatibility_pct != null && c.ai_veredicto !== 'SIN DATOS SUFICIENTES' && (c.campos_evaluados_pts || 0) >= 15)
+  ).slice().sort((a, b) => (b.orden ?? b.score ?? 0) - (a.orden ?? a.score ?? 0))
 
   const insufficientMatches = (data?.insufficient_matches || []).length > 0
     ? data.insufficient_matches
-    : suggested_matches.filter(c => c.insufficient_data || c.compatibility_pct == null || c.ai_veredicto === 'SIN DATOS SUFICIENTES' || (c.campos_evaluados_pts || 0) < 15)
+    : suggested_matches.filter(c => c.insufficient_data || c.mostrar_porcentaje === false || c.veredicto === 'DATOS INSUFICIENTES' || c.compatibility_pct == null || c.ai_veredicto === 'SIN DATOS SUFICIENTES' || (c.campos_evaluados_pts || 0) < 15)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -638,6 +639,30 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
             </div>
           )}
 
+          {/* Aviso si Persona A tiene plan cumplido */}
+          {client && client.plan_total_dates > 0 && (client.dates_used >= client.plan_total_dates || (client.dates_remaining != null && client.dates_remaining <= 0)) && (
+            <div style={{
+              background: isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.12)',
+              border: isLight ? '1.5px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.4)',
+              borderRadius: 12,
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              marginBottom: 16
+            }}>
+              <AlertTriangle size={24} color="#D97706" style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 14, color: isLight ? '#92400E' : '#FCD34D' }}>
+                  ⚠️ Atención: {client.name} — {client.dates_used || 0} de {client.plan_total_dates} citas (Plan cumplido)
+                </div>
+                <div style={{ fontSize: 12.5, color: isLight ? '#B45309' : '#FDE68A', marginTop: 2 }}>
+                  Esta persona ya completó todas las citas incluidas en su plan contratado. Antes de proceder a agendar un nuevo match, verifica si cuenta con recompra o autorización de administración.
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -895,20 +920,20 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                           🌟 {cand.opportunity_badge}
                         </span>
                       )}
-                      {isInsufficient ? (
+                      {isInsufficient || cand.mostrar_porcentaje === false || cand.insufficient_data ? (
                         <span style={{
-                          background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
-                          border: isLight ? '1.5px solid #F59E0B' : '1px solid #F59E0B',
-                          color: isLight ? '#92400E' : '#FBBF24',
-                          fontWeight: 800,
+                          background: isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.15)',
+                          border: isLight ? '1.5px solid #FCD34D' : '1px solid #F59E0B',
+                          color: isLight ? '#B45309' : '#FBBF24',
+                          fontWeight: 700,
                           fontSize: 13,
                           padding: '4px 12px',
                           borderRadius: 20,
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: 5
-                        }}>
-                          ⚠️ Sin datos suficientes
+                          gap: 6
+                        }} title={`Datos insuficientes para puntaje definitivo. Cobertura: ${cand.cobertura_pct ?? cand.campos_evaluados_pts ?? 0}%`}>
+                          ⚠️ Datos insuficientes · cobertura {cand.cobertura_pct ?? cand.campos_evaluados_pts ?? 0}%
                         </span>
                       ) : (
                         <>
@@ -938,51 +963,8 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                             borderRadius: 20,
                             boxShadow: isLight ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
                           }}>
-                            ✨ {cand.compatibility_pct}% Match {!cand.datos_completos ? '(Parcial)' : ''}
+                            ✨ {cand.compatibility_pct || cand.score}% · {cand.ai_veredicto || cand.veredicto || 'COMPATIBLE'}
                           </span>
-                          {cand.ai_score != null ? (
-                            <span style={{
-                              background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
-                              border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
-                              color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
-                              fontWeight: 700,
-                              fontSize: 12,
-                              padding: '3px 10px',
-                              borderRadius: 16
-                            }} title={cand.ai_analisis || ''}>
-                              🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
-                            </span>
-                          ) : cand.ai_veredicto === 'FALLBACK POR TIMEOUT' || cand.ai_status === 'TIMEOUT_FALLBACK' ? (
-                            <span style={{
-                              background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
-                              border: '1px solid #F59E0B',
-                              color: isLight ? '#B45309' : '#FBBF24',
-                              fontWeight: 700,
-                              fontSize: 12,
-                              padding: '3px 10px',
-                              borderRadius: 16,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }} title={cand.ai_fallback_notice || 'Evaluación de IA excedió el tiempo límite (18s); se utilizó el score estructural'}>
-                              ⏱️ IA Timeout (Score Estructural)
-                            </span>
-                          ) : cand.ai_veredicto === 'SCORE ESTRUCTURAL' || cand.ai_status === 'STRUCTURAL_ONLY' ? (
-                            <span style={{
-                              background: isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)',
-                              border: '1px solid rgba(156, 163, 175, 0.5)',
-                              color: isLight ? '#4B5563' : '#9CA3AF',
-                              fontWeight: 700,
-                              fontSize: 12,
-                              padding: '3px 10px',
-                              borderRadius: 16,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4
-                            }} title={cand.ai_fallback_notice || 'Evaluado con modelo estructural CRM (sin análisis profundo de IA)'}>
-                              📊 Score Estructural (Sin IA)
-                            </span>
-                          ) : null}
                         </>
                       )}
                     </div>
@@ -1508,85 +1490,42 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                       </span>
                     )}
 
-                    {isInsufficient ? (
+                    {isInsufficient || cand.mostrar_porcentaje === false || cand.insufficient_data ? (
                       <span style={{
                         fontSize: 11,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 14,
+                        background: isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.15)',
+                        color: isLight ? '#B45309' : '#FBBF24',
+                        border: isLight ? '1px solid #FCD34D' : '1px solid #F59E0B',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }} title={`Datos insuficientes para puntaje definitivo. Cobertura: ${cand.cobertura_pct ?? cand.campos_evaluados_pts ?? 0}%`}>
+                        ⚠️ Cobertura {cand.cobertura_pct ?? cand.campos_evaluados_pts ?? 0}%
+                      </span>
+                    ) : (
+                      <span style={{
+                        fontSize: 12,
                         fontWeight: 800,
                         padding: '3px 10px',
                         borderRadius: 14,
-                        background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
-                        color: isLight ? '#92400E' : '#FBBF24',
-                        border: isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.3)'
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        background: (cand.compatibility_pct ?? cand.score ?? 0) >= 80
+                          ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)')
+                          : (isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)'),
+                        color: (cand.compatibility_pct ?? cand.score ?? 0) >= 80
+                          ? (isLight ? '#065F46' : '#81C784')
+                          : (isLight ? '#1E40AF' : '#93C5FD'),
+                        border: (cand.compatibility_pct ?? cand.score ?? 0) >= 80
+                          ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)')
+                          : (isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.3)')
                       }}>
-                        ⚠️ Sin datos
+                        ✨ {cand.compatibility_pct || cand.score}% · {cand.ai_veredicto || cand.veredicto || 'COMPATIBLE'}
                       </span>
-                    ) : (
-                      <>
-                        <span style={{
-                          fontSize: 12,
-                          fontWeight: 800,
-                          padding: '3px 10px',
-                          borderRadius: 14,
-                          background: (cand.compatibility_pct ?? 0) >= 80
-                            ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)')
-                            : (isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)'),
-                          color: (cand.compatibility_pct ?? 0) >= 80
-                            ? (isLight ? '#065F46' : '#81C784')
-                            : (isLight ? '#1E40AF' : '#93C5FD'),
-                          border: (cand.compatibility_pct ?? 0) >= 80
-                            ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)')
-                            : (isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.3)')
-                        }}>
-                          ✨ {cand.compatibility_pct}% {!cand.datos_completos ? '(Parcial)' : ''}
-                        </span>
-
-                        {cand.ai_score != null ? (
-                          <span style={{
-                            background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
-                            border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
-                            color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
-                            fontWeight: 700,
-                            fontSize: 11,
-                            padding: '3px 8px',
-                            borderRadius: 14,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }} title={cand.ai_analisis || ''}>
-                            🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
-                          </span>
-                        ) : cand.ai_veredicto === 'FALLBACK POR TIMEOUT' || cand.ai_status === 'TIMEOUT_FALLBACK' ? (
-                          <span style={{
-                            background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
-                            border: '1px solid #F59E0B',
-                            color: isLight ? '#B45309' : '#FBBF24',
-                            fontWeight: 700,
-                            fontSize: 11,
-                            padding: '3px 8px',
-                            borderRadius: 14,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }} title={cand.ai_fallback_notice || 'Evaluación de IA excedió el tiempo límite (13s); se utilizó el score estructural'}>
-                            ⏱️ IA Timeout
-                          </span>
-                        ) : cand.ai_veredicto === 'SCORE ESTRUCTURAL' || cand.ai_status === 'STRUCTURAL_ONLY' ? (
-                          <span style={{
-                            background: isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)',
-                            border: '1px solid rgba(156, 163, 175, 0.5)',
-                            color: isLight ? '#4B5563' : '#9CA3AF',
-                            fontWeight: 700,
-                            fontSize: 11,
-                            padding: '3px 8px',
-                            borderRadius: 14,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4
-                          }} title={cand.ai_fallback_notice || 'Candidato fuera del lote prioritario de IA; evaluado con modelo estructural CRM'}>
-                            📊 Score Estructural
-                          </span>
-                        ) : null}
-                      </>
                     )}
                   </div>
 
