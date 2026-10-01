@@ -136,10 +136,9 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         elif desc and len(desc) > 3 and not desc.lower().startswith("invoice"):
             plan_name = desc[:60]
         else:
-            for key, name in STRIPE_PLAN_MAP.items():
-                if key in str(int(amount_cop)):
-                    plan_name = name
-                    break
+            # Monto exacto en miles (65.000 -> "65"). Antes se buscaba como texto y "650" coincidía con 65.000.
+            if amount_cop and int(amount_cop) % 1000 == 0:
+                plan_name = STRIPE_PLAN_MAP.get(str(int(amount_cop) // 1000), "")
 
         if not plan_name:
             if amount_cop > 0:
