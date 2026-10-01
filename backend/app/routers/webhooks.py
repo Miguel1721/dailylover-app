@@ -123,9 +123,34 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         is_event_ticket = any(str(k).lower().startswith("luma") or str(k).lower() == "event_api_id" for k in meta.keys())
         desc = str(data_object.get("description") or "").strip()
 
+        # Catálogo de enlaces de pago: el plan se reconoce por el ENLACE que usó el cliente (no por el monto).
+        plink_id = str(data_object.get("payment_link") or "").strip() if not isinstance(data_object.get("payment_link"), dict) else ""
+        cat_plan, cat_cambia, cat_vip = None, True, False
+        if plink_id.startswith("plink_"):
+            try:
+                _cr = (await db.execute(text("SELECT plan, cambia_plan, agenda_vip, revisar FROM stripe_plan_catalog WHERE payment_link_id = :p"), {"p": plink_id})).fetchone()
+                if _cr is None:
+                    # Enlace nuevo que nadie ha clasificado: se registra como pendiente y se avisa (el pago se procesa con la regla por monto).
+                    await db.execute(text("""INSERT INTO stripe_plan_catalog (payment_link_id, nombre, monto, moneda, plan, cambia_plan, agenda_vip, revisar, creado_por)
+                        VALUES (:p, :n, :m, :c, :pl, FALSE, FALSE, TRUE, 'webhook') ON CONFLICT (payment_link_id) DO NOTHING"""),
+                        {"p": plink_id, "n": (desc or "")[:200], "m": int(amount_cop or 0), "c": currency, "pl": "Sin clasificar"})
+                    await db.execute(text("""INSERT INTO reminders (title, client_name, client_phone, priority, matchmaker, due_date, notes)
+                        VALUES (:t, 'SISTEMA', '', 'URGENTE', 'MPS', 'Hoy (URGENTE)', :n)"""),
+                        {"t": "Enlace de pago nuevo sin plan asignado", "n": f"Un cliente pagó ${int(amount_cop or 0):,} {currency} por un enlace de Stripe que el sistema no conoce ({plink_id}). Dile a Claude qué plan es para clasificarlo."})
+                    await db.commit()
+                elif not _cr.revisar:
+                    cat_plan, cat_cambia, cat_vip = _cr.plan, bool(_cr.cambia_plan), bool(_cr.agenda_vip)
+            except Exception as e_cat:
+                logger.warning(f"Catálogo de enlaces de pago no disponible: {e_cat}")
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+
         # Detección específica del plan Matchmaking Service 650k (Link directo https://buy.stripe.com/4gMcN4aqI87p4no2O48EM1g o monto 650k)
         is_vip_650k = bool(
-            "4gMcN4aqI87p4no2O48EM1g" in str(data_object)
+            cat_vip
+            or "4gMcN4aqI87p4no2O48EM1g" in str(data_object)
             or (640000 <= amount_cop <= 660000)
             or ("650" in str(meta_plan).lower())
             or ("650" in desc.lower())
@@ -145,6 +170,8 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             if amount_cop and int(amount_cop) % 1000 == 0:
                 plan_name = STRIPE_PLAN_MAP.get(str(int(amount_cop) // 1000), "")
 
+        if cat_plan:
+            plan_name = cat_plan
         if not plan_name:
             if amount_cop > 0:
                 plan_name = f"Plan Especial - ${int(amount_cop):,} {currency}"
@@ -183,7 +210,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 "curr": currency,
                 "desc": desc or plan_name,
                 "plan": plan_name,
-                "meta": json.dumps(meta)
+                "meta": json.dumps({**meta, "checkout_session_id": (str(data_object.get("id")) if str(data_object.get("id") or "").startswith("cs_") else None), "payment_link": plink_id or None})
             })
             # Confirmar YA el registro del pago: antes solo se confirmaba si el comprador existía en `users`,
             # y los pagos de personas nuevas se perdían en silencio (se respondía "success" sin guardar).
@@ -191,6 +218,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         except Exception as e:
             logger.error(f"Error guardando en stripe_payments: {e}")
             await db.rollback()
+
+        if cat_plan and pi_id:
+            try:
+                await db.execute(text("UPDATE stripe_payments SET plan_tier = :pl WHERE stripe_payment_intent_id = :pi"), {"pl": cat_plan, "pi": pi_id})
+                await db.commit()
+            except Exception:
+                await db.rollback()
 
         # Buscar usuario en el CRM por correo, teléfono o nombre
         if customer_email or customer_phone or customer_name:
@@ -232,7 +266,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     "pi_id": pi_id,
                     "amt": amount_cop,
                     "user_id": user_id,
-                    "is_event": bool(is_event_ticket) or (plan_name in PLANES_SIN_CAMBIO)
+                    "is_event": bool(is_event_ticket) or (plan_name in PLANES_SIN_CAMBIO) or (not cat_cambia)
                 })
 
                 # Vincular user_id en stripe_payments
@@ -274,7 +308,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             # Disparador en tiempo real hacia Google Sheets (apuntando al Sheet configurado en GOOGLE_SHEETS_SPREADSHEET_ID)
             target_name = (user_row.name if user_row else None) or customer_name or ""
             target_resp = ("MPS" if is_vip_650k else (user_row.responsable if user_row else None))
-            if target_name and plan_name and not is_event_ticket and plan_name not in PLANES_SIN_CAMBIO:
+            if target_name and plan_name and not is_event_ticket and plan_name not in PLANES_SIN_CAMBIO and cat_cambia:
                 try:
                     from app.services.google_sheets import update_client_plan_in_sheet
                     asyncio.create_task(

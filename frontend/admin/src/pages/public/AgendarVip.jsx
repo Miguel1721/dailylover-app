@@ -67,7 +67,7 @@ const pad = (n) => String(n).padStart(2, '0')
 
 export default function AgendarVip() {
   const { search } = useLocation()
-  const token = useMemo(() => new URLSearchParams(search).get('token') || '', [search])
+  const token = useMemo(() => { const q = new URLSearchParams(search); return q.get('token') || q.get('session_id') || '' }, [search])
 
   const [state, setState] = useState('loading') // loading | ready | error | booked | done
   const [errorMsg, setErrorMsg] = useState('')

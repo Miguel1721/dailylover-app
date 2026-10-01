@@ -590,8 +590,34 @@ def _parse_vip_token(token: str) -> Dict[str, Any]:
     return {"pi": m.group("pi"), "ts": ts}
 
 
+async def _resolve_vip_session(db: AsyncSession, token: str) -> Dict[str, Any]:
+    """Entrada directa desde Stripe: ?session_id=cs_... (la redirección del enlace de pago). Se espera unos segundos a que el webhook registre el pago."""
+    cs = (token or "").strip()
+    row = None
+    for _ in range(12):
+        row = (await db.execute(text("""
+            SELECT sp.customer_name, sp.customer_email, sp.customer_phone, sp.amount, sp.plan_tier, sp.payment_status, sp.created_at,
+                   COALESCE((SELECT c.agenda_vip FROM stripe_plan_catalog c WHERE c.payment_link_id = sp.metadata->>'payment_link'), FALSE) AS agenda_vip
+            FROM stripe_payments sp WHERE sp.metadata->>'checkout_session_id' = :cs LIMIT 1"""), {"cs": cs})).fetchone()
+        if row:
+            break
+        await asyncio.sleep(1)
+    if not row or (row.payment_status or "") != "succeeded":
+        raise HTTPException(status_code=403, detail="Todavía estamos confirmando tu pago. Espera un momento y recarga la página, o revisa el correo que te enviamos.")
+    is_vip = bool(row.agenda_vip) or ("matchmaking service" in str(row.plan_tier or "").lower()) or (row.amount is not None and 640000 <= float(row.amount) <= 660000)
+    if not is_vip or not (row.customer_email and "@" in row.customer_email):
+        raise HTTPException(status_code=403, detail="Enlace de agendamiento inválido.")
+    if row.created_at and (datetime.utcnow() - row.created_at).total_seconds() > VIP_TOKEN_MAX_AGE_DAYS * 86400:
+        raise HTTPException(status_code=410, detail="Este enlace de agendamiento venció. Escríbenos y te enviamos uno nuevo.")
+    name = (row.customer_name or "").strip() or "Cliente"
+    return {"token": cs, "client_name": name, "first_name": name.split()[0] if name.split() else name,
+            "client_email": row.customer_email, "client_phone": row.customer_phone or ""}
+
+
 async def _resolve_vip_token(db: AsyncSession, token: str) -> Dict[str, Any]:
     """Del token obtiene el pago Matchmaking Service (650k) asociado y con él los datos de la clienta."""
+    if (token or "").strip().startswith("cs_"):
+        return await _resolve_vip_session(db, token)
     parsed = _parse_vip_token(token)
     res = await db.execute(text("""
         SELECT customer_name, customer_email, customer_phone, amount, plan_tier, payment_status
