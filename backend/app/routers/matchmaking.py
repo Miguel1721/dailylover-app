@@ -163,52 +163,52 @@ def clean_plan_name(plan_str: Optional[str]) -> str:
     s = re.sub(r'est\?+ndar', 'Estándar', s, flags=re.IGNORECASE)
     return s
 
-# Cada cita del plan se arma con 2 opciones de Persona B (slots): quien tiene 1 cita tiene 2 slots, quien tiene 2 citas, 4 slots.
-SLOTS_POR_CITA = 2
+# Slots = citas del plan + 1 (una opción de reserva): 1 cita -> 2 slots, 2 citas -> 3 slots, 3 citas -> 4 slots.
+SLOTS_EXTRA = 1
 
 
-def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
+def get_slots_by_plan(plan_str: Optional[str], fecha: Optional[Any] = None) -> Optional[int]:
     """
-    Retorna la cantidad exacta de citas/slots según el plan activo (SSOT canónico):
-    - Si el texto contiene '(X citas)' o 'X citas', se extrae directamente dicho número.
-    - VIP / Matchmaking Experience -> 4 slots
-    - Premium (150k) -> 3 slots
-    - Estándar (65k / 98k) -> 2 slots
-    - Básico (40k) -> 1 slot
-    - Sin plan -> 0 slots
+    Cantidad de CITAS que incluye el plan (reglas de Jorge, 1-oct-2026):
+    - Si el texto dice '(N citas)' o '(N dates)', se usa N.
+    - Básico 40k = 1 · Estándar Plus 98k = 2 · VIP 195k = 2 · Matchmaking Service / Experience 650k = 3
+    - Estándar 65k: 1 cita desde el 1-may-2026; antes eran 2.
+    - Premium 150k: antes del 1-may-2026 eran 2; desde esa fecha 3 (por confirmar con Jorge).
+    - Sin plan -> 0.
+    `fecha` es la fecha de compra (date/datetime) cuando se conoce; si no, se asume compra reciente.
     """
     if not plan_str or not str(plan_str).strip():
         return 0
     p = clean_plan_name(plan_str).lower().strip()
     if p in ("sin plan", "none", "null", "no plan"):
         return 0
-    m = re.search(r'(\d+)\s*citas?', p)
+    m = re.search(r'(\d+)\s*(?:citas?|dates?)\b', p)
     if m:
         try:
             return int(m.group(1))
         except Exception:
             pass
-    if "matchmaking service" in p or "650k" in p:
+    antes_de_mayo = False
+    if fecha is not None:
+        try:
+            f = fecha.date() if hasattr(fecha, "date") else fecha
+            antes_de_mayo = f < datetime(2026, 5, 1).date()
+        except Exception:
+            antes_de_mayo = False
+    if "matchmaking service" in p or "650k" in p or "experience" in p or "mape" in p:
         return 3
-    if "experience" in p or "mape" in p:
-        return 4
-    elif "vip" in p:
-        return 4
-    elif "premium" in p or "150k" in p:
-        return 3
-    elif "65k" in p or "estándar" in p or "estandar" in p or "98k" in p:
+    if "vip" in p or "195k" in p:
         return 2
-    elif "40k" in p or "básico" in p or "basico" in p:
+    if "premium" in p or "150k" in p:
+        return 2 if antes_de_mayo else 3
+    if "98k" in p or "plus" in p:
+        return 2
+    if "65k" in p or "estandar" in p or "estándar" in p:
+        return 2 if antes_de_mayo else 1
+    if "40k" in p or "basico" in p or "básico" in p:
         return 1
     return 0
 
-CONFIRMATION_OPTIONS = [
-    "Pendiente", "Listo para escribir", "No contesta", "De viaje",
-    "Problema personal", "Reprogramar", "Viaje largo / indefinido",
-    "Aceptó", "Rechazó"
-]
-
-# ─── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 
 def normalize_pref(val: Optional[str]) -> str:
     if not val:
@@ -3183,7 +3183,7 @@ async def get_mesa_psicologa(
             COALESCE(pA.photo_url, '') AS person_a_photo_url,
             COALESCE(pB.photo_url, '') AS person_b_photo_url,
             pA.age AS person_a_age, pA.occupation AS person_a_occupation, pA.responsable AS person_a_responsable,
-            pA.city AS person_a_profile_city,
+            pA.city AS person_a_profile_city, pA.last_payment_date AS person_a_pay_date,
             pB.age AS person_b_age, pB.occupation AS person_b_occupation,
             pB.city AS person_b_profile_city,
             sd.venue AS scheduled_venue, sd.date_time AS scheduled_date_time, sd.had_date AS scheduled_had_date,
@@ -3278,7 +3278,7 @@ async def get_mesa_psicologa(
             dias_label = "-"
 
         clean_plan = normalize_plan(d.get("plan_tier"))
-        total_slots = get_slots_by_plan(clean_plan)
+        total_slots = get_slots_by_plan(clean_plan, d.get("person_a_pay_date"))
         used = dates_used_map.get(d.get("user_id_a"), 0)
         if total_slots is not None and total_slots > 0:
             citas_restantes = max(0, total_slots - used)
@@ -3312,8 +3312,8 @@ async def get_mesa_psicologa(
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
             "citas_label": citas_label,
-            "slots_total": (total_slots * SLOTS_POR_CITA) if total_slots else None,
-            "slots_libres": (citas_restantes * SLOTS_POR_CITA) if citas_restantes is not None else None,
+            "slots_total": (total_slots + SLOTS_EXTRA) if total_slots else None,
+            "slots_libres": ((citas_restantes + SLOTS_EXTRA) if citas_restantes else 0) if citas_restantes is not None else None,
             "dias_esperando": dias_esperando,
             "dias_label": dias_label,
             "slot_number": d.get("slot_number") or 1,
@@ -3381,7 +3381,7 @@ async def get_mesa_psicologa(
             continue
 
         clean_plan = normalize_plan(latest_r.get("plan_tier"))
-        total_slots = get_slots_by_plan(clean_plan)
+        total_slots = get_slots_by_plan(clean_plan, latest_r.get("person_a_pay_date"))
         used = dates_used_map.get(latest_r.get("user_id_a"), 0)
 
         if total_slots is not None and total_slots > 0:
@@ -3436,8 +3436,8 @@ async def get_mesa_psicologa(
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
             "citas_label": citas_label,
-            "slots_total": (total_slots * SLOTS_POR_CITA) if total_slots else None,
-            "slots_libres": (citas_restantes * SLOTS_POR_CITA) if citas_restantes is not None else None,
+            "slots_total": (total_slots + SLOTS_EXTRA) if total_slots else None,
+            "slots_libres": ((citas_restantes + SLOTS_EXTRA) if citas_restantes else 0) if citas_restantes is not None else None,
             "dias_esperando": dias_esperando,
             "dias_label": dias_label,
             "slot_number": latest_r.get("slot_number") or 1,
