@@ -42,6 +42,7 @@ NEW_FIELDS = {
     "prof_243": ("lifestyle", "personal_red_flags"),
 }
 REFRESH = {
+    "prof_187": ("col", "photo_url"),
     "prof_192": ("col", "gender"), "prof_193": ("col", "orientation"), "prof_197": ("col", "religion"), "prof_220": ("col", "love_language"),
     "prof_201": ("lifestyle", "has_children"), "prof_202": ("lifestyle", "wants_children"), "prof_204": ("lifestyle", "body_type"),
     "prof_208": ("lifestyle", "smoker"), "prof_209": ("lifestyle", "drinks_alcohol"), "prof_210": ("lifestyle", "has_pets"),
@@ -145,9 +146,18 @@ async def project_user(db: AsyncSession, user_id: int, apply: bool = True, sourc
         for fid, (kind, key) in table.items():
             if fid not in fields:
                 continue
-            new = joined(fields[fid])
-            if fid == "prof_212":
-                new = new.lstrip("@").strip()
+            if fid == "prof_187":
+                raw_f = fields[fid]
+                if isinstance(raw_f, dict) and raw_f.get("url"):
+                    new = str(raw_f["url"]).strip()
+                elif isinstance(raw_f, str) and raw_f.startswith("http"):
+                    new = raw_f.strip()
+                else:
+                    new = ""
+            else:
+                new = joined(fields[fid])
+                if fid == "prof_212":
+                    new = new.lstrip("@").strip()
             if not new:
                 continue
             old = _current(prof, kind, key)

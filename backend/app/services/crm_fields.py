@@ -93,6 +93,15 @@ async def ingest_webhook_payload(db: AsyncSession, payload: Dict[str, Any]) -> i
                         value = EXCLUDED.value, source = 'webhook', updated_at = NOW()"""),
                     {"c": crm_id, "f": fid, "u": user_id, "l": meta[0] if meta else None, "t": meta[1] if meta else None, "v": json.dumps(v, ensure_ascii=False)})
             n += 1
+        # Foto de perfil del CRM (prof_187) -> profiles.photo_url, con registro del valor anterior.
+        p187 = data.get("prof_187")
+        photo = p187.get("url") if isinstance(p187, dict) else (p187 if isinstance(p187, str) and p187.startswith("http") else None)
+        if user_id and photo:
+            old_photo = (await db.execute(text("SELECT photo_url FROM profiles WHERE user_id = :u"), {"u": user_id})).scalar()
+            if (old_photo or "") != photo:
+                await db.execute(text("UPDATE profiles SET photo_url = :p, updated_at = NOW() WHERE user_id = :u"), {"p": photo, "u": user_id})
+                await db.execute(text("""INSERT INTO profile_field_changes (user_id, target, old_value, new_value, source, kind)
+                    VALUES (:u, 'col.photo_url', :o, :n, 'crm_webhook', 'refresco')"""), {"u": user_id, "o": old_photo or "", "n": photo})
         await db.commit()
         return n
     except Exception as exc:  # jamás debe tumbar el webhook
