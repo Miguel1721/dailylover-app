@@ -41,7 +41,7 @@ from app.services.clinical_profile_extractor import (
     MALE_NAME_TOKENS,
     normalize_text_unaccent
 )
-from app.services.match_score import unified_score, norm_city, canonical_to_score_input
+from app.services.match_score import unified_score, norm_city, canonical_to_score_input, _yes_no as _yes_no_ms
 from app.services.psychologist_helper import (
     build_psychologist_sql_condition,
     get_psychologist_aliases,
@@ -11581,21 +11581,19 @@ def build_dimensional_reasons(a: dict, b: dict, eval_res: dict) -> List[str]:
     cálculo único determinístico, usando los datos reales de cada persona (sin 'IA:').
     """
     reasons = []
+    por_confirmar = []
 
-    # 1. Hijos (peso 15)
+    # 1. Hijos (peso 15): razón solo si coinciden; si no, queda "por confirmar"
     hijos_a = a.get("deseo_hijos")
     hijos_b = b.get("deseo_hijos")
     if hijos_a and hijos_b:
-        ha_norm = str(hijos_a).strip().lower()
-        hb_norm = str(hijos_b).strip().lower()
-        if any(w in ha_norm for w in ("si", "sí", "desea", "quiere", "abierto")) and any(w in hb_norm for w in ("si", "sí", "desea", "quiere", "abierto")):
-            reasons.append("Hijos: ambos 'Sí'")
-        elif "no" in ha_norm and "no" in hb_norm:
-            reasons.append("Hijos: ambos 'No'")
-        elif ha_norm == hb_norm:
-            reasons.append(f"Hijos: ambos '{hijos_a}'")
+        ha_n, hb_n = _yes_no_ms(hijos_a), _yes_no_ms(hijos_b)
+        if ha_n and ha_n == hb_n and ha_n != "tal vez":
+            reasons.append(f"Hijos: ambos '{'Sí' if ha_n == 'si' else 'No'}'")
+        elif ha_n and ha_n == hb_n:
+            por_confirmar.append("Hijos: ambos 'Tal vez' — confirmar en entrevista")
         else:
-            reasons.append(f"Hijos: {hijos_a} vs {hijos_b}")
+            por_confirmar.append(f"Hijos por confirmar: {hijos_a} / {hijos_b}")
 
     # 2. Edad (peso 15)
     edad_a = a.get("edad")
@@ -11613,9 +11611,9 @@ def build_dimensional_reasons(a: dict, b: dict, eval_res: dict) -> List[str]:
 
         if edad_a and (emin_b or emax_b):
             r_str_b = f"{emin_b or 18}–{emax_b or 99}"
-            a_in_b = (not emin_b or edad_a >= emin_b) and (not emax_a or edad_a <= emax_b)
+            a_in_b = (not emin_b or edad_a >= emin_b) and (not emax_b or edad_a <= emax_b)
             if a_in_b:
-                edad_text = f"Edad: {p1}; {edad_a} dentro del rango de ella ({r_str_b})"
+                edad_text = f"Edad: {p1}; {edad_a} dentro del rango que busca la otra persona ({r_str_b})"
             else:
                 edad_text = f"Edad: {p1}; {edad_a} años"
         else:
@@ -11659,6 +11657,9 @@ def build_dimensional_reasons(a: dict, b: dict, eval_res: dict) -> List[str]:
         elif dim_name == "apego" and len(reasons) < 3:
             reasons.append("Apego: Dinámica vincular armónica")
 
+    for pc in por_confirmar:
+        if len(reasons) < 3:
+            reasons.append(pc)
     if len(reasons) < 3:
         reasons.append("Filtro clínico bidireccional superado sin incompatibilidades")
     if len(reasons) < 3:
