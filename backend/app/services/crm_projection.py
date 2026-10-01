@@ -6,6 +6,7 @@ Todo cambio queda en `profile_field_changes` (valor anterior y nuevo) para poder
 numéricos) NO se proyectan: quedan solo en crm_profile_fields. Texto libre y campos mezclados NO se refrescan.
 """
 import json
+import os
 import logging
 import re
 import unicodedata
@@ -48,7 +49,7 @@ REFRESH = {
 }
 _ready = False
 # Datos de identidad / búsqueda: si CRM y sistema se CONTRADICEN, no se aplica solo: queda para revisión humana.
-CRITICAL = {"col.gender", "search_preferences.preferred_gender", "col.orientation"}
+CRITICAL = set() if os.environ.get("CRM_PROJECTION_APPLY_CRITICAL") == "1" else {"col.gender", "search_preferences.preferred_gender", "col.orientation"}
 EQUIV = {"hetero": "heterosexual", "yes": "si", "sí": "si", "no": "no", "true": "si", "false": "no"}
 
 
