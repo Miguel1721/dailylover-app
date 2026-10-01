@@ -299,3 +299,149 @@ async def public_join(token: str, db: AsyncSession = Depends(get_db)):
 async def public_audio(token: str, request: Request, seq: int = Query(...), start_ms: Optional[int] = Query(None), db: AsyncSession = Depends(get_db)):
     await ensure_call_tables(db)
     return await _store_chunk(db, await _by_token(db, token), "CLIENTE", seq, start_ms, request)
+
+
+# ------------------------------------------------------------------ transcripción (equipo)
+
+@router.post("/{sid}/transcribe")
+async def transcribe(sid: int, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Transcribe la entrevista (una pista por persona). Solo si la cliente autorizó la grabación."""
+    await ensure_call_tables(db)
+    s = await _by_id(db, sid)
+    if s.consent != "ACEPTADO":
+        raise HTTPException(status_code=403, detail="La cliente no autorizó la grabación: no se transcribe.")
+    for role in ("PSICOLOGA", "CLIENTE"):
+        assemble_audio(sid, role)
+    from app.services.call_transcription import transcribe_session
+    try:
+        res = await transcribe_session(db, sid, AUDIO_DIR)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=502, detail="El servicio de transcripción falló. Intenta de nuevo en unos minutos.")
+    await db.execute(text("INSERT INTO call_access_log (session_id, actor, action) VALUES (:i, :a, 'transcribir')"), {"i": sid, "a": _who(user)})
+    await db.commit()
+    return res
+
+
+@router.get("/{sid}/transcript")
+async def get_transcript(sid: int, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    await ensure_call_tables(db)
+    await _by_id(db, sid)
+    from app.services.call_transcription import ensure_transcript_tables
+    await ensure_transcript_tables(db)
+    row = (await db.execute(text("SELECT status, model, segments, error, updated_at FROM call_transcripts WHERE session_id = :i"), {"i": sid})).fetchone()
+    await db.execute(text("INSERT INTO call_access_log (session_id, actor, action) VALUES (:i, :a, 'leer_transcripcion')"), {"i": sid, "a": _who(user)})
+    await db.commit()
+    if not row:
+        return {"status": "SIN_TRANSCRIPCION", "segmentos": []}
+    return {"status": row.status, "modelo": row.model, "segmentos": row.segments or [], "error": row.error,
+            "actualizada": row.updated_at.isoformat() if row.updated_at else None}
+
+
+# ------------------------------------------------------------------ extracción de datos y revisión (equipo)
+
+class LinkClient(BaseModel):
+    user_id: int
+
+
+class Decision(BaseModel):
+    accion: str               # aprobar | editar | rechazar
+    valor: Optional[Any] = None
+
+
+@router.post("/{sid}/link-client")
+async def link_client(sid: int, body: LinkClient, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Asocia la llamada al cliente del sistema (necesario para guardar lo aprobado en su perfil)."""
+    from app.services.call_extraction import ensure_proposal_tables
+    await ensure_call_tables(db)
+    await ensure_proposal_tables(db)
+    await _by_id(db, sid)
+    name = (await db.execute(text("SELECT name FROM users WHERE id = :u"), {"u": body.user_id})).scalar()
+    if not name:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    await db.execute(text("UPDATE call_sessions SET user_id = :u WHERE id = :i"), {"u": body.user_id, "i": sid})
+    await db.execute(text("UPDATE profile_field_proposals SET user_id = :u WHERE session_id = :i AND estado = 'PROPUESTA'"), {"u": body.user_id, "i": sid})
+    await db.commit()
+    return {"user_id": body.user_id, "nombre": name}
+
+
+@router.post("/{sid}/extract")
+async def extract(sid: int, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    await ensure_call_tables(db)
+    s = await _by_id(db, sid)
+    if s.consent != "ACEPTADO":
+        raise HTTPException(status_code=403, detail="La cliente no autorizó la grabación.")
+    from app.services.call_extraction import extract_session
+    try:
+        res = await extract_session(db, sid)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=502, detail="El servicio de extracción falló. Intenta de nuevo en unos minutos.")
+    await db.execute(text("INSERT INTO call_access_log (session_id, actor, action) VALUES (:i, :a, 'extraer_datos')"), {"i": sid, "a": _who(user)})
+    await db.commit()
+    return res
+
+
+@router.get("/{sid}/proposals")
+async def list_proposals(sid: int, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    from app.services.call_extraction import ensure_proposal_tables
+    await ensure_call_tables(db)
+    await ensure_proposal_tables(db)
+    s = await _by_id(db, sid)
+    rows = (await db.execute(text("""SELECT id, campo, etiqueta, destino, valor, cita, minuto, confianza, solo_sugerencia, valor_actual,
+        conflicto, estado, valor_final, revisado_por, revisado_at FROM profile_field_proposals WHERE session_id = :i ORDER BY conflicto DESC, id"""), {"i": sid})).fetchall()
+    cliente = None
+    if getattr(s, "user_id", None):
+        cliente = (await db.execute(text("SELECT id, name FROM users WHERE id = :u"), {"u": s.user_id})).fetchone()
+    return {"cliente": {"id": cliente.id, "nombre": cliente.name} if cliente else None,
+            "propuestas": [{"id": r.id, "campo": r.campo, "etiqueta": r.etiqueta, "destino": r.destino, "valor": r.valor, "cita": r.cita,
+                            "minuto": r.minuto, "confianza": r.confianza, "solo_sugerencia": r.solo_sugerencia, "valor_actual": r.valor_actual,
+                            "conflicto": r.conflicto, "estado": r.estado, "valor_final": r.valor_final, "revisado_por": r.revisado_por,
+                            "revisado_at": r.revisado_at.isoformat() if r.revisado_at else None} for r in rows]}
+
+
+@router.post("/{sid}/proposals/{pid}/decision")
+async def decide(sid: int, pid: int, body: Decision, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    import json as _json
+    from app.services.call_extraction import ensure_proposal_tables, apply_proposal, _validar, CAMPOS, _norm
+    await ensure_proposal_tables(db)
+    prop = (await db.execute(text("SELECT * FROM profile_field_proposals WHERE id = :p AND session_id = :s"), {"p": pid, "s": sid})).fetchone()
+    if not prop:
+        raise HTTPException(status_code=404, detail="Propuesta no encontrada.")
+    if prop.estado != "PROPUESTA":
+        raise HTTPException(status_code=409, detail="Esta propuesta ya fue revisada.")
+    actor = _who(user)
+    if body.accion == "rechazar":
+        await db.execute(text("UPDATE profile_field_proposals SET estado = 'RECHAZADA', revisado_por = :a, revisado_at = NOW() WHERE id = :p"), {"a": actor, "p": pid})
+        await db.commit()
+        return {"estado": "RECHAZADA"}
+    if body.accion not in ("aprobar", "editar"):
+        raise HTTPException(status_code=422, detail="Acción inválida.")
+    valor = prop.valor if body.accion == "aprobar" else body.valor
+    if body.accion == "editar":
+        # el valor editado también debe respetar el catálogo (la cita sigue siendo la de la propuesta)
+        v, motivo = _validar({"campo": prop.campo, "valor": valor, "cita": prop.cita}, _norm(prop.cita))
+        if v is None:
+            raise HTTPException(status_code=422, detail=f"Valor no válido: {motivo}")
+        valor = v
+    try:
+        await apply_proposal(db, prop, valor, actor)
+    except RuntimeError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    estado = "APROBADA" if body.accion == "aprobar" else "EDITADA"
+    await db.execute(text("""UPDATE profile_field_proposals SET estado = :e, valor_final = CAST(:v AS jsonb), revisado_por = :a, revisado_at = NOW()
+        WHERE id = :p"""), {"e": estado, "v": _json.dumps(valor, ensure_ascii=False), "a": actor, "p": pid})
+    await db.commit()
+    return {"estado": estado, "valor": valor}
+
+
+@router.get("/buscar/clientes")
+async def buscar_clientes(q: str = Query(..., min_length=3), db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Busca clientes por nombre para asociarlos a una llamada (máx. 10)."""
+    rows = (await db.execute(text("""SELECT u.id, u.name, u.crm_id, p.city, p.age FROM users u LEFT JOIN profiles p ON p.user_id = u.id
+        WHERE unaccent(lower(u.name)) LIKE '%' || unaccent(lower(:q)) || '%' AND u.crm_id ~ '^[0-9]+$'
+        ORDER BY u.id DESC LIMIT 10"""), {"q": q.strip()})).fetchall()
+    return [{"id": r.id, "nombre": r.name, "crm_id": r.crm_id, "ciudad": r.city, "edad": r.age} for r in rows]

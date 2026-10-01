@@ -1,0 +1,640 @@
+{
+ "version": "2026-09-30",
+ "reglas": [
+  "Si el tema NO se habló en la entrevista, el valor es null. Nunca se rellena con un valor por defecto ni se adivina.",
+  "Cada valor propuesto lleva una cita textual de la transcripción y el minuto. Sin cita, no hay propuesta.",
+  "Las escalas son de 1 a 10. El formulario actual guarda 5 por defecto: un 5 sin evidencia NO se considera dato real.",
+  "Los campos de observación (presentación, puntualidad, seguridad al hablar, riesgo conductual) los decide la psicóloga; la IA solo sugiere.",
+  "Si el valor contradice lo que ya hay en el perfil, se marca conflicto y lo resuelve una persona.",
+  "Normalizar al español (hay valores en inglés mezclados en la base: Yes/Occasionally/Balanced…).",
+  "Datos sensibles (ingresos, salud, orientación, religión, política) solo si la persona los dijo voluntariamente."
+ ],
+ "campos": [
+  {
+   "key": "education_level",
+   "label": "Nivel educativo y formación",
+   "target": "client_extended_profile.education_level",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Básico",
+    "10": "Posgrado / muy alto"
+   },
+   "ask": "¿Qué estudiaste y hasta dónde llegaste?"
+  },
+  {
+   "key": "mobility_travel",
+   "label": "Movilidad y gusto por viajar",
+   "target": "client_extended_profile.mobility_travel",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Casero, no viaja",
+    "10": "Viaja constantemente"
+   },
+   "ask": "¿Cuánto viajas y qué tan dispuesto/a estás a moverte de ciudad?"
+  },
+  {
+   "key": "physical_activity_level",
+   "label": "Nivel de actividad física",
+   "target": "client_extended_profile.physical_activity_level",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Sedentario",
+    "10": "Atleta"
+   },
+   "ask": "¿Con qué frecuencia haces deporte?"
+  },
+  {
+   "key": "social_energy_level",
+   "label": "Energía social",
+   "target": "client_extended_profile.social_energy_level",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Muy reservado/a",
+    "10": "Muy sociable"
+   },
+   "ask": "¿Cómo eres en reuniones y planes con gente?"
+  },
+  {
+   "key": "life_structure_level",
+   "label": "Estructura de vida",
+   "target": "client_extended_profile.life_structure_level",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Espontáneo/a",
+    "10": "Muy organizado/a"
+   },
+   "ask": "¿Qué tan planeada es tu semana y tu vida?"
+  },
+  {
+   "key": "religion_importance",
+   "label": "Importancia de la religión",
+   "target": "client_extended_profile.religion_importance",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Nada importante",
+    "10": "Central en su vida"
+   },
+   "ask": "¿Qué lugar ocupa la religión o la espiritualidad en tu vida?"
+  },
+  {
+   "key": "kids_importance",
+   "label": "Importancia de tener hijos",
+   "target": "client_extended_profile.kids_importance",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "No quiere",
+    "10": "Es prioridad"
+   },
+   "ask": "¿Qué tan importante es para ti tener hijos?"
+  },
+  {
+   "key": "traditionalism_level",
+   "label": "Tradicionalismo",
+   "target": "client_extended_profile.traditionalism_level",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Muy liberal",
+    "10": "Muy tradicional"
+   },
+   "ask": "¿Cómo ves los roles en la pareja y la familia?"
+  },
+  {
+   "key": "speaking_confidence",
+   "label": "Seguridad al hablar",
+   "target": "client_extended_profile.speaking_confidence",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Muy insegura",
+    "10": "Muy segura"
+   },
+   "ask": "(observación de la psicóloga durante la llamada)"
+  },
+  {
+   "key": "conversation_lead",
+   "label": "Quién lidera la conversación",
+   "target": "client_extended_profile.conversation_lead",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Muy pasivo/a",
+    "10": "Lidera siempre"
+   },
+   "ask": "(observación durante la llamada)"
+  },
+  {
+   "key": "emotional_processing",
+   "label": "Procesamiento emocional",
+   "target": "client_extended_profile.emotional_processing",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Reprime",
+    "10": "Procesa y expresa con claridad"
+   },
+   "ask": "¿Cómo manejas una discusión o una decepción?"
+  },
+  {
+   "key": "self_awareness",
+   "label": "Autoconciencia",
+   "target": "client_extended_profile.self_awareness",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Baja",
+    "10": "Alta"
+   },
+   "ask": "¿Qué aprendiste de tus relaciones anteriores?"
+  },
+  {
+   "key": "love_language_flexibility",
+   "label": "Flexibilidad en lenguajes del amor",
+   "target": "client_extended_profile.love_language_flexibility",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Muy rígido/a",
+    "10": "Muy flexible"
+   },
+   "ask": "¿Qué haces si tu pareja expresa cariño distinto a como tú lo recibes?"
+  },
+  {
+   "key": "physical_importance",
+   "label": "Importancia de lo físico",
+   "target": "client_extended_profile.physical_importance",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Poco",
+    "10": "Muy importante"
+   },
+   "ask": "¿Qué tanto pesa la atracción física?"
+  },
+  {
+   "key": "behavioral_risk_level",
+   "label": "Riesgo conductual percibido",
+   "target": "client_extended_profile.behavioral_risk_level",
+   "type": "scale_1_10",
+   "anchors": {
+    "1": "Sin banderas",
+    "10": "Riesgo alto"
+   },
+   "ask": "(juicio profesional de la psicóloga; nunca se infiere solo de la transcripción)"
+  },
+  {
+   "key": "social_group_score",
+   "label": "Vida social / grupo",
+   "target": "client_extended_profile.social_group_score",
+   "type": "decimal_1_10",
+   "anchors": {
+    "1": "Sin grupo",
+    "10": "Grupo amplio y activo"
+   },
+   "ask": "¿Con qué frecuencia ves amigos y cómo es tu círculo?"
+  },
+  {
+   "key": "months_single",
+   "label": "Meses solo/a",
+   "target": "client_extended_profile.months_single",
+   "type": "int",
+   "min": 0,
+   "max": 600,
+   "ask": "¿Hace cuánto terminó tu última relación?"
+  },
+  {
+   "key": "punctuality",
+   "label": "Puntualidad",
+   "target": "client_extended_profile.punctuality",
+   "type": "text",
+   "max_chars": 50,
+   "ask": "(observación: llegó puntual, tarde, avisó)"
+  },
+  {
+   "key": "presentation_camera",
+   "label": "Cámara encendida en la llamada",
+   "target": "client_extended_profile.presentation_camera",
+   "type": "bool",
+   "ask": "(dato del sistema de video)"
+  },
+  {
+   "key": "presentation_style",
+   "label": "Presentación personal",
+   "target": "client_extended_profile.presentation_style",
+   "type": "text",
+   "max_chars": 50,
+   "ask": "(observación: formal, casual, cuidada…)"
+  },
+  {
+   "key": "presentation_background",
+   "label": "Entorno de la llamada",
+   "target": "client_extended_profile.presentation_background",
+   "type": "text",
+   "max_chars": 50,
+   "ask": "(observación del fondo)"
+  },
+  {
+   "key": "love_language_given",
+   "label": "Lenguaje del amor que da",
+   "target": "client_extended_profile.love_language_given",
+   "type": "enum",
+   "allowed": [
+    "Tiempo de calidad",
+    "Actos de servicio",
+    "Contacto físico",
+    "Regalos",
+    "Palabras"
+   ],
+   "ask": "¿Cómo demuestras cariño?"
+  },
+  {
+   "key": "love_language_received",
+   "label": "Lenguaje del amor que recibe",
+   "target": "client_extended_profile.love_language_received",
+   "type": "enum",
+   "allowed": [
+    "Tiempo de calidad",
+    "Actos de servicio",
+    "Contacto físico",
+    "Regalos",
+    "Palabras"
+   ],
+   "ask": "¿Qué te hace sentir querido/a?"
+  },
+  {
+   "key": "attachment_style",
+   "label": "Estilo de apego",
+   "target": "client_extended_profile.attachment_style",
+   "type": "enum",
+   "allowed": [
+    "Seguro",
+    "Ansioso",
+    "Evitativo",
+    "Mixto",
+    "No claro"
+   ],
+   "ask": "(lo concluye la psicóloga; la IA solo propone con evidencia)"
+  },
+  {
+   "key": "political_self_placement",
+   "label": "Postura política",
+   "target": "client_extended_profile.political_self_placement",
+   "type": "enum",
+   "allowed": [
+    "Izquierda extrema",
+    "Moderate left",
+    "Center",
+    "Moderate right",
+    "Far right",
+    "Prefiere no decir"
+   ],
+   "ask": "¿Cómo te ubicas políticamente?"
+  },
+  {
+   "key": "weekend_style",
+   "label": "Estilo de fin de semana",
+   "target": "client_extended_profile.weekend_style",
+   "type": "list",
+   "allowed": [
+    "Casero",
+    "Activo urbano",
+    "Naturaleza-aventura",
+    "Social",
+    "Mixto"
+   ],
+   "ask": "¿Cómo es tu fin de semana ideal?"
+  },
+  {
+   "key": "physical_complexion",
+   "label": "Complexión física",
+   "target": "client_extended_profile.physical_complexion",
+   "type": "list",
+   "allowed": [
+    "Delgado/a",
+    "Promedio",
+    "Atlético/a",
+    "Curvy",
+    "Musculoso/a"
+   ],
+   "ask": "(observación)"
+  },
+  {
+   "key": "physical_traits_notes",
+   "label": "Notas de rasgos físicos",
+   "target": "client_extended_profile.physical_traits_notes",
+   "type": "text",
+   "max_chars": 500,
+   "ask": "(observación; solo rasgos relevantes y respetuosos)"
+  },
+  {
+   "key": "flags_notes",
+   "label": "Banderas / alertas",
+   "target": "client_extended_profile.flags_notes",
+   "type": "text",
+   "max_chars": 500,
+   "ask": "(temas que la psicóloga marcó)"
+  },
+  {
+   "key": "non_negotiables",
+   "label": "Innegociables",
+   "target": "client_extended_profile.non_negotiables",
+   "type": "list_text",
+   "ask": "¿Qué es innegociable en tu pareja o en una relación?"
+  },
+  {
+   "key": "synthesis_who_really_is",
+   "label": "Síntesis: quién es realmente",
+   "target": "client_extended_profile.synthesis_who_really_is",
+   "type": "text",
+   "max_chars": 250,
+   "ask": "(resumen de la psicóloga; la IA redacta un borrador citando evidencia)"
+  },
+  {
+   "key": "synthesis_first_date_behavior",
+   "label": "Síntesis: cómo se comporta en una primera cita",
+   "target": "client_extended_profile.synthesis_first_date_behavior",
+   "type": "text",
+   "max_chars": 250,
+   "ask": "(borrador con evidencia)"
+  },
+  {
+   "key": "synthesis_best_match_type",
+   "label": "Síntesis: tipo de persona más compatible",
+   "target": "client_extended_profile.synthesis_best_match_type",
+   "type": "text",
+   "max_chars": 250,
+   "ask": "(borrador con evidencia)"
+  },
+  {
+   "key": "has_children",
+   "label": "Tiene hijos",
+   "target": "profiles.lifestyle.has_children",
+   "type": "enum",
+   "allowed": [
+    "Sí",
+    "No"
+   ],
+   "ask": "¿Tienes hijos?"
+  },
+  {
+   "key": "wants_children",
+   "label": "Quiere hijos",
+   "target": "profiles.lifestyle.wants_children",
+   "type": "enum",
+   "allowed": [
+    "Sí",
+    "Tal vez",
+    "No"
+   ],
+   "ask": "¿Quieres tener hijos (más)?"
+  },
+  {
+   "key": "smoker",
+   "label": "Fuma",
+   "target": "profiles.lifestyle.smoker",
+   "type": "enum",
+   "allowed": [
+    "No",
+    "Occasionally",
+    "Yes",
+    "Vapeo"
+   ],
+   "ask": "¿Fumas o vapeas?"
+  },
+  {
+   "key": "drinks_alcohol",
+   "label": "Alcohol",
+   "target": "profiles.lifestyle.drinks_alcohol",
+   "type": "enum",
+   "allowed": [
+    "No",
+    "Socialmente",
+    "Sí"
+   ],
+   "ask": "¿Tomas alcohol?"
+  },
+  {
+   "key": "has_pets",
+   "label": "Tiene mascotas",
+   "target": "profiles.lifestyle.has_pets",
+   "type": "enum",
+   "allowed": [
+    "Sí",
+    "No"
+   ],
+   "ask": "¿Tienes mascotas?"
+  },
+  {
+   "key": "pet_allergies",
+   "label": "Alergias a mascotas",
+   "target": "profiles.lifestyle.pet_allergies",
+   "type": "list",
+   "allowed": [
+    "Gatos",
+    "Perros",
+    "Otros"
+   ],
+   "ask": "¿Alergia a algún animal?"
+  },
+  {
+   "key": "housing_status",
+   "label": "Con quién vive",
+   "target": "profiles.lifestyle.housing_status",
+   "type": "enum",
+   "allowed": [
+    "Vive solo",
+    "Familia",
+    "Roomies",
+    "Amigos"
+   ],
+   "ask": "¿Con quién vives?"
+  },
+  {
+   "key": "fitness_level",
+   "label": "Ejercicio",
+   "target": "profiles.lifestyle.fitness_level",
+   "type": "enum",
+   "allowed": [
+    "No entrena",
+    "Principiante",
+    "Constante (2–3/semana)",
+    "Fitness Lover (4–6/semana)",
+    "Atleta"
+   ],
+   "ask": "¿Cuánto entrenas?"
+  },
+  {
+   "key": "work_style",
+   "label": "Estilo de trabajo",
+   "target": "profiles.lifestyle.work_style",
+   "type": "enum",
+   "allowed": [
+    "Productivo",
+    "Balanceado",
+    "Workaholic",
+    "Flexible",
+    "No trabaja"
+   ],
+   "ask": "¿Cómo es tu relación con el trabajo?"
+  },
+  {
+   "key": "financial_vibe",
+   "label": "Relación con el dinero",
+   "target": "profiles.lifestyle.financial_vibe",
+   "type": "enum",
+   "allowed": [
+    "Balanced",
+    "Spender",
+    "Saver",
+    "Luxury spender"
+   ],
+   "ask": "¿Cómo manejas el dinero?"
+  },
+  {
+   "key": "income_range",
+   "label": "Rango de ingresos",
+   "target": "profiles.lifestyle.income_range",
+   "type": "enum",
+   "allowed": [
+    "Entre 1 y 2 SMMLV.",
+    "Entre 2 y 3 SMMLV.",
+    "Entre 3 y 5 SMMLV.",
+    "Entre 5 y 8 SMMLV.",
+    "Entre 8 y 12 SMMLV.",
+    "Entre 12 y 20 SMMLV.",
+    "Más de 20 SMMLV."
+   ],
+   "ask": "(solo si la persona lo dice de forma voluntaria)"
+  },
+  {
+   "key": "rumba",
+   "label": "Rumba",
+   "target": "profiles.lifestyle.rumba",
+   "type": "enum",
+   "allowed": [
+    "No rumbea",
+    "Ocasional",
+    "Moderada",
+    "Fiestero",
+    "Electrónica"
+   ],
+   "ask": "¿Qué tanto sales de fiesta?"
+  },
+  {
+   "key": "sociability",
+   "label": "Sociabilidad",
+   "target": "profiles.lifestyle.sociability",
+   "type": "enum",
+   "allowed": [
+    "Muy solitario",
+    "Introvertido",
+    "Balanceado",
+    "Sociable"
+   ],
+   "ask": "¿Te describes más bien reservado/a o sociable?"
+  },
+  {
+   "key": "energy_level",
+   "label": "Nivel de energía",
+   "target": "profiles.lifestyle.energy_level",
+   "type": "enum",
+   "allowed": [
+    "Calma",
+    "Balanceado",
+    "Alta energía"
+   ],
+   "ask": "¿Cómo es tu ritmo de energía?"
+  },
+  {
+   "key": "passions",
+   "label": "Pasiones",
+   "target": "profiles.lifestyle.passions",
+   "type": "text",
+   "max_chars": 200,
+   "ask": "¿Qué te apasiona?"
+  },
+  {
+   "key": "other_interests",
+   "label": "Otros intereses",
+   "target": "profiles.lifestyle.other_interests",
+   "type": "text",
+   "max_chars": 300,
+   "ask": "¿Qué haces en tu tiempo libre?"
+  },
+  {
+   "key": "values",
+   "label": "Valores",
+   "target": "profiles.lifestyle.values",
+   "type": "text",
+   "max_chars": 200,
+   "ask": "¿Qué valores te definen?"
+  },
+  {
+   "key": "therapy",
+   "label": "Terapia",
+   "target": "profiles.lifestyle.terapia",
+   "type": "enum",
+   "allowed": [
+    "Sí",
+    "No",
+    "Lo ha considerado"
+   ],
+   "ask": "¿Has hecho terapia?"
+  },
+  {
+   "key": "preferred_gender",
+   "label": "Busca",
+   "target": "profiles.search_preferences.preferred_gender",
+   "type": "enum",
+   "allowed": [
+    "Hombre",
+    "Mujer",
+    "No binario"
+   ],
+   "ask": "¿Qué género buscas?"
+  },
+  {
+   "key": "min_age",
+   "label": "Edad mínima que busca",
+   "target": "profiles.search_preferences.min_age",
+   "type": "int",
+   "min": 18,
+   "max": 80,
+   "ask": "¿Desde qué edad?"
+  },
+  {
+   "key": "max_age",
+   "label": "Edad máxima que busca",
+   "target": "profiles.search_preferences.max_age",
+   "type": "int",
+   "min": 18,
+   "max": 90,
+   "ask": "¿Hasta qué edad?"
+  },
+  {
+   "key": "red_flags",
+   "label": "Banderas rojas en pareja",
+   "target": "profiles.search_preferences.red_flags",
+   "type": "text",
+   "max_chars": 400,
+   "ask": "¿Qué no toleras en una pareja?"
+  },
+  {
+   "key": "what_searches_in_partner",
+   "label": "Qué busca en su pareja",
+   "target": "profiles.search_preferences.what_searches_in_partner",
+   "type": "text",
+   "max_chars": 500,
+   "ask": "¿Cómo es tu pareja ideal?"
+  },
+  {
+   "key": "what_partner_should_understand",
+   "label": "Qué debe entender su pareja de él/ella",
+   "target": "profiles.search_preferences.what_partner_should_understand",
+   "type": "text",
+   "max_chars": 500,
+   "ask": "¿Qué debería entender de ti quien esté contigo?"
+  },
+  {
+   "key": "attraction_cues",
+   "label": "Qué le atrae",
+   "target": "profiles.search_preferences.attraction_cues",
+   "type": "text",
+   "max_chars": 300,
+   "ask": "¿Qué te atrae de alguien?"
+  }
+ ]
+}

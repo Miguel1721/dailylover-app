@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import SalaLiveKit from '../../components/SalaLiveKit'
+import RevisionEntrevista from './RevisionEntrevista'
 
 // Videollamadas de entrevista (equipo). Crear llamada -> copiar enlace para la cliente -> entrar -> finalizar.
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
@@ -13,6 +14,7 @@ export default function Videollamadas() {
   const [lista, setLista] = useState([])
   const [form, setForm] = useState({ client_name: '', psychologist_name: 'SILVI', is_test: true })
   const [enSala, setEnSala] = useState(null)   // { call, join }
+  const [revisar, setRevisar] = useState(null) // llamada en revisión
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -62,6 +64,8 @@ export default function Videollamadas() {
   const btn = (bg, fg = '#fff') => ({ border: 'none', background: bg, color: fg, borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer' })
   const input = { padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, minWidth: 0 }
 
+  if (revisar) return <RevisionEntrevista call={revisar} headers={headers} onBack={() => { setRevisar(null); cargar() }} />
+
   if (enSala) return (
     <div style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
       <h2 style={{ marginTop: 0 }}>Entrevista con {enSala.call.client_name}</h2>
@@ -99,13 +103,16 @@ export default function Videollamadas() {
               <div style={{ fontSize: 12, color: '#64748b' }}>{c.psychologist_name} · {c.status} · {c.created_at ? new Date(c.created_at).toLocaleString('es-CO') : ''}</div>
               <span style={{ display: 'inline-block', marginTop: 4, background: bg, color: fg, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>{txt}</span>
             </div>
-            {c.status !== 'FINALIZADA' && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button style={btn('#e2e8f0', '#1e293b')} onClick={() => copiar(c.public_url)}>Copiar enlace para la cliente</button>
-                <button style={btn('#be123c')} onClick={() => entrar(c)}>Entrar</button>
-                <button style={btn('#475569')} onClick={() => finalizar(c)}>Finalizar</button>
-              </div>
-            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {c.status !== 'FINALIZADA' && (
+                <>
+                  <button style={btn('#e2e8f0', '#1e293b')} onClick={() => copiar(c.public_url)}>Copiar enlace para la cliente</button>
+                  <button style={btn('#be123c')} onClick={() => entrar(c)}>Entrar</button>
+                  <button style={btn('#475569')} onClick={() => finalizar(c)}>Finalizar</button>
+                </>
+              )}
+              {c.consent === 'ACEPTADO' && <button style={btn('#7c3aed')} onClick={() => setRevisar(c)}>Revisar entrevista</button>}
+            </div>
           </div>
         )
       })}
