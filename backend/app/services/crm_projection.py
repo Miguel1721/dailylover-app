@@ -33,6 +33,13 @@ NEW_FIELDS = {
     "prof_238": ("lifestyle", "date_budget"),
     "pref_69": ("search_preferences", "preferred_social_group"),
     "pref_103": ("search_preferences", "most_valued_choices"),
+    "prof_211": ("lifestyle", "pet_allergies"),
+    "pref_64": ("search_preferences", "wants_partner_to_understand"),
+    "pref_63": ("search_preferences", "important_values_text"),
+    "pref_52": ("search_preferences", "desired_interests"),
+    "prof_229": ("lifestyle", "style_represents"),
+    "prof_235": ("lifestyle", "own_physical_traits"),
+    "prof_243": ("lifestyle", "personal_red_flags"),
 }
 REFRESH = {
     "prof_192": ("col", "gender"), "prof_193": ("col", "orientation"), "prof_197": ("col", "religion"), "prof_220": ("col", "love_language"),
@@ -202,11 +209,121 @@ async def project_all(db: AsyncSession, apply: bool = False, only_new: bool = Fa
             "por_destino": {k: dict(v) for k, v in by_target.items()}, "transiciones_refresco": {k: v.most_common(3) for k, v in trans.items()}}
 
 
+async def repair_bloque_c2(db: AsyncSession, apply: bool = False, source: str = "crm_projection_repair") -> Dict[str, Any]:
+    """Pasada de corrección del Bloque C.2:
+    1. Quitar lifestyle.pet_type cuando sea igual a prof_211 (alergias guardadas como tipo de mascota).
+    2. Actualizar search_preferences.what_searches_in_partner con pref_62 cuando hoy sea igual a pref_64 o esté vacío.
+    3. Rellenar lifestyle.free_time con prof_214 cuando esté vacío.
+    """
+    await ensure_projection_tables(db)
+
+    res = await db.execute(text("""
+        SELECT u.id AS user_id, u.crm_id, p.lifestyle, p.search_preferences
+        FROM users u
+        JOIN profiles p ON p.user_id = u.id
+        WHERE u.crm_id ~ '^[0-9]+$'
+    """))
+    users = res.fetchall()
+
+    crm_map = defaultdict(dict)
+    res_fields = await db.execute(text("""
+        SELECT crm_id, field_id, value
+        FROM crm_profile_fields
+        WHERE field_id IN ('prof_211', 'pref_64', 'pref_62', 'prof_214')
+    """))
+    for cid, fid, val in res_fields.fetchall():
+        crm_map[cid][fid] = val
+
+    stats = {
+        "pet_type_removals": 0,
+        "what_searches_updates": 0,
+        "free_time_fills": 0,
+        "total_users_affected": 0,
+    }
+
+    for u in users:
+        cid = int(u.crm_id)
+        fields = crm_map.get(cid, {})
+        ls = dict(u.lifestyle) if isinstance(u.lifestyle, dict) else {}
+        sp = dict(u.search_preferences) if isinstance(u.search_preferences, dict) else {}
+        user_changes = []
+
+        # 1. Quitar lifestyle.pet_type cuando sea igual a prof_211
+        cur_pet = ls.get("pet_type")
+        if cur_pet and "prof_211" in fields:
+            val_211 = joined(fields["prof_211"])
+            if val_211 and _norm(str(cur_pet)) == _norm(val_211):
+                user_changes.append({
+                    "target": "lifestyle.pet_type",
+                    "old": str(cur_pet),
+                    "new": None,
+                })
+                del ls["pet_type"]
+                stats["pet_type_removals"] += 1
+
+        # 2. search_preferences.what_searches_in_partner = pref_62 cuando hoy sea igual a pref_64 o esté vacío
+        if "pref_62" in fields:
+            new_what = joined(fields["pref_62"])
+            if new_what:
+                cur_what = sp.get("what_searches_in_partner")
+                val_64 = joined(fields.get("pref_64")) if "pref_64" in fields else None
+                if not cur_what or (val_64 and _norm(str(cur_what)) == _norm(val_64)):
+                    user_changes.append({
+                        "target": "search_preferences.what_searches_in_partner",
+                        "old": str(cur_what) if cur_what else None,
+                        "new": new_what,
+                    })
+                    sp["what_searches_in_partner"] = new_what
+                    stats["what_searches_updates"] += 1
+
+        # 3. Rellenar lifestyle.free_time con prof_214 cuando esté vacío
+        cur_ft = ls.get("free_time")
+        if not cur_ft and "prof_214" in fields:
+            val_214 = joined(fields["prof_214"])
+            if val_214:
+                user_changes.append({
+                    "target": "lifestyle.free_time",
+                    "old": None,
+                    "new": val_214,
+                })
+                ls["free_time"] = val_214
+                stats["free_time_fills"] += 1
+
+        if user_changes:
+            stats["total_users_affected"] += 1
+            if apply:
+                await db.execute(text("""
+                    UPDATE profiles
+                    SET lifestyle = CAST(:ls AS JSONB), search_preferences = CAST(:sp AS JSONB), updated_at = NOW()
+                    WHERE user_id = :uid
+                """), {
+                    "ls": json.dumps(ls, ensure_ascii=False),
+                    "sp": json.dumps(sp, ensure_ascii=False),
+                    "uid": u.user_id
+                })
+                for ch in user_changes:
+                    await db.execute(text("""
+                        INSERT INTO profile_field_changes (user_id, target, old_value, new_value, source, kind)
+                        VALUES (:u, :t, :o, :n, :s, 'correccion')
+                    """), {
+                        "u": u.user_id,
+                        "t": ch["target"],
+                        "o": ch["old"],
+                        "n": ch["new"],
+                        "s": source
+                    })
+
+    if apply:
+        await db.commit()
+
+    return stats
+
+
 async def revert_all(db: AsyncSession, source: str = "crm_projection") -> Dict[str, int]:
     """Revierte TODOS los cambios aplicados por la proyección (usa profile_field_changes; ignora las 'revision', que nunca se aplicaron)."""
     await ensure_projection_tables(db)
     rows = (await db.execute(text("""SELECT id, user_id, target, old_value FROM profile_field_changes
-        WHERE source = :s AND kind IN ('nuevo','relleno','normalizacion','refresco') ORDER BY id DESC"""), {"s": source})).fetchall()
+        WHERE source = :s AND kind IN ('nuevo','relleno','normalizacion','refresco','correccion') ORDER BY id DESC"""), {"s": source})).fetchall()
     n = 0
     for _id, uid, target, old in rows:
         kind, key = target.split(".", 1)
@@ -220,6 +337,6 @@ async def revert_all(db: AsyncSession, source: str = "crm_projection") -> Dict[s
         n += 1
         if n % 500 == 0:
             await db.commit()
-    await db.execute(text("DELETE FROM profile_field_changes WHERE source = :s AND kind IN ('nuevo','relleno','normalizacion','refresco')"), {"s": source})
+    await db.execute(text("DELETE FROM profile_field_changes WHERE source = :s AND kind IN ('nuevo','relleno','normalizacion','refresco','correccion')"), {"s": source})
     await db.commit()
     return {"cambios_revertidos": n}

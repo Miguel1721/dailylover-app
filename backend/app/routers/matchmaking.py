@@ -1204,7 +1204,7 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
         if merged.get("prof_210"):
             lifestyle_new["has_pets"] = _choice_str(merged.get("prof_210"))
         if merged.get("prof_211"):
-            lifestyle_new["pet_type"] = _choice_str(merged.get("prof_211"))
+            lifestyle_new["pet_allergies"] = _choice_str(merged.get("prof_211"))
         if merged.get("prof_216"):
             lifestyle_new["fitness_level"] = _choice_str(merged.get("prof_216"))
         if merged.get("prof_217"):
@@ -1226,6 +1226,10 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
         if merged.get("prof_234"):
             lifestyle_new["financial_vibe"] = _choice_str(merged.get("prof_234"))
         free_time_items = _choice_list(merged.get("prof_246"))
+        if merged.get("prof_214"):
+            ft_extra_214 = str(merged.get("prof_214")).strip()
+            if ft_extra_214 and ft_extra_214 not in free_time_items:
+                free_time_items.append(ft_extra_214)
         if merged.get("prof_215"):
             ft_extra = str(merged.get("prof_215")).strip()
             if ft_extra and ft_extra not in free_time_items:
@@ -1273,7 +1277,10 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
             elif st_cm:
                 sp_new["preferred_height"] = f"Desde {st_cm} cm"
         if bio_essay:
-            sp_new["what_searches_in_partner"] = bio_essay
+            sp_new["wants_partner_to_understand"] = bio_essay
+        pref_62_val = str(merged.get("pref_62") or "").strip()
+        if pref_62_val:
+            sp_new["what_searches_in_partner"] = pref_62_val
         pers_rf = _choice_list(merged.get("prof_241")) or _choice_list(merged.get("pref_67"))
         if pers_rf:
             sp_new["personal_red_flags"] = pers_rf
@@ -1605,6 +1612,16 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
 
     final_bio = quick_notes_clean or (prof_row.bio_notes if prof_row else None)
 
+    # Preservar orientación canónica en profiles (no degradar a forma corta 'hetero')
+    norm_orient = prof_row.orientation if prof_row and prof_row.orientation else None
+    if not norm_orient and pref_val:
+        pv_low = pref_val.strip().lower()
+        if "hetero" in pv_low: norm_orient = "Heterosexual"
+        elif "homo" in pv_low or "gay" in pv_low: norm_orient = "Homosexual"
+        elif "bi" in pv_low: norm_orient = "Bisexual"
+        elif "lesbi" in pv_low: norm_orient = "Lesbiana"
+        else: norm_orient = pref_val
+
     if prof_row:
         await db.execute(text("""
             UPDATE profiles SET
@@ -1612,7 +1629,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
                 responsable = :resp,
                 city = COALESCE(NULLIF(:city, ''), city),
                 age = COALESCE(:age, age),
-                orientation = COALESCE(NULLIF(:orient, ''), orientation),
+                orientation = COALESCE(orientation, NULLIF(:orient, '')),
                 plan_tier = COALESCE(NULLIF(:plan, ''), plan_tier),
                 bio_notes = COALESCE(NULLIF(:bio, ''), bio_notes),
                 clinical_profile_360 = :c360,
@@ -1623,7 +1640,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             "resp": psyc_clean,
             "city": city_val,
             "age": age_val,
-            "orient": pref_val,
+            "orient": norm_orient,
             "plan": plan_val or None,
             "bio": final_bio,
             "c360": json.dumps(updated_c360),
@@ -1642,7 +1659,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             "resp": psyc_clean,
             "city": city_val or None,
             "age": age_val,
-            "orient": pref_val or None,
+            "orient": norm_orient or None,
             "plan": plan_val or None,
             "bio": final_bio,
             "c360": json.dumps(updated_c360)
@@ -2168,6 +2185,7 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
         if not pb_clean:
             updates.append("person_b = ''")
             updates.append("person_b_crm_id = ''")
+            updates.append("user_id_b = NULL")
             updates.append("compatibility_score = NULL")
             updates.append("compatibility_verdict = NULL")
             updates.append("compatibility_analysis = NULL")
@@ -2177,7 +2195,7 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
 
             effective_b = pb_clean
             if extracted_cid:
-                u_res = await db.execute(text("SELECT u.name, p.responsable FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.crm_id = :cid LIMIT 1"), {"cid": extracted_cid})
+                u_res = await db.execute(text("SELECT u.id, u.name, p.responsable FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.crm_id = :cid LIMIT 1"), {"cid": extracted_cid})
                 u_row = u_res.fetchone()
                 if not u_row or (u_row.name and u_row.name.startswith("Cliente CRM")):
                     wh_synced = await _sync_crm_id_from_webhooks(extracted_cid, db)
@@ -2189,10 +2207,13 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
                     effective_b = f"Cliente CRM #{extracted_cid}"
                 updates.append("person_b_crm_id = :pbcid")
                 params["pbcid"] = extracted_cid
+                if u_row and hasattr(u_row, "id") and u_row.id:
+                    updates.append("user_id_b = :uid_b")
+                    params["uid_b"] = u_row.id
             else:
                 # Si viene el nombre ya resuelto por resolve-profile o existente en users
                 u_check = await db.execute(text("""
-                    SELECT name, crm_id FROM users
+                    SELECT id, name, crm_id FROM users
                     WHERE LOWER(TRIM(name)) = LOWER(TRIM(:n))
                     ORDER BY (crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None') DESC, id DESC
                     LIMIT 1
@@ -2203,6 +2224,9 @@ async def update_match(match_id: int, payload: UpdateMatchRequest, db: AsyncSess
                     if u_c_row.crm_id:
                         updates.append("person_b_crm_id = :pbcid")
                         params["pbcid"] = u_c_row.crm_id
+                    if u_c_row.id:
+                        updates.append("user_id_b = :uid_b")
+                        params["uid_b"] = u_c_row.id
                 elif "http" in pb_clean or "smartmatchapp" in pb_clean:
                     # Cualquier enlace de SmartMatchApp válido nunca debe bloquearse
                     m_any_num = re.search(r"(\d{3,})", pb_clean)
