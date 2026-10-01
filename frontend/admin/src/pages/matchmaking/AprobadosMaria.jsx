@@ -2,16 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { 
   ShieldCheck, Headphones, Search, RefreshCw, CheckCircle, Clock, MapPin, 
   User, AlertTriangle, PhoneCall, ExternalLink, Filter, X, Calendar as CalendarIcon,
-  Check, ArrowRight, Undo2, MessageSquare, Sparkles, Heart
+  Check, ArrowRight, Undo2, MessageSquare, Sparkles, Heart, Briefcase
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
+import UserAvatar from '../../components/UserAvatar'
 import RestaurantFilterModal from '../../components/RestaurantFilterModal'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const PSYCHOLOGIST_LIST = [
-  'Todas', 'JENN', 'ANA', 'SILVI', 'STEFFY', 'SOFI', 'MAPE D', 'ALEJA', 'MANU', 'PIA', 'ISA'
+  'Todas', 'SILVI', 'JENN', 'ANA', 'STEFFY', 'ISA', 'PIA', 'MAPE D', 'MPS'
 ]
 
 const CITIES = [
@@ -19,8 +20,31 @@ const CITIES = [
   'Pereira', 'Cartagena', 'Manizales', 'Santa Marta', 'Miami', 'Madrid'
 ]
 
+const REJECTION_CATEGORIES = [
+  { id: 'Físico', label: 'Físico' },
+  { id: 'Estilo de vida', label: 'Estilo de vida' },
+  { id: 'Edad', label: 'Edad' },
+  { id: 'Valores / Proyecto', label: 'Valores / Proyecto' },
+  { id: 'Ya se conocen', label: 'Ya se conocen' },
+  { id: 'Otro', label: 'Otro' }
+]
+
 export default function AprobadosMaria() {
   const { token, user } = useAuth()
+
+  const userEmail = (user?.email || '').trim().toLowerCase()
+  const userName = (user?.name || '').trim().toLowerCase()
+  const userRole = (user?.role || '').trim()
+
+  const isMpsOrAdmin = 
+    userRole === 'Admin' ||
+    userRole === 'Super Admin' ||
+    userRole === 'María' ||
+    userEmail.includes('maria') ||
+    userEmail.includes('admin') ||
+    userName.includes('maria paula salinas') ||
+    userName.includes('maría paula salinas') ||
+    userName.includes('maria salinas')
   
   // Pestaña activa: 'revision' (Cola de Aprobación de María) o 'servicio' (CS - Citas por agendar)
   const isCsOnly = user?.role === 'Servicio al Cliente'
@@ -34,9 +58,14 @@ export default function AprobadosMaria() {
 
   // Estado de Cola de Revisión de María
   const [reviewQueue, setReviewQueue] = useState([])
+  const [totalReview, setTotalReview] = useState(0)
+  const [pageReview, setPageReview] = useState(1)
+  const [totalPagesReview, setTotalPagesReview] = useState(1)
+  const [pageSizeReview, setPageSizeReview] = useState(20)
   const [loadingReview, setLoadingReview] = useState(true)
   const [approvingId, setApprovingId] = useState(null)
   const [rejectModalMatch, setRejectModalMatch] = useState(null)
+  const [rejectCategory, setRejectCategory] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [rejecting, setRejecting] = useState(false)
 
@@ -52,7 +81,7 @@ export default function AprobadosMaria() {
   // 1. Cargar Cola de Revisión de María
   const fetchReviewQueue = useCallback(() => {
     setLoadingReview(true)
-    let url = `${API}/api/v1/matchmaking/approval-queue?sort_by=oldest_first&`
+    let url = `${API}/api/v1/matchmaking/approval-queue?sort_by=oldest_first&page=${pageReview}&page_size=${pageSizeReview}&`
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
@@ -64,14 +93,18 @@ export default function AprobadosMaria() {
       .then(r => r.json())
       .then(data => {
         setReviewQueue(data.queue || [])
+        setTotalReview(data.total ?? (data.queue || []).length)
+        setTotalPagesReview(data.total_pages || 1)
         setLoadingReview(false)
       })
       .catch(err => {
         console.error('Error cargando cola de aprobación:', err)
         setReviewQueue([])
+        setTotalReview(0)
+        setTotalPagesReview(1)
         setLoadingReview(false)
       })
-  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, token])
+  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, pageReview, pageSizeReview, token])
 
   // 2. Cargar Cola de Servicio al Cliente (Aprobados por María)
   const fetchServiceQueue = useCallback(() => {
@@ -102,7 +135,7 @@ export default function AprobadosMaria() {
     fetchServiceQueue()
   }, [fetchReviewQueue, fetchServiceQueue])
 
-  // Aprobar match definitivo por María
+  // Aprobar match definitivo por María (1 solo clic)
   const handleApproveMatch = async (matchId) => {
     setApprovingId(matchId)
     try {
@@ -112,39 +145,15 @@ export default function AprobadosMaria() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ notes: "Aprobado oficialmente por María" })
+        body: JSON.stringify({ notes: "Aprobado oficialmente por María", force: true })
       })
       if (res.ok) {
-        setNotification('✓ Match aprobado con éxito. Se ha desbloqueado en la mesa oficial de MATCHES y enviado a Servicio al Cliente.')
+        setNotification('✓ Match aprobado con éxito (1 clic). Se ha enviado a Servicio al Cliente (Citas por Agendar).')
         setTimeout(() => setNotification(''), 6000)
         fetchReviewQueue()
         fetchServiceQueue()
       } else {
         const err = await res.json()
-        if (err.detail && err.detail.includes('BLOQUEADO')) {
-          const forceConfirm = window.confirm(`${err.detail}\n\n¿Deseas autorizar la aprobación directamente como Dirección (María Paula)?`)
-          if (forceConfirm) {
-            const forceRes = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}/approve-by-maria`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              },
-              body: JSON.stringify({ notes: "Aprobado oficialmente por María (Anulación de Dirección)", force: true })
-            })
-            if (forceRes.ok) {
-              setNotification('✓ Match aprobado con éxito por Dirección (autorización forzada). Enviado a Servicio al Cliente.')
-              setTimeout(() => setNotification(''), 6000)
-              fetchReviewQueue()
-              fetchServiceQueue()
-              return
-            } else {
-              const forceErr = await forceRes.json()
-              alert(`Error al forzar aprobación: ${forceErr.detail || 'Operación no completada'}`)
-              return
-            }
-          }
-        }
         alert(`Error al aprobar match: ${err.detail || 'Operación no completada'}`)
       }
     } catch (e) {
@@ -154,9 +163,13 @@ export default function AprobadosMaria() {
     }
   }
 
-  // Rechazar o devolver propuesta
+  // Rechazar o devolver propuesta con motivo obligatorio (1 clic)
   const handleRejectMatch = async () => {
     if (!rejectModalMatch) return
+    if (!rejectCategory) {
+      alert('Por favor selecciona un motivo principal de rechazo.')
+      return
+    }
     setRejecting(true)
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/matches/${rejectModalMatch.id}/reject-by-maria`, {
@@ -165,12 +178,16 @@ export default function AprobadosMaria() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ rejection_reason: rejectReason || "No cumple criterios clínicos de María" })
+        body: JSON.stringify({ 
+          rejection_category: rejectCategory,
+          rejection_reason: rejectReason.trim()
+        })
       })
       if (res.ok) {
-        setNotification(`✕ Match devuelto a ${rejectModalMatch.psychologist_name}. Se liberó a ${rejectModalMatch.person_b}.`)
+        setNotification(`✕ Match rechazado por motivo [${rejectCategory}]. Se devolvió a ${rejectModalMatch.psychologist_name} con el motivo visible y se liberó a ${rejectModalMatch.person_b}.`)
         setTimeout(() => setNotification(''), 6000)
         setRejectModalMatch(null)
+        setRejectCategory('')
         setRejectReason('')
         fetchReviewQueue()
       } else {
@@ -362,7 +379,7 @@ export default function AprobadosMaria() {
             fontSize: 11,
             fontWeight: 800
           }}>
-            {reviewQueue.length}
+            {totalReview || reviewQueue.length}
           </span>
         </button>
 
@@ -420,7 +437,7 @@ export default function AprobadosMaria() {
               type="text"
               placeholder="Nombre cliente o candidata..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={e => { setSearchTerm(e.target.value); setPageReview(1); }}
               style={{
                 width: '100%',
                 padding: '9px 12px 9px 36px',
@@ -441,7 +458,7 @@ export default function AprobadosMaria() {
           </label>
           <select
             value={selectedPsyc}
-            onChange={e => setSelectedPsyc(e.target.value)}
+            onChange={e => { setSelectedPsyc(e.target.value); setPageReview(1); }}
             style={{
               width: '100%',
               padding: '9px 12px',
@@ -465,7 +482,7 @@ export default function AprobadosMaria() {
           </label>
           <select
             value={selectedCity}
-            onChange={e => setSelectedCity(e.target.value)}
+            onChange={e => { setSelectedCity(e.target.value); setPageReview(1); }}
             style={{
               width: '100%',
               padding: '9px 12px',
@@ -491,7 +508,7 @@ export default function AprobadosMaria() {
             <input
               type="date"
               value={approvalDate}
-              onChange={e => setApprovalDate(e.target.value)}
+              onChange={e => { setApprovalDate(e.target.value); setPageReview(1); }}
               style={{
                 width: '100%',
                 padding: '8px 12px',
@@ -529,264 +546,459 @@ export default function AprobadosMaria() {
       {/* ==================================================================== */}
       {/* VISTA 1: COLA DE REVISIÓN Y APROBACIÓN DE MARÍA                     */}
       {/* ==================================================================== */}
+      {/* ==================================================================== */}
+      {/* VISTA 1: COLA DE REVISIÓN Y APROBACIÓN DE MARÍA                     */}
+      {/* ==================================================================== */}
       {activeTab === 'revision' && (
         <div>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
-            flexWrap: 'wrap',
-            gap: 12
-          }}>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              Mostrando <strong style={{ color: 'var(--text-primary)' }}>{reviewQueue.length}</strong> propuestas pendientes de aprobación por María
-            </div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 12,
-              color: '#F59E0B',
-              background: 'rgba(245, 158, 11, 0.1)',
-              padding: '6px 12px',
-              borderRadius: 8,
-              border: '1px solid rgba(245, 158, 11, 0.25)'
-            }}>
-              <Clock size={13} />
-              <span>Sólo al hacer click en "Aprobar Match", el registro se desbloquea en la mesa oficial de MATCHES.</span>
-            </div>
-          </div>
-
-          {loadingReview ? (
+          {!isMpsOrAdmin ? (
             <div style={{
               textAlign: 'center',
-              padding: 60,
+              padding: '60px 24px',
               background: 'var(--bg-card)',
-              borderRadius: 14,
+              borderRadius: 16,
               border: '1px solid var(--border-color)',
-              color: 'var(--text-muted)'
+              maxWidth: 600,
+              margin: '30px auto'
             }}>
-              <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px', color: '#B8324F' }} />
-              <p style={{ margin: 0, fontSize: 14 }}>Cargando cola de revisión clínica...</p>
-            </div>
-          ) : reviewQueue.length === 0 ? (
-            <div style={{
-              textAlign: 'center',
-              padding: 60,
-              background: 'var(--bg-card)',
-              borderRadius: 14,
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-secondary)'
-            }}>
-              <CheckCircle size={40} style={{ color: '#10B981', margin: '0 auto 12px' }} />
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px' }}>
-                Cola al día
-              </h3>
-              <p style={{ fontSize: 13, margin: 0, color: 'var(--text-muted)' }}>
-                No hay propuestas pendientes de visto bueno. Todos los matches propuestos desde la entrevista clínica han sido procesados.
+              <ShieldCheck size={52} style={{ color: '#B8324F', margin: '0 auto 16px' }} />
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
+                Bandeja Exclusiva de Dirección Clínica
+              </h2>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 20px' }}>
+                La cola de aprobación de propuestas ("Por aprobar") está reservada únicamente para María Paula Salinas y Administración.
               </p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {reviewQueue.map(item => (
-                <div
-                  key={item.id}
+              {isCsOnly && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('servicio')}
                   style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 14,
-                    padding: 20,
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    gap: 18,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    padding: '10px 20px',
+                    borderRadius: 8,
+                    background: '#10B981',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontWeight: 700,
+                    cursor: 'pointer'
                   }}
                 >
-                  {/* Info del Match */}
-                  <div style={{ flex: 1, minWidth: 280 }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        background: 'rgba(124, 58, 237, 0.15)',
-                        color: '#A78BFA',
-                        border: '1px solid rgba(124, 58, 237, 0.3)'
-                      }}>
-                        <User size={12} /> {item.psychologist_name || 'Psicóloga'}
-                      </span>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        background: 'rgba(255,255,255,0.06)',
-                        color: 'var(--text-secondary)'
-                      }}>
-                        <MapPin size={12} /> {item.city || 'Bogotá'}
-                      </span>
-                      <span style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        background: `${item.plan_color || '#555'}20`,
-                        border: `1px solid ${item.plan_color || '#555'}50`,
-                        color: item.plan_color || '#ccc'
-                      }}>
-                        {item.plan_tier || 'Estándar'}
-                      </span>
-                      {item.fecha_hecho && (
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <Clock size={12} /> {item.fecha_hecho}
-                        </span>
-                      )}
-                      {item.status && item.status.includes('APROBADO POR') && (
-                        <span style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 6,
-                          background: 'rgba(16, 185, 129, 0.2)',
-                          color: '#34D399',
-                          border: '1px solid rgba(16, 185, 129, 0.4)'
-                        }}>
-                          ✓ Validado por Psicólogas
-                        </span>
-                      )}
-                    </div>
+                  Ir a Citas por Agendar (Servicio al Cliente)
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 16,
+                flexWrap: 'wrap',
+                gap: 12
+              }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Mostrando <strong style={{ color: 'var(--text-primary)' }}>{reviewQueue.length}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{totalReview}</strong> propuestas pendientes de aprobación por María
+                  {totalPagesReview > 1 && ` (Página ${pageReview} de ${totalPagesReview})`}
+                </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12,
+                  color: '#10B981',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(16, 185, 129, 0.25)'
+                }}>
+                  <ShieldCheck size={13} />
+                  <span>Aprobar con 1 solo clic pasa el match directo a Servicio al Cliente (Citas por Agendar).</span>
+                </div>
+              </div>
 
-                    {/* Pareja: Persona A x Persona B */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, fontSize: 16, marginBottom: 10 }}>
-                      <div style={{ fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <CrmPersonLink 
-                          crmId={item.person_a_crm_id} 
-                          name={item.person_a} 
-                          style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }} 
-                        />
-                      </div>
-
-                      <div style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: '50%',
-                        background: 'rgba(184, 50, 79, 0.2)',
+              {loadingReview ? (
+                <div style={{
+                  textAlign: 'center',
+                  padding: 60,
+                  background: 'var(--bg-card)',
+                  borderRadius: 14,
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-muted)'
+                }}>
+                  <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px', color: '#B8324F' }} />
+                  <p style={{ margin: 0, fontSize: 14 }}>Cargando cola de revisión clínica...</p>
+                </div>
+              ) : reviewQueue.length === 0 ? (
+                <div style={{
+                  textAlign: 'center',
+                  padding: 60,
+                  background: 'var(--bg-card)',
+                  borderRadius: 14,
+                  border: '1px solid var(--border-color)',
+                  color: 'var(--text-secondary)'
+                }}>
+                  <CheckCircle size={40} style={{ color: '#10B981', margin: '0 auto 12px' }} />
+                  <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px' }}>
+                    Cola al día
+                  </h3>
+                  <p style={{ fontSize: 13, margin: 0, color: 'var(--text-muted)' }}>
+                    No hay propuestas pendientes de visto bueno. Todos los matches propuestos han sido procesados.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  {reviewQueue.map(item => (
+                    <div
+                      key={item.id}
+                      style={{
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 16,
+                        padding: 22,
                         display: 'flex',
+                        flexDirection: 'column',
+                        gap: 16,
+                        boxShadow: '0 4px 14px rgba(0,0,0,0.08)'
+                      }}
+                    >
+                      {/* Cabecera de la Tarjeta */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#B8324F'
+                        flexWrap: 'wrap',
+                        gap: 10,
+                        borderBottom: '1px solid var(--border-color)',
+                        paddingBottom: 12
                       }}>
-                        <Heart size={13} fill="#B8324F" />
-                      </div>
-
-                      <div style={{ fontWeight: 800, color: '#10B981', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {item.person_b && item.person_b.trim() ? (
-                          <CrmPersonLink 
-                            crmId={item.person_b_crm_id} 
-                            name={item.person_b} 
-                            style={{ fontWeight: 800, fontSize: 16, color: '#10B981' }} 
-                          />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: 8,
+                            background: 'rgba(124, 58, 237, 0.15)',
+                            color: '#A78BFA',
+                            border: '1px solid rgba(124, 58, 237, 0.3)'
+                          }}>
+                            <User size={13} /> {item.psychologist_name || 'Psicóloga'}
+                          </span>
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            padding: '3px 10px',
+                            borderRadius: 8,
+                            background: 'rgba(255,255,255,0.06)',
+                            color: 'var(--text-secondary)'
+                          }}>
+                            <MapPin size={13} /> {item.city || 'Bogotá'}
+                          </span>
+                        </div>
+                        {item.fecha_propuesta_label && item.fecha_propuesta_label !== '-' ? (
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <Clock size={13} /> Propuesto: {item.fecha_propuesta_label}
+                          </span>
+                        ) : item.fecha_hecho && item.fecha_hecho !== '-' && !item.fecha_hecho.startsWith("2026-08-23") ? (
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <Clock size={13} /> Propuesto: {item.fecha_hecho}
+                          </span>
                         ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>Por definir</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            <Clock size={13} /> Propuesto: -
+                          </span>
                         )}
                       </div>
-                    </div>
 
-                    {/* Observaciones o Justificación de la Psicóloga */}
-                    {item.observations && (
+                      {/* PERSONA A Y PERSONA B LADO A LADO */}
                       <div style={{
-                        background: 'var(--bg-base)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 8,
-                        padding: 10,
-                        fontSize: 12,
-                        color: 'var(--text-secondary)',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: 8
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                        gap: 16,
+                        alignItems: 'stretch'
                       }}>
-                        <Sparkles size={14} color="#F59E0B" style={{ flexShrink: 0, marginTop: 2 }} />
-                        <div>
-                          <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 2 }}>Justificación de Match:</strong>
-                          <p style={{ margin: 0, fontStyle: 'italic', lineHeight: 1.4 }}>{item.observations}</p>
+                        {/* Tarjeta Persona A */}
+                        <div style={{
+                          background: 'var(--bg-base)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 12,
+                          padding: 16,
+                          display: 'flex',
+                          gap: 14
+                        }}>
+                          <UserAvatar url={item.person_a_photo_url} name={item.person_a} size={56} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>
+                              Persona A (Cliente)
+                            </div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <CrmPersonLink crmId={item.person_a_crm_id} name={item.person_a} style={{ fontWeight: 800, color: 'var(--text-primary)' }} />
+                            </div>
+                            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                              {item.person_a_age ? `${item.person_a_age} años` : 'Edad no registrada'} • {item.person_a_city || item.city || 'Bogotá'}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <Briefcase size={12} /> {item.person_a_occupation || 'Ocupación no especificada'}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              <span style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                background: 'rgba(184, 50, 79, 0.15)',
+                                border: '1px solid rgba(184, 50, 79, 0.3)',
+                                color: '#FF758F'
+                              }}>
+                                {item.person_a_plan_tier || item.plan_tier || 'Estándar'}
+                              </span>
+                              <span style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                background: item.person_a_dates_remaining > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                border: `1px solid ${item.person_a_dates_remaining > 0 ? '#10B98150' : '#EF444450'}`,
+                                color: item.person_a_dates_remaining > 0 ? '#10B981' : '#EF4444'
+                              }}>
+                                {item.person_a_dates_remaining > 0 ? `${item.person_a_dates_remaining} citas restantes` : '0 citas restantes'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Tarjeta Persona B */}
+                        <div style={{
+                          background: 'var(--bg-base)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 12,
+                          padding: 16,
+                          display: 'flex',
+                          gap: 14
+                        }}>
+                          <UserAvatar url={item.person_b_photo_url} name={item.person_b} size={56} bg="linear-gradient(135deg, #065f46, #10b981)" />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#10B981', textTransform: 'uppercase', marginBottom: 2 }}>
+                              Persona B (Candidata)
+                            </div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: '#10B981', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {item.person_b && item.person_b.trim() ? (
+                                <CrmPersonLink crmId={item.person_b_crm_id} name={item.person_b} style={{ fontWeight: 800, color: '#10B981' }} />
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>Por definir</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                              {item.person_b_age ? `${item.person_b_age} años` : 'Edad no registrada'} • {item.person_b_city || item.city || 'Bogotá'}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <Briefcase size={12} /> {item.person_b_occupation || 'Ocupación no especificada'}
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              <span style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                color: '#10B981'
+                              }}>
+                                {item.person_b_plan_tier || 'Candidata activa'}
+                              </span>
+                              <span style={{
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                background: item.person_b_dates_remaining > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                border: `1px solid ${item.person_b_dates_remaining > 0 ? '#10B98150' : '#F59E0B50'}`,
+                                color: item.person_b_dates_remaining > 0 ? '#10B981' : '#F59E0B'
+                              }}>
+                                {item.person_b_dates_remaining > 0 ? `${item.person_b_dates_remaining} citas restantes` : '0 citas (Oportunidad comercial)'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    )}
-                  </div>
 
-                  {/* Acciones de María */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end', minWidth: 200 }}>
-                    <button
-                      onClick={() => handleApproveMatch(item.id)}
-                      disabled={approvingId === item.id}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        padding: '10px 18px',
-                        background: '#16A34A',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        boxShadow: '0 2px 8px rgba(22, 163, 74, 0.3)',
-                        opacity: approvingId === item.id ? 0.6 : 1,
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      {approvingId === item.id ? (
-                        <>
-                          <RefreshCw size={14} className="animate-spin" />
-                          Aprobando...
-                        </>
-                      ) : (
-                        <>
-                          <Check size={15} />
-                          Aprobar Match (Pasar a MATCHES)
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => { setRejectModalMatch(item); setRejectReason(''); }}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        padding: '8px 14px',
-                        background: 'transparent',
-                        color: 'var(--text-secondary)',
+                      {/* Puntaje único, 3 Razones y Justificación */}
+                      <div style={{
+                        background: 'rgba(255,255,255,0.02)',
                         border: '1px solid var(--border-color)',
+                        borderRadius: 12,
+                        padding: 16,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 12
+                      }}>
+                        {/* Veredicto */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                          <span style={{
+                            fontSize: 13,
+                            fontWeight: 800,
+                            padding: '4px 12px',
+                            borderRadius: 8,
+                            background: item.compatibility_score >= 75 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                            color: item.compatibility_score >= 75 ? '#34D399' : '#FBBF24',
+                            border: `1px solid ${item.compatibility_score >= 75 ? '#10B98150' : '#F59E0B50'}`
+                          }}>
+                            {item.compatibility_score || 80}/100 • {item.compatibility_verdict || 'RECOMENDADO'}
+                          </span>
+                        </div>
+
+                        {/* 3 Razones Principales */}
+                        {item.reasons && item.reasons.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                              3 Razones Principales del Match:
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {item.reasons.map((r, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: 'var(--text-primary)' }}>
+                                  <CheckCircle size={14} color="#10B981" style={{ flexShrink: 0, marginTop: 2 }} />
+                                  <span>{r}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Nota de la Psicóloga */}
+                        {item.observations && (
+                          <div style={{
+                            background: 'var(--bg-base)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: 8,
+                            padding: 10,
+                            fontSize: 12,
+                            color: 'var(--text-secondary)',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 8
+                          }}>
+                            <Sparkles size={14} color="#F59E0B" style={{ flexShrink: 0, marginTop: 2 }} />
+                            <div>
+                              <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 2 }}>
+                                Nota de la Psicóloga ({item.psychologist_name}):
+                              </strong>
+                              <p style={{ margin: 0, fontStyle: 'italic', lineHeight: 1.4 }}>{item.observations}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Botones de Acción: Aprobar (1 clic) vs Rechazar (1 clic con motivo) */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 4 }}>
+                        <button
+                          onClick={() => { setRejectModalMatch(item); setRejectCategory(''); setRejectReason(''); }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '10px 18px',
+                            background: 'transparent',
+                            color: '#EF4444',
+                            border: '1px solid rgba(239, 68, 68, 0.4)',
+                            borderRadius: 10,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <Undo2 size={15} />
+                          Rechazar Match (1 clic con motivo)
+                        </button>
+
+                        <button
+                          onClick={() => handleApproveMatch(item.id)}
+                          disabled={approvingId === item.id}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '10px 22px',
+                            background: '#16A34A',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: 10,
+                            fontSize: 13,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 10px rgba(22, 163, 74, 0.35)',
+                            opacity: approvingId === item.id ? 0.6 : 1,
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          {approvingId === item.id ? (
+                            <>
+                              <RefreshCw size={15} className="animate-spin" />
+                              Aprobando...
+                            </>
+                          ) : (
+                            <>
+                              <Check size={16} />
+                              Aprobar Match (1 solo clic)
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Controles de Paginación */}
+                {totalPagesReview > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14, marginTop: 24 }}>
+                    <button
+                      type="button"
+                      disabled={pageReview <= 1 || loadingReview}
+                      onClick={() => setPageReview(p => Math.max(1, p - 1))}
+                      style={{
+                        padding: '8px 16px',
                         borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: pageReview <= 1 ? 'var(--text-muted)' : 'var(--text-primary)',
+                        cursor: pageReview <= 1 ? 'not-allowed' : 'pointer',
+                        fontSize: 13,
+                        fontWeight: 600
                       }}
                     >
-                      <Undo2 size={13} />
-                      Devolver / Observación
+                      ← Anterior
+                    </button>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      Página <strong style={{ color: 'var(--text-primary)' }}>{pageReview}</strong> de <strong style={{ color: 'var(--text-primary)' }}>{totalPagesReview}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={pageReview >= totalPagesReview || loadingReview}
+                      onClick={() => setPageReview(p => Math.min(totalPagesReview, p + 1))}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: 8,
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-card)',
+                        color: pageReview >= totalPagesReview ? 'var(--text-muted)' : 'var(--text-primary)',
+                        cursor: pageReview >= totalPagesReview ? 'not-allowed' : 'pointer',
+                        fontSize: 13,
+                        fontWeight: 600
+                      }}
+                    >
+                      Siguiente →
                     </button>
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </>
+            )}
+            </>
           )}
         </div>
       )}
@@ -935,15 +1147,20 @@ export default function AprobadosMaria() {
                         borderRadius: 10,
                         padding: 12
                       }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>PERSONA A</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <CrmPersonLink crmId={match.person_a_crm_id} name={match.person_a} style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }} />
-                        </div>
-                        {match.person_a_phone && (
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
-                            📞 {match.person_a_phone}
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>PERSONA A</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <UserAvatar url={match.person_a_photo_url} name={match.person_a} size={36} />
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <CrmPersonLink crmId={match.person_a_crm_id} name={match.person_a} style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }} />
+                            </div>
+                            {match.person_a_phone && (
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
+                                📞 {match.person_a_phone}
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
 
                       <div style={{
@@ -952,19 +1169,24 @@ export default function AprobadosMaria() {
                         borderRadius: 10,
                         padding: 12
                       }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>PERSONA B</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: '#10B981', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {match.person_b && match.person_b.trim() ? (
-                            <CrmPersonLink crmId={match.person_b_crm_id} name={match.person_b} style={{ fontWeight: 800, fontSize: 14, color: '#10B981' }} />
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)' }}>Por definir</span>
-                          )}
-                        </div>
-                        {match.person_b_phone && (
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
-                            📞 {match.person_b_phone}
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>PERSONA B</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <UserAvatar url={match.person_b_photo_url} name={match.person_b} size={36} bg="linear-gradient(135deg, #065f46, #10b981)" />
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 800, color: '#10B981', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {match.person_b && match.person_b.trim() ? (
+                                <CrmPersonLink crmId={match.person_b_crm_id} name={match.person_b} style={{ fontWeight: 800, fontSize: 14, color: '#10B981' }} />
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>Por definir</span>
+                              )}
+                            </div>
+                            {match.person_b_phone && (
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
+                                📞 {match.person_b_phone}
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1039,7 +1261,7 @@ export default function AprobadosMaria() {
         }}>
           <div style={{
             width: '100%',
-            maxWidth: 480,
+            maxWidth: 520,
             background: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
             borderRadius: 16,
@@ -1056,7 +1278,7 @@ export default function AprobadosMaria() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#B8324F', fontWeight: 800, fontSize: 16 }}>
                 <Undo2 size={18} />
-                <span>Devolver Propuesta a Psicóloga</span>
+                <span>Rechazar Propuesta de Match</span>
               </div>
               <button
                 onClick={() => setRejectModalMatch(null)}
@@ -1067,16 +1289,52 @@ export default function AprobadosMaria() {
             </div>
 
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px' }}>
-              Indica la razón por la cual no apruebas el match entre <strong style={{ color: 'var(--text-primary)' }}>{rejectModalMatch.person_a}</strong> y <strong style={{ color: 'var(--text-primary)' }}>{rejectModalMatch.person_b}</strong> para que la psicóloga {rejectModalMatch.psychologist_name} proponga una alternativa adecuada.
+              Rechazar match entre <strong style={{ color: 'var(--text-primary)' }}>{rejectModalMatch.person_a}</strong> y <strong style={{ color: '#10B981' }}>{rejectModalMatch.person_b}</strong>. Se devolverá a la psicóloga <strong style={{ color: 'var(--text-primary)' }}>{rejectModalMatch.psychologist_name}</strong> con el motivo visible, y el motor no volverá a sugerir esta pareja.
             </p>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Motivo principal de rechazo (1 clic obligatorio):
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {REJECTION_CATEGORIES.map(cat => {
+                  const isSelected = rejectCategory === cat.id
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setRejectCategory(cat.id)}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        fontSize: 13,
+                        fontWeight: isSelected ? 800 : 600,
+                        border: isSelected ? '2px solid #B8324F' : '1px solid var(--border-color)',
+                        background: isSelected ? 'rgba(184, 50, 79, 0.2)' : 'var(--bg-base)',
+                        color: isSelected ? '#FFFFFF' : 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      {isSelected && <Check size={14} color="#FF758F" />}
+                      <span>{cat.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
 
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Observación o Motivo
+                Detalle adicional para la psicóloga (opcional)
               </label>
               <textarea
                 rows={3}
-                placeholder="Ej. Incompatibilidad de rango de edad o estilo de vida, buscar perfil más afín..."
+                placeholder="Observación complementaria sobre el criterio clínico..."
                 value={rejectReason}
                 onChange={e => setRejectReason(e.target.value)}
                 style={{
@@ -1110,20 +1368,23 @@ export default function AprobadosMaria() {
               </button>
               <button
                 onClick={handleRejectMatch}
-                disabled={rejecting}
+                disabled={rejecting || !rejectCategory}
                 style={{
-                  padding: '9px 18px',
+                  padding: '10px 20px',
                   background: '#B8324F',
                   color: '#FFFFFF',
                   border: 'none',
                   borderRadius: 8,
                   fontSize: 13,
                   fontWeight: 700,
-                  cursor: 'pointer',
-                  opacity: rejecting ? 0.6 : 1
+                  cursor: rejectCategory ? 'pointer' : 'not-allowed',
+                  opacity: (rejecting || !rejectCategory) ? 0.5 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
                 }}
               >
-                {rejecting ? 'Devolviendo...' : 'Confirmar Devolución'}
+                {rejecting ? 'Rechazando...' : 'Confirmar Rechazo'}
               </button>
             </div>
           </div>

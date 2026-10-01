@@ -42,6 +42,7 @@ import AuditoriaPsicologas from './pages/AuditoriaPsicologas'
 import CmsEventos from './pages/CmsEventos'
 import CmsCiudades from './pages/CmsCiudades'
 import MisMatches from './pages/matchmaking/MisMatches'
+import MiMesaPsicologa from './pages/matchmaking/MiMesaPsicologa'
 import IntakeClientes from './pages/matchmaking/IntakeClientes'
 import RefundsQueue from './pages/matchmaking/RefundsQueue'
 import AprobadosMaria from './pages/matchmaking/AprobadosMaria'
@@ -54,7 +55,6 @@ import EntrevistaHub from './pages/matchmaking/EntrevistaHub'
 import SupervisionMaria from './pages/matchmaking/SupervisionMaria'
 import Prioritarios from './pages/matchmaking/Prioritarios'
 import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
-import MisTurnos from './pages/matchmaking/MisTurnos'
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
@@ -255,9 +255,12 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
     effectiveRole.toLowerCase().includes('matchmaker')
   )
   const isLina = !isAtrasadosOnly && !isCliente && effectiveRole === 'Lina (Refunds)'
-  const isMariaOnly = !isAtrasadosOnly && !isCliente && !isCs && !isPsyc && !isLina && effectiveRole === 'María'
+  const isMariaOnly = !isAtrasadosOnly && !isCliente && !isCs && !isPsyc && !isLina && (
+    effectiveRole === 'María' || effectiveRole === 'MPS' || effectiveRole === 'María Paula Salinas'
+  )
   const isMaria = !isAtrasadosOnly && !isCliente && !isCs && !isPsyc && !isLina && (
     effectiveRole === 'María' ||
+    effectiveRole === 'MPS' ||
     effectiveRole === 'Admin' ||
     effectiveRole === 'Super Admin' ||
     (!previewRole && (
@@ -272,11 +275,11 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
     : isCliente
       ? '/portal-cliente'
       : isCs
-        ? '/cs-dashboard'
+        ? '/matchmaking/aprobados-maria'
         : isPsyc
-          ? '/psicologa'
+          ? '/matchmaking/mi-mesa'
           : isMariaOnly
-            ? '/matchmaking/supervision-maria'
+            ? '/matchmaking/aprobados-maria'
             : '/'
 
   const atrasadosNavItems = [
@@ -289,23 +292,41 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
     { to: '/evaluacion-cita', icon: Sparkles, label: '⭐ Evaluación de Cita' }
   ]
 
-  // 4 Carpetas Colapsables (Diseño aprobado)
+  const psycNavItems = [
+    { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa' },
+    { to: '/matchmaking/calendario', icon: Calendar, label: '📅 Mis Turnos' },
+    { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevistas' }
+  ]
+
+  const mpsNavItems = [
+    { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar' },
+    { to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión' },
+    { to: '/kpis', icon: FileSpreadsheet, label: '📊 KPIs' }
+  ]
+
+  const csNavItems = [
+    { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Agendar' },
+    { to: '/matchmaking/citas-agendadas', icon: Calendar, label: '📅 Citas' },
+    { to: '/matchmaking/refunds', icon: Wallet, label: '💰 Refunds' }
+  ]
+
+  // 4 Carpetas Colapsables (Diseño para Administradores)
   const folders = [
     {
       id: 'matchmaking',
       title: '💘 Matchmaking',
-      visible: isMaria || isPsyc,
+      visible: true,
       items: [
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/calendario', icon: Calendar, label: isMaria ? '🗓️ Calendario & Turnos' : '📅 Mi Calendario de Turnos' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-turnos', icon: Calendar, label: '🔁 Mis turnos y cambios' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' }] : []),
-        ...(isPsyc ? [{ to: '/psicologa', icon: Heart, label: '💖 Mi Panel Clínico', end: true }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/profiles', icon: FileSpreadsheet, label: isPsyc ? '📋 Mis Clientes (PROFILES)' : '📋 PROFILES (Ingreso)' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/mis-matches', icon: Heart, label: isMaria ? '💖 Matches Psicólogas' : '💖 Mis Matches' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/clientes', icon: Users, label: '👥 Directorio Clientes' }] : []),
-        ...(isMaria || isPsyc ? [{ to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' }] : []),
-        ...(isMaria ? [{ to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' }] : []),
-        ...(isMaria ? [{ to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales' }] : [])
+        { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa (Psicóloga)' },
+        { to: '/matchmaking/mis-matches', icon: Heart, label: '💖 Matches Psicólogas (Admin)' },
+        { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar (María)' },
+        { to: '/matchmaking/calendario', icon: Calendar, label: '🗓️ Calendario & Turnos' },
+        { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' },
+        { to: '/matchmaking/profiles', icon: FileSpreadsheet, label: '📋 PROFILES (Ingreso)' },
+        { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
+        { to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' },
+        { to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' },
+        { to: '/matchmaking/trouble', icon: AlertTriangle, label: '⚠️ Trouble & Casos Especiales' }
       ]
     },
     {
@@ -434,6 +455,51 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
                 to={to}
                 className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
                 onClick={handleLinkClick}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        ) : isPsyc ? (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {psycNavItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+                style={{ fontSize: 13, padding: '9px 12px' }}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        ) : isMariaOnly ? (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {mpsNavItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+                style={{ fontSize: 13, padding: '9px 12px' }}
+              >
+                <Icon className="nav-icon" size={16} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        ) : isCs ? (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {csNavItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                onClick={handleLinkClick}
+                style={{ fontSize: 13, padding: '9px 12px' }}
               >
                 <Icon className="nav-icon" size={16} />
                 {label}
@@ -605,16 +671,16 @@ function HomeRoute() {
     return <ClientePortalDashboard />
   }
   if (effectiveRole === 'Servicio al Cliente' || (typeof effectiveRole === 'string' && (effectiveRole.toLowerCase().includes('servicio') || effectiveRole.toLowerCase().includes('customer')))) {
-    return <CustomerServiceDashboard />
+    return <Navigate to="/matchmaking/aprobados-maria" replace />
   }
   if (effectiveRole === 'Psicóloga' || (typeof effectiveRole === 'string' && (effectiveRole.toLowerCase().includes('psicolog') || effectiveRole.toLowerCase().includes('matchmaker')))) {
-    return <MatchmakerDashboard />
+    return <Navigate to="/matchmaking/mi-mesa" replace />
   }
   if (effectiveRole === 'Lina (Refunds)') {
     return <Navigate to="/matchmaking/refunds" replace />
   }
-  if (effectiveRole === 'María') {
-    return <SupervisionMaria />
+  if (effectiveRole === 'María' || effectiveRole === 'MPS') {
+    return <Navigate to="/matchmaking/aprobados-maria" replace />
   }
   return <Dashboard />
 }
@@ -902,8 +968,9 @@ function AppContent() {
                     <Route path="/matchmaking/matches" element={<AreaErrorBoundary areaName="Servicio al Cliente (Mesa MATCHES)"><ProtectedRoute module="matching" action="view"><MisMatches isOfficialMatches={true} /></ProtectedRoute></AreaErrorBoundary>} />
 
                     {/* MÓDULO: PSICÓLOGAS & MATCHMAKING CLÍNICO */}
-                    <Route path="/psicologa" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas"><ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute></AreaErrorBoundary>} />
-                    <Route path="/clinico" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas"><ProtectedRoute module="dashboard" action="view"><MatchmakerDashboard /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/psicologa" element={<Navigate to="/matchmaking/mi-mesa" replace />} />
+                    <Route path="/clinico" element={<Navigate to="/matchmaking/mi-mesa" replace />} />
+                    <Route path="/matchmaking/mi-mesa" element={<AreaErrorBoundary areaName="Mi Mesa Psicóloga"><ProtectedRoute module="matching" action="view"><MiMesaPsicologa /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/mis-matches" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas (Mis Matches)"><ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/entrevista" element={<AreaErrorBoundary areaName="Entrevista Clínica & Hub"><ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/cola-atrasados" element={<AreaErrorBoundary areaName="Cola de Atrasados Clínicos"><ProtectedRoute module="matching" action="view"><EntrevistaHub initialTab="cola_atrasados" /></ProtectedRoute></AreaErrorBoundary>} />
@@ -915,7 +982,6 @@ function AppContent() {
                     <Route path="/matchmaking/todos-los-matches" element={<AreaErrorBoundary areaName="Matriz Global de Matches"><ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/agenda" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/calendario" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
-                    <Route path="/matchmaking/mis-turnos" element={<AreaErrorBoundary areaName="Mis turnos"><ProtectedRoute module="matching" action="view"><MisTurnos /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/sala/:sessionId" element={<AreaErrorBoundary areaName="Sala de Videollamada"><ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/horas-psicologas" element={<AreaErrorBoundary areaName="Control de Horas Clínicas"><ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
 

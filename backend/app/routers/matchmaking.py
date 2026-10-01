@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
+from collections import defaultdict
 import os
 import re
 import json
@@ -515,6 +516,8 @@ async def get_my_matches(
             p.city AS profile_city, p.orientation AS profile_orientation, 
             p.gender AS profile_gender, p.plan_tier AS profile_plan_tier,
             p.responsable AS profile_responsable,
+            COALESCE(p.photo_url, '') AS person_a_photo_url,
+            COALESCE(pB.photo_url, '') AS person_b_photo_url,
             p.neighborhood AS person_a_neighborhood,
             pB.neighborhood AS person_b_neighborhood,
             COALESCE(NULLIF(TRIM(pB.plan_tier), ''), NULLIF(TRIM(mOwnerB.plan_tier), ''), '') AS person_b_plan_tier,
@@ -908,8 +911,10 @@ async def get_my_matches(
             "is_vip_b": vip_b,
             "is_vip_match": vip_match,
             "person_a": pA_name,
+            "person_a_photo_url": d.get("person_a_photo_url") or "",
             "person_a_crm_id": str(d.get("person_a_crm_id") or d.get("ua_crm_id") or "").strip() if str(d.get("person_a_crm_id") or d.get("ua_crm_id") or "").strip().lower() not in ("none", "null", "undefined") else "",
             "person_b": d.get("person_b") or "",
+            "person_b_photo_url": d.get("person_b_photo_url") or "",
             "person_b_crm_id": str(d.get("person_b_crm_id") or d.get("ub_crm_id") or "").strip() if str(d.get("person_b_crm_id") or d.get("ub_crm_id") or "").strip().lower() not in ("none", "null", "undefined") else "",
             "psychologist_b": p_b_psyc,
             "compatibility_score": d.get("compatibility_score"),
@@ -2510,20 +2515,33 @@ async def get_approval_queue(
             m.id, m.psychologist_name, m.person_a, m.person_b, m.city, m.plan_tier, m.pref,
             m.created_at, m.updated_at, m.observations, m.status,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS person_a_crm_id,
-            COALESCE(m.person_b_crm_id, uB.crm_id, '') AS person_b_crm_id
+            COALESCE(m.person_b_crm_id, uB.crm_id, '') AS person_b_crm_id,
+            COALESCE(pA.photo_url, '') AS person_a_photo_url,
+            COALESCE(pB.photo_url, '') AS person_b_photo_url,
+            pA.age AS person_a_age,
+            pA.occupation AS person_a_occupation,
+            pA.city AS person_a_city,
+            pA.plan_tier AS person_a_plan_tier,
+            pB.age AS person_b_age,
+            pB.occupation AS person_b_occupation,
+            pB.city AS person_b_city,
+            pB.plan_tier AS person_b_plan_tier,
+            pA.gender AS pA_gender, pA.orientation AS pA_orientation, pA.estatura AS pA_estatura,
+            pA.lifestyle AS pA_lifestyle, pA.search_preferences AS pA_search_preferences, pA.apego AS pA_apego,
+            pA.education AS pA_education, pA.love_language AS pA_love_language, pA.valores AS pA_valores,
+            pB.gender AS pB_gender, pB.orientation AS pB_orientation, pB.estatura AS pB_estatura,
+            pB.lifestyle AS pB_lifestyle, pB.search_preferences AS pB_search_preferences, pB.apego AS pB_apego,
+            pB.education AS pB_education, pB.love_language AS pB_love_language, pB.valores AS pB_valores,
+            m.compatibility_score,
+            m.compatibility_verdict,
+            m.compatibility_analysis,
+            uA.id AS u_a_id,
+            uB.id AS u_b_id
         FROM operational_matches m
-        LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
-            FROM users
-            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
-            ORDER BY LOWER(TRIM(name)), id DESC
-        ) uA ON LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a))
-        LEFT JOIN (
-            SELECT DISTINCT ON (LOWER(TRIM(name))) name, crm_id
-            FROM users
-            WHERE crm_id IS NOT NULL AND crm_id != '' AND crm_id != 'None'
-            ORDER BY LOWER(TRIM(name)), id DESC
-        ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
+        LEFT JOIN users uA ON (m.user_id_a IS NOT NULL AND uA.id = m.user_id_a) OR (m.user_id_a IS NULL AND LOWER(TRIM(uA.name)) = LOWER(TRIM(m.person_a)))
+        LEFT JOIN users uB ON (m.user_id_b IS NOT NULL AND uB.id = m.user_id_b) OR (m.user_id_b IS NULL AND LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b)))
+        LEFT JOIN profiles pA ON pA.user_id = uA.id
+        LEFT JOIN profiles pB ON pB.user_id = uB.id
         WHERE (m.status IN ('HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS', 'APROBADO POR AMBAS PSICÓLOGAS') OR m.status ILIKE '%APROBA%MARIA%')
           AND m.approved_by_maria = false
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
@@ -2577,23 +2595,170 @@ async def get_approval_queue(
     result = await db.execute(text(query), params)
     rows = result.fetchall()
 
+    user_ids = set()
+    for r in rows:
+        d = dict(r._mapping)
+        if d.get("u_a_id"):
+            user_ids.add(d["u_a_id"])
+        if d.get("u_b_id"):
+            user_ids.add(d["u_b_id"])
+
+    dates_used_map = {}
+    if user_ids:
+        try:
+            sd_counts_a = await db.execute(text("""
+                SELECT m.user_id_a, count(*) as cnt
+                FROM scheduled_dates sd
+                JOIN operational_matches m ON m.id = sd.match_id
+                WHERE m.user_id_a = ANY(:uids)
+                GROUP BY m.user_id_a
+            """), {"uids": list(user_ids)})
+            for sc in sd_counts_a.fetchall():
+                dates_used_map[sc.user_id_a] = sc.cnt
+
+            sd_counts_b = await db.execute(text("""
+                SELECT m.user_id_b, count(*) as cnt
+                FROM scheduled_dates sd
+                JOIN operational_matches m ON m.id = sd.match_id
+                WHERE m.user_id_b = ANY(:uids)
+                GROUP BY m.user_id_b
+            """), {"uids": list(user_ids)})
+            for sc in sd_counts_b.fetchall():
+                dates_used_map[sc.user_id_b] = sc.cnt
+        except Exception as e_sd:
+            logger.warning(f"Error calculating dates_used_map in approval_queue: {e_sd}")
+
     queue = []
     for r in rows:
         d = dict(r._mapping)
+
+        plan_a = normalize_plan(d.get("person_a_plan_tier") or d.get("plan_tier"))
+        slots_a = get_slots_by_plan(plan_a) or 0
+        used_a = dates_used_map.get(d.get("u_a_id"), 0)
+        saldo_a = max(0, slots_a - used_a) if slots_a > 0 else 0
+
+        plan_b = normalize_plan(d.get("person_b_plan_tier"))
+        slots_b = get_slots_by_plan(plan_b) or 0
+        used_b = dates_used_map.get(d.get("u_b_id"), 0)
+        saldo_b = max(0, slots_b - used_b) if slots_b > 0 else 0
+
+        # Cálculo ÚNICO de compatibilidad Daily Lover (unified_score)
+        canon_a = canonical_to_score_input(p_row={
+            "name": d.get("person_a"),
+            "gender": d.get("pA_gender"),
+            "age": d.get("person_a_age"),
+            "city": d.get("person_a_city") or d.get("city"),
+            "occupation": d.get("person_a_occupation"),
+            "lifestyle": d.get("pA_lifestyle"),
+            "search_preferences": d.get("pA_search_preferences"),
+            "apego": d.get("pA_apego"),
+            "education": d.get("pA_education"),
+            "love_language": d.get("pA_love_language"),
+            "estatura": d.get("pA_estatura"),
+            "valores": d.get("pA_valores")
+        })
+        canon_b = canonical_to_score_input(p_row={
+            "name": d.get("person_b"),
+            "gender": d.get("pB_gender"),
+            "age": d.get("person_b_age"),
+            "city": d.get("person_b_city") or d.get("city"),
+            "occupation": d.get("person_b_occupation"),
+            "lifestyle": d.get("pB_lifestyle"),
+            "search_preferences": d.get("pB_search_preferences"),
+            "apego": d.get("pB_apego"),
+            "education": d.get("pB_education"),
+            "love_language": d.get("pB_love_language"),
+            "estatura": d.get("pB_estatura"),
+            "valores": d.get("pB_valores")
+        })
+        score_eval = unified_score(canon_a, canon_b)
+        calc_score = score_eval.get("score") if score_eval.get("score") is not None else 75
+        calc_verdict = score_eval.get("veredicto") or "RECOMENDADO"
+
+        score = d.get("compatibility_score") or calc_score
+        verdict = d.get("compatibility_verdict") or calc_verdict
+
+        # Construir 3 razones clínicas reales basadas en dimensiones de unified_score
+        reasons = []
+        age_a = d.get("person_a_age")
+        age_b = d.get("person_b_age")
+        city_a = d.get("person_a_city") or d.get("city")
+        city_b = d.get("person_b_city") or d.get("city")
+        occ_a = d.get("person_a_occupation")
+        occ_b = d.get("person_b_occupation")
+
+        # 1. Dimensión de Edad con datos reales
+        if age_a and age_b:
+            diff = abs(int(age_a) - int(age_b))
+            if diff <= 4:
+                reasons.append(f"Afinidad etaria cercana: {age_a} y {age_b} años ({diff} año{'s' if diff != 1 else ''} de diferencia)")
+            elif diff <= 8:
+                reasons.append(f"Rango de edad armónico: {age_a} y {age_b} años ({diff} años de diferencia)")
+            else:
+                reasons.append(f"Diferencia de edad: {age_a} y {age_b} años ({diff} años — evaluar expectativas de vida)")
+
+        # 2. Puntos de atención clínicos reales (de discrepancias_fuertes u observaciones) o territorio
+        disc_fuertes = score_eval.get("discrepancias_fuertes") or []
+        obs_eval = score_eval.get("observaciones") or []
+        if disc_fuertes:
+            reasons.append(f"Punto de atención: {disc_fuertes[0]}")
+        elif obs_eval:
+            reasons.append(f"Observación clínica: {obs_eval[0]}")
+        elif city_a and city_b:
+            if norm_city(city_a) == norm_city(city_b):
+                reasons.append(f"Compatibilidad territorial: Ambos residen en {city_a}")
+            else:
+                reasons.append(f"Ubicación geográfica: {city_a} y {city_b} (evaluar desplazamiento)")
+
+        # 3. Dimensión destacada evaluada (Valores, Hijos, Deporte, Estilo de vida)
+        dims_list = score_eval.get("dimensiones") or []
+        high_dims = [dm["dimension"] for dm in dims_list if (dm.get("puntaje") or 0) >= 0.8 and dm["dimension"] not in ("edad", "ciudad")]
+        if "valores" in high_dims:
+            reasons.append("Valores compartidos: Alta alineación en metas y visión personal")
+        elif "hijos" in high_dims:
+            reasons.append("Proyecto de vida: Coincidencia en planes familiares")
+        elif "actividad_fisica" in high_dims:
+            reasons.append("Estilo de vida: Hábitos afines en actividad física y salud")
+        elif occ_a and occ_b and occ_a != "No especificado" and occ_b != "No especificado":
+            reasons.append(f"Afinidad sociocultural: {occ_a} y {occ_b}")
+        else:
+            reasons.append("Filtro clínico bidireccional superado sin incompatibilidades")
+
+        reasons = reasons[:3]
+
+        created_dt = d.get("created_at")
+        fecha_label = "-" if (created_dt and created_dt.strftime("%Y-%m-%d") == "2026-08-23") else (created_dt.strftime("%Y-%m-%d %H:%M") if created_dt else "-")
+
         queue.append({
             "id": d.get("id"),
             "psychologist_name": d.get("psychologist_name"),
             "person_a": d.get("person_a"),
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
+            "person_a_photo_url": d.get("person_a_photo_url") or "",
+            "person_a_age": d.get("person_a_age"),
+            "person_a_occupation": d.get("person_a_occupation") or "",
+            "person_a_city": d.get("person_a_city") or d.get("city") or "",
+            "person_a_plan_tier": plan_a,
+            "person_a_dates_remaining": saldo_a,
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
+            "person_b_photo_url": d.get("person_b_photo_url") or "",
+            "person_b_age": d.get("person_b_age"),
+            "person_b_occupation": d.get("person_b_occupation") or "",
+            "person_b_city": d.get("person_b_city") or d.get("city") or "",
+            "person_b_plan_tier": plan_b,
+            "person_b_dates_remaining": saldo_b,
+            "compatibility_score": score,
+            "compatibility_verdict": verdict,
+            "reasons": reasons[:3],
             "city": normalize_city(d.get("city")),
-            "plan_tier": normalize_plan(d.get("plan_tier")),
+            "plan_tier": plan_a,
             "pref": normalize_pref(d.get("pref")),
-            "fecha_hecho": d.get("updated_at").strftime("%Y-%m-%d %H:%M") if d.get("updated_at") else "",
+            "fecha_hecho": fecha_label,
+            "fecha_propuesta_label": fecha_label,
             "observations": d.get("observations") or "",
             "status": d.get("status") or "HECHO",
-            "plan_color": PLAN_COLORS.get(d.get("plan_tier"), "#F3F3F3")
+            "plan_color": PLAN_COLORS.get(plan_a, "#F3F3F3")
         })
 
     if total_items is None:
@@ -2749,6 +2914,7 @@ async def refund_match_by_maria(
 
 
 class RejectByMariaRequest(BaseModel):
+    rejection_category: Optional[str] = None
     rejection_reason: Optional[str] = None
     reason: Optional[str] = None
 
@@ -2763,7 +2929,7 @@ async def reject_match_by_maria(
     ACCIÓN DE RECHAZO / DEVOLUCIÓN DE MARÍA:
     1. Devuelve el match a la psicóloga asignada marcando status = 'NOT APPROVED'.
     2. Libera el bloqueo de María para que la psicóloga pueda proponer un nuevo candidato B.
-    3. Registra en person_history.
+    3. Registra en person_history y alimenta el filtro 2 del motor.
     """
     exist_res = await db.execute(text("""
         SELECT id, person_a, person_b, psychologist_name, city, plan_tier, observations,
@@ -2774,11 +2940,19 @@ async def reject_match_by_maria(
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
-    reason = ""
+    category = (payload.rejection_category if payload else None) or ""
+    detail = ""
     if payload:
-        reason = (payload.rejection_reason or payload.reason or "").strip()
-    if not reason:
-        reason = "No cumple criterios clínicos de María"
+        detail = (payload.rejection_reason or payload.reason or "").strip()
+
+    if category and detail:
+        formatted_reason = f"[{category}] {detail}"
+    elif category:
+        formatted_reason = f"[{category}]"
+    elif detail:
+        formatted_reason = detail
+    else:
+        formatted_reason = "No cumple criterios clínicos de María"
 
     await db.execute(text("""
         UPDATE operational_matches
@@ -2787,9 +2961,9 @@ async def reject_match_by_maria(
             observations = :obs,
             updated_at = NOW()
         WHERE id = :id
-    """), {"id": match_id, "obs": f"[DEVUELTO MARÍA] {reason}"})
+    """), {"id": match_id, "obs": f"[DEVUELTO MARÍA] {formatted_reason}"})
 
-    det = f"Match devuelto por María a {match_row.psychologist_name}. Motivo: {reason}."
+    det = f"Match devuelto por María a {match_row.psychologist_name}. Motivo: {formatted_reason}."
 
     # La persona vuelve a "Listo para match" en la mesa de su psicóloga (fila nueva; la original conserva su estado),
     # salvo que ya tenga otra fila abierta sin candidato.
@@ -2802,8 +2976,6 @@ async def reject_match_by_maria(
             LIMIT 1
         """), {"pa": match_row.person_a, "mid": match_id})
         if not open_slot.fetchone():
-            # Se calcula el siguiente slot en un SELECT aparte: reutilizar :pa en VALUES y en la subconsulta
-            # provoca AmbiguousParameterError en asyncpg (text vs varchar).
             next_slot_row = await db.execute(text("""
                 SELECT COALESCE(MAX(slot_number), 0) + 1 AS n FROM operational_matches
                 WHERE LOWER(TRIM(person_a)) = LOWER(TRIM(:pa_lookup))
@@ -2825,7 +2997,7 @@ async def reject_match_by_maria(
                 "psyc": match_row.psychologist_name, "city": match_row.city or None,
                 "plan": match_row.plan_tier or "", "pref": match_row.pref or None,
                 "slot": next_slot,
-                "obs": f"Reintento automático tras NOT APPROVED de María con {match_row.person_b or 'Candidato B'}"
+                "obs": f"Reintento tras rechazo de María ({formatted_reason}) con {match_row.person_b or 'candidato previo'}"
             })
             retry_created = True
             det += " Se generó una fila nueva 'Listo para match'."
@@ -2835,6 +3007,402 @@ async def reject_match_by_maria(
 
     await db.commit()
     return {"status": "success", "match_id": match_id, "retry_created": retry_created, "message": f"Match devuelto exitosamente a {match_row.psychologist_name}."}
+
+
+# ─── BLOQUE 4: MI MESA DE PSICÓLOGA Y CONTROL DE CANDIDATAS ──────────────────
+
+class DiscardCandidateRequest(BaseModel):
+    match_id: Optional[int] = None
+    person_a: str
+    person_b: str
+    user_id_a: Optional[int] = None
+    user_id_b: Optional[int] = None
+    psychologist_name: Optional[str] = None
+    discard_reason: str
+    discard_notes: Optional[str] = None
+
+@router.post("/matches/discard-candidate")
+@router.post("/discard-candidate")
+async def discard_candidate(
+    payload: DiscardCandidateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Registra el descarte clínico de una candidata por la psicóloga durante 30 días (Bloque 4).
+    """
+    pA = payload.person_a.strip()
+    pB = payload.person_b.strip()
+    reason = payload.discard_reason.strip()
+    notes = (payload.discard_notes or "").strip()
+    psyc = (payload.psychologist_name or "").strip()
+
+    await db.execute(text("""
+        INSERT INTO match_discards (
+            person_a, person_b, user_id_a, user_id_b, psychologist_name, discard_reason, discard_notes, created_at
+        ) VALUES (
+            :pa, :pb, :ua, :ub, :psyc, :reason, :notes, NOW()
+        )
+    """), {
+        "pa": pA, "pb": pB, "ua": payload.user_id_a, "ub": payload.user_id_b,
+        "psyc": psyc, "reason": reason, "notes": notes
+    })
+    await db.commit()
+    return {
+        "status": "success",
+        "message": f"Candidata {pB} descartada exitosamente ({reason}). No se volverá a sugerir a {pA} durante 30 días."
+    }
+
+
+class ProposeCandidateRequest(BaseModel):
+    match_id: int
+    candidate_user_id: int
+    candidate_name: str
+    candidate_crm_id: Optional[str] = None
+    notes: Optional[str] = None
+    compatibility_score: Optional[int] = None
+    compatibility_verdict: Optional[str] = None
+    analysis: Optional[Dict[str, Any]] = None
+
+@router.post("/matches/propose-candidate")
+@router.post("/propose-candidate")
+async def propose_candidate_to_maria(
+    payload: ProposeCandidateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Asigna una candidata elegida por la psicóloga y envía la propuesta a revisión de María (Bloque 4).
+    """
+    match_res = await db.execute(text("""
+        SELECT id, person_a, psychologist_name, observations, status
+        FROM operational_matches
+        WHERE id = :mid
+    """), {"mid": payload.match_id})
+    match_row = match_res.fetchone()
+    if not match_row:
+        raise HTTPException(status_code=404, detail="Fila de match no encontrada")
+
+    cand_name = payload.candidate_name.strip()
+    notes = (payload.notes or "").strip()
+    obs = notes if notes else f"Propuesta clínica estructurada por {match_row.psychologist_name}"
+
+    analysis_str = json.dumps(payload.analysis, default=str) if payload.analysis else None
+
+    await db.execute(text("""
+        UPDATE operational_matches
+        SET person_b = :pb,
+            user_id_b = :ub,
+            person_b_crm_id = :cid,
+            status = 'HECHO',
+            approved_by_maria = false,
+            observations = :obs,
+            compatibility_score = :score,
+            compatibility_verdict = :verdict,
+            compatibility_analysis = :analysis,
+            compatibility_evaluated_at = NOW(),
+            updated_at = NOW()
+        WHERE id = :mid
+    """), {
+        "mid": payload.match_id,
+        "pb": cand_name,
+        "ub": payload.candidate_user_id,
+        "cid": payload.candidate_crm_id or "",
+        "obs": obs,
+        "score": payload.compatibility_score,
+        "verdict": payload.compatibility_verdict,
+        "analysis": analysis_str
+    })
+
+    det = f"Propuesta enviada a María por {match_row.psychologist_name}: {match_row.person_a} x {cand_name}."
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": match_row.person_a, "mid": payload.match_id, "d": det})
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": cand_name, "mid": payload.match_id, "d": det})
+
+    await db.commit()
+    return {
+        "status": "success",
+        "match_id": payload.match_id,
+        "message": f"Propuesta para {match_row.person_a} y {cand_name} enviada exitosamente a María para aprobación."
+    }
+
+
+@router.get("/mesa-psicologa")
+async def get_mesa_psicologa(
+    psychologist: str = Query(...),
+    search: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retorna la mesa simplificada de la psicóloga en 3 bandejas (Bloque 4):
+    1. Por proponer: Bandeja por CLIENTE (deduplicada). Clientes sin propuesta activa ni match aprobado en curso,
+       con citas restantes o por confirmar.
+    2. En revisión de María: Propuestas reales con Persona B esperando visto bueno de María (solo lectura).
+    3. Aprobados: Matches aprobados por María y seguimiento de citas.
+    """
+    canonical_psyc = resolve_canonical_psychologist(psychologist)
+    aliases = get_psychologist_aliases(canonical_psyc, ownership_mode="all")
+
+    query = """
+        SELECT 
+            m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.status,
+            m.approved_by_maria, m.approved_at, m.observations, m.slot_number, m.created_at, m.updated_at,
+            m.person_a_crm_id, m.person_b_crm_id,
+            m.user_id_a, m.user_id_b,
+            m.compatibility_score, m.compatibility_verdict,
+            COALESCE(pA.photo_url, '') AS person_a_photo_url,
+            COALESCE(pB.photo_url, '') AS person_b_photo_url,
+            pA.age AS person_a_age, pA.occupation AS person_a_occupation, pA.responsable AS person_a_responsable,
+            pB.age AS person_b_age, pB.occupation AS person_b_occupation,
+            sd.venue AS scheduled_venue, sd.date_time AS scheduled_date_time, sd.had_date AS scheduled_had_date,
+            sd.feedback_ella, sd.feedback_el
+        FROM operational_matches m
+        LEFT JOIN profiles pA ON pA.user_id = m.user_id_a
+        LEFT JOIN profiles pB ON pB.user_id = m.user_id_b
+        LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
+        WHERE (UPPER(m.psychologist_name) = ANY(:aliases) OR UPPER(COALESCE(pA.responsable, '')) = ANY(:aliases))
+          AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
+    """
+    params = {"aliases": [a.upper() for a in aliases]}
+    if search and search.strip():
+        query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch)"
+        params["srch"] = f"%{search.strip()}%"
+
+    query += " ORDER BY m.updated_at DESC, m.id DESC"
+
+    res = await db.execute(text(query), params)
+    rows = res.fetchall()
+
+    uids_a = {r.user_id_a for r in rows if r.user_id_a}
+    dates_used_map = {}
+    if uids_a:
+        try:
+            sd_res = await db.execute(text("""
+                SELECT m.user_id_a, COUNT(*) AS cnt 
+                FROM scheduled_dates sd
+                JOIN operational_matches m ON m.id = sd.match_id
+                WHERE m.user_id_a = ANY(:uids)
+                GROUP BY m.user_id_a
+            """), {"uids": list(uids_a)})
+            for r_sd in sd_res.fetchall():
+                dates_used_map[r_sd.user_id_a] = r_sd.cnt
+        except Exception as e_sd:
+            logger.warning(f"Error dates_used_map in mesa-psicologa: {e_sd}")
+
+    now = datetime.utcnow()
+
+    # Agrupar filas por cliente: user_id_a o person_a normalizado
+    rows_by_client = defaultdict(list)
+    for r in rows:
+        d = dict(r._mapping)
+        cli_key = d.get("user_id_a") or (d.get("person_a") or "").strip().lower()
+        if cli_key:
+            rows_by_client[cli_key].append(d)
+
+    en_revision = []
+    aprobados = []
+    por_proponer = []
+
+    clients_in_revision = set()
+    clients_with_pending_date = set()
+
+    # 1. Separar Aprobados y En revisión de María
+    for r in rows:
+        d = dict(r._mapping)
+        pa = d.get("person_a") or ""
+        pb = d.get("person_b") or ""
+        st = (d.get("status") or "").upper().strip()
+        app_maria = bool(d.get("approved_by_maria"))
+
+        created = d.get("created_at") or now
+        if created and created.strftime("%Y-%m-%d") == "2026-08-23":
+            dias_esperando = None
+            dias_label = "-"
+        elif created:
+            dias_esperando = max(0, (now - created).days)
+            dias_label = f"{dias_esperando} días esperando"
+        else:
+            dias_esperando = None
+            dias_label = "-"
+
+        clean_plan = normalize_plan(d.get("plan_tier"))
+        total_slots = get_slots_by_plan(clean_plan)
+        used = dates_used_map.get(d.get("user_id_a"), 0)
+        if total_slots is not None and total_slots > 0:
+            citas_restantes = max(0, total_slots - used)
+            citas_label = f"{citas_restantes} citas restantes"
+        else:
+            citas_restantes = None
+            citas_label = "Citas por confirmar"
+
+        ownership = classify_psychologist_ownership(
+            d.get("psychologist_name"),
+            canonical_psyc,
+            fallback_responsable=d.get("person_a_responsable")
+        )
+
+        obs = d.get("observations") or ""
+        rejection_reason = None
+        if st in ("NOT APPROVED", "RECHAZADO") or "DEVUELTO MARÍA" in obs or "Rechazado por María" in obs:
+            rejection_reason = obs.replace("[DEVUELTO MARÍA]", "").strip()
+
+        item = {
+            "id": d.get("id"),
+            "person_a": pa,
+            "user_id_a": d.get("user_id_a"),
+            "person_a_crm_id": d.get("person_a_crm_id") or "",
+            "person_a_photo_url": d.get("person_a_photo_url") or "",
+            "person_a_age": d.get("person_a_age"),
+            "person_a_occupation": d.get("person_a_occupation") or "",
+            "person_a_city": d.get("city") or "Bogotá",
+            "plan_tier": clean_plan,
+            "citas_restantes": citas_restantes,
+            "citas_total": total_slots or 0,
+            "citas_label": citas_label,
+            "dias_esperando": dias_esperando,
+            "dias_label": dias_label,
+            "slot_number": d.get("slot_number") or 1,
+            "is_inherited": ownership["is_inherited"],
+            "inherited_from": ownership.get("inherited_from"),
+            "status": d.get("status"),
+            "observations": obs,
+            "rejection_reason": rejection_reason,
+            "fecha_creacion": created.strftime("%Y-%m-%d"),
+            "person_b": pb,
+            "user_id_b": d.get("user_id_b"),
+            "person_b_crm_id": d.get("person_b_crm_id") or "",
+            "person_b_photo_url": d.get("person_b_photo_url") or "",
+            "person_b_age": d.get("person_b_age"),
+            "person_b_occupation": d.get("person_b_occupation") or "",
+            "compatibility_score": d.get("compatibility_score"),
+            "compatibility_verdict": d.get("compatibility_verdict"),
+            "scheduled_venue": d.get("scheduled_venue"),
+            "scheduled_date_time": d.get("scheduled_date_time"),
+            "scheduled_had_date": d.get("scheduled_had_date"),
+            "feedback_ella": d.get("feedback_ella"),
+            "feedback_el": d.get("feedback_el")
+        }
+
+        cli_k = d.get("user_id_a") or pa.strip().lower()
+
+        # Aprobados: María o estados confirmados de cita
+        if app_maria or st in ("APROBADO", "AGENDADO", "CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA"):
+            aprobados.append(item)
+            if st in ("APROBADO", "AGENDADO", "CITA PROGRAMADA") or (d.get("scheduled_had_date") is False and d.get("scheduled_date_time") is not None):
+                clients_with_pending_date.add(cli_k)
+
+        # En revisión de María: solo propuestas reales con candidata asignada esperando visto bueno
+        else:
+            has_pb = bool(pb and pb.strip() and pb.lower() not in ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null", ""))
+            is_real_proposal = (
+                st in ("HECHO", "HECHO POR MAPE", "HECHO POR OTRA PSICÓLOGA", "PROPUESTO", "EN REVISION", "PENDIENTE APROBACIÓN MARÍA", "APROBADO POR PSICÓLOGAS", "APROBADO POR AMBAS PSICÓLOGAS")
+                or st.startswith("HECHO")
+                or ("APROBA" in st and "MARIA" in st)
+            )
+            is_excluded_status = any(term in st for term in ("TROUBLE", "REVISAR", "ARCHIVADO", "HISTORIAL", "DESCALIFICADO", "REFUND", "NOT APPROVED", "RECHAZADO", "NO HAY GENTE", "LISTO PARA MATCH"))
+            if has_pb and is_real_proposal and not is_excluded_status:
+                en_revision.append(item)
+                clients_in_revision.add(cli_k)
+
+    # 2. Por proponer: BANDEJA POR CLIENTE (deduplicada)
+    for cli_k, c_rows in rows_by_client.items():
+        if cli_k in clients_in_revision:
+            continue
+        if cli_k in clients_with_pending_date:
+            continue
+
+        latest_r = c_rows[0]
+        st = (latest_r.get("status") or "").upper().strip()
+
+        # Excluir clientes con estados de exclusión
+        if any(term in st for term in ("TROUBLE", "REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO", "NO HAY GENTE")):
+            continue
+
+        clean_plan = normalize_plan(latest_r.get("plan_tier"))
+        total_slots = get_slots_by_plan(clean_plan)
+        used = dates_used_map.get(latest_r.get("user_id_a"), 0)
+
+        if total_slots is not None and total_slots > 0:
+            citas_restantes = max(0, total_slots - used)
+            if citas_restantes == 0:
+                continue  # Plan agotado
+            citas_label = f"{citas_restantes} citas restantes"
+        else:
+            citas_restantes = None
+            citas_label = "Citas por confirmar"
+
+        created = latest_r.get("created_at") or now
+        if created and created.strftime("%Y-%m-%d") == "2026-08-23":
+            dias_esperando = None
+            dias_label = "-"
+        elif created:
+            dias_esperando = max(0, (now - created).days)
+            dias_label = f"{dias_esperando} días esperando"
+        else:
+            dias_esperando = None
+            dias_label = "-"
+
+        ownership = classify_psychologist_ownership(
+            latest_r.get("psychologist_name"),
+            canonical_psyc,
+            fallback_responsable=latest_r.get("person_a_responsable")
+        )
+
+        obs = latest_r.get("observations") or ""
+        rejection_reason = None
+        if st in ("NOT APPROVED", "RECHAZADO") or "DEVUELTO MARÍA" in obs or "Rechazado por María" in obs:
+            rejection_reason = obs.replace("[DEVUELTO MARÍA]", "").strip()
+
+        item = {
+            "id": latest_r.get("id"),
+            "person_a": latest_r.get("person_a") or "",
+            "user_id_a": latest_r.get("user_id_a"),
+            "person_a_crm_id": latest_r.get("person_a_crm_id") or "",
+            "person_a_photo_url": latest_r.get("person_a_photo_url") or "",
+            "person_a_age": latest_r.get("person_a_age"),
+            "person_a_occupation": latest_r.get("person_a_occupation") or "",
+            "person_a_city": latest_r.get("city") or "Bogotá",
+            "plan_tier": clean_plan,
+            "citas_restantes": citas_restantes,
+            "citas_total": total_slots or 0,
+            "citas_label": citas_label,
+            "dias_esperando": dias_esperando,
+            "dias_label": dias_label,
+            "slot_number": latest_r.get("slot_number") or 1,
+            "is_inherited": ownership["is_inherited"],
+            "inherited_from": ownership.get("inherited_from"),
+            "status": latest_r.get("status"),
+            "observations": obs,
+            "rejection_reason": rejection_reason,
+            "fecha_creacion": created.strftime("%Y-%m-%d"),
+            "person_b": latest_r.get("person_b") or "",
+            "user_id_b": latest_r.get("user_id_b"),
+            "person_b_crm_id": latest_r.get("person_b_crm_id") or "",
+            "person_b_photo_url": latest_r.get("person_b_photo_url") or "",
+            "person_b_age": latest_r.get("person_b_age"),
+            "person_b_occupation": latest_r.get("person_b_occupation") or "",
+            "compatibility_score": latest_r.get("compatibility_score"),
+            "compatibility_verdict": latest_r.get("compatibility_verdict"),
+            "scheduled_venue": latest_r.get("scheduled_venue"),
+            "scheduled_date_time": latest_r.get("scheduled_date_time"),
+            "scheduled_had_date": latest_r.get("scheduled_had_date"),
+            "feedback_ella": latest_r.get("feedback_ella"),
+            "feedback_el": latest_r.get("feedback_el")
+        }
+        por_proponer.append(item)
+
+    por_proponer.sort(key=lambda x: (x["dias_esperando"] if x["dias_esperando"] is not None else -1, x["id"]), reverse=True)
+    en_revision.sort(key=lambda x: x["id"], reverse=True)
+    aprobados.sort(key=lambda x: x["id"], reverse=True)
+
+    return {
+        "psychologist": canonical_psyc,
+        "por_proponer": por_proponer,
+        "en_revision": en_revision,
+        "aprobados": aprobados,
+        "summary": {
+            "total_por_proponer": len(por_proponer),
+            "total_en_revision": len(en_revision),
+            "total_aprobados": len(aprobados)
+        }
+    }
 
 
 @router.post("/refunds/manual")
@@ -10875,7 +11443,7 @@ def build_candidate_pool_queries(
         SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
                p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
                p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-               p.lifestyle, p.love_language,
+               p.lifestyle, p.love_language, p.photo_url,
                cep.social_group_score, cep.physical_activity_level, cep.education_level,
                cep.love_language_given, cep.love_language_received, cep.attachment_style,
                cep.non_negotiables, cep.synthesis_who_really_is
@@ -10921,7 +11489,7 @@ def build_candidate_pool_queries(
         SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
                p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
                p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-               p.lifestyle, p.love_language,
+               p.lifestyle, p.love_language, p.photo_url,
                cep.social_group_score, cep.physical_activity_level, cep.education_level,
                cep.love_language_given, cep.love_language_received, cep.attachment_style,
                cep.non_negotiables, cep.synthesis_who_really_is
@@ -11237,14 +11805,15 @@ async def find_candidate_matches_engine(
                 return True
         return False
 
-    # 1.1 Consultar operational_matches + scheduled_dates
-    # Regla Jorge (Actualización 22):
-    # Criterio único de descarte por cita histórica: scheduled_dates.had_date = true.
-    # No descartar por status ('Listo para match', 'TROUBLE', etc.) si la cita no ocurrió físicamente.
+    # 1.1 Consultar operational_matches (Citas físicas realizadas + Rechazos previos de María)
+    client_past_rejected_by_maria_by_uid: Dict[int, dict] = {}
+    client_past_rejected_by_maria_by_crm_id: Dict[str, dict] = {}
+    client_past_rejected_by_maria_by_name: Dict[str, dict] = {}
+
     try:
         q_op_prev = text("""
             SELECT m.id, m.person_a, m.person_b, m.user_id_a, m.user_id_b,
-                   m.person_a_crm_id, m.person_b_crm_id, m.status,
+                   m.person_a_crm_id, m.person_b_crm_id, m.status, m.approved_by_maria,
                    sd.had_date, sd.date_time, sd.venue, m.observations
             FROM operational_matches m
             LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
@@ -11267,40 +11836,63 @@ async def find_candidate_matches_engine(
             partner_uid = r_op.user_id_b if cli_is_a else r_op.user_id_a
             partner_cid = str(r_op.person_b_crm_id or "").strip() if cli_is_a else str(r_op.person_a_crm_id or "").strip()
             partner_name = (r_op.person_b if cli_is_a else r_op.person_a) or ""
+            p_norm = normalize_text_unaccent(partner_name)
+            st_raw = (r_op.status or "").strip()
+            st_upper = st_raw.upper()
 
-            # Recolectar nombres y observaciones para el perfil clínico 360 (sin descartar candidatos)
+            # Recolectar nombres y observaciones para el perfil clínico 360
             if partner_name.strip():
                 all_past_partner_names.add(partner_name.strip())
             if r_op.observations:
                 all_past_observations.append(f"{partner_name}: {r_op.observations}")
 
-            # Candado de descarte por cita histórica: ÚNICAMENTE si had_date = true
-            if r_op.had_date is not True:
-                continue
+            # Bloque 2 - Filtro 1: Cita previa física confirmada en Daily Lover
+            if r_op.had_date is True or any(k in st_upper for k in ["CITA REALIZADA", "CITA COMPLETADA", "MATCH DONE", "HECHO"]):
+                match_info = {
+                    "match_id": r_op.id,
+                    "partner_uid": partner_uid,
+                    "partner_crm_id": partner_cid,
+                    "partner_name": partner_name,
+                    "status": st_raw or "CITA REALIZADA",
+                    "had_date": True,
+                    "date_time": r_op.date_time,
+                    "venue": r_op.venue,
+                    "observations": r_op.observations or "",
+                    "source": "operational_matches"
+                }
+                if partner_uid:
+                    client_past_had_dates_by_uid[partner_uid] = match_info
+                if partner_cid:
+                    client_past_had_dates_by_crm_id[partner_cid] = match_info
+                if p_norm:
+                    client_past_had_dates_by_name[p_norm] = match_info
 
-            match_info = {
-                "match_id": r_op.id,
-                "partner_uid": partner_uid,
-                "partner_crm_id": partner_cid,
-                "partner_name": partner_name,
-                "status": r_op.status,
-                "had_date": True,
-                "date_time": r_op.date_time,
-                "venue": r_op.venue,
-                "observations": r_op.observations,
-                "source": "operational_matches"
-            }
-            if partner_uid:
-                client_past_had_dates_by_uid[partner_uid] = match_info
-            if partner_cid:
-                client_past_had_dates_by_crm_id[partner_cid] = match_info
-            p_norm = normalize_text_unaccent(partner_name)
-            if p_norm:
-                client_past_had_dates_by_name[p_norm] = match_info
+            # Bloque 2 - Filtro 2: María ya rechazó esa pareja (NOT APPROVED / RECHAZADO)
+            is_rejected_maria = (
+                (r_op.approved_by_maria is False and st_upper not in ["LISTO PARA MATCH", ""])
+                or any(k in st_upper for k in ["NOT APPROVED", "RECHAZAD", "NO MATCH/CAMBIAR", "NO ACCEPT"])
+            )
+            if is_rejected_maria:
+                rejection_info = {
+                    "match_id": r_op.id,
+                    "partner_uid": partner_uid,
+                    "partner_crm_id": partner_cid,
+                    "partner_name": partner_name,
+                    "status": st_raw or "NOT APPROVED",
+                    "observations": r_op.observations or "",
+                    "source": "operational_matches_rejected"
+                }
+                if partner_uid:
+                    client_past_rejected_by_maria_by_uid[partner_uid] = rejection_info
+                if partner_cid:
+                    client_past_rejected_by_maria_by_crm_id[partner_cid] = rejection_info
+                if p_norm:
+                    client_past_rejected_by_maria_by_name[p_norm] = rejection_info
+
     except Exception as _e_op:
         logger.warning(f"Error consultando operational_matches para historial previo del cliente: {_e_op}")
 
-    # 1.1b Consultar scheduled_dates directas con had_date = true (para citas no vinculadas por match_id)
+    # 1.1b Consultar scheduled_dates directas con had_date = true
     try:
         q_sd_prev = text("""
             SELECT sd.id, sd.match_id, sd.person_a, sd.person_b,
@@ -11345,7 +11937,71 @@ async def find_candidate_matches_engine(
     except Exception as _e_sd:
         logger.warning(f"Error consultando scheduled_dates directo para historial previo del cliente: {_e_sd}")
 
-    # 1.2 Consultar historical_matches (SOLO para notas y observaciones clínicas 360, NUNCA para descarte)
+    # 1.1c Bloque 2 - Filtro 3: Consultar trouble_matches entre A y B
+    client_past_trouble_by_name: Dict[str, dict] = {}
+    try:
+        q_tm_prev = text("""
+            SELECT tm.person_a, tm.person_b, tm.reason, tm.notes
+            FROM trouble_matches tm
+            WHERE (:norm != '' AND (unaccent(lower(trim(tm.person_a))) = :norm OR unaccent(lower(trim(tm.person_b))) = :norm))
+               OR (:norm_like != '' AND (unaccent(lower(trim(tm.person_a))) LIKE :norm_like OR unaccent(lower(trim(tm.person_b))) LIKE :norm_like))
+        """)
+        res_tm_prev = await db.execute(q_tm_prev, {
+            "norm": client_norm,
+            "norm_like": client_norm_like
+        })
+        for r_tm in res_tm_prev.fetchall():
+            norm_a = normalize_text_unaccent(r_tm.person_a or "")
+            cli_is_a = (norm_a == client_norm or (client_norm in norm_a and len(client_norm) >= 6))
+            partner_name = (r_tm.person_b if cli_is_a else r_tm.person_a) or ""
+            p_norm = normalize_text_unaccent(partner_name)
+            if p_norm:
+                client_past_trouble_by_name[p_norm] = {
+                    "reason": r_tm.reason or "",
+                    "notes": r_tm.notes or "",
+                    "partner_name": partner_name
+                }
+    except Exception as _e_tm:
+        logger.warning(f"Error consultando trouble_matches para cliente: {_e_tm}")
+
+    # 1.1d Bloque 4: Consultar match_discards entre A y B dentro de los últimos 30 días
+    client_past_discards_by_uid: Dict[int, dict] = {}
+    client_past_discards_by_name: Dict[str, dict] = {}
+    try:
+        q_disc_prev = text("""
+            SELECT md.person_a, md.person_b, md.user_id_a, md.user_id_b, md.discard_reason, md.discard_notes, md.created_at
+            FROM match_discards md
+            WHERE (
+                (md.user_id_a IS NOT NULL AND md.user_id_a = :uid)
+                OR (md.user_id_b IS NOT NULL AND md.user_id_b = :uid)
+                OR (:norm != '' AND (unaccent(lower(trim(md.person_a))) = :norm OR unaccent(lower(trim(md.person_b))) = :norm))
+            )
+            AND md.created_at >= NOW() - INTERVAL '30 days'
+        """)
+        res_disc = await db.execute(q_disc_prev, {
+            "uid": client_uid,
+            "norm": client_norm
+        })
+        for r_d in res_disc.fetchall():
+            cli_is_a = (r_d.user_id_a == client_uid) or (normalize_text_unaccent(r_d.person_a or "") == client_norm)
+            partner_name = (r_d.person_b if cli_is_a else r_d.person_a) or ""
+            partner_uid = r_d.user_id_b if cli_is_a else r_d.user_id_a
+            p_norm = normalize_text_unaccent(partner_name)
+            disc_info = {
+                "reason": r_d.discard_reason or "Descartada por psicóloga",
+                "notes": r_d.discard_notes or "",
+                "created_at": r_d.created_at
+            }
+            if partner_uid:
+                client_past_discards_by_uid[partner_uid] = disc_info
+            if p_norm:
+                client_past_discards_by_name[p_norm] = disc_info
+    except Exception as _e_disc:
+        logger.warning(f"Error consultando match_discards para cliente: {_e_disc}")
+
+    # 1.2 Bloque 2 - Filtro 1: Consultar historical_matches (Citas y matches históricos entre A y B para exclusión + notas 360)
+    client_past_historical_by_uid: Dict[int, dict] = {}
+    client_past_historical_by_name: Dict[str, dict] = {}
     try:
         q_hist_prev = text("""
             SELECT hm.id, hm.person_a, hm.person_b, hm.user_id_a, hm.user_id_b,
@@ -11366,12 +12022,28 @@ async def find_candidate_matches_engine(
         for r_h in res_hist_prev.fetchall():
             cli_is_a = _is_client_side_a(r_h.user_id_a, None, r_h.person_a)
             partner_name = (r_h.person_b if cli_is_a else r_h.person_a) or ""
+            partner_uid = r_h.user_id_b if cli_is_a else r_h.user_id_a
+            p_norm = normalize_text_unaccent(partner_name)
+
             if partner_name.strip():
                 all_past_partner_names.add(partner_name.strip())
             if r_h.observations:
                 all_past_observations.append(f"{partner_name}: {r_h.observations}")
+
+            hist_info = {
+                "match_id": r_h.id,
+                "partner_uid": partner_uid,
+                "partner_name": partner_name,
+                "status": r_h.status or "HISTORICAL MATCH",
+                "observations": r_h.observations or "",
+                "source": "historical_matches"
+            }
+            if partner_uid:
+                client_past_historical_by_uid[partner_uid] = hist_info
+            if p_norm:
+                client_past_historical_by_name[p_norm] = hist_info
     except Exception as _e_h:
-        logger.warning(f"Error consultando historical_matches para observaciones del cliente: {_e_h}")
+        logger.warning(f"Error consultando historical_matches para historial previo del cliente: {_e_h}")
 
     # 1.3 Historial y balance de citas en lote de los candidatos pre-seleccionados del pool
     cand_hist_map: Dict[int, dict] = {}
@@ -11384,6 +12056,7 @@ async def find_candidate_matches_engine(
         cand_hist_map[r.id] = {"partner_names": [], "observations": [], "dates_count": 0}
         cand_used_map[r.id] = 0
 
+    cand_active_exclusive_matches: Dict[int, dict] = {}
     if cand_uids or cand_cids or cand_names_norm:
         try:
             q_cand_om = text("""
@@ -11398,14 +12071,6 @@ async def find_candidate_matches_engine(
                     (:has_uids AND (m.user_id_a = ANY(:uids) OR m.user_id_b = ANY(:uids)))
                     OR (:has_cids AND (m.person_a_crm_id = ANY(:cids) OR m.person_b_crm_id = ANY(:cids)))
                     OR (:has_names AND (unaccent(lower(trim(m.person_a))) = ANY(:names) OR unaccent(lower(trim(m.person_b))) = ANY(:names)))
-                )
-                AND (
-                    sd.had_date = true
-                    OR UPPER(COALESCE(m.status, '')) LIKE '%CITA%'
-                    OR UPPER(COALESCE(m.status, '')) LIKE '%DATE%'
-                    OR UPPER(COALESCE(m.status, '')) LIKE '%HECHO%'
-                    OR UPPER(COALESCE(m.status, '')) LIKE '%APROBAD%'
-                    OR UPPER(COALESCE(m.status, '')) LIKE '%MATCH DONE%'
                 )
             """)
             res_cand_om = await db.execute(q_cand_om, {
@@ -11423,18 +12088,39 @@ async def find_candidate_matches_engine(
 
             for r_co in res_cand_om.fetchall():
                 mid = r_co.match_id
+                st = (r_co.status or "").strip()
+                st_upper = st.upper()
+                had_d = (r_co.had_date is True)
+                is_completed_date = had_d or any(k in st_upper for k in ["CITA REALIZADA", "CITA COMPLETADA", "MATCH DONE", "HECHO"])
+
                 # Lado A
                 c_id_a = r_co.user_id_a if r_co.user_id_a in cand_matches_set else (
                     uid_by_cid.get(str(r_co.person_a_crm_id or "").strip()) or
                     uid_by_name.get(r_co.norm_a)
                 )
                 if c_id_a and c_id_a in cand_matches_set:
-                    cand_matches_set[c_id_a].add(mid)
                     pn = r_co.person_b
-                    if pn and pn.strip() and pn.strip() not in cand_hist_map[c_id_a]["partner_names"]:
-                        cand_hist_map[c_id_a]["partner_names"].append(pn.strip())
-                    if r_co.observations:
-                        cand_hist_map[c_id_a]["observations"].append(f"{pn}: {r_co.observations}")
+                    if is_completed_date:
+                        cand_matches_set[c_id_a].add(mid)
+                        if pn and pn.strip() and pn.strip() not in cand_hist_map[c_id_a]["partner_names"]:
+                            cand_hist_map[c_id_a]["partner_names"].append(pn.strip())
+                        if r_co.observations:
+                            cand_hist_map[c_id_a]["observations"].append(f"{pn}: {r_co.observations}")
+                    else:
+                        # Exclusividad: match activo pendiente con otra persona (no con este cliente)
+                        p_is_client = (
+                            (r_co.user_id_b and r_co.user_id_b == client_uid) or
+                            (client_crm_id and str(r_co.person_b_crm_id or "").strip() == client_crm_id) or
+                            (r_co.norm_b and r_co.norm_b == client_norm)
+                        )
+                        if not p_is_client and (
+                            st_upper in [
+                                "APROBADO", "APROBADO POR PSICÓLOGAS", "AGENDANDO", "POR CONFIRMAR",
+                                "CONFIRMADA", "CITA PROGRAMADA", "CITA RESERVADA", "AGENDADA", "LISTO PARA AGENDAR"
+                            ]
+                            or any(k in st_upper for k in ["APROBADO", "AGENDANDO", "POR CONFIRMAR", "CONFIRMADA", "PROGRAMADA", "RESERVADA", "AGENDADA", "LISTO PARA AGENDAR"])
+                        ):
+                            cand_active_exclusive_matches[c_id_a] = {"partner": pn or "Otro cliente", "status": st, "match_id": mid}
 
                 # Lado B
                 c_id_b = r_co.user_id_b if r_co.user_id_b in cand_matches_set else (
@@ -11442,12 +12128,28 @@ async def find_candidate_matches_engine(
                     uid_by_name.get(r_co.norm_b)
                 )
                 if c_id_b and c_id_b in cand_matches_set:
-                    cand_matches_set[c_id_b].add(mid)
                     pn = r_co.person_a
-                    if pn and pn.strip() and pn.strip() not in cand_hist_map[c_id_b]["partner_names"]:
-                        cand_hist_map[c_id_b]["partner_names"].append(pn.strip())
-                    if r_co.observations:
-                        cand_hist_map[c_id_b]["observations"].append(f"{pn}: {r_co.observations}")
+                    if is_completed_date:
+                        cand_matches_set[c_id_b].add(mid)
+                        if pn and pn.strip() and pn.strip() not in cand_hist_map[c_id_b]["partner_names"]:
+                            cand_hist_map[c_id_b]["partner_names"].append(pn.strip())
+                        if r_co.observations:
+                            cand_hist_map[c_id_b]["observations"].append(f"{pn}: {r_co.observations}")
+                    else:
+                        # Exclusividad: match activo pendiente con otra persona (no con este cliente)
+                        p_is_client = (
+                            (r_co.user_id_a and r_co.user_id_a == client_uid) or
+                            (client_crm_id and str(r_co.person_a_crm_id or "").strip() == client_crm_id) or
+                            (r_co.norm_a and r_co.norm_a == client_norm)
+                        )
+                        if not p_is_client and (
+                            st_upper in [
+                                "APROBADO", "APROBADO POR PSICÓLOGAS", "AGENDANDO", "POR CONFIRMAR",
+                                "CONFIRMADA", "CITA PROGRAMADA", "CITA RESERVADA", "AGENDADA", "LISTO PARA AGENDAR"
+                            ]
+                            or any(k in st_upper for k in ["APROBADO", "AGENDANDO", "POR CONFIRMAR", "CONFIRMADA", "PROGRAMADA", "RESERVADA", "AGENDADA", "LISTO PARA AGENDAR"])
+                        ):
+                            cand_active_exclusive_matches[c_id_b] = {"partner": pn or "Otro cliente", "status": st, "match_id": mid}
 
             for c_id, m_set in cand_matches_set.items():
                 cand_used_map[c_id] = len(m_set)
@@ -11506,18 +12208,18 @@ async def find_candidate_matches_engine(
             if candidate_usage_tracker.get(r.id, 0) >= max_candidate_usage:
                 is_capped = True
 
-        # 1. Historial previo de citas históricas: ÚNICAMENTE descartar si hubo cita real física (had_date = true)
+        # -------------------------------------------------------------
+        # FILTROS DUROS PREVIOS (Reglas 1, 2, 3, 5)
+        # -------------------------------------------------------------
         cand_norm_name = normalize_text_unaccent(cand_name)
         cand_cid_str = str(r.crm_id or "").strip()
 
-        # Búsqueda en mapas indexados de citas reales del cliente
+        # 1. Filtro Duro 1: Cita previa física confirmada O match histórico en historical_matches
         past_match_info = (
             client_past_had_dates_by_uid.get(r.id)
             or (client_past_had_dates_by_crm_id.get(cand_cid_str) if cand_cid_str else None)
             or client_past_had_dates_by_name.get(cand_norm_name)
         )
-
-        # Búsqueda por coincidencia difusa / contenida en nombres para citas con had_date = true
         if not past_match_info and cand_norm_name:
             for p_norm_key, p_info in client_past_had_dates_by_name.items():
                 if p_norm_key and (p_norm_key in cand_norm_name or cand_norm_name in p_norm_key):
@@ -11529,45 +12231,23 @@ async def find_candidate_matches_engine(
             dt = past_match_info.get("date_time") or ""
             vn = past_match_info.get("venue") or ""
             obs = past_match_info.get("observations") or ""
-
             details_parts = []
-            if st:
-                details_parts.append(f"Estado: {st}")
-            if dt:
-                details_parts.append(f"Fecha: {dt}")
-            if vn:
-                details_parts.append(f"Lugar: {vn}")
-            if obs:
-                details_parts.append(f"Obs: {obs}")
-            else:
-                details_parts.append("Cita física realizada")
-
+            if st: details_parts.append(f"Estado: {st}")
+            if dt: details_parts.append(f"Fecha: {dt}")
+            if vn: details_parts.append(f"Lugar: {vn}")
+            if obs: details_parts.append(f"Obs: {obs}")
+            else: details_parts.append("Cita física realizada")
             details_str = f" ({', '.join(details_parts)})" if details_parts else ""
             discard_reason = f"Ya tuvieron una cita histórica confirmada en Daily Lover{details_str}."
 
             cand_hist = cand_hist_map.get(r.id, {})
             cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
-                user_id=r.id,
-                name=cand_name,
-                profile_data={
-                    "city": r.city,
-                    "age": r.age,
-                    "gender": r.gender,
-                    "estatura": r.estatura,
-                    "occupation": r.occupation or "No especificado",
-                    "orientation": getattr(r, "orientation", None),
-                    "religion": getattr(r, "religion", None),
-                    "apego": getattr(r, "apego", None),
-                    "love_language": getattr(r, "love_language", None),
-                    "search_preferences": getattr(r, "search_preferences", None) or {},
-                    "lifestyle": getattr(r, "lifestyle", None),
-                    "non_negotiables": getattr(r, "non_negotiables", None),
-                },
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
                 bio_notes=(r.bio_notes or "").strip(),
                 past_matched_names=cand_hist.get("partner_names", []),
                 past_match_observations=cand_hist.get("observations", []),
             )
-
             discarded_matches.append({
                 "candidate_user_id": r.id,
                 "candidate_name": cand_name,
@@ -11585,6 +12265,235 @@ async def find_candidate_matches_engine(
             })
             continue
 
+        past_hist_info = (
+            client_past_historical_by_uid.get(r.id)
+            or client_past_historical_by_name.get(cand_norm_name)
+        )
+        if not past_hist_info and cand_norm_name:
+            for p_norm_key, p_info in client_past_historical_by_name.items():
+                if p_norm_key and (p_norm_key in cand_norm_name or cand_norm_name in p_norm_key):
+                    past_hist_info = p_info
+                    break
+
+        if past_hist_info:
+            h_st = past_hist_info.get("status") or "HISTORICAL MATCH"
+            h_obs = past_hist_info.get("observations") or ""
+            discard_reason = f"Ya fueron emparejados en el histórico de Daily Lover (historical_matches: {h_st}{f' - {h_obs}' if h_obs else ''})."
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
+                bio_notes=(r.bio_notes or "").strip(),
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [discard_reason],
+                "warnings": [],
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "historical_match",
+                    "rule": "historical_matches",
+                    "reasons": [discard_reason]
+                }
+            })
+            continue
+
+        # 2. Filtro Duro 2: María ya rechazó esa pareja
+        past_rej_info = (
+            client_past_rejected_by_maria_by_uid.get(r.id)
+            or (client_past_rejected_by_maria_by_crm_id.get(cand_cid_str) if cand_cid_str else None)
+            or client_past_rejected_by_maria_by_name.get(cand_norm_name)
+        )
+        if not past_rej_info and cand_norm_name:
+            for p_norm_key, p_info in client_past_rejected_by_maria_by_name.items():
+                if p_norm_key and (p_norm_key in cand_norm_name or cand_norm_name in p_norm_key):
+                    past_rej_info = p_info
+                    break
+
+        if past_rej_info:
+            rej_st = past_rej_info.get("status") or "NOT APPROVED"
+            rej_obs = past_rej_info.get("observations") or ""
+            discard_reason = f"María ya rechazó esta pareja anteriormente ({rej_st}{f': {rej_obs}' if rej_obs else ''})."
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
+                bio_notes=(r.bio_notes or "").strip(),
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [discard_reason],
+                "warnings": [],
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "rejected_by_maria",
+                    "rule": "maria_not_approved",
+                    "reasons": [discard_reason]
+                }
+            })
+            continue
+
+        # Bloque 4: Descarte activo por match_discards (regla de 30 días de la psicóloga)
+        past_disc_info = (
+            client_past_discards_by_uid.get(r.id)
+            or client_past_discards_by_name.get(cand_norm_name)
+        )
+        if not past_disc_info and cand_norm_name:
+            for p_norm_key, p_info in client_past_discards_by_name.items():
+                if p_norm_key and (p_norm_key in cand_norm_name or cand_norm_name in p_norm_key):
+                    past_disc_info = p_info
+                    break
+
+        if past_disc_info:
+            d_reason = past_disc_info.get("reason") or "Descarte clínico"
+            d_notes = past_disc_info.get("notes") or ""
+            discard_reason = f"Candidata descartada previamente por psicóloga ({d_reason}{f': {d_notes}' if d_notes else ''}) — oculta durante 30 días."
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
+                bio_notes=(r.bio_notes or "").strip(),
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [discard_reason],
+                "warnings": ["Descarte activo por 30 días"],
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "psychologist_discard_30d",
+                    "rule": "match_discards_active_30d",
+                    "reasons": [discard_reason]
+                }
+            })
+            continue
+
+        # 3. Filtro Duro 3: Registro en trouble_matches
+        past_trb_info = client_past_trouble_by_name.get(cand_norm_name)
+        if not past_trb_info and cand_norm_name:
+            for p_norm_key, p_info in client_past_trouble_by_name.items():
+                if p_norm_key and (p_norm_key in cand_norm_name or cand_norm_name in p_norm_key):
+                    past_trb_info = p_info
+                    break
+
+        if past_trb_info:
+            trb_rs = past_trb_info.get("reason") or past_trb_info.get("notes") or "Conflicto previo"
+            discard_reason = f"Existe reporte de conflicto entre ambos en trouble_matches ({trb_rs})."
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
+                bio_notes=(r.bio_notes or "").strip(),
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [discard_reason],
+                "warnings": [],
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "trouble_matches",
+                    "rule": "trouble_matches_conflict",
+                    "reasons": [discard_reason]
+                }
+            })
+            continue
+
+        # 5. Filtro Duro 5: Candidata no disponible (DESCALIFICADO / INACTIVO / REFUND o Exclusividad activa)
+        cand_ls_raw = getattr(r, "lifestyle", None)
+        if isinstance(cand_ls_raw, str):
+            try: cand_ls_dict = json.loads(cand_ls_raw)
+            except Exception: cand_ls_dict = {}
+        elif isinstance(cand_ls_raw, dict):
+            cand_ls_dict = cand_ls_raw
+        else:
+            cand_ls_dict = {}
+
+        avail_status = str(cand_ls_dict.get("availability_status") or "").upper()
+        resp_status = str(getattr(r, "responsable", "") or "").upper()
+        plan_status = str(getattr(r, "plan_tier", "") or "").upper()
+        cand_bio_str = str(getattr(r, "bio_notes", "") or "").lower()
+
+        if any(k in avail_status for k in ["DESCALIFICAD", "INACTIV", "REFUND", "EN PAUSA", "BAJA"]) \
+           or any(k in resp_status for k in ["DESCALIFICAD", "INACTIV", "REFUND"]) \
+           or any(k in plan_status for k in ["REFUND", "DESCALIFICAD"]) \
+           or re.search(r'\b(descalificad|pidio devolucion|refund|no desea mas citas|no quiere mas citas)\b', cand_bio_str):
+            discard_reason = f"Candidata {cand_name} se encuentra en estado inactivo o descalificado ({avail_status or resp_status or 'bio'})."
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
+                bio_notes=cand_bio_str,
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [discard_reason],
+                "warnings": [],
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "availability_status",
+                    "rule": "candidate_available",
+                    "reasons": [discard_reason]
+                }
+            })
+            continue
+
+        if r.id in cand_active_exclusive_matches:
+            act_info = cand_active_exclusive_matches[r.id]
+            discard_reason = f"Candidata {cand_name} tiene actualmente otro match activo en proceso con {act_info['partner']} ({act_info['status']})."
+            cand_hist = cand_hist_map.get(r.id, {})
+            cand_profile_360 = ClinicalProfileExtractor.extract_full_profile_360(
+                user_id=r.id, name=cand_name,
+                profile_data={"city": r.city, "age": r.age, "gender": r.gender, "estatura": r.estatura, "occupation": r.occupation or "No especificado"},
+                bio_notes=cand_bio_str,
+                past_matched_names=cand_hist.get("partner_names", []),
+                past_match_observations=cand_hist.get("observations", []),
+            )
+            discarded_matches.append({
+                "candidate_user_id": r.id,
+                "candidate_name": cand_name,
+                "age": r.age,
+                "occupation": r.occupation,
+                "reasons": [discard_reason],
+                "warnings": ["Exclusividad: en proceso con otra persona"],
+                "clinical_profile_360": cand_profile_360,
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "exclusivity_active_match",
+                    "rule": "active_match_exclusive",
+                    "reasons": [discard_reason]
+                }
+            })
+            continue
+
         # Recuperación en vivo desde el histórico de webhooks del CRM: si a este candidato le
         # faltan datos clave (ciudad, estatura, lifestyle, preferencias, lenguaje del amor) y
         # tiene CRM ID, se intenta recuperar el dato real de SmartMatchApp antes de evaluarlo
@@ -11596,7 +12505,7 @@ async def find_candidate_matches_engine(
                     SELECT u.id, u.name, u.phone, u.crm_id, u.client_code,
                            p.gender, p.city, p.age, p.plan_tier, p.occupation, p.education, p.responsable,
                            p.estatura, p.search_preferences, p.bio_notes, p.apego, p.orientation,
-                           p.lifestyle, p.love_language,
+                           p.lifestyle, p.love_language, p.photo_url,
                            cep.social_group_score, cep.physical_activity_level, cep.education_level,
                            cep.love_language_given, cep.love_language_received, cep.attachment_style,
                            cep.non_negotiables, cep.synthesis_who_really_is
@@ -11957,12 +12866,12 @@ async def find_candidate_matches_engine(
 
         opportunity_badge = None
         opportunity_reason = None
-        if cand_slots_total > 0 and saldo_citas_b <= 0:
-            opportunity_badge = "Oportunidad Comercial / Cumplimiento"
-            opportunity_reason = f"Persona B ({cand_name}) ya usó sus {cand_slots_total} citas del plan ({raw_cand_used} registradas) — antes de aprobar la cita, confirmar con ella/él si desea pagar por una cita adicional."
-        elif cand_slots_total == 0:
-            opportunity_badge = "Sin Plan Activo"
-            opportunity_reason = f"Persona B ({cand_name}) no tiene plan de citas contratado — registrar plan antes de formalizar cita."
+        if saldo_citas_b <= 0:
+            opportunity_badge = "Oportunidad comercial: sin citas"
+            if cand_slots_total > 0:
+                opportunity_reason = f"Persona B ({cand_name}) ya completó sus {cand_slots_total} citas del plan ({raw_cand_used} registradas) — registrar recarga o compra de cita adicional antes de formalizar."
+            else:
+                opportunity_reason = f"Persona B ({cand_name}) no tiene plan de citas activo contratado — registrar plan o cita antes de formalizar."
 
         strengths = []
         if cand_sg is not None and client_sg is not None:
@@ -12097,6 +13006,7 @@ async def find_candidate_matches_engine(
         cand_payload = {
             "user_id": r.id,
             "name": cand_name,
+            "photo_url": getattr(r, "photo_url", None) or "",
             "gender": cand_inferred_gender,
             "orientation": getattr(r, "orientation", None),
             "phone": r.phone or "",
@@ -12524,14 +13434,60 @@ async def find_candidate_matches_engine(
             reverse=True
         )
         all_non_viable = [c for c in (safe_evaluated + remaining_candidates) if c.get("ai_veredicto") == "NO RECOMENDADO" or c.get("veredicto") == "NO RECOMENDADO"]
-        all_non_viable.sort(key=lambda x: (x.get("orden") or 0.0, x.get("score") or 0), reverse=True)
-        suggested_matches = all_viable + all_non_viable
+        for c in all_non_viable:
+            discarded_matches.append({
+                "candidate_user_id": c.get("user_id"),
+                "candidate_name": c.get("name"),
+                "age": c.get("age"),
+                "occupation": c.get("occupation"),
+                "reasons": c.get("ai_deal_breakers") or [f"Veredicto: {c.get('ai_veredicto') or c.get('veredicto')}"],
+                "warnings": [f"Calificación: {c.get('veredicto') or c.get('ai_veredicto')}"],
+                "decision_trace": {
+                    "outcome": "discarded",
+                    "stage": "non_viable",
+                    "rule": "veredicto_no_recomendado",
+                    "reasons": c.get("ai_deal_breakers") or [f"Veredicto: {c.get('ai_veredicto') or c.get('veredicto')}"]
+                }
+            })
+        suggested_matches = all_viable
 
     elif suggested_matches and not client_has_notes:
+        viable_without_notes = []
         for c in suggested_matches:
-            if c.get("ai_veredicto") != "SIN DATOS SUFICIENTES":
-                c["ai_veredicto"] = "SCORE ESTRUCTURAL (CLIENTE SIN NOTAS)"
-                c["ai_analisis"] = "Ficha del cliente sin notas clínicas de entrevista en CRM. Score basado en afinidad demográfica y estructural."
+            if c.get("veredicto") == "NO RECOMENDADO":
+                discarded_matches.append({
+                    "candidate_user_id": c.get("user_id"),
+                    "candidate_name": c.get("name"),
+                    "age": c.get("age"),
+                    "occupation": c.get("occupation"),
+                    "reasons": [f"Veredicto: {c.get('veredicto')}"],
+                    "warnings": ["Descarte estructural sin notas"],
+                    "decision_trace": {
+                        "outcome": "discarded",
+                        "stage": "non_viable",
+                        "rule": "veredicto_no_recomendado",
+                        "reasons": [f"Veredicto: {c.get('veredicto')}"]
+                    }
+                })
+            else:
+                if c.get("ai_veredicto") != "SIN DATOS SUFICIENTES":
+                    c["ai_veredicto"] = "SCORE ESTRUCTURAL (CLIENTE SIN NOTAS)"
+                    c["ai_analisis"] = "Ficha del cliente sin notas clínicas de entrevista en CRM. Score basado en afinidad demográfica y estructural."
+                viable_without_notes.append(c)
+        suggested_matches = viable_without_notes
+
+    # Ordenar primero candidatas con citas contratadas/disponibles, luego oportunidad comercial (saldo 0) al final
+    suggested_matches.sort(
+        key=lambda x: (
+            (x.get("dates_remaining") or 0) > 0,
+            x.get("orden") or 0.0,
+            x.get("score") or 0,
+            x.get("cobertura_pct") or 0,
+            x.get("dealbreakers_clean", True),
+            x["user_id"]
+        ),
+        reverse=True
+    )
 
     for c in suggested_matches:
         is_insufficient = (
@@ -12558,6 +13514,40 @@ async def find_candidate_matches_engine(
     if return_discarded:
         return suggested_matches, discarded_matches, client_profile_360
     return suggested_matches
+
+
+@router.get("/candidate-matches-engine")
+async def get_candidate_matches_engine_alias(
+    client_id: str = Query(..., description="ID o CRM ID del cliente"),
+    limit: Optional[int] = Query(5),
+    response: Response = None,
+    force_refresh: bool = Query(False),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para panel 'Proponer match' de Mi Mesa Psicóloga.
+    Conecta directamente con el motor de matching clínico.
+    """
+    resp = response or Response()
+    res = await get_interview_results(
+        crm_id_or_user_id=client_id,
+        response=resp,
+        force_refresh=force_refresh,
+        current_user=current_user,
+        db=db
+    )
+    raw_list = res.get("viable_matches") or res.get("suggested_matches") or []
+    cands = []
+    for c in raw_list[:(limit or 5)]:
+        cand_dict = dict(c)
+        cand_dict["score"] = cand_dict.get("compatibility_pct") or cand_dict.get("score") or cand_dict.get("structural_score") or 75
+        cand_dict["veredicto"] = cand_dict.get("ai_veredicto") or cand_dict.get("veredicto") or ("ALTA AFINIDAD" if cand_dict["score"] >= 80 else "RECOMENDADO")
+        cand_dict["opportunity_badge"] = "Oportunidad comercial: sin citas" if (cand_dict.get("dates_remaining") == 0 or cand_dict.get("slots_remaining") == 0) else None
+        cands.append(cand_dict)
+    res["candidates"] = cands
+    res["suggested_matches"] = cands
+    return res
 
 
 @router.get("/interview-results/{crm_id_or_user_id}")
@@ -12627,6 +13617,7 @@ async def get_interview_results(
     ext_data = dict(ext_row._mapping) if ext_row else {}
 
     # Verificación de entrevista registrada para Persona A (D.2)
+    has_bio_notes = bool(prof_row and prof_row.bio_notes and len(prof_row.bio_notes.strip()) > 40)
     has_interview_check = await db.execute(text("""
         SELECT EXISTS (
             SELECT 1 FROM interview_appointments
@@ -12639,13 +13630,11 @@ async def get_interview_results(
             SELECT 1 FROM client_extended_profile
             WHERE user_id = :uid AND (
                 (synthesis_who_really_is IS NOT NULL AND TRIM(synthesis_who_really_is) != '')
-                OR (first_impression IS NOT NULL AND TRIM(first_impression) != '')
+                OR (synthesis_first_date_behavior IS NOT NULL AND TRIM(synthesis_first_date_behavior) != '')
             )
-        ) OR (
-            :bio IS NOT NULL AND LENGTH(TRIM(:bio)) > 40
         )
-    """), {"uid": uid, "bio": prof_row.bio_notes if prof_row and prof_row.bio_notes else ""})
-    has_interview_a = bool(has_interview_check.scalar())
+    """), {"uid": uid})
+    has_interview_a = bool(has_interview_check.scalar()) or has_bio_notes
 
     # REGLA ESTRICTA (ciudad): tras intentar la recuperación real desde el CRM, si la ciudad
     # sigue sin poder determinarse, NO se asume "Bogotá" ni ninguna otra ciudad por defecto —
@@ -13058,7 +14047,7 @@ async def get_supervision_maria(
     """
     ALIASES = {
         'MARIA': 'MPS', 'MARÍA': 'MPS', 'MPS': 'MPS',
-        'MARI DE LA E': 'MPS', 'MARI DE LA ESPRIELLA': 'MPS',
+        'MARI DE LA E': 'MAPE D', 'MARI DE LA ESPRIELLA': 'MAPE D',
         'MAPE': 'MAPE D', 'MAPE D': 'MAPE D',
         'MARIA PAULA': 'MAPE D', 'MARÍA PAULA': 'MAPE D',
         'STEFF': 'STEFFY', 'STEFFY': 'STEFFY',
