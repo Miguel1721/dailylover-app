@@ -40,7 +40,7 @@ export function iniciarSinEmojis() {
       else if (m.type === 'attributes') cola.add(m.target)
       else m.addedNodes.forEach((n) => cola.add(n))
     }
-    if (!pendiente) { pendiente = true; requestAnimationFrame(procesar) }
+    if (!pendiente) { pendiente = true; setTimeout(procesar, 40) }
   })
   const arrancar = () => {
     limpiarNodo(document.body)
