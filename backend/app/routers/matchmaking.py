@@ -5655,6 +5655,41 @@ async def resolve_profile(
 # CANONICAL FACTUAL PROFILE ENGINE (CERO ALUCINACIÓN - DATOS CONFIRMADOS)
 # ==============================================================================
 
+async def _load_crm_raw(db: AsyncSession, crm_id) -> Dict[str, Any]:
+    """Datos del CRM (prof_N / pref_N) para el motor can??nico.
+    1) Copia fiel y actual `crm_profile_fields` (la mantiene el webhook del CRM + la carga por API).
+    2) Si no hay copia, webhooks del MISMO id (no por LIKE en el texto), del m??s reciente al m??s antiguo.
+    """
+    out: Dict[str, Any] = {}
+    cid = str(crm_id or "").strip()
+    if not cid.isdigit():
+        return out
+    try:
+        rows = (await db.execute(text("SELECT field_id, value FROM crm_profile_fields WHERE crm_id = :c"), {"c": int(cid)})).fetchall()
+        for fid, val in rows:
+            if val not in (None, "", []):
+                out[fid] = val
+        if out:
+            return out
+    except Exception as e:
+        logger.warning(f"_load_crm_raw({cid}) copia fiel: {e}")
+    try:
+        wh = await db.execute(text("""
+            SELECT payload FROM webhook_events_raw
+            WHERE COALESCE(payload->'payload'->>'id', payload->>'id', payload->'payload'->>'client_id', payload->>'client_id') = :cid
+            ORDER BY id DESC LIMIT 3
+        """), {"cid": cid})
+        for rw in reversed(wh.fetchall()):
+            outer = rw[0] if isinstance(rw[0], dict) else {}
+            pl = outer.get("payload") if isinstance(outer.get("payload"), dict) else outer
+            for k, v in pl.items():
+                if v not in (None, "", []):
+                    out[k] = v
+    except Exception as e:
+        logger.warning(f"_load_crm_raw({cid}) webhooks: {e}")
+    return out
+
+
 def build_canonical_profile(
     user_id: int,
     name: str,
@@ -6685,13 +6720,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
 
     try:
         # A: Cargar webhook raw o perfil canónico existente
-        raw_wh_a = {}
-        if meta_a.get("crm_id"):
-            wh_a_res = await db.execute(text("SELECT payload FROM webhook_events_raw WHERE payload::text LIKE :p ORDER BY id ASC LIMIT 3"), {"p": f"%{meta_a['crm_id']}%"})
-            for rw in wh_a_res.fetchall():
-                out = rw[0] if isinstance(rw[0], dict) else {}
-                p = out.get("payload") if isinstance(out.get("payload"), dict) else out
-                raw_wh_a.update(p)
+        raw_wh_a = await _load_crm_raw(db, meta_a.get("crm_id"))
 
         ext_a_row = None
         if meta_a.get("user_id"):
@@ -6708,13 +6737,7 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         )
 
         # B: Cargar webhook raw o perfil canónico existente
-        raw_wh_b = {}
-        if meta_b.get("crm_id"):
-            wh_b_res = await db.execute(text("SELECT payload FROM webhook_events_raw WHERE payload::text LIKE :p ORDER BY id ASC LIMIT 3"), {"p": f"%{meta_b['crm_id']}%"})
-            for rw in wh_b_res.fetchall():
-                out = rw[0] if isinstance(rw[0], dict) else {}
-                p = out.get("payload") if isinstance(out.get("payload"), dict) else out
-                raw_wh_b.update(p)
+        raw_wh_b = await _load_crm_raw(db, meta_b.get("crm_id"))
 
         ext_b_row = None
         if meta_b.get("user_id"):
