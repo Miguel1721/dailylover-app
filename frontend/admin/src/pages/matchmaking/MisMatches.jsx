@@ -4265,7 +4265,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                                     btnColor = isLight ? '#991B1B' : '#F87171'
                                   }
                                   const shortVerdict = verdict.length > 20 ? verdict.substring(0, 18) + '...' : verdict
-                                  btnText = `🧠 ${score}% • ${shortVerdict || 'Evaluado'}`
+                                  btnText = `🧠 ${score}% · ${shortVerdict || 'Evaluado'}`
                                 } else {
                                   btnBg = isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.14)'
                                   btnBorder = isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.35)'
@@ -5375,7 +5375,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                           ? (afinidadScore >= 70 ? '1px solid #A7F3D0' : afinidadScore >= 45 ? '1px solid #FCD34D' : '1px solid #FCA5A5')
                           : 'none'
                       }}>
-                        Afinidad Factual: {afinidadScore}% • {veredicto}
+                        {afinidadScore}% · {veredicto}{coveragePct < 100 ? ` (parcial, cobertura ${coveragePct}%)` : ''}
                       </span>
                       <span style={{
                         padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,

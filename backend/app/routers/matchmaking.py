@@ -40,6 +40,7 @@ from app.services.clinical_profile_extractor import (
     MALE_NAME_TOKENS,
     normalize_text_unaccent
 )
+from app.services.match_score import unified_score, norm_city, canonical_to_score_input
 from app.services.psychologist_helper import (
     build_psychologist_sql_condition,
     get_psychologist_aliases,
@@ -5744,10 +5745,11 @@ def build_canonical_profile(
         except Exception:
             pass
 
-    # Ciudad
+    # Ciudad (normalizada)
     city = None
     if raw_wh.get("prof_191") and isinstance(raw_wh["prof_191"], dict):
-        city = _choice_str(raw_wh["prof_191"].get("city") or raw_wh["prof_191"].get("state"))
+        raw_city = _choice_str(raw_wh["prof_191"].get("city") or raw_wh["prof_191"].get("state"))
+        city = normalize_city(raw_city) if raw_city else None
     if not city and p_row and getattr(p_row, 'city', None):
         city = normalize_city(p_row.city)
 
@@ -5915,6 +5917,12 @@ def build_canonical_profile(
     busca_pareja_deportiva = any("deport" in str(p_sp.get(k, "")).lower() for k in ("MustHaveValuesTop3", "Green Flags", "PreferredVibe"))
 
     # Identificar qué dimensiones están VERIFICADAS vs cuáles son FALTANTES
+    # Dimensiones adicionales para motor unificado
+    grupo_social = _choice_str(raw_wh.get("prof_248")) or (p_ls.get("social_group") if isinstance(p_ls, dict) else None)
+    alcohol = _choice_str(raw_wh.get("prof_209")) or (p_ls.get("drinks_alcohol") if isinstance(p_ls, dict) else None)
+    rumba = _choice_str(raw_wh.get("prof_210")) or (p_ls.get("rumba") if isinstance(p_ls, dict) else None)
+    educacion_val = grado_edu or (getattr(p_row, 'education', None) if p_row else None)
+
     clinical_dimensions = {
         "edad": age,
         "ciudad": city,
@@ -5922,6 +5930,7 @@ def build_canonical_profile(
         "genero": genero,
         "orientacion": orientacion,
         "profesion": profesion,
+        "educacion": educacion_val,
         "hijos_actuales": hijos_actuales,
         "deseo_hijos": deseo_hijos,
         "deporte_nivel": deporte_nivel,
@@ -5929,6 +5938,10 @@ def build_canonical_profile(
         "valores": valores if len(valores) > 0 else None,
         "hobbies": hobbies if len(hobbies) > 0 else None,
         "estilo_apego": estilo_apego,
+        "grupo_social": grupo_social,
+        "fumador": fumador,
+        "alcohol": alcohol,
+        "rumba": rumba,
         "rango_edad_buscado": f"{edad_min}-{edad_max}" if (edad_min or edad_max) else None,
         "no_negociables": no_negociables if len(no_negociables) > 0 else None,
     }
@@ -5958,145 +5971,114 @@ def build_canonical_profile(
 
 
 def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict[str, Any]:
-    v_a = p_a["verified_data"]
-    v_b = p_b["verified_data"]
-    pref_a = p_a["preferences"]
-    pref_b = p_b["preferences"]
+    input_a = canonical_to_score_input(p_a)
+    input_b = canonical_to_score_input(p_b)
+    u_score = unified_score(input_a, input_b)
 
-    bloqueos = []
+    bloqueos = list(u_score["bloqueos"])
+    discrepancias = list(u_score["discrepancias_fuertes"]) + list(u_score["observaciones"])
     coincidencias = []
-    discrepancias = []
     pendientes_entrevista = []
 
-    # 1. Filtros Bloqueantes
-    gen_a = str(v_a.get("genero") or "").lower()
-    gen_b = str(v_b.get("genero") or "").lower()
-    ori_a = str(v_a.get("orientacion") or "").lower()
-    ori_b = str(v_b.get("orientacion") or "").lower()
+    dims_map = {d["dimension"]: d for d in u_score["dimensiones"]}
 
-    if "hetero" in ori_a and "hetero" in ori_b and gen_a and gen_b and gen_a == gen_b:
-        bloqueos.append(f"Incompatibilidad de género para pareja heterosexual: Ambos perfiles tienen género '{v_a.get('genero')}'.")
-
-    # 2. Ciudad
-    if v_a.get("ciudad") and v_b.get("ciudad"):
-        if v_a["ciudad"].lower() == v_b["ciudad"].lower():
-            coincidencias.append(f"Ubicación: Ambos residen en {v_a['ciudad']}.")
-        else:
-            discrepancias.append(f"Ciudades distintas: {p_a['name']} está en {v_a['ciudad']} y {p_b['name']} en {v_b['ciudad']}.")
-    else:
+    # Ciudad: solo coincidencia si punt??a 1.0 (ambos en la misma ciudad normalizada)
+    d_ciudad = dims_map.get("ciudad")
+    if d_ciudad and d_ciudad["puntaje"] == 1.0:
+        c_name = p_a.get("verified_data", {}).get("ciudad") or p_b.get("verified_data", {}).get("ciudad") or "la misma ciudad"
+        coincidencias.append(f"Ubicaci??n: Ambos residen en {c_name}.")
+    elif not d_ciudad or d_ciudad["puntaje"] is None:
         pendientes_entrevista.append("Ciudad de residencia no confirmada en uno de los perfiles.")
 
-    # 3. Rango de Edad
-    age_a = v_a.get("edad")
-    age_b = v_b.get("edad")
-    if age_a and pref_b.get("edad_max") and age_a > pref_b["edad_max"]:
-        discrepancias.append(
-            f"Fuera de rango de edad: {p_a['name']} tiene {age_a} años y el tope máximo de {p_b['name']} es {pref_b['edad_max']} años."
-        )
-    if age_b and pref_a.get("edad_max") and age_b > pref_a["edad_max"]:
-        discrepancias.append(
-            f"Fuera de rango de edad: {p_b['name']} tiene {age_b} años y el tope máximo de {p_a['name']} es {pref_a['edad_max']} años."
-        )
-    if age_a and age_b and not (pref_b.get("edad_max") and age_a > pref_b["edad_max"]) and not (pref_a.get("edad_max") and age_b > pref_a["edad_max"]):
-        coincidencias.append(f"Edades afines: {age_a} años ({p_a['name']}) y {age_b} años ({p_b['name']}).")
-    if not age_a or not age_b:
+    # Edad: solo coincidencia si punt??a 1.0 (ambos en rango mutuo sin discrepancia)
+    d_edad = dims_map.get("edad")
+    if d_edad and d_edad["puntaje"] == 1.0:
+        age_a = p_a.get("verified_data", {}).get("edad")
+        age_b = p_b.get("verified_data", {}).get("edad")
+        if age_a and age_b:
+            coincidencias.append(f"Edades afines: {age_a} a??os ({p_a['name']}) y {age_b} a??os ({p_b['name']}).")
+    elif not d_edad or d_edad["puntaje"] is None:
         pendientes_entrevista.append("Edad no confirmada en uno de los perfiles.")
 
-    # 4. Deseo de Hijos
-    hijos_a = v_a.get("deseo_hijos")
-    hijos_b = v_b.get("deseo_hijos")
-    if hijos_a and hijos_b:
-        ha_low = str(hijos_a).lower()
-        hb_low = str(hijos_b).lower()
-        if ha_low == hb_low:
-            coincidencias.append(f"Alineación en proyecto de hijos: Ambos indican postura '{hijos_a}'.")
-        elif "no" in hb_low and ("tal vez" in ha_low or "si" in ha_low or "sí" in ha_low):
-            discrepancias.append(f"Diferencia en proyecto familiar: {p_b['name']} NO desea hijos, mientras que {p_a['name']} indica '{hijos_a}'.")
-        elif "no" in ha_low and ("tal vez" in hb_low or "si" in hb_low or "sí" in hb_low):
-            discrepancias.append(f"Diferencia en proyecto familiar: {p_a['name']} NO desea hijos, mientras que {p_b['name']} indica '{hijos_b}'.")
-    else:
-        faltante_quien = []
-        if not hijos_a: faltante_quien.append(p_a['name'])
-        if not hijos_b: faltante_quien.append(p_b['name'])
-        pendientes_entrevista.append(f"Preguntar en entrevista por deseo de hijos a: {', '.join(faltante_quien)}.")
+    # Hijos
+    d_hijos = dims_map.get("hijos")
+    if d_hijos and d_hijos["puntaje"] == 1.0:
+        ha = p_a.get("verified_data", {}).get("deseo_hijos")
+        coincidencias.append(f"Alineaci??n en proyecto de hijos: Ambos indican postura '{ha}'.")
+    elif not d_hijos or d_hijos["puntaje"] is None:
+        faltante = []
+        if not p_a.get("verified_data", {}).get("deseo_hijos"): faltante.append(p_a['name'])
+        if not p_b.get("verified_data", {}).get("deseo_hijos"): faltante.append(p_b['name'])
+        pendientes_entrevista.append(f"Preguntar en entrevista por deseo de hijos a: {', '.join(faltante)}.")
 
-    # 5. Lenguaje del Amor
-    love_a = v_a.get("lenguaje_amor")
-    love_b = v_b.get("lenguaje_amor")
-    if love_a and love_b:
-        if love_a.lower() == love_b.lower():
-            coincidencias.append(f"Lenguaje del Amor idéntico: Ambos coinciden en '{love_a}'.")
+    # Valores
+    d_val = dims_map.get("valores")
+    if d_val and d_val["puntaje"] is not None and d_val["puntaje"] >= 0.7:
+        coincidencias.append("Coincidencia en valores y principios de vida fundamentales.")
+    elif not d_val or d_val["puntaje"] is None:
+        pendientes_entrevista.append("Valores compartidos pendientes de validar en sesi??n.")
+
+    # Actividad f??sica
+    d_fit = dims_map.get("actividad_fisica")
+    if d_fit and d_fit["puntaje"] is not None and d_fit["puntaje"] >= 0.67:
+        fa = p_a.get("verified_data", {}).get("deporte_nivel") or input_a.get("deporte_nivel")
+        fb = p_b.get("verified_data", {}).get("deporte_nivel") or input_b.get("deporte_nivel")
+        coincidencias.append(f"Nivel de actividad deportiva arm??nico: {fa} y {fb}.")
+
+    # Estatura
+    d_est = dims_map.get("estatura")
+    if d_est and d_est["puntaje"] == 1.0:
+        coincidencias.append("Estatura dentro del rango preferido por ambas partes.")
+
+    # Apego
+    d_apego = dims_map.get("apego")
+    if d_apego and d_apego["puntaje"] is not None and d_apego["puntaje"] >= 0.8:
+        pa = p_a.get("verified_data", {}).get("estilo_apego") or input_a.get("estilo_apego")
+        pb = p_b.get("verified_data", {}).get("estilo_apego") or input_b.get("estilo_apego")
+        coincidencias.append(f"Din??mica de apego compatible: {pa} ?? {pb}.")
+    elif not d_apego or d_apego["puntaje"] is None:
+        pendientes_entrevista.append("Estilo de apego pendiente de evaluaci??n cl??nica por psic??loga.")
+
+    # Lenguaje del amor
+    d_love = dims_map.get("lenguaje_amor")
+    if d_love and d_love["puntaje"] is not None and d_love["puntaje"] >= 0.6:
+        la = p_a.get("verified_data", {}).get("lenguaje_amor") or input_a.get("lenguaje_amor")
+        lb = p_b.get("verified_data", {}).get("lenguaje_amor") or input_b.get("lenguaje_amor")
+        if d_love["puntaje"] == 1.0:
+            coincidencias.append(f"Lenguaje del Amor id??ntico: Ambos coinciden en '{la}'.")
         else:
-            coincidencias.append(f"Lenguajes del amor complementarios: {love_a} ({p_a['name']}) y {love_b} ({p_b['name']}).")
-    else:
+            coincidencias.append(f"Lenguajes del amor complementarios: {la} ({p_a['name']}) y {lb} ({p_b['name']}).")
+    elif not d_love or d_love["puntaje"] is None:
         pendientes_entrevista.append("Lenguaje del amor no evaluado en ficha.")
 
-    # 6. Estilo de Apego
-    att_a = v_a.get("estilo_apego")
-    att_b = v_b.get("estilo_apego")
-    if att_a and att_b:
-        coincidencias.append(f"Dinámica de apego evaluada: {att_a} ({p_a['name']}) × {att_b} ({p_b['name']}).")
-    else:
-        pendientes_entrevista.append("Estilo de apego pendiente de evaluación clínica por psicóloga.")
+    # H??bitos
+    d_hab = dims_map.get("habitos")
+    if d_hab and d_hab["puntaje"] is not None and d_hab["puntaje"] >= 0.8:
+        coincidencias.append("Afinidad en h??bitos cotidianos (social, rumba, tabaco).")
 
-    # 7. Ritmo deportivo / Físico
-    fit_a = v_a.get("deporte_nivel")
-    fit_b = v_b.get("deporte_nivel")
-    if pref_b.get("busca_pareja_deportiva") and fit_a and any(w in str(fit_a).lower() for w in ("principiante", "sedentario", "no entrena")):
-        discrepancias.append(f"Brecha deportiva: {p_b['name']} busca pareja deportiva/alta energía y {p_a['name']} registra nivel {fit_a}.")
-    elif fit_a and fit_b:
-        coincidencias.append(f"Nivel de actividad deportiva registrado: {fit_a} y {fit_b}.")
+    # Educaci??n
+    d_edu = dims_map.get("educacion")
+    if d_edu and d_edu["puntaje"] is not None and d_edu["puntaje"] >= 0.7:
+        coincidencias.append("Nivel acad??mico y proyecci??n profesional equivalente.")
 
-    # 8. Estatura
-    est_a = v_a.get("estatura_cm")
-    est_b = v_b.get("estatura_cm")
-    if est_a and (pref_b.get("estatura_min_cm") or pref_b.get("estatura_max_cm")):
-        min_b = pref_b.get("estatura_min_cm")
-        max_b = pref_b.get("estatura_max_cm")
-        if min_b and est_a < min_b:
-            discrepancias.append(f"Estatura fuera de preferencia: {p_a['name']} mide {est_a} cm (preferencia desde {min_b} cm).")
-        elif max_b and est_a > max_b:
-            discrepancias.append(f"Estatura fuera de preferencia: {p_a['name']} mide {est_a} cm (preferencia hasta {max_b} cm).")
-        else:
-            coincidencias.append(f"Estatura cumplida: {p_a['name']} mide {est_a} cm (dentro del rango preferido por {p_b['name']}).")
-    if est_b and (pref_a.get("estatura_min_cm") or pref_a.get("estatura_max_cm")):
-        min_a = pref_a.get("estatura_min_cm")
-        max_a = pref_a.get("estatura_max_cm")
-        if min_a and est_b < min_a:
-            discrepancias.append(f"Estatura fuera de preferencia: {p_b['name']} mide {est_b} cm (preferencia desde {min_a} cm).")
-        elif max_a and est_b > max_a:
-            discrepancias.append(f"Estatura fuera de preferencia: {p_b['name']} mide {est_b} cm (preferencia hasta {max_a} cm).")
-
-    # Cobertura mutua de información
-    coverage_pct = round((p_a["completeness_pct"] + p_b["completeness_pct"]) / 2)
-    min_individual_coverage = min(p_a.get("completeness_pct", 0), p_b.get("completeness_pct", 0))
-
-    # Cálculo determinístico de afinidad factual
-    if bloqueos:
-        score = 0
-        veredicto = "NO RECOMENDADO"
-    elif len(discrepancias) >= 2:
-        score = min(62, 50 + len(coincidencias) * 3)
-        veredicto = "VIABLE CON RESERVAS"
-    elif len(discrepancias) == 1:
-        score = 68
-        veredicto = "VIABLE BUENO (CON OBSERVACIÓN)"
-    elif coverage_pct < 45 or min_individual_coverage < 40:
-        score = 55
-        veredicto = "DATOS INSUFICIENTES (ENTREVISTA PENDIENTE)"
-    else:
-        score = min(88, 65 + len(coincidencias) * 5)
-        veredicto = "RECOMENDADO"
+    for pend in u_score.get("pendientes", []):
+        msg = f"Dato no registrado en una o ambas fichas: {pend.replace('_', ' ')}."
+        if msg not in pendientes_entrevista:
+            pendientes_entrevista.append(msg)
 
     return {
-        "coverage_pct": coverage_pct,
-        "min_individual_coverage": min_individual_coverage,
-        "score_factual": score,
-        "veredicto": veredicto,
+        "score_factual": u_score["score"],
+        "score": u_score["score"],
+        "veredicto": u_score["veredicto"],
+        "coverage_pct": u_score["cobertura_pct"],
+        "cobertura_pct": u_score["cobertura_pct"],
+        "parcial": u_score["parcial"],
         "bloqueos": bloqueos,
         "coincidencias_verificadas": coincidencias,
         "discrepancias_reales": discrepancias,
-        "pendientes_entrevista": pendientes_entrevista
+        "pendientes_entrevista": pendientes_entrevista,
+        "dimensiones": u_score["dimensiones"],
+        "pendientes": u_score["pendientes"],
     }
 
 
@@ -6788,41 +6770,57 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
         coverage_val = 60
         score_val = 20 if issues else (62 if warnings else 75)
         veredicto_val = "NO RECOMENDADO" if issues else ("VIABLE CON RESERVAS" if warnings else "RECOMENDADO")
-        coinc_val = ["Compatibilidad general según ficha registrada."]
+        coinc_val = ["Compatibilidad general seg??n ficha registrada."]
         disc_val = warnings[:]
         pends_val = ["Validar historial completo y expectativas en entrevista."]
+        dims_val = []
+        pends_list = []
     else:
-        coverage_val = comp_result["coverage_pct"]
-        score_val = comp_result["score_factual"]
-        veredicto_val = comp_result["veredicto"]
+        coverage_val = comp_result.get("cobertura_pct", comp_result.get("coverage_pct", 70))
+        score_val = comp_result.get("score", comp_result.get("score_factual", 70))
+        veredicto_val = comp_result.get("veredicto", "RECOMENDADO")
         coinc_val = comp_result["coincidencias_verificadas"]
         disc_val = comp_result["discrepancias_reales"]
         pends_val = comp_result["pendientes_entrevista"]
+        dims_val = comp_result.get("dimensiones", [])
+        pends_list = comp_result.get("pendientes", [])
 
     ai_evaluation = {
         "ai_score": score_val,
+        "score": score_val,
         "veredicto": veredicto_val,
         "analisis": guarded_synthesis or (
-            f"Afinidades verificadas: {' • '.join(coinc_val[:3])}\n\n"
-            f"Reservas clínicas: {' • '.join(disc_val) if disc_val else 'Ninguna discrepancia crítica.'}. "
-            f"Pendientes para entrevista: {' • '.join(pends_val[:3])}"
+            f"Afinidades verificadas: {' ??? '.join(coinc_val[:3])}\n\n"
+            f"Reservas cl??nicas: {' ??? '.join(disc_val) if disc_val else 'Ninguna discrepancia cr??tica.'}. "
+            f"Pendientes para entrevista: {' ??? '.join(pends_val[:3])}"
         ),
         "deal_breakers": disc_val,
         "pendientes_entrevista": pends_val,
         "coincidencias": coinc_val,
-        "coverage_pct": coverage_val
+        "coverage_pct": coverage_val,
+        "cobertura_pct": coverage_val,
+        "dimensiones": dims_val,
+        "pendientes": pends_list,
     }
 
     response_payload = {
         "compatible": len(issues) == 0 and veredicto_val != "NO RECOMENDADO",
+        "score": score_val,
+        "veredicto": veredicto_val,
+        "cobertura_pct": coverage_val,
+        "dimensiones": dims_val,
+        "pendientes": pends_list,
         "issues": issues,
         "warnings": warnings,
         "quota_info": quota_info,
         "ai_evaluation": ai_evaluation,
         "canonical_analysis": {
-            "coverage_pct": coverage_val,
+            "score": score_val,
             "score_factual": score_val,
             "veredicto": veredicto_val,
+            "coverage_pct": coverage_val,
+            "cobertura_pct": coverage_val,
+            "parcial": comp_result.get("parcial", False) if comp_result else False,
             "coincidencias_verificadas": coinc_val,
             "discrepancias_reales": disc_val,
             "pendientes_para_entrevista": pends_val,
@@ -11457,6 +11455,7 @@ async def find_candidate_matches_engine(
     discarded_matches = []
     seen_names = set()
     capped_candidates = []
+    input_client = canonical_to_score_input(None, client_summary)
 
     for r in candidate_rows:
         cand_name = (r.name or "").strip()
@@ -12017,6 +12016,12 @@ async def find_candidate_matches_engine(
             })
             continue
 
+        input_cand = canonical_to_score_input(None, r)
+        u_cand = unified_score(input_client, input_cand)
+        cand_score = u_cand["score"]
+        cand_veredicto = u_cand["veredicto"]
+        cand_cobertura = u_cand["cobertura_pct"]
+
         cand_payload = {
             "user_id": r.id,
             "name": cand_name,
@@ -12053,12 +12058,18 @@ async def find_candidate_matches_engine(
             "completeness_ratio": completeness_ratio,
             "penalizaciones": penalizaciones,
             "campos_faltantes": missing_fields,
-            "campos_evaluados_pts": round(max_possible_points, 1),
+            "campos_evaluados_pts": cand_cobertura,
             "saldo_citas": saldo_citas_b,
             "opportunity_badge": opportunity_badge,
             "opportunity_reason": opportunity_reason,
-            "compatibility_pct": match_pct,
-            "structural_score": match_pct,
+            "score": cand_score,
+            "veredicto": cand_veredicto,
+            "cobertura_pct": cand_cobertura,
+            "dimensiones": u_cand["dimensiones"],
+            "pendientes": u_cand["pendientes"],
+            "compatibility_pct": cand_score,
+            "structural_score": cand_score,
+            "overall_match_score": cand_score,
             "dealbreakers_clean": bidi["is_bidirectionally_compatible"],
             "dealbreakers_check": dealbreakers_check_msg,
             "strengths": strengths,
@@ -12147,14 +12158,14 @@ async def find_candidate_matches_engine(
         capped_candidates.sort(key=lambda x: candidate_usage_tracker.get(x["user_id"], 0) if candidate_usage_tracker else 0)
         suggested_matches = capped_candidates[:max_ai_evaluations]
 
-    # 7. Filtro previo estructural: ordenar preliminarmente
+    # 7. Filtro previo: ordenar primero candidatas con citas disponibles, luego por score determin??stico
     suggested_matches.sort(
         key=lambda x: (
-            x["compatibility_pct"] is not None,
-            x["compatibility_pct"] or 0,
-            x.get("completeness_ratio") or 0.0,
-            x["dealbreakers_clean"],
-            x["datos_completos"],
+            (x.get("dates_remaining") or 0) > 0,
+            x.get("score") is not None,
+            x.get("score") or 0,
+            x.get("cobertura_pct") or 0,
+            x.get("dealbreakers_clean", True),
             x["user_id"]
         ),
         reverse=True
@@ -12317,32 +12328,22 @@ async def find_candidate_matches_engine(
                         cand["comparison"]["candidate_summary"] = cand_summ
                         cand["comparison"]["red_flags_seguridad"] = safety_flags
 
-                    if safety_flags:
+                    if safety_flags or is_risk:
+                        cand["score"] = 0
                         cand["compatibility_pct"] = 0
                         cand["structural_score"] = 0
+                        cand["overall_match_score"] = 0
+                        cand["veredicto"] = "NO RECOMENDADO"
+                        cand["ai_veredicto"] = "NO RECOMENDADO"
+                        cand["ai_score"] = 0
                         cand["dealbreakers_clean"] = False
-                        cand["dealbreakers_check"] = f"🚨 RED FLAG DE SEGURIDAD: {'; '.join(safety_flags[:2])}"
-                    elif notes_qual == "NULA" and struct_score is None:
-                        cand["compatibility_pct"] = None
-                        cand["structural_score"] = None
-                        cand["ai_score"] = None
+                        cand["dealbreakers_check"] = f"???? RED FLAG DE SEGURIDAD: {'; '.join(safety_flags[:2])}"
+                    elif notes_qual == "NULA" and cand.get("score") is None:
                         cand["ai_veredicto"] = "SIN DATOS SUFICIENTES"
                     else:
-                        if verdict == "NO RECOMENDADO":
-                            cand["compatibility_pct"] = min(ai_score, 35) if ai_score is not None else None
-                        elif verdict == "COMPATIBILIDAD BAJA":
-                            raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score)) if struct_score is not None else ai_score
-                            cand["compatibility_pct"] = min(raw_blend, 49) if raw_blend is not None else None
-                        elif verdict == "VIABLE CON RESERVAS":
-                            raw_blend = int(round(0.35 * struct_score + 0.65 * ai_score)) if struct_score is not None else ai_score
-                            cand["compatibility_pct"] = min(raw_blend, 64) if raw_blend is not None else None
-                        elif verdict == "VIABLE BUENO":
-                            raw_blend = int(round(0.30 * struct_score + 0.70 * ai_score)) if struct_score is not None else ai_score
-                            cand["compatibility_pct"] = max(65, min(raw_blend, 74)) if raw_blend is not None else None
-                        else:
-                            # RECOMENDADO
-                            raw_blend = int(round(0.25 * struct_score + 0.75 * ai_score)) if struct_score is not None else ai_score
-                            cand["compatibility_pct"] = max(75, min(raw_blend, 95)) if raw_blend is not None else None
+                        # La IA deja de puntuar: el puntaje unificado determin??stico se conserva intacto
+                        cand["ai_veredicto"] = cand.get("veredicto", verdict)
+                        cand["ai_score"] = cand.get("score")
 
                     if dbs and not safety_flags:
                         if verdict == "NO RECOMENDADO":
@@ -12407,11 +12408,11 @@ async def find_candidate_matches_engine(
         evaluated_sorted = sorted(
             safe_evaluated,
             key=lambda x: (
-                x["compatibility_pct"] is not None,
-                x["compatibility_pct"] or 0,
-                x.get("completeness_ratio") or 0.0,
-                x["dealbreakers_clean"],
-                x["datos_completos"],
+                (x.get("dates_remaining") or 0) > 0,
+                x.get("score") is not None,
+                x.get("score") or 0,
+                x.get("cobertura_pct") or 0,
+                x.get("dealbreakers_clean", True),
                 x["user_id"]
             ),
             reverse=True
@@ -12420,17 +12421,17 @@ async def find_candidate_matches_engine(
             if c.get("ai_veredicto") != "SIN DATOS SUFICIENTES":
                 c["ai_status"] = "STRUCTURAL_ONLY"
                 c["is_ai_evaluated"] = False
-                c["ai_veredicto"] = "SCORE ESTRUCTURAL" if c.get("structural_score") is not None else "SIN DATOS SUFICIENTES"
-                c["ai_fallback_notice"] = "Candidato fuera del lote prioritario de IA (evaluado con modelo estructural CRM)."
+                c["ai_veredicto"] = c.get("veredicto") or "RECOMENDADO"
+                c["ai_fallback_notice"] = "Candidato fuera del lote prioritario de IA (evaluado con c??lculo ??nico determin??stico)."
 
         remaining_sorted = sorted(
             remaining_candidates,
             key=lambda x: (
-                x["compatibility_pct"] is not None,
-                x["compatibility_pct"] or 0,
-                x.get("completeness_ratio") or 0.0,
-                x["dealbreakers_clean"],
-                x["datos_completos"],
+                (x.get("dates_remaining") or 0) > 0,
+                x.get("score") is not None,
+                x.get("score") or 0,
+                x.get("cobertura_pct") or 0,
+                x.get("dealbreakers_clean", True),
                 x["user_id"]
             ),
             reverse=True
