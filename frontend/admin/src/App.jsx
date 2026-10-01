@@ -296,6 +296,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
 
   const psycNavItems = [
     { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa' },
+    { to: '/matchmaking/profiles', icon: Sparkles, label: 'Profiles (ingreso)' },
     { to: '/matchmaking/calendario', icon: Calendar, label: '📅 Mis Turnos' },
     { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevistas' },
     { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' }
