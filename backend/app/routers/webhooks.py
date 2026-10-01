@@ -34,7 +34,12 @@ STRIPE_PLAN_MAP = {
     "98": "Estándar Plus 98k",
     "65": "Estándar 65k",
     "40": "Básico 40k",
+    "240": "VIP Done (matches ilimitados)",
+    "30": "Recompra de cita",
+    "50": "Pendiente de confirmar",
 }
+# Pagos que NO cambian el plan del cliente (recompra de una cita; monto aún sin confirmar con la dueña).
+PLANES_SIN_CAMBIO = {"Recompra de cita", "Pendiente de confirmar"}
 
 def verify_stripe_signature(payload_bytes: bytes, sig_header: Optional[str], secret: str) -> bool:
     """Valida la firma HMAC-SHA256 del webhook de Stripe."""
@@ -227,7 +232,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     "pi_id": pi_id,
                     "amt": amount_cop,
                     "user_id": user_id,
-                    "is_event": bool(is_event_ticket)
+                    "is_event": bool(is_event_ticket) or (plan_name in PLANES_SIN_CAMBIO)
                 })
 
                 # Vincular user_id en stripe_payments
@@ -269,7 +274,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             # Disparador en tiempo real hacia Google Sheets (apuntando al Sheet configurado en GOOGLE_SHEETS_SPREADSHEET_ID)
             target_name = (user_row.name if user_row else None) or customer_name or ""
             target_resp = ("MPS" if is_vip_650k else (user_row.responsable if user_row else None))
-            if target_name and plan_name and not is_event_ticket:
+            if target_name and plan_name and not is_event_ticket and plan_name not in PLANES_SIN_CAMBIO:
                 try:
                     from app.services.google_sheets import update_client_plan_in_sheet
                     asyncio.create_task(
