@@ -42,6 +42,7 @@ const PREF_COLORS = {
 }
 
 const PLAN_COLORS = {
+  'Sin plan': { bg: 'rgba(148, 163, 184, 0.15)', color: '#94A3B8' },
   'Básico 40k': { bg: '#F3F3F3', color: '#434343' },
   'Básico': { bg: '#F3F3F3', color: '#434343' },
   'Estándar 65k (1 cita)': { bg: '#D9EAD3', color: '#274E13' },
@@ -1891,6 +1892,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   const [approvalDateFilter, setApprovalDateFilter] = useState('')
 
   const fetchMatches = useCallback(() => {
+    setRecentlyAssignedBIds(new Set())
     setLoading(true)
     const effectiveApproved = isOfficialMatches ? 'yes' : approvedFilter
     let url = `${API}/api/v1/matchmaking/my-matches?view_mode=${viewMode}&sort_by=${encodeURIComponent(sortBy)}&`
@@ -2114,7 +2116,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
       return true
     }
     if (quickFilter === 'prioritarios') return m.is_priority
-    if (quickFilter === 'sin_b') return !m.person_b || m.person_b.trim() === ''
+    if (quickFilter === 'sin_b') return (!m.person_b || m.person_b.trim() === '') || recentlyAssignedBIds.has(m.id)
     if (quickFilter === 'hechos') return (m.status || '').toUpperCase().startsWith('HECHO') && !m.approved_by_maria
     if (quickFilter === 'troublemaker') return checkIsTroublemakerMatch(m)
     if (quickFilter === 'rechazado_psicologa') return checkIsRechazadoPsicologaMatch(m)
@@ -2158,6 +2160,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
   }, [])
 
   const [compatibilityModalData, setCompatibilityModalData] = useState(null)
+  const [recentlyAssignedBIds, setRecentlyAssignedBIds] = useState(() => new Set())
   const [loadingCompatId, setLoadingCompatId] = useState(null)
   const [notifyingCs, setNotifyingCs] = useState(false)
   const [csNotifiedSuccess, setCsNotifiedSuccess] = useState('')
@@ -2225,6 +2228,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         const compScore = compData?.canonical_analysis?.score_factual ?? compData?.ai_evaluation?.ai_score
         const compVerdict = compData?.canonical_analysis?.veredicto ?? compData?.ai_evaluation?.veredicto
 
+        setRecentlyAssignedBIds(prev => new Set(prev).add(matchRow.id))
         setMatches(prev => prev.map(m => m.id === matchRow.id ? {
           ...m,
           person_b: resolvedNameBFromCheck || m.person_b,
@@ -2385,8 +2389,11 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
         setSyncStatus('synced')
         setTimeout(() => setFeedbackMsg(''), 2500)
 
-        if (field === 'person_b' && effectivePB && matchRow) {
-          runCompatibilityCheck(matchRow, effectivePB, effectivePBCid, value, false)
+        if (field === 'person_b' && effectivePB) {
+          setRecentlyAssignedBIds(prev => new Set(prev).add(matchId))
+          if (matchRow) {
+            runCompatibilityCheck(matchRow, effectivePB, effectivePBCid, value, false)
+          }
         }
 
         if (field === 'status' && typeof value === 'string' && value.startsWith('HECHO')) {
@@ -4265,7 +4272,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                                     btnColor = isLight ? '#991B1B' : '#F87171'
                                   }
                                   const shortVerdict = verdict.length > 20 ? verdict.substring(0, 18) + '...' : verdict
-                                  btnText = `🧠 ${score}% · ${shortVerdict || 'Evaluado'}`
+                                  btnText = `🧠 ${score}% • ${shortVerdict || 'Evaluado'}`
                                 } else {
                                   btnBg = isLight ? '#EEF2FF' : 'rgba(99, 91, 255, 0.14)'
                                   btnBorder = isLight ? '1px solid #C7D2FE' : '1px solid rgba(99, 91, 255, 0.35)'
@@ -4382,7 +4389,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                               )}
                             </div>
                             <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                              {m.plan_tier ? `🏷️ ${m.plan_tier}` : 'Slot sistema'}
+                              {m.plan_tier ? `🏷️ ${m.plan_tier}` : 'Sin plan'}
                             </span>
                           </div>
                         )}
@@ -5375,7 +5382,7 @@ export default function MisMatches({ isOfficialMatches: propIsOfficialMatches = 
                           ? (afinidadScore >= 70 ? '1px solid #A7F3D0' : afinidadScore >= 45 ? '1px solid #FCD34D' : '1px solid #FCA5A5')
                           : 'none'
                       }}>
-                        {afinidadScore}% · {veredicto}{coveragePct < 100 ? ` (parcial, cobertura ${coveragePct}%)` : ''}
+                        Afinidad Factual: {afinidadScore}% • {veredicto}
                       </span>
                       <span style={{
                         padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,

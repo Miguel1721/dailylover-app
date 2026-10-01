@@ -398,25 +398,42 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                 Plan & Citas Contratadas
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: isLight ? '#0F172A' : 'var(--text-primary)', marginTop: 2 }}>
-                {client.plan_tier || 'Plan Estándar (2 citas)'}
+                {client.plan_tier || 'Sin plan'}
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <span style={{
-                fontSize: 12,
-                fontWeight: 800,
-                color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#065F46' : '#4CAF50') : (isLight ? '#92400E' : '#FFC107'),
-                background: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)') : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
-                padding: '4px 10px',
-                borderRadius: 8,
-                border: (client.dates_remaining ?? 1) > 0 ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.3)') : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)'),
-                display: 'inline-block'
-              }}>
-                🎟️ {client.dates_used || 0} de {client.plan_total_dates || 2} citas
-              </span>
-              <div style={{ fontSize: 11, color: isLight ? '#64748B' : 'var(--text-muted)', marginTop: 2 }}>
-                {(client.dates_remaining ?? 1) > 0 ? `${client.dates_remaining ?? 1} citas disponibles` : '⚠️ Plan cumplido'}
-              </div>
+              {(client.plan_total_dates > 0 && client.plan_tier && client.plan_tier !== 'Sin plan') ? (
+                <>
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#065F46' : '#4CAF50') : (isLight ? '#92400E' : '#FFC107'),
+                    background: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#ECFDF5' : 'rgba(76, 175, 80, 0.12)') : (isLight ? '#FFFBEB' : 'rgba(255, 193, 7, 0.12)'),
+                    padding: '4px 10px',
+                    borderRadius: 8,
+                    border: (client.dates_remaining ?? 0) > 0 ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(76, 175, 80, 0.3)') : (isLight ? '1px solid #FDE68A' : '1px solid rgba(255, 193, 7, 0.3)'),
+                    display: 'inline-block'
+                  }}>
+                    🎟️ {client.dates_used || 0} de {client.plan_total_dates} citas
+                  </span>
+                  <div style={{ fontSize: 11, color: isLight ? '#64748B' : 'var(--text-muted)', marginTop: 2 }}>
+                    {(client.dates_remaining ?? 0) > 0 ? `${client.dates_remaining} citas disponibles` : '⚠️ Plan cumplido'}
+                  </div>
+                </>
+              ) : (
+                <span style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: isLight ? '#94A3B8' : 'var(--text-muted)',
+                  background: isLight ? '#F1F5F9' : 'rgba(148, 163, 184, 0.1)',
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  border: isLight ? '1px solid #E2E8F0' : '1px solid rgba(148, 163, 184, 0.2)',
+                  display: 'inline-block'
+                }}>
+                  Sin plan contratado
+                </span>
+              )}
             </div>
           </div>
 
@@ -912,29 +929,60 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                             </span>
                           )}
                           <span style={{
-                            background: (cand.score ?? cand.compatibility_pct ?? 0) >= 75
-                              ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.2)')
-                              : (cand.score ?? cand.compatibility_pct ?? 0) >= 50
-                              ? (isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.2)')
-                              : (isLight ? '#FEF2F2' : 'rgba(239, 68, 68, 0.2)'),
-                            border: (cand.score ?? cand.compatibility_pct ?? 0) >= 75
-                              ? (isLight ? '1.5px solid #10B981' : '1px solid #4CAF50')
-                              : (cand.score ?? cand.compatibility_pct ?? 0) >= 50
-                              ? (isLight ? '1.5px solid #F59E0B' : '1px solid #FCD34D')
-                              : (isLight ? '1.5px solid #EF4444' : '1px solid #FCA5A5'),
-                            color: (cand.score ?? cand.compatibility_pct ?? 0) >= 75
-                              ? (isLight ? '#065F46' : '#81C784')
-                              : (cand.score ?? cand.compatibility_pct ?? 0) >= 50
-                              ? (isLight ? '#92400E' : '#FBBF24')
-                              : (isLight ? '#991B1B' : '#EF4444'),
+                            background: isLight ? '#ECFDF5' : 'linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(46, 125, 50, 0.3))',
+                            border: isLight ? '1.5px solid #10B981' : '1px solid #4CAF50',
+                            color: isLight ? '#065F46' : '#81C784',
                             fontWeight: 800,
-                            fontSize: 13,
+                            fontSize: 14,
                             padding: '4px 12px',
                             borderRadius: 20,
                             boxShadow: isLight ? '0 1px 4px rgba(16, 185, 129, 0.12)' : 'none'
                           }}>
-                            ✨ {cand.score ?? cand.compatibility_pct}% · {cand.veredicto || cand.ai_veredicto || 'RECOMENDADO'}{(cand.cobertura_pct ?? 0) < 100 && (cand.cobertura_pct ?? 0) > 0 ? ` (parcial, cobertura ${cand.cobertura_pct}%)` : (!cand.datos_completos ? ' (Parcial)' : '')}
+                            ✨ {cand.compatibility_pct}% Match {!cand.datos_completos ? '(Parcial)' : ''}
                           </span>
+                          {cand.ai_score != null ? (
+                            <span style={{
+                              background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
+                              border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
+                              color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '3px 10px',
+                              borderRadius: 16
+                            }} title={cand.ai_analisis || ''}>
+                              🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
+                            </span>
+                          ) : cand.ai_veredicto === 'FALLBACK POR TIMEOUT' || cand.ai_status === 'TIMEOUT_FALLBACK' ? (
+                            <span style={{
+                              background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                              border: '1px solid #F59E0B',
+                              color: isLight ? '#B45309' : '#FBBF24',
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '3px 10px',
+                              borderRadius: 16,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }} title={cand.ai_fallback_notice || 'Evaluación de IA excedió el tiempo límite (18s); se utilizó el score estructural'}>
+                              ⏱️ IA Timeout (Score Estructural)
+                            </span>
+                          ) : cand.ai_veredicto === 'SCORE ESTRUCTURAL' || cand.ai_status === 'STRUCTURAL_ONLY' ? (
+                            <span style={{
+                              background: isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)',
+                              border: '1px solid rgba(156, 163, 175, 0.5)',
+                              color: isLight ? '#4B5563' : '#9CA3AF',
+                              fontWeight: 700,
+                              fontSize: 12,
+                              padding: '3px 10px',
+                              borderRadius: 16,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }} title={cand.ai_fallback_notice || 'Evaluado con modelo estructural CRM (sin análisis profundo de IA)'}>
+                              📊 Score Estructural (Sin IA)
+                            </span>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -1475,21 +1523,69 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                     ) : (
                       <>
                         <span style={{
+                          fontSize: 12,
                           fontWeight: 800,
                           padding: '3px 10px',
                           borderRadius: 14,
-                          background: (cand.score ?? cand.compatibility_pct ?? 0) >= 75
+                          background: (cand.compatibility_pct ?? 0) >= 80
                             ? (isLight ? '#ECFDF5' : 'rgba(16, 185, 129, 0.15)')
                             : (isLight ? '#EFF6FF' : 'rgba(59, 130, 246, 0.15)'),
-                          color: (cand.score ?? cand.compatibility_pct ?? 0) >= 75
+                          color: (cand.compatibility_pct ?? 0) >= 80
                             ? (isLight ? '#065F46' : '#81C784')
                             : (isLight ? '#1E40AF' : '#93C5FD'),
-                          border: (cand.score ?? cand.compatibility_pct ?? 0) >= 75
+                          border: (cand.compatibility_pct ?? 0) >= 80
                             ? (isLight ? '1px solid #A7F3D0' : '1px solid rgba(16, 185, 129, 0.3)')
                             : (isLight ? '1px solid #BFDBFE' : '1px solid rgba(59, 130, 246, 0.3)')
                         }}>
-                          ✨ {cand.score ?? cand.compatibility_pct}% · {cand.veredicto || cand.ai_veredicto || 'RECOMENDADO'}{(cand.cobertura_pct ?? 0) < 100 && (cand.cobertura_pct ?? 0) > 0 ? ` (parcial, cobertura ${cand.cobertura_pct}%)` : (!cand.datos_completos ? ' (Parcial)' : '')}
+                          ✨ {cand.compatibility_pct}% {!cand.datos_completos ? '(Parcial)' : ''}
                         </span>
+
+                        {cand.ai_score != null ? (
+                          <span style={{
+                            background: cand.ai_veredicto === 'NO RECOMENDADO' ? (isLight ? '#FEE2E2' : 'rgba(239, 68, 68, 0.15)') : (isLight ? '#EEF2FF' : 'rgba(99, 102, 241, 0.15)'),
+                            border: cand.ai_veredicto === 'NO RECOMENDADO' ? '1px solid #EF4444' : '1px solid #6366F1',
+                            color: cand.ai_veredicto === 'NO RECOMENDADO' ? '#DC2626' : (isLight ? '#4F46E5' : '#818CF8'),
+                            fontWeight: 700,
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title={cand.ai_analisis || ''}>
+                            🤖 IA: {cand.ai_score}% • {cand.ai_veredicto}
+                          </span>
+                        ) : cand.ai_veredicto === 'FALLBACK POR TIMEOUT' || cand.ai_status === 'TIMEOUT_FALLBACK' ? (
+                          <span style={{
+                            background: isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)',
+                            border: '1px solid #F59E0B',
+                            color: isLight ? '#B45309' : '#FBBF24',
+                            fontWeight: 700,
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title={cand.ai_fallback_notice || 'Evaluación de IA excedió el tiempo límite (13s); se utilizó el score estructural'}>
+                            ⏱️ IA Timeout
+                          </span>
+                        ) : cand.ai_veredicto === 'SCORE ESTRUCTURAL' || cand.ai_status === 'STRUCTURAL_ONLY' ? (
+                          <span style={{
+                            background: isLight ? '#F3F4F6' : 'rgba(156, 163, 175, 0.15)',
+                            border: '1px solid rgba(156, 163, 175, 0.5)',
+                            color: isLight ? '#4B5563' : '#9CA3AF',
+                            fontWeight: 700,
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 14,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }} title={cand.ai_fallback_notice || 'Candidato fuera del lote prioritario de IA; evaluado con modelo estructural CRM'}>
+                            📊 Score Estructural
+                          </span>
+                        ) : null}
                       </>
                     )}
                   </div>
@@ -1804,7 +1900,7 @@ export default function EntrevistaResultados({ clientId, clientName, onGoToTab, 
                 {client.name} × {selectedCandidate.name}
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                📍 {client.city} • Afinidad: <b>{selectedCandidate.score ?? selectedCandidate.compatibility_pct != null ? `${selectedCandidate.score ?? selectedCandidate.compatibility_pct}% · ${selectedCandidate.veredicto || 'RECOMENDADO'}` : 'Sin datos suficientes'}</b>
+                📍 {client.city} • Afinidad: <b>{selectedCandidate.compatibility_pct != null ? `${selectedCandidate.compatibility_pct}%` : 'Sin datos suficientes'}</b>
               </div>
             </div>
 
@@ -2421,17 +2517,29 @@ function MultiCandidateCompareModal({ client, candidates, onClose, onApprove, on
                   Plan & Citas Disp.
                 </td>
                 <td style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
-                  <div style={{ fontWeight: 700 }}>{client.plan_tier || 'Plan Estándar (2 citas)'}</div>
-                  <div style={{ fontSize: 12, color: (client.dates_remaining ?? 1) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
-                    🎟️ {client.dates_used || 0} de {client.plan_total_dates || 2} citas ({client.dates_remaining ?? 1} disp.)
-                  </div>
+                  <div style={{ fontWeight: 700 }}>{client.plan_tier || 'Sin plan'}</div>
+                  {(client.plan_total_dates > 0 && client.plan_tier && client.plan_tier !== 'Sin plan') ? (
+                    <div style={{ fontSize: 12, color: (client.dates_remaining ?? 0) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
+                      🎟️ {client.dates_used || 0} de {client.plan_total_dates} citas ({client.dates_remaining ?? 0} disp.)
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: isLight ? '#94A3B8' : 'var(--text-muted)', fontWeight: 600 }}>
+                      Sin saldo de citas
+                    </div>
+                  )}
                 </td>
                 {candidates.map(c => (
                   <td key={c.user_id} style={{ padding: '12px 16px', borderRight: t.tdBorder }}>
-                    <div style={{ fontWeight: 700 }}>{c.plan_tier || 'Estándar'}</div>
-                    <div style={{ fontSize: 12, color: (c.dates_remaining ?? c.saldo_citas ?? 1) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }} title={c.opportunity_reason || ''}>
-                      🎟️ {c.dates_used || 0} de {c.plan_total_dates || 2} citas ({(c.dates_remaining ?? c.saldo_citas ?? 1) > 0 ? `${c.dates_remaining ?? c.saldo_citas ?? 1} disp.` : (c.opportunity_badge || 'Plan completado')})
-                    </div>
+                    <div style={{ fontWeight: 700 }}>{c.plan_tier || 'Sin plan'}</div>
+                    {(c.plan_total_dates > 0 && c.plan_tier && c.plan_tier !== 'Sin plan') ? (
+                      <div style={{ fontSize: 12, color: (c.dates_remaining ?? c.saldo_citas ?? 0) > 0 ? '#10B981' : '#F59E0B', fontWeight: 700 }} title={c.opportunity_reason || ''}>
+                        🎟️ {c.dates_used || 0} de {c.plan_total_dates} citas ({(c.dates_remaining ?? c.saldo_citas ?? 0) > 0 ? `${c.dates_remaining ?? c.saldo_citas ?? 0} disp.` : (c.opportunity_badge || 'Plan completado')})
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: isLight ? '#94A3B8' : 'var(--text-muted)', fontWeight: 600 }}>
+                        Sin saldo de citas
+                      </div>
+                    )}
                     {(c.opportunity_badge || c.opportunity_reason) && (
                       <div style={{
                         marginTop: 5,
@@ -3166,17 +3274,48 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
   const clientSummary = candidate.ai_client_summary || comparison.client_summary || null
   const candSummary = candidate.ai_candidate_summary || comparison.candidate_summary || null
 
-  const clientNonNeg = comparison.client_non_neg || client.non_negotiables || []
-  const candNonNeg = comparison.candidate_non_neg || candidate.non_negotiables || []
+  const clientWrittenNn = client.search_preferences?.partner_red_flags || client.partner_red_flags || []
+  const clientRawNonNeg = comparison.client_non_neg || client.non_negotiables || []
+  const clientNonNeg = [...(Array.isArray(clientRawNonNeg) ? clientRawNonNeg : [])]
+  if (Array.isArray(clientWrittenNn)) {
+    clientWrittenNn.forEach(w => {
+      const txt = typeof w === 'string' ? w.trim() : (w.texto || w.text || '').trim()
+      if (txt && !clientNonNeg.some(x => (typeof x === 'string' ? x : (x.texto || x.text || '')) === txt)) {
+        clientNonNeg.push({ texto: txt, tipo: 'escrito', verificar: true })
+      }
+    })
+  } else if (typeof clientWrittenNn === 'string' && clientWrittenNn.trim()) {
+    const txt = clientWrittenNn.trim()
+    if (!clientNonNeg.some(x => (typeof x === 'string' ? x : (x.texto || x.text || '')) === txt)) {
+      clientNonNeg.push({ texto: txt, tipo: 'escrito', verificar: true })
+    }
+  }
+
+  const candWrittenNn = candidate.search_preferences?.partner_red_flags || candidate.partner_red_flags || []
+  const candRawNonNeg = comparison.candidate_non_neg || candidate.non_negotiables || []
+  const candNonNeg = [...(Array.isArray(candRawNonNeg) ? candRawNonNeg : [])]
+  if (Array.isArray(candWrittenNn)) {
+    candWrittenNn.forEach(w => {
+      const txt = typeof w === 'string' ? w.trim() : (w.texto || w.text || '').trim()
+      if (txt && !candNonNeg.some(x => (typeof x === 'string' ? x : (x.texto || x.text || '')) === txt)) {
+        candNonNeg.push({ texto: txt, tipo: 'escrito', verificar: true })
+      }
+    })
+  } else if (typeof candWrittenNn === 'string' && candWrittenNn.trim()) {
+    const txt = candWrittenNn.trim()
+    if (!candNonNeg.some(x => (typeof x === 'string' ? x : (x.texto || x.text || '')) === txt)) {
+      candNonNeg.push({ texto: txt, tipo: 'escrito', verificar: true })
+    }
+  }
 
   const clientRedFlags = comparison.client_red_flags || client.search_preferences?.red_flags || []
   const candRedFlags = comparison.candidate_red_flags || candidate.red_flags || []
 
-  const clientAgePref = comparison.client_age_pref || (client.search_preferences?.min_age ? `${client.search_preferences.min_age} a ${client.search_preferences.max_age} años` : '20 a 26 años')
-  const candAgePref = comparison.candidate_age_pref || (candidate.search_preferences?.min_age ? `${candidate.search_preferences.min_age} a ${candidate.search_preferences.max_age} años` : 'No especificado')
+  const clientAgePref = comparison.client_age_pref || (client.search_preferences?.min_age ? `${client.search_preferences.min_age} a ${client.search_preferences.max_age} años` : '')
+  const candAgePref = comparison.candidate_age_pref || (candidate.search_preferences?.min_age ? `${candidate.search_preferences.min_age} a ${candidate.search_preferences.max_age} años` : '')
 
-  const clientHeightPref = comparison.client_height_pref || client.search_preferences?.preferred_height || 'Hasta 170 cm'
-  const candHeightPref = comparison.candidate_height_pref || candidate.search_preferences?.preferred_height || 'No especificado'
+  const clientHeightPref = comparison.client_height_pref || client.search_preferences?.preferred_height || ''
+  const candHeightPref = comparison.candidate_height_pref || candidate.search_preferences?.preferred_height || ''
 
   const hasBothSg = client.social_group_score != null && candidate.social_group_score != null
   const sgDiff = hasBothSg ? Math.abs(client.social_group_score - candidate.social_group_score).toFixed(1) : null
@@ -3617,8 +3756,8 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
               borderRadius: 24,
               boxShadow: candidate.compatibility_pct != null ? (isLight ? '0 2px 8px rgba(16, 185, 129, 0.15)' : '0 2px 10px rgba(16, 185, 129, 0.25)') : 'none'
             }}>
-              {(candidate.score ?? candidate.compatibility_pct) != null
-                ? `✨ ${candidate.score ?? candidate.compatibility_pct}% · ${candidate.veredicto || 'RECOMENDADO'}${(candidate.cobertura_pct ?? 0) < 100 && (candidate.cobertura_pct ?? 0) > 0 ? ` (parcial, cobertura ${candidate.cobertura_pct}%)` : (!candidate.datos_completos ? ' (Parcial)' : '')}`
+              {candidate.compatibility_pct != null
+                ? `✨ ${candidate.compatibility_pct}% Match ${!candidate.datos_completos ? '(Parcial)' : ''}`
                 : '⚠️ Sin datos suficientes'}
             </span>
             <button
@@ -3679,28 +3818,45 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
               </span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: t.nameAColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {client.plan_tier || 'Plan Estándar (2 citas)'}
+                  {client.plan_tier || 'Sin plan'}
                 </div>
               </div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <span style={{
-                fontSize: 11.5,
-                fontWeight: 800,
-                padding: '3px 8px',
-                borderRadius: 6,
-                background: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
-                color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24'),
-                border: `1px solid ${(client.dates_remaining ?? 1) > 0 ? (isLight ? '#86EFAC' : 'rgba(34, 197, 94, 0.3)') : (isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.3)')}`,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4
-              }}>
-                🎟️ {client.dates_used || 0} de {client.plan_total_dates || 2} citas realizadas
-              </span>
-              <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }}>
-                {(client.dates_remaining ?? 1) > 0 ? `Saldo: ${client.dates_remaining ?? 1} cita(s) disponible(s)` : '⚠️ Cupo completado'}
-              </div>
+              {(client.plan_total_dates > 0 && client.plan_tier && client.plan_tier !== 'Sin plan') ? (
+                <>
+                  <span style={{
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    background: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                    color: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24'),
+                    border: `1px solid ${(client.dates_remaining ?? 0) > 0 ? (isLight ? '#86EFAC' : 'rgba(34, 197, 94, 0.3)') : (isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.3)')}`,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    🎟️ {client.dates_used || 0} de {client.plan_total_dates} citas realizadas
+                  </span>
+                  <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }}>
+                    {(client.dates_remaining ?? 0) > 0 ? `Saldo: ${client.dates_remaining} cita(s) disponible(s)` : '⚠️ Cupo completado'}
+                  </div>
+                </>
+              ) : (
+                <span style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  background: isLight ? '#F1F5F9' : 'rgba(148, 163, 184, 0.1)',
+                  color: isLight ? '#94A3B8' : 'var(--text-muted)',
+                  border: isLight ? '1px solid #E2E8F0' : '1px solid rgba(148, 163, 184, 0.2)',
+                  display: 'inline-block'
+                }}>
+                  Sin plan contratado
+                </span>
+              )}
             </div>
           </div>
 
@@ -3729,30 +3885,47 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
               </span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: t.nameBColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {candidate.plan_tier || 'Plan Estándar (2 citas)'}
+                  {candidate.plan_tier || 'Sin plan'}
                 </div>
               </div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <span style={{
-                fontSize: 11.5,
-                fontWeight: 800,
-                padding: '3px 8px',
-                borderRadius: 6,
-                background: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
-                color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24'),
-                border: `1px solid ${(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#86EFAC' : 'rgba(34, 197, 94, 0.3)') : (isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.3)')}`,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4
-              }}>
-                🎟️ {candidate.dates_used || 0} de {candidate.plan_total_dates || 2} citas realizadas
-              </span>
-              <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }} title={candidate.opportunity_reason || ''}>
-                {(candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0
-                  ? `Saldo: ${candidate.dates_remaining ?? candidate.saldo_citas ?? 1} cita(s) disponible(s)`
-                  : (candidate.opportunity_badge ? `🌟 ${candidate.opportunity_badge}` : '⚠️ Cupo completado')}
-              </div>
+              {(candidate.plan_total_dates > 0 && candidate.plan_tier && candidate.plan_tier !== 'Sin plan') ? (
+                <>
+                  <span style={{
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    background: (candidate.dates_remaining ?? candidate.saldo_citas ?? 0) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                    color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 0) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24'),
+                    border: `1px solid ${(candidate.dates_remaining ?? candidate.saldo_citas ?? 0) > 0 ? (isLight ? '#86EFAC' : 'rgba(34, 197, 94, 0.3)') : (isLight ? '#FDE68A' : 'rgba(245, 158, 11, 0.3)')}`,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    🎟️ {candidate.dates_used || 0} de {candidate.plan_total_dates} citas realizadas
+                  </span>
+                  <div style={{ fontSize: 11, color: t.subtitleColor, marginTop: 2 }} title={candidate.opportunity_reason || ''}>
+                    {(candidate.dates_remaining ?? candidate.saldo_citas ?? 0) > 0
+                      ? `Saldo: ${candidate.dates_remaining ?? candidate.saldo_citas} cita(s) disponible(s)`
+                      : (candidate.opportunity_badge ? `🌟 ${candidate.opportunity_badge}` : '⚠️ Cupo completado')}
+                  </div>
+                </>
+              ) : (
+                <span style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  background: isLight ? '#F1F5F9' : 'rgba(148, 163, 184, 0.1)',
+                  color: isLight ? '#94A3B8' : 'var(--text-muted)',
+                  border: isLight ? '1px solid #E2E8F0' : '1px solid rgba(148, 163, 184, 0.2)',
+                  display: 'inline-block'
+                }}>
+                  Sin plan contratado
+                </span>
+              )}
             </div>
           </div>
 
@@ -3941,15 +4114,21 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                       {client.name}
                     </span>
                   </div>
-                  <span style={{ fontSize: 12, color: t.subAColor, fontWeight: 700 }}>
-                    Entrevistado
-                  </span>
+                  {client.has_interview ? (
+                    <span style={{ fontSize: 12, color: t.subAColor, fontWeight: 700 }}>
+                      Entrevistado
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 12, color: isLight ? '#94A3B8' : 'var(--text-muted)', fontWeight: 600 }}>
+                      Sin entrevista registrada
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ fontSize: 12, color: t.subtitleColor, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   <span>🎂 {client.age || '—'} años</span>
                   <span>💼 {client.occupation || 'Profesional'}</span>
-                  <span>📏 {client.estatura || '178 cm'}</span>
+                  <span>📏 {client.estatura ? `${client.estatura}${String(client.estatura).includes('cm') ? '' : ' cm'}` : 'Estatura no reg.'}</span>
                   <span>📍 {client.city}</span>
                 </div>
 
@@ -3966,21 +4145,25 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                   flexWrap: 'wrap'
                 }}>
                   <span style={{ fontWeight: 800, color: t.nameAColor }}>🎟️ Plan:</span>
-                  <span style={{ color: t.titleColor, fontWeight: 700 }}>{client.plan_tier || 'Estándar'}</span>
-                  <span style={{ color: t.subtitleColor }}>•</span>
-                  <b style={{ color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
-                    {client.dates_used || 0} de {client.plan_total_dates || 2} citas realizadas
-                  </b>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    background: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
-                    color: (client.dates_remaining ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24')
-                  }}>
-                    {(client.dates_remaining ?? 1) > 0 ? `${client.dates_remaining ?? 1} disp.` : 'Cumplido'}
-                  </span>
+                  <span style={{ color: t.titleColor, fontWeight: 700 }}>{client.plan_tier || 'Sin plan'}</span>
+                  {(client.plan_total_dates > 0 && client.plan_tier && client.plan_tier !== 'Sin plan') ? (
+                    <>
+                      <span style={{ color: t.subtitleColor }}>•</span>
+                      <b style={{ color: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
+                        {client.dates_used || 0} de {client.plan_total_dates} citas realizadas
+                      </b>
+                      <span style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#DCFCE7' : 'rgba(34, 197, 94, 0.15)') : (isLight ? '#FEF3C7' : 'rgba(245, 158, 11, 0.15)'),
+                        color: (client.dates_remaining ?? 0) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24')
+                      }}>
+                        {(client.dates_remaining ?? 0) > 0 ? `${client.dates_remaining} disp.` : 'Cumplido'}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
 
                 {/* Notas Clínicas de Persona A */}
@@ -4135,19 +4318,31 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                   </div>
                   {clientNonNeg.length > 0 ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {clientNonNeg.map((nn, i) => (
-                        <span key={i} style={{
-                          fontSize: 12,
-                          color: t.nonNegTagColor,
-                          background: t.nonNegTagBg,
-                          border: t.nonNegTagBorder,
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          fontWeight: 600
-                        }}>
-                          ✓ {typeof nn === 'string' ? nn : (nn.texto || nn.text || '')}
-                        </span>
-                      ))}
+                      {clientNonNeg.map((nn, i) => {
+                        const isWritten = typeof nn === 'object' ? (nn.tipo === 'escrito' || nn.verificar) : (typeof nn === 'string' && nn.length > 30);
+                        const labelText = typeof nn === 'string' ? nn : (nn.texto || nn.text || '');
+                        return (
+                          <span key={i} style={{
+                            fontSize: 12,
+                            color: isWritten ? '#D97706' : t.nonNegTagColor,
+                            background: isWritten ? (isLight ? '#FFFBEB' : 'rgba(245, 158, 11, 0.12)') : t.nonNegTagBg,
+                            border: isWritten ? (isLight ? '1px solid #FCD34D' : '1px solid rgba(245, 158, 11, 0.3)') : t.nonNegTagBorder,
+                            padding: '3px 8px',
+                            borderRadius: 4,
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5
+                          }}>
+                            {isWritten ? '⚠️' : '✓'} {labelText}
+                            {isWritten && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#B45309', marginLeft: 4 }}>
+                                (verificar con la candidata)
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   ) : (
                     <span style={{ fontSize: 12, color: t.subtitleColor }}>Sin dealbreakers específicos registrados</span>
@@ -4201,7 +4396,7 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                   </div>
                   <div style={{ fontSize: 12, color: t.prefsText, lineHeight: 1.5 }}>
                     <div>• <b>Rango de Edad:</b> {clientAgePref}</div>
-                    <div>• <b>Estatura Deseada:</b> {clientHeightPref}</div>
+                    {clientHeightPref ? <div>• <b>Estatura Deseada:</b> {clientHeightPref}</div> : null}
                   </div>
                 </div>
 
@@ -4315,7 +4510,7 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                       color: isLight ? '#065F46' : '#34D399',
                       border: `1px solid ${isLight ? '#A7F3D0' : 'rgba(16, 185, 129, 0.4)'}`
                     }}>
-                      {candidate.score ?? candidate.compatibility_pct ?? candidate.overall_match_score}% · {candidate.veredicto || 'Match Clínico'}
+                      {candidate.overall_match_score || 92}% Match Clínico
                     </span>
                   </div>
 
@@ -4430,11 +4625,15 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                   flexWrap: 'wrap'
                 }}>
                   <span style={{ fontWeight: 800, color: t.nameBColor }}>🎟️ Plan:</span>
-                  <span style={{ color: t.titleColor, fontWeight: 700 }}>{candidate.plan_tier || 'Estándar'}</span>
-                  <span style={{ color: t.subtitleColor }}>•</span>
-                  <b style={{ color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 1) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
-                    {candidate.dates_used || 0} de {candidate.plan_total_dates || 2} citas realizadas
-                  </b>
+                  <span style={{ color: t.titleColor, fontWeight: 700 }}>{candidate.plan_tier || 'Sin plan'}</span>
+                  {(candidate.plan_total_dates > 0 && candidate.plan_tier && candidate.plan_tier !== 'Sin plan') ? (
+                    <>
+                      <span style={{ color: t.subtitleColor }}>•</span>
+                      <b style={{ color: (candidate.dates_remaining ?? candidate.saldo_citas ?? 0) > 0 ? (isLight ? '#166534' : '#4ADE80') : (isLight ? '#92400E' : '#FBBF24') }}>
+                        {candidate.dates_used || 0} de {candidate.plan_total_dates} citas realizadas
+                      </b>
+                    </>
+                  ) : null}
                   <span
                     style={{
                       fontSize: 11,
@@ -4668,7 +4867,7 @@ function MatchAnalysisModal({ candidate, client, onClose, onApprove, onNotifyCsU
                   </div>
                   <div style={{ fontSize: 12, color: t.prefsText, lineHeight: 1.5 }}>
                     <div>• <b>Rango de Edad:</b> {candAgePref}</div>
-                    <div>• <b>Estatura Deseada:</b> {candHeightPref}</div>
+                    {candHeightPref ? <div>• <b>Estatura Deseada:</b> {candHeightPref}</div> : null}
                   </div>
                 </div>
 

@@ -152,10 +152,11 @@ def is_vip_plan(plan_str: Optional[str]) -> bool:
 
 def clean_plan_name(plan_str: Optional[str]) -> str:
     """
-    Sanitiza nombres de planes con errores tipográficos o de codificación (ej. 'B??sico 40k').
+    Sanitiza nombres de planes con errores tipográficos o de codificación.
+    Si el plan está vacío o no contratado, retorna 'Sin plan'.
     """
-    if not plan_str or not str(plan_str).strip():
-        return "Estándar 65k (2 citas)"
+    if not plan_str or not str(plan_str).strip() or str(plan_str).strip().lower() in ("sin plan", "none", "null", "no plan"):
+        return "Sin plan"
     s = str(plan_str).strip()
     s = re.sub(r'b\?+sico', 'Básico', s, flags=re.IGNORECASE)
     s = re.sub(r'est\?+ndar', 'Estándar', s, flags=re.IGNORECASE)
@@ -169,10 +170,13 @@ def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
     - Premium (150k) -> 3 slots
     - Estándar (65k / 98k) -> 2 slots
     - Básico (40k) -> 1 slot
+    - Sin plan -> 0 slots
     """
     if not plan_str or not str(plan_str).strip():
-        return 2
+        return 0
     p = clean_plan_name(plan_str).lower().strip()
+    if p in ("sin plan", "none", "null", "no plan"):
+        return 0
     m = re.search(r'(\d+)\s*citas?', p)
     if m:
         try:
@@ -191,7 +195,7 @@ def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
         return 2
     elif "40k" in p or "básico" in p or "basico" in p:
         return 1
-    return 2
+    return 0
 
 CONFIRMATION_OPTIONS = [
     "Pendiente", "Listo para escribir", "No contesta", "De viaje",
@@ -1285,6 +1289,15 @@ async def _sync_crm_id_from_webhooks(crm_id: str, db: AsyncSession):
         if pers_rf:
             sp_new["personal_red_flags"] = pers_rf
         part_rf = _choice_list(merged.get("prof_242")) or _choice_list(merged.get("prof_243"))
+        p242_val = merged.get("prof_242")
+        if p242_val:
+            p242_txt = str(p242_val).strip()
+            if p242_txt and p242_txt not in (part_rf or []):
+                part_rf = (part_rf or []) + [p242_txt]
+            if "non_negotiables" not in sp_new:
+                sp_new["non_negotiables"] = []
+            if isinstance(sp_new["non_negotiables"], list) and p242_txt not in sp_new["non_negotiables"]:
+                sp_new["non_negotiables"].append(p242_txt)
         if part_rf:
             sp_new["partner_red_flags"] = part_rf
         sp_new = {k: v for k, v in sp_new.items() if v is not None and v != "" and v != []}
@@ -11936,17 +11949,20 @@ async def find_candidate_matches_engine(
         datos_completos = (len(missing_fields) == 0 and completeness_ratio >= 0.85)
 
         # 6. Saldo de citas Persona B (calculado dinámicamente desde cand_used_map multi-origen)
-        cand_plan = clean_plan_name(r.plan_tier or "Estándar 65k (2 citas)")
-        cand_slots_total = get_slots_by_plan(cand_plan) or 2
+        cand_plan = clean_plan_name(r.plan_tier)
+        cand_slots_total = get_slots_by_plan(cand_plan) or 0
         raw_cand_used = cand_used_map.get(r.id, 0)
-        cand_used = min(raw_cand_used, cand_slots_total)
-        saldo_citas_b = max(0, cand_slots_total - raw_cand_used)
+        cand_used = min(raw_cand_used, cand_slots_total) if cand_slots_total > 0 else 0
+        saldo_citas_b = max(0, cand_slots_total - raw_cand_used) if cand_slots_total > 0 else 0
 
         opportunity_badge = None
         opportunity_reason = None
-        if saldo_citas_b <= 0:
+        if cand_slots_total > 0 and saldo_citas_b <= 0:
             opportunity_badge = "Oportunidad Comercial / Cumplimiento"
             opportunity_reason = f"Persona B ({cand_name}) ya usó sus {cand_slots_total} citas del plan ({raw_cand_used} registradas) — antes de aprobar la cita, confirmar con ella/él si desea pagar por una cita adicional."
+        elif cand_slots_total == 0:
+            opportunity_badge = "Sin Plan Activo"
+            opportunity_reason = f"Persona B ({cand_name}) no tiene plan de citas contratado — registrar plan antes de formalizar cita."
 
         strengths = []
         if cand_sg is not None and client_sg is not None:
@@ -12012,6 +12028,13 @@ async def find_candidate_matches_engine(
                     if txt.strip():
                         cand_clean_non_neg.append(txt.strip())
                 elif isinstance(item, str) and item.strip():
+                    cand_clean_non_neg.append(item.strip())
+        cand_prf = cand_sp.get("partner_red_flags") or []
+        if isinstance(cand_prf, str) and cand_prf.strip() and cand_prf.strip() not in cand_clean_non_neg:
+            cand_clean_non_neg.append(cand_prf.strip())
+        elif isinstance(cand_prf, list):
+            for item in cand_prf:
+                if isinstance(item, str) and item.strip() and item.strip() not in cand_clean_non_neg:
                     cand_clean_non_neg.append(item.strip())
 
         cand_nn_list = cand_clean_non_neg
@@ -12562,6 +12585,27 @@ async def get_interview_results(
     ext_row = ext_res.fetchone()
     ext_data = dict(ext_row._mapping) if ext_row else {}
 
+    # Verificación de entrevista registrada para Persona A (D.2)
+    has_interview_check = await db.execute(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM interview_appointments
+            WHERE user_id = :uid AND (
+                status IN ('REALIZADA', 'COMPLETADA', 'FINALIZADA')
+                OR (transcript_text IS NOT NULL AND TRIM(transcript_text) != '')
+                OR (quick_notes_ai IS NOT NULL AND TRIM(quick_notes_ai) != '')
+            )
+        ) OR EXISTS (
+            SELECT 1 FROM client_extended_profile
+            WHERE user_id = :uid AND (
+                (synthesis_who_really_is IS NOT NULL AND TRIM(synthesis_who_really_is) != '')
+                OR (first_impression IS NOT NULL AND TRIM(first_impression) != '')
+            )
+        ) OR (
+            :bio IS NOT NULL AND LENGTH(TRIM(:bio)) > 40
+        )
+    """), {"uid": uid, "bio": prof_row.bio_notes if prof_row and prof_row.bio_notes else ""})
+    has_interview_a = bool(has_interview_check.scalar())
+
     # REGLA ESTRICTA (ciudad): tras intentar la recuperación real desde el CRM, si la ciudad
     # sigue sin poder determinarse, NO se asume "Bogotá" ni ninguna otra ciudad por defecto —
     # se deja vacía y el motor de matching bloqueará el proceso pidiendo completar el dato.
@@ -12648,6 +12692,13 @@ async def get_interview_results(
                     clean_client_non_neg.append(txt.strip())
             elif isinstance(item, str) and item.strip():
                 clean_client_non_neg.append(item.strip())
+        client_prf = prof_row.search_preferences.get("partner_red_flags") or []
+        if isinstance(client_prf, str) and client_prf.strip() and client_prf.strip() not in clean_client_non_neg:
+            clean_client_non_neg.append(client_prf.strip())
+        elif isinstance(client_prf, list):
+            for item in client_prf:
+                if isinstance(item, str) and item.strip() and item.strip() not in clean_client_non_neg:
+                    clean_client_non_neg.append(item.strip())
 
     # URL canónica de SmartMatchApp para el cliente entrevistado
     clean_user_cid = str(user_row.crm_id or "").strip()
@@ -12657,8 +12708,8 @@ async def get_interview_results(
         client_crm_url = f"https://dailylover.smartmatchapp.com/#!/clients?search={quote(user_row.name or '')}"
 
     # Balance de citas del plan para Persona A (Cliente Entrevistado)
-    client_plan = clean_plan_name(prof_row.plan_tier if prof_row and prof_row.plan_tier else "Estándar 65k (2 citas)")
-    client_slots_total = get_slots_by_plan(client_plan) or 2
+    client_plan = clean_plan_name(prof_row.plan_tier if prof_row and prof_row.plan_tier else "")
+    client_slots_total = get_slots_by_plan(client_plan) or 0
     res_used_a = await db.execute(text("""
         SELECT COUNT(DISTINCT m.id)
         FROM operational_matches m
@@ -12684,8 +12735,8 @@ async def get_interview_results(
         "name": user_row.name or ""
     })
     raw_client_used = res_used_a.scalar() or 0
-    client_used = min(raw_client_used, client_slots_total)
-    client_saldo = max(0, client_slots_total - client_used)
+    client_used = min(raw_client_used, client_slots_total) if client_slots_total > 0 else 0
+    client_saldo = max(0, client_slots_total - client_used) if client_slots_total > 0 else 0
 
     client_summary = {
         "user_id": user_row.id,
@@ -12706,6 +12757,7 @@ async def get_interview_results(
         "dates_used": client_used,
         "dates_remaining": client_saldo,
         "saldo_citas": client_saldo,
+        "has_interview": has_interview_a,
         "responsable": prof_row.responsable if prof_row and prof_row.responsable else (ext_data.get("updated_by") or "Psicóloga"),
         "attachment_style": client_attachment,
         "attachment_source": client_attachment_source,
