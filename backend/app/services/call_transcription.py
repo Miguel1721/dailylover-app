@@ -52,13 +52,52 @@ def _gemini_transcribe(path: Path) -> List[Dict[str, Any]]:
     if not key:
         raise RuntimeError("Falta GEMINI_API_KEY")
     data = path.read_bytes()
-    if len(data) > MAX_INLINE_BYTES:
-        raise RuntimeError(f"Audio de {len(data) // 1048576} MB: supera el límite de envío directo (falta partirlo)")
     mime = "audio/webm" if path.suffix == ".webm" else ("audio/wav" if path.suffix == ".wav" else "audio/mpeg")
+    subido = None
+    if len(data) > MAX_INLINE_BYTES:
+        subido = _subir_archivo(data, mime, key)          # audios largos: se suben como archivo y se borran al terminar
+        audio_part = {"file_data": {"mime_type": mime, "file_uri": subido["uri"]}}
+    else:
+        audio_part = {"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}}
     body = {
-        "contents": [{"parts": [{"inline_data": {"mime_type": mime, "data": base64.b64encode(data).decode()}}, {"text": PROMPT}]}],
+        "contents": [{"parts": [audio_part, {"text": PROMPT}]}],
         "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
     }
+    try:
+        return _generar(body, key)
+    finally:
+        if subido:
+            try:
+                urllib.request.urlopen(urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/{subido['name']}",
+                                                              method="DELETE", headers={"x-goog-api-key": key}), timeout=30)
+            except Exception:
+                logger.warning("No se pudo borrar el archivo temporal %s en Gemini", subido.get("name"))
+
+
+def _subir_archivo(data: bytes, mime: str, key: str) -> Dict[str, Any]:
+    import time
+    ini = urllib.request.Request("https://generativelanguage.googleapis.com/upload/v1beta/files", method="POST",
+        data=json.dumps({"file": {"display_name": "entrevista"}}).encode(),
+        headers={"x-goog-api-key": key, "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start",
+                 "X-Goog-Upload-Header-Content-Length": str(len(data)), "X-Goog-Upload-Header-Content-Type": mime,
+                 "Content-Type": "application/json"})
+    with urllib.request.urlopen(ini, timeout=60) as r:
+        url = r.headers.get("x-goog-upload-url")
+    up = urllib.request.Request(url, method="POST", data=data, headers={"X-Goog-Upload-Command": "upload, finalize",
+                                "X-Goog-Upload-Offset": "0", "Content-Length": str(len(data))})
+    with urllib.request.urlopen(up, timeout=600) as r:
+        f = json.loads(r.read().decode())["file"]
+    for _ in range(60):                                   # esperar a que el archivo quede listo
+        if f.get("state") in (None, "ACTIVE"):
+            return f
+        time.sleep(3)
+        with urllib.request.urlopen(urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/{f['name']}",
+                                                           headers={"x-goog-api-key": key}), timeout=30) as r:
+            f = json.loads(r.read().decode())
+    raise RuntimeError("Gemini no terminó de procesar el audio subido")
+
+
+def _generar(body: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
     req = urllib.request.Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent",
         data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key})

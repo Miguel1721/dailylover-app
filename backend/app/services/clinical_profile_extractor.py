@@ -141,6 +141,9 @@ def get_metro_cluster(city: Optional[str]) -> Optional[str]:
     if not city:
         return None
     c = normalize_text_unaccent(city).replace('?', 'a')
+    # Abreviaturas que escriben las psicólogas en la hoja ("bog", "bgta", "med"…)
+    c = {"bog": "bogota", "bgta": "bogota", "bta": "bogota", "med": "medellin", "mde": "medellin",
+         "bq": "barranquilla", "baq": "barranquilla", "ctg": "cartagena", "bga": "bucaramanga"}.get(c.strip(), c)
     if any(k in c for k in ["medell", "itagui", "itaguei", "envigado", "sabaneta", "bello", "estrella", "rionegro", "poblado", "laureles"]):
         return "medellin_metro"
     if any(k in c for k in ["bogot", "chia", "cajica", "cota", "soacha", "zipaquira", "engativa", "suba", "cedritos", "chapinero", "colina", "usaquen"]):
@@ -722,8 +725,8 @@ class ClinicalProfileExtractor:
                     f"Incompatibilidad crítica en mascotas: {p_a.get('name')} exige fascinación por los perros/convive con perro, y {p_b.get('name')} declara que no le gustan las mascotas."
                 )
             elif not m_b.get("datos_mascotas_verificados"):
-                reasons.append(
-                    f"Descarte por no-negociable no verificable: {p_a.get('name')} convive con perro y exige fascinación por los animales; la ficha de {p_b.get('name')} no tiene verificada su afinidad con mascotas."
+                warnings.append(
+                    f"Verificar antes de proponer: {p_a.get('name')} convive con perro y exige fascinación por los animales; la ficha de {p_b.get('name')} no tiene verificada su afinidad con mascotas."
                 )
 
         if m_a.get("rechaza_mascotas"):
@@ -793,13 +796,13 @@ class ClinicalProfileExtractor:
             if h_b.get("tiene_hijos"):
                 reasons.append(f"Fricción de hijos: {p_a.get('name')} tiene como red flag parejas con hijos, y {p_b.get('name')} tiene hijos.")
             elif not h_b.get("datos_hijos_verificados"):
-                reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} tiene como innegociable no salir con parejas que ya tengan hijos, y la ficha de {p_b.get('name')} no especifica si tiene hijos.")
+                warnings.append(f"Verificar antes de proponer: {p_a.get('name')} tiene como innegociable no salir con parejas que ya tengan hijos, y la ficha de {p_b.get('name')} no especifica si tiene hijos.")
 
         if h_a.get("quiere_hijos"):
             if h_b.get("vasectomia") or h_b.get("no_quiere_hijos"):
                 reasons.append(f"Planes familiares opuestos: {p_a.get('name')} desea tener hijos y {p_b.get('name')} tiene vasectomía / no desea hijos.")
             elif not h_b.get("datos_hijos_verificados"):
-                reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} tiene como innegociable formar una familia con hijos, y la ficha de {p_b.get('name')} no tiene registrada su postura frente a tener hijos.")
+                warnings.append(f"Verificar antes de proponer: {p_a.get('name')} tiene como innegociable formar una familia con hijos, y la ficha de {p_b.get('name')} no tiene registrada su postura frente a tener hijos.")
 
         # 4. REGLA VICIOS / FUMADORES
         v_a = p_a.get("vicios", {})
@@ -809,7 +812,7 @@ class ClinicalProfileExtractor:
             if v_b.get("consume_nicotina"):
                 reasons.append(f"Red flag de sustancias: {p_a.get('name')} rechaza fumadores/vicios y {p_b.get('name')} fuma/vapea.")
             elif not v_b.get("datos_sustancias_verificados"):
-                reasons.append(f"Descarte por no-negociable no verificable: {p_a.get('name')} exige pareja no fumadora / sin vicios, y la ficha de {p_b.get('name')} no cuenta con datos verificados sobre consumo de sustancias.")
+                warnings.append(f"Verificar antes de proponer: {p_a.get('name')} exige pareja no fumadora / sin vicios, y la ficha de {p_b.get('name')} no cuenta con datos verificados sobre consumo de sustancias.")
 
         # 5. HISTORIAL PREVIO (informativo clínico; el descarte vinculante por cita física realizada lo realiza matchmaking engine con had_date=true)
         hist_a = p_a.get("historial", {}).get("past_matched_names", [])
@@ -828,8 +831,8 @@ class ClinicalProfileExtractor:
 
         if cluster_a:
             if not city_b or city_b.strip().lower() in ("no especificada", "none", ""):
-                reasons.append(
-                    f"Descarte por no-negociable no verificable: {p_a.get('name')} reside en {city_a} y {p_b.get('name')} no tiene ciudad de residencia registrada para coordinar cita presencial."
+                warnings.append(
+                    f"Verificar antes de proponer: {p_a.get('name')} reside en {city_a} y {p_b.get('name')} no tiene ciudad de residencia registrada para coordinar cita presencial."
                 )
             elif cluster_b and cluster_a != cluster_b:
                 reasons.append(
@@ -847,8 +850,8 @@ class ClinicalProfileExtractor:
         # Validación de Persona B evaluada contra los límites de Persona A
         if min_pref_a is not None or max_pref_a is not None:
             if not age_b or age_b == 0:
-                reasons.append(
-                    f"Descarte por no-negociable no verificable: {p_a.get('name')} exige rango de edad específico ({min_pref_a or 18} a {max_pref_a or 99} años), y {p_b.get('name')} no tiene edad registrada."
+                warnings.append(
+                    f"Verificar antes de proponer: {p_a.get('name')} exige rango de edad específico ({min_pref_a or 18} a {max_pref_a or 99} años), y {p_b.get('name')} no tiene edad registrada."
                 )
             else:
                 if min_pref_a is not None and age_b < min_pref_a:

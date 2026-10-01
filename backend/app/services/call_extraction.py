@@ -234,3 +234,22 @@ async def apply_proposal(db: AsyncSession, prop, valor: Any, actor: str) -> None
         raise RuntimeError(f"Destino no soportado: {prop.destino}")
     await db.execute(text("""INSERT INTO profile_field_changes (user_id, target, old_value, new_value, source, kind)
         VALUES (:u, :t, :o, :n, :s, 'entrevista')"""), {"u": user_id, "t": prop.destino, "o": prop.valor_actual or "", "n": v_json[:2000], "s": f"llamada_{prop.session_id}:{actor}"})
+
+
+
+async def cargar_verificados(db: AsyncSession, user_ids) -> Dict[int, Dict[str, Any]]:
+    """{user_id: {campo: valor}} con lo último aprobado/editado por la psicóloga en entrevistas."""
+    ids = sorted({int(u) for u in user_ids if u})
+    if not ids:
+        return {}
+    try:
+        rows = (await db.execute(text("""SELECT DISTINCT ON (user_id, campo) user_id, campo, valor_final
+            FROM profile_field_proposals WHERE user_id = ANY(:ids) AND estado IN ('APROBADA', 'EDITADA')
+            ORDER BY user_id, campo, revisado_at DESC"""), {"ids": ids})).fetchall()
+    except Exception:
+        await db.rollback()
+        return {}
+    out: Dict[int, Dict[str, Any]] = {}
+    for uid, campo, val in rows:
+        out.setdefault(uid, {})[campo] = val
+    return out

@@ -33,7 +33,14 @@ def norm_city(c: Any) -> Optional[str]:
     """'BogotÁ', 'Bogota', 'Bogotá D.C.', 'Bogota, Colina Campestre' -> 'bogota'."""
     t = _n(str(c or "").split(",")[0])
     t = re.sub(r"\b(d c|dc|distrito capital)\b", "", t).strip()
-    return t or None
+    return ABREV_CIUDAD.get(t, t) or None
+
+
+# Abreviaturas que escriben las psicólogas en la hoja.
+ABREV_CIUDAD = {"bog": "bogota", "bgta": "bogota", "bta": "bogota", "bogota dc": "bogota",
+                "med": "medellin", "mde": "medellin", "medallo": "medellin", "bq": "barranquilla", "baq": "barranquilla",
+                "barranquila": "barranquilla", "ctg": "cartagena", "bga": "bucaramanga", "bucara": "bucaramanga",
+                "per": "pereira", "smr": "santa marta", "mia": "miami", "mad": "madrid", "cdmx": "ciudad de mexico"}
 
 
 def _gender(g: Any) -> Optional[str]:
@@ -294,3 +301,29 @@ def canonical_to_score_input(canon: Optional[Dict[str, Any]] = None, p_row: Opti
         "rumba": rumba,
         "educacion": educacion,
     }
+
+
+
+# Datos verificados por la psicóloga en la entrevista (aprobados o editados): mandan sobre el formulario del CRM.
+MAPA_ENTREVISTA = {
+    "wants_children": "deseo_hijos", "fitness_level": "deporte_nivel", "values": "valores", "attachment_style": "estilo_apego",
+    "love_language_received": "lenguaje_amor", "smoker": "fumador", "drinks_alcohol": "alcohol", "rumba": "rumba",
+    "min_age": "edad_min", "max_age": "edad_max", "preferred_gender": "genero_buscado",
+}
+
+
+def aplicar_verificados(inp: Dict[str, Any], verificados: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not verificados:
+        return inp
+    out = dict(inp)
+    usados = []
+    for campo, valor in verificados.items():
+        clave = MAPA_ENTREVISTA.get(campo)
+        if not clave or valor in (None, "", []):
+            continue
+        if clave == "valores" and isinstance(valor, str):
+            valor = [x.strip() for x in re.split(r"[,;|]", valor) if x.strip()]
+        out[clave] = valor
+        usados.append(clave)
+    out["verificado_en_entrevista"] = usados
+    return out

@@ -41,7 +41,7 @@ from app.services.clinical_profile_extractor import (
     MALE_NAME_TOKENS,
     normalize_text_unaccent
 )
-from app.services.match_score import unified_score, norm_city, canonical_to_score_input, _yes_no as _yes_no_ms
+from app.services.match_score import unified_score, norm_city, canonical_to_score_input, _yes_no as _yes_no_ms, aplicar_verificados
 from app.services.psychologist_helper import (
     build_psychologist_sql_condition,
     get_psychologist_aliases,
@@ -2654,6 +2654,8 @@ async def get_approval_queue(
             logger.warning(f"Error calculating dates_used_map in approval_queue: {e_sd}")
 
     queue = []
+    from app.services.call_extraction import cargar_verificados
+    VERIF_Q = await cargar_verificados(db, [getattr(r, "u_a_id", None) for r in rows] + [getattr(r, "u_b_id", None) for r in rows])
     for r in rows:
         d = dict(r._mapping)
 
@@ -2670,32 +2672,34 @@ async def get_approval_queue(
         # Cálculo ÚNICO de compatibilidad Daily Lover (unified_score)
         canon_a = canonical_to_score_input(p_row={
             "name": d.get("person_a"),
-            "gender": d.get("pA_gender"),
+            "gender": d.get("pa_gender"),
             "age": d.get("person_a_age"),
             "city": d.get("person_a_city") or d.get("city"),
             "occupation": d.get("person_a_occupation"),
-            "lifestyle": d.get("pA_lifestyle"),
-            "search_preferences": d.get("pA_search_preferences"),
-            "apego": d.get("pA_apego"),
-            "education": d.get("pA_education"),
-            "love_language": d.get("pA_love_language"),
-            "estatura": d.get("pA_estatura"),
-            "valores": d.get("pA_valores")
+            "lifestyle": d.get("pa_lifestyle"),
+            "search_preferences": d.get("pa_search_preferences"),
+            "apego": d.get("pa_apego"),
+            "education": d.get("pa_education"),
+            "love_language": d.get("pa_love_language"),
+            "estatura": d.get("pa_estatura"),
+            "valores": d.get("pa_valores")
         })
         canon_b = canonical_to_score_input(p_row={
             "name": d.get("person_b"),
-            "gender": d.get("pB_gender"),
+            "gender": d.get("pb_gender"),
             "age": d.get("person_b_age"),
             "city": d.get("person_b_city") or d.get("city"),
             "occupation": d.get("person_b_occupation"),
-            "lifestyle": d.get("pB_lifestyle"),
-            "search_preferences": d.get("pB_search_preferences"),
-            "apego": d.get("pB_apego"),
-            "education": d.get("pB_education"),
-            "love_language": d.get("pB_love_language"),
-            "estatura": d.get("pB_estatura"),
-            "valores": d.get("pB_valores")
+            "lifestyle": d.get("pb_lifestyle"),
+            "search_preferences": d.get("pb_search_preferences"),
+            "apego": d.get("pb_apego"),
+            "education": d.get("pb_education"),
+            "love_language": d.get("pb_love_language"),
+            "estatura": d.get("pb_estatura"),
+            "valores": d.get("pb_valores")
         })
+        canon_a = aplicar_verificados(canon_a, VERIF_Q.get(d.get("u_a_id")))
+        canon_b = aplicar_verificados(canon_b, VERIF_Q.get(d.get("u_b_id")))
         score_eval = unified_score(canon_a, canon_b)
         calc_score = score_eval.get("score") if score_eval.get("score") is not None else 75
         calc_verdict = score_eval.get("veredicto") or "RECOMENDADO"
@@ -6634,8 +6638,8 @@ def build_canonical_profile(
 
 
 def compare_canonical_profiles(p_a: Dict[str, Any], p_b: Dict[str, Any]) -> Dict[str, Any]:
-    input_a = canonical_to_score_input(p_a)
-    input_b = canonical_to_score_input(p_b)
+    input_a = aplicar_verificados(canonical_to_score_input(p_a), p_a.get("verificados"))
+    input_b = aplicar_verificados(canonical_to_score_input(p_b), p_b.get("verificados"))
     u_score = unified_score(input_a, input_b)
 
     bloqueos = list(u_score["bloqueos"])
@@ -7409,6 +7413,10 @@ async def check_compatibility(payload: CheckCompatibilityRequest, db: AsyncSessi
             pass
 
         # Comparación determinística canónica
+        from app.services.call_extraction import cargar_verificados
+        _vf = await cargar_verificados(db, [meta_a.get("user_id"), meta_b.get("user_id")])
+        canon_a["verificados"] = _vf.get(meta_a.get("user_id"), {})
+        canon_b["verificados"] = _vf.get(meta_b.get("user_id"), {})
         comp_result = compare_canonical_profiles(canon_a, canon_b)
 
         # Integrar bloqueos factuales a issues
@@ -12345,7 +12353,9 @@ async def find_candidate_matches_engine(
     discarded_matches = []
     seen_names = set()
     capped_candidates = []
-    input_client = canonical_to_score_input(None, client_summary)
+    from app.services.call_extraction import cargar_verificados
+    VERIF_E = await cargar_verificados(db, [client_summary.get("user_id")] + [getattr(r, "id", None) for r in candidate_rows])
+    input_client = aplicar_verificados(canonical_to_score_input(None, client_summary), VERIF_E.get(client_summary.get("user_id")))
 
     for r in candidate_rows:
         cand_name = (r.name or "").strip()
@@ -13148,7 +13158,7 @@ async def find_candidate_matches_engine(
             })
             continue
 
-        input_cand = canonical_to_score_input(None, r)
+        input_cand = aplicar_verificados(canonical_to_score_input(None, r), VERIF_E.get(getattr(r, "id", None)))
         u_cand = unified_score(input_client, input_cand)
         cand_score = u_cand["score"]
         cand_veredicto = u_cand["veredicto"]
