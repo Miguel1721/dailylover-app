@@ -295,8 +295,8 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
   ]
 
   const psycNavItems = [
-    { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa' },
     { to: '/matchmaking/profiles', icon: Sparkles, label: 'Profiles (ingreso)' },
+    { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa' },
     { to: '/matchmaking/calendario', icon: Calendar, label: '📅 Mis Turnos' },
     { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevistas' },
     { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' }
@@ -321,13 +321,13 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
       title: '💘 Matchmaking',
       visible: true,
       items: [
+        { to: '/matchmaking/profiles', icon: FileSpreadsheet, label: '📋 PROFILES (Ingreso)' },
         { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa (Psicóloga)' },
         { to: '/matchmaking/mis-matches', icon: Heart, label: '💖 Matches Psicólogas (Admin)' },
         { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar (María)' },
         { to: '/matchmaking/calendario', icon: Calendar, label: '🗓️ Calendario & Turnos' },
         { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' },
         { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' },
-        { to: '/matchmaking/profiles', icon: FileSpreadsheet, label: '📋 PROFILES (Ingreso)' },
         { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
         { to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' },
         { to: '/matchmaking/prioritarios', icon: Flame, label: '🔥 Prioritarios (15+ días)' },
