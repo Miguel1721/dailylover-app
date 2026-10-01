@@ -38,7 +38,9 @@ import asyncpg
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
-TARGET_DB = "dailylover_ensayo"
+# Por defecto, copia de ensayo. Para el corte real: REBUILD_TARGET_DB=dailylover y REBUILD_CONFIRM=CORTE-2026-10-10
+TARGET_DB = os.environ.get("REBUILD_TARGET_DB", "dailylover_ensayo")
+CONFIRM_PROD = os.environ.get("REBUILD_CONFIRM") == "CORTE-2026-10-10"
 DB_HOST = "dl_postgres"
 DB_PORT = 5432
 DB_USER = "postgres"
@@ -365,8 +367,8 @@ async def main():
     print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
     print("=" * 80)
 
-    if TARGET_DB != "dailylover_ensayo":
-        print(f"[FATAL] La base de datos configurada es {TARGET_DB}. DEBE ser dailylover_ensayo.")
+    if TARGET_DB not in ("dailylover_ensayo", "dailylover") or (TARGET_DB == "dailylover" and not CONFIRM_PROD):
+        print(f"[FATAL] Base {TARGET_DB} no permitida. Producción solo con REBUILD_CONFIRM=CORTE-2026-10-10.")
         sys.exit(1)
 
     conn = await asyncpg.connect(
@@ -378,8 +380,8 @@ async def main():
     )
 
     curr_db = await conn.fetchval("SELECT current_database();")
-    if curr_db != "dailylover_ensayo":
-        print(f"[FATAL] Conectado a {curr_db} en lugar de dailylover_ensayo. ABORTANDO.")
+    if curr_db != TARGET_DB:
+        print(f"[FATAL] Conectado a {curr_db} en lugar de {TARGET_DB}. ABORTANDO.")
         await conn.close()
         sys.exit(1)
     print(f"[OK] Conectado con éxito a base de ensayo: {curr_db}")
