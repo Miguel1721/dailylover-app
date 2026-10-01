@@ -2492,6 +2492,31 @@ async def update_match_service_status(
     return {"status": "success", "match_id": match_id, "stage": new_stage}
 
 
+def is_mass_migration_date(dt: Optional[datetime]) -> bool:
+    """Retorna True si la fecha corresponde a la carga masiva (agosto 2026 o anterior)."""
+    if not dt:
+        return True
+    if dt.year < 2026:
+        return True
+    if dt.year == 2026 and dt.month <= 8:
+        return True
+    return False
+
+
+def is_invalid_person_a(name: Optional[str]) -> bool:
+    """Filtra nombres que son solo dígitos, fechas o basura importada de la hoja."""
+    if not name or not name.strip():
+        return True
+    s = name.strip()
+    if len(s) <= 2:
+        return True
+    if re.match(r'^\d+$', s):
+        return True
+    if re.match(r'^\d{4}-\d{2}', s):
+        return True
+    return False
+
+
 # ─── 2. PANTALLA 2: COLA DE APROBACIÓN (MARÍA) ──────────────────────────────
 
 @router.get("/approval-queue")
@@ -2727,7 +2752,7 @@ async def get_approval_queue(
         reasons = reasons[:3]
 
         created_dt = d.get("created_at")
-        fecha_label = "-" if (created_dt and created_dt.strftime("%Y-%m-%d") == "2026-08-23") else (created_dt.strftime("%Y-%m-%d %H:%M") if created_dt else "-")
+        fecha_label = "-" if is_mass_migration_date(created_dt) else (created_dt.strftime("%Y-%m-%d %H:%M") if created_dt else "-")
 
         queue.append({
             "id": d.get("id"),
@@ -3150,7 +3175,9 @@ async def get_mesa_psicologa(
             COALESCE(pA.photo_url, '') AS person_a_photo_url,
             COALESCE(pB.photo_url, '') AS person_b_photo_url,
             pA.age AS person_a_age, pA.occupation AS person_a_occupation, pA.responsable AS person_a_responsable,
+            pA.city AS person_a_profile_city,
             pB.age AS person_b_age, pB.occupation AS person_b_occupation,
+            pB.city AS person_b_profile_city,
             sd.venue AS scheduled_venue, sd.date_time AS scheduled_date_time, sd.had_date AS scheduled_had_date,
             sd.feedback_ella, sd.feedback_el
         FROM operational_matches m
@@ -3159,6 +3186,13 @@ async def get_mesa_psicologa(
         LEFT JOIN scheduled_dates sd ON sd.match_id = m.id
         WHERE (UPPER(m.psychologist_name) = ANY(:aliases) OR UPPER(COALESCE(pA.responsable, '')) = ANY(:aliases))
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
+          AND NOT (
+              m.person_a IS NULL 
+              OR TRIM(m.person_a) = ''
+              OR m.person_a ~ '^[0-9]+$'
+              OR m.person_a ~ '^[0-9]{4}-[0-9]{2}'
+              OR LENGTH(TRIM(m.person_a)) <= 2
+          )
     """
     params = {"aliases": [a.upper() for a in aliases]}
     if search and search.strip():
@@ -3192,7 +3226,10 @@ async def get_mesa_psicologa(
     rows_by_client = defaultdict(list)
     for r in rows:
         d = dict(r._mapping)
-        cli_key = d.get("user_id_a") or (d.get("person_a") or "").strip().lower()
+        pa_candidate = d.get("person_a") or ""
+        if is_invalid_person_a(pa_candidate):
+            continue
+        cli_key = d.get("user_id_a") or pa_candidate.strip().lower()
         if cli_key:
             rows_by_client[cli_key].append(d)
 
@@ -3207,12 +3244,21 @@ async def get_mesa_psicologa(
     for r in rows:
         d = dict(r._mapping)
         pa = d.get("person_a") or ""
+        if is_invalid_person_a(pa):
+            continue
         pb = d.get("person_b") or ""
         st = (d.get("status") or "").upper().strip()
         app_maria = bool(d.get("approved_by_maria"))
 
+        prof_city = (d.get("person_a_profile_city") or "").strip()
+        sheet_city = (d.get("city") or "").strip()
+        person_a_city = prof_city or sheet_city or "Bogotá"
+        city_warning = None
+        if prof_city and sheet_city and norm_city(prof_city) != norm_city(sheet_city):
+            city_warning = f"Hoja: {sheet_city}"
+
         created = d.get("created_at") or now
-        if created and created.strftime("%Y-%m-%d") == "2026-08-23":
+        if is_mass_migration_date(created):
             dias_esperando = None
             dias_label = "-"
         elif created:
@@ -3251,7 +3297,8 @@ async def get_mesa_psicologa(
             "person_a_photo_url": d.get("person_a_photo_url") or "",
             "person_a_age": d.get("person_a_age"),
             "person_a_occupation": d.get("person_a_occupation") or "",
-            "person_a_city": d.get("city") or "Bogotá",
+            "person_a_city": person_a_city,
+            "city_warning": city_warning,
             "plan_tier": clean_plan,
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
@@ -3309,6 +3356,9 @@ async def get_mesa_psicologa(
             continue
 
         latest_r = c_rows[0]
+        if is_invalid_person_a(latest_r.get("person_a")):
+            continue
+
         st = (latest_r.get("status") or "").upper().strip()
 
         # Excluir clientes con estados de exclusión
@@ -3328,8 +3378,15 @@ async def get_mesa_psicologa(
             citas_restantes = None
             citas_label = "Citas por confirmar"
 
+        prof_city = (latest_r.get("person_a_profile_city") or "").strip()
+        sheet_city = (latest_r.get("city") or "").strip()
+        person_a_city = prof_city or sheet_city or "Bogotá"
+        city_warning = None
+        if prof_city and sheet_city and norm_city(prof_city) != norm_city(sheet_city):
+            city_warning = f"Hoja: {sheet_city}"
+
         created = latest_r.get("created_at") or now
-        if created and created.strftime("%Y-%m-%d") == "2026-08-23":
+        if is_mass_migration_date(created):
             dias_esperando = None
             dias_label = "-"
         elif created:
@@ -3358,7 +3415,8 @@ async def get_mesa_psicologa(
             "person_a_photo_url": latest_r.get("person_a_photo_url") or "",
             "person_a_age": latest_r.get("person_a_age"),
             "person_a_occupation": latest_r.get("person_a_occupation") or "",
-            "person_a_city": latest_r.get("city") or "Bogotá",
+            "person_a_city": person_a_city,
+            "city_warning": city_warning,
             "plan_tier": clean_plan,
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
@@ -11517,6 +11575,98 @@ def build_candidate_pool_queries(
     return strict_query_sql, relaxed_query_sql
 
 
+def build_dimensional_reasons(a: dict, b: dict, eval_res: dict) -> List[str]:
+    """
+    Construye exactamente 3 razones clínicas concisas a partir de las dimensiones del
+    cálculo único determinístico, usando los datos reales de cada persona (sin 'IA:').
+    """
+    reasons = []
+
+    # 1. Hijos (peso 15)
+    hijos_a = a.get("deseo_hijos")
+    hijos_b = b.get("deseo_hijos")
+    if hijos_a and hijos_b:
+        ha_norm = str(hijos_a).strip().lower()
+        hb_norm = str(hijos_b).strip().lower()
+        if any(w in ha_norm for w in ("si", "sí", "desea", "quiere", "abierto")) and any(w in hb_norm for w in ("si", "sí", "desea", "quiere", "abierto")):
+            reasons.append("Hijos: ambos 'Sí'")
+        elif "no" in ha_norm and "no" in hb_norm:
+            reasons.append("Hijos: ambos 'No'")
+        elif ha_norm == hb_norm:
+            reasons.append(f"Hijos: ambos '{hijos_a}'")
+        else:
+            reasons.append(f"Hijos: {hijos_a} vs {hijos_b}")
+
+    # 2. Edad (peso 15)
+    edad_a = a.get("edad")
+    edad_b = b.get("edad")
+    emin_a = a.get("edad_min")
+    emax_a = a.get("edad_max")
+    emin_b = b.get("edad_min")
+    emax_b = b.get("edad_max")
+
+    edad_text = None
+    if edad_b and (emin_a or emax_a):
+        r_str_a = f"{emin_a or 18}–{emax_a or 99}"
+        b_in_a = (not emin_a or edad_b >= emin_a) and (not emax_a or edad_b <= emax_a)
+        p1 = f"{edad_b} dentro de {r_str_a} que busca" if b_in_a else f"{edad_b} años"
+
+        if edad_a and (emin_b or emax_b):
+            r_str_b = f"{emin_b or 18}–{emax_b or 99}"
+            a_in_b = (not emin_b or edad_a >= emin_b) and (not emax_a or edad_a <= emax_b)
+            if a_in_b:
+                edad_text = f"Edad: {p1}; {edad_a} dentro del rango de ella ({r_str_b})"
+            else:
+                edad_text = f"Edad: {p1}; {edad_a} años"
+        else:
+            edad_text = f"Edad: {p1}"
+    elif edad_a and edad_b:
+        edad_text = f"Edad: afinidad etaria armónica ({edad_a} y {edad_b} años)"
+
+    if edad_text:
+        reasons.append(edad_text)
+
+    # 3. Ciudad (peso 10)
+    city_a = a.get("ciudad")
+    city_b = b.get("ciudad")
+    if city_a and city_b:
+        ca_norm = norm_city(city_a)
+        cb_norm = norm_city(city_b)
+        if ca_norm and cb_norm and ca_norm == cb_norm:
+            reasons.append(f"Ciudad: Ambos residen en {city_b.strip().title()}")
+        else:
+            reasons.append(f"Ciudad: {city_a.strip().title()} y {city_b.strip().title()}")
+
+    # 4. Dimensiones altas del score (valores, actividad_fisica, estatura, apego, etc.)
+    dims = eval_res.get("dimensiones") or []
+    for d in dims:
+        dim_name = d.get("dimension")
+        pts = d.get("puntaje")
+        if pts is None or pts < 0.7:
+            continue
+        if dim_name == "valores" and len(reasons) < 3:
+            reasons.append("Valores: Alta alineación en metas y visión personal")
+        elif dim_name == "actividad_fisica" and len(reasons) < 3:
+            reasons.append("Actividad física: Ritmo de vida compatible")
+        elif dim_name == "estatura" and len(reasons) < 3:
+            est_b = b.get("estatura_cm")
+            if est_b:
+                reasons.append(f"Estatura: {est_b} cm acorde a preferencias")
+        elif dim_name == "lenguaje_amor" and len(reasons) < 3:
+            reasons.append("Lenguaje del amor: Expresión afectiva armónica")
+        elif dim_name == "grupo_social" and len(reasons) < 3:
+            reasons.append("Grupo social: Afinidad sociocultural evaluada")
+        elif dim_name == "apego" and len(reasons) < 3:
+            reasons.append("Apego: Dinámica vincular armónica")
+
+    if len(reasons) < 3:
+        reasons.append("Filtro clínico bidireccional superado sin incompatibilidades")
+    if len(reasons) < 3:
+        reasons.append("Perfil verificado en CRM y sin bloqueos clínicos")
+
+    return reasons[:3]
+
+
 async def find_candidate_matches_engine(
     client_summary: dict,
     db: AsyncSession,
@@ -13003,10 +13153,36 @@ async def find_candidate_matches_engine(
         cand_veredicto = u_cand["veredicto"]
         cand_cobertura = u_cand["cobertura_pct"]
 
+        cand_photo = getattr(r, "photo_url", None) or ""
+        if not cand_photo or not cand_photo.strip():
+            cand_n_parts = cand_name.split()
+            cand_pfx = f"{cand_n_parts[0]} {cand_n_parts[1]}" if len(cand_n_parts) >= 2 else cand_n_parts[0]
+            try:
+                p_photo_res = await db.execute(text("""
+                    SELECT p.photo_url
+                    FROM profiles p
+                    JOIN users u ON u.id = p.user_id
+                    WHERE p.photo_url IS NOT NULL AND TRIM(p.photo_url) != ''
+                      AND (
+                          (:cid != '' AND u.crm_id = :cid)
+                          OR unaccent(lower(trim(u.name))) = unaccent(lower(trim(:name)))
+                          OR unaccent(lower(trim(u.name))) ILIKE unaccent(lower(trim(:pfx))) || '%'
+                      )
+                    ORDER BY (u.crm_id IS NOT NULL) DESC
+                    LIMIT 1
+                """), {"cid": clean_cid if clean_cid.isdigit() else "", "name": cand_name, "pfx": cand_pfx})
+                found_p = p_photo_res.scalar()
+                if found_p:
+                    cand_photo = found_p.strip()
+            except Exception:
+                pass
+
+        cand_reasons = build_dimensional_reasons(input_client, input_cand, u_cand)
+
         cand_payload = {
             "user_id": r.id,
             "name": cand_name,
-            "photo_url": getattr(r, "photo_url", None) or "",
+            "photo_url": cand_photo,
             "gender": cand_inferred_gender,
             "orientation": getattr(r, "orientation", None),
             "phone": r.phone or "",
@@ -13056,7 +13232,8 @@ async def find_candidate_matches_engine(
             "overall_match_score": cand_score,
             "dealbreakers_clean": bidi["is_bidirectionally_compatible"],
             "dealbreakers_check": dealbreakers_check_msg,
-            "strengths": strengths,
+            "reasons": cand_reasons,
+            "strengths": cand_reasons,
             "synthesis": r.synthesis_who_really_is or (cand_bio_clean[:200] + "..." if len(cand_bio_clean) > 200 else cand_bio_clean) or "",
             "bio_notes": cand_bio_clean,
             "clinical_profile_360": cand_profile_360,
@@ -13337,7 +13514,7 @@ async def find_candidate_matches_engine(
                             cand["dealbreakers_check"] = f"⚠️ Puntos a verificar: {', '.join(dbs[:2])}"
                             cand["dealbreakers_clean"] = True
                     if pts and not safety_flags:
-                        cand["strengths"] = [f"IA: {p}" for p in pts] + cand.get("strengths", [])
+                        cand["ai_puntos_fuertes"] = pts
                 else:
                     cand["is_ai_evaluated"] = False
                     cand["ai_score"] = None
@@ -13539,14 +13716,58 @@ async def get_candidate_matches_engine_alias(
     )
     raw_list = res.get("viable_matches") or res.get("suggested_matches") or []
     cands = []
-    for c in raw_list[:(limit or 5)]:
+    for c in raw_list:
         cand_dict = dict(c)
-        cand_dict["score"] = cand_dict.get("compatibility_pct") or cand_dict.get("score") or cand_dict.get("structural_score") or 75
-        cand_dict["veredicto"] = cand_dict.get("ai_veredicto") or cand_dict.get("veredicto") or ("ALTA AFINIDAD" if cand_dict["score"] >= 80 else "RECOMENDADO")
+        sc = cand_dict.get("score") if cand_dict.get("score") is not None else (cand_dict.get("compatibility_pct") or cand_dict.get("structural_score") or 75)
+        cand_dict["score"] = sc
+        cand_dict["veredicto"] = cand_dict.get("ai_veredicto") or cand_dict.get("veredicto") or ("ALTA AFINIDAD" if sc >= 80 else "RECOMENDADO")
         cand_dict["opportunity_badge"] = "Oportunidad comercial: sin citas" if (cand_dict.get("dates_remaining") == 0 or cand_dict.get("slots_remaining") == 0) else None
+
+        # Limpiar cualquier prefijo "IA: " en razones o strengths
+        if cand_dict.get("reasons"):
+            cand_dict["reasons"] = [re.sub(r"^IA:\s*", "", str(r)) for r in cand_dict["reasons"]][:3]
+        if cand_dict.get("strengths"):
+            cand_dict["strengths"] = [re.sub(r"^IA:\s*", "", str(r)) for r in cand_dict["strengths"]][:3]
+
+        # Respaldo fotográfico si la foto viene vacía
+        if not cand_dict.get("photo_url"):
+            cand_n = (cand_dict.get("name") or "").strip()
+            cand_c = str(cand_dict.get("crm_id") or "").strip()
+            parts = cand_n.split()
+            cand_pfx = f"{parts[0]} {parts[1]}" if len(parts) >= 2 else parts[0]
+            try:
+                p_res = await db.execute(text("""
+                    SELECT p.photo_url FROM profiles p
+                    JOIN users u ON u.id = p.user_id
+                    WHERE p.photo_url IS NOT NULL AND TRIM(p.photo_url) != ''
+                      AND (
+                          (:cid != '' AND u.crm_id = :cid)
+                          OR unaccent(lower(trim(u.name))) = unaccent(lower(trim(:name)))
+                          OR unaccent(lower(trim(u.name))) ILIKE unaccent(lower(trim(:pfx))) || '%'
+                      )
+                    ORDER BY (u.crm_id IS NOT NULL) DESC
+                    LIMIT 1
+                """), {"cid": cand_c if cand_c.isdigit() else "", "name": cand_n, "pfx": cand_pfx})
+                found_p = p_res.scalar()
+                if found_p:
+                    cand_dict["photo_url"] = found_p.strip()
+            except Exception:
+                pass
+
         cands.append(cand_dict)
-    res["candidates"] = cands
-    res["suggested_matches"] = cands
+
+    # Ordenar por puntaje/orden descendente estricto (93, 89, 83, 80, 79)
+    cands.sort(
+        key=lambda x: (
+            (x.get("dates_remaining") or 0) > 0,
+            x.get("score") or x.get("compatibility_pct") or 0,
+            x.get("orden") or 0.0
+        ),
+        reverse=True
+    )
+    final_cands = cands[:(limit or 5)]
+    res["candidates"] = final_cands
+    res["suggested_matches"] = final_cands
     return res
 
 
