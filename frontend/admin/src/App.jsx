@@ -58,6 +58,8 @@ import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
+import Videollamadas from './pages/matchmaking/Videollamadas'
+import LlamadaPublica from './pages/LlamadaPublica'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import TroubleMatches from './pages/matchmaking/TroubleMatches'
 import PerfilesIncompletos from './pages/matchmaking/PerfilesIncompletos'
@@ -295,7 +297,8 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
   const psycNavItems = [
     { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa' },
     { to: '/matchmaking/calendario', icon: Calendar, label: '📅 Mis Turnos' },
-    { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevistas' }
+    { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevistas' },
+    { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' }
   ]
 
   const mpsNavItems = [
@@ -322,6 +325,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
         { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar (María)' },
         { to: '/matchmaking/calendario', icon: Calendar, label: '🗓️ Calendario & Turnos' },
         { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' },
+        { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' },
         { to: '/matchmaking/profiles', icon: FileSpreadsheet, label: '📋 PROFILES (Ingreso)' },
         { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
         { to: '/matchmaking/perfiles-incompletos', icon: Flame, label: '🔥 Rescate Hombres / Fichas' },
@@ -775,6 +779,7 @@ function AppContent() {
       <Route path="/agendar-entrevista" element={<AgendarVip />} />
       <Route path="/agendar-vip" element={<AgendarVip />} />
       <Route path="/sala/:sessionId" element={<SalaVideollamada />} />
+      <Route path="/llamada/:token" element={<LlamadaPublica />} />
       <Route
         path="/*"
         element={
@@ -970,6 +975,7 @@ function AppContent() {
                     {/* MÓDULO: PSICÓLOGAS & MATCHMAKING CLÍNICO */}
                     <Route path="/psicologa" element={<Navigate to="/matchmaking/mi-mesa" replace />} />
                     <Route path="/clinico" element={<Navigate to="/matchmaking/mi-mesa" replace />} />
+                    <Route path="/matchmaking/videollamadas" element={<AreaErrorBoundary areaName="Videollamadas"><ProtectedRoute module="matching" action="view"><Videollamadas /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/mi-mesa" element={<AreaErrorBoundary areaName="Mi Mesa Psicóloga"><ProtectedRoute module="matching" action="view"><MiMesaPsicologa /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/mis-matches" element={<AreaErrorBoundary areaName="Mesa de Trabajo Psicólogas (Mis Matches)"><ProtectedRoute module="matching" action="view"><MisMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/entrevista" element={<AreaErrorBoundary areaName="Entrevista Clínica & Hub"><ProtectedRoute module="matching" action="view"><EntrevistaHub /></ProtectedRoute></AreaErrorBoundary>} />
