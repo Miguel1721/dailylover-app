@@ -26,6 +26,7 @@ Reglas del Ensayo 3:
 
 import sys
 import os
+import urllib.parse
 import json
 import time
 import re
@@ -41,7 +42,7 @@ TARGET_DB = "dailylover_ensayo"
 DB_HOST = "dl_postgres"
 DB_PORT = 5432
 DB_USER = "postgres"
-DB_PASS = "your_secure_postgres_password"
+DB_PASS = os.environ.get("POSTGRES_PASSWORD") or urllib.parse.urlsplit(os.environ.get("DATABASE_URL", "").replace("+asyncpg", "")).password
 
 SHEET_ID = "113GBaGwDltILH4pMqbyvuK17rhCIxPFW0Cv4sLtBX5A"
 CREDS_FILE = "/app/service_account.json"

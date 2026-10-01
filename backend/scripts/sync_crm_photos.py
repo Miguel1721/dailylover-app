@@ -19,7 +19,7 @@ import asyncpg
 DB_HOST = os.getenv("POSTGRES_HOST", "dl_postgres" if os.path.exists("/.dockerenv") else "localhost")
 DB_PORT = int(os.getenv("POSTGRES_PORT", 5432))
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "your_secure_postgres_password")
+DB_PASS = os.getenv("POSTGRES_PASSWORD")
 DB_NAME = os.getenv("POSTGRES_DB", "dailylover")
 
 
