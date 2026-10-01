@@ -163,6 +163,10 @@ def clean_plan_name(plan_str: Optional[str]) -> str:
     s = re.sub(r'est\?+ndar', 'Estándar', s, flags=re.IGNORECASE)
     return s
 
+# Cada cita del plan se arma con 2 opciones de Persona B (slots): quien tiene 1 cita tiene 2 slots, quien tiene 2 citas, 4 slots.
+SLOTS_POR_CITA = 2
+
+
 def get_slots_by_plan(plan_str: Optional[str]) -> Optional[int]:
     """
     Retorna la cantidad exacta de citas/slots según el plan activo (SSOT canónico):
@@ -3308,6 +3312,8 @@ async def get_mesa_psicologa(
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
             "citas_label": citas_label,
+            "slots_total": (total_slots * SLOTS_POR_CITA) if total_slots else None,
+            "slots_libres": (citas_restantes * SLOTS_POR_CITA) if citas_restantes is not None else None,
             "dias_esperando": dias_esperando,
             "dias_label": dias_label,
             "slot_number": d.get("slot_number") or 1,
@@ -3430,6 +3436,8 @@ async def get_mesa_psicologa(
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
             "citas_label": citas_label,
+            "slots_total": (total_slots * SLOTS_POR_CITA) if total_slots else None,
+            "slots_libres": (citas_restantes * SLOTS_POR_CITA) if citas_restantes is not None else None,
             "dias_esperando": dias_esperando,
             "dias_label": dias_label,
             "slot_number": latest_r.get("slot_number") or 1,
@@ -6311,6 +6319,7 @@ async def resolve_profile(
 
     return {
         "found": True,
+        "user_id": getattr(row, "id", None),
         "crm_id": final_cid,
         "crm_url": canonical_crm_url,
         "profile_url": detected_url,

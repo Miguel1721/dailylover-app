@@ -64,6 +64,7 @@ export default function MiMesaPsicologa() {
   // Modal Elegir (confirmación con nota opcional para María)
   const [choosingCandidate, setChoosingCandidate] = useState(null)
   const [proposalNote, setProposalNote] = useState('')
+  const [manualB, setManualB] = useState({})   // Persona B puesta a mano, por fila
   const [submittingProposal, setSubmittingProposal] = useState(false)
 
   // Modal Descartar (1 clic obligatorio de 30 días)
@@ -126,6 +127,64 @@ export default function MiMesaPsicologa() {
         setCandidates([])
         setLoadingCandidates(false)
       })
+  }
+
+  // Persona B puesta a mano (URL del CRM o nombre) -> se envía a María igual que una candidata del motor
+  const setMB = (id, patch) => setManualB(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }))
+
+  const buscarPersonaB = async (row) => {
+    const q = (manualB[row.id]?.text || '').trim()
+    if (q.length < 3) return
+    setMB(row.id, { loading: true, error: '', found: null })
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ url_or_query: q })
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.found && d.user_id) {
+        if (d.user_id === row.user_id_a) setMB(row.id, { loading: false, error: 'Esa es la misma persona que la Persona A.' })
+        else setMB(row.id, { loading: false, found: d })
+      } else if (res.ok && d.found) {
+        setMB(row.id, { loading: false, error: 'Esa persona no está registrada como usuaria del sistema.' })
+      } else {
+        setMB(row.id, { loading: false, error: 'No se encontró. Pega la URL del CRM o escribe el nombre completo.' })
+      }
+    } catch (e) {
+      setMB(row.id, { loading: false, error: 'Error de conexión.' })
+    }
+  }
+
+  const enviarPersonaB = async (row) => {
+    const f = manualB[row.id]?.found
+    if (!f) return
+    setMB(row.id, { sending: true, error: '' })
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/propose-candidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          match_id: row.id,
+          candidate_user_id: f.user_id,
+          candidate_name: f.name,
+          candidate_crm_id: f.crm_id || '',
+          notes: 'Persona B elegida a mano por la psicóloga'
+        })
+      })
+      if (res.ok) {
+        setNotification(`Propuesta enviada a María: ${row.person_a} x ${f.name}`)
+        setTimeout(() => setNotification(''), 6000)
+        setManualB(prev => { const n = { ...prev }; delete n[row.id]; return n })
+        fetchMesa()
+        setActiveTab('en_revision')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setMB(row.id, { sending: false, error: err.detail || 'No se pudo enviar la propuesta.' })
+      }
+    } catch (e) {
+      setMB(row.id, { sending: false, error: 'Error de conexión.' })
+    }
   }
 
   // 3. Confirmar "Elegir" candidata -> Enviar propuesta a María
@@ -612,6 +671,53 @@ export default function MiMesaPsicologa() {
                             }}>
                               {row.citas_label || (row.citas_restantes > 0 ? `${row.citas_restantes} citas restantes` : '0 citas restantes')}
                             </span>
+                          </div>
+
+                          {/* Slots del plan */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                              {row.slots_total ? `Slots del plan: ${row.slots_total} (${row.slots_libres} libres)` : 'Slots: por confirmar'}
+                            </span>
+                            {Array.from({ length: Math.min(row.slots_libres || 0, 8) }).map((_, i) => (
+                              <span key={i} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, border: '1px dashed #B8324F', color: '#B8324F' }}>
+                                Slot {i + 1}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Persona B a mano */}
+                          <div style={{ marginTop: 10 }}>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <input
+                                type="text"
+                                value={manualB[row.id]?.text || ''}
+                                onChange={(e) => setMB(row.id, { text: e.target.value, found: null, error: '' })}
+                                onKeyDown={(e) => { if (e.key === 'Enter') buscarPersonaB(row) }}
+                                placeholder="Persona B a mano: pega la URL del CRM o escribe el nombre"
+                                style={{ flex: '1 1 280px', minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }}
+                              />
+                              <button type="button" onClick={() => buscarPersonaB(row)} disabled={manualB[row.id]?.loading}
+                                style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                {manualB[row.id]?.loading ? 'Buscando...' : 'Buscar'}
+                              </button>
+                            </div>
+                            {manualB[row.id]?.error && (
+                              <div style={{ marginTop: 6, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{manualB[row.id].error}</div>
+                            )}
+                            {manualB[row.id]?.found && (
+                              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                                  <b>{manualB[row.id].found.name}</b>
+                                  {manualB[row.id].found.age ? ` · ${manualB[row.id].found.age} años` : ''}
+                                  {manualB[row.id].found.city ? ` · ${manualB[row.id].found.city}` : ''}
+                                  {manualB[row.id].found.plan_tier ? ` · ${manualB[row.id].found.plan_tier}` : ''}
+                                </span>
+                                <button type="button" onClick={() => enviarPersonaB(row)} disabled={manualB[row.id]?.sending}
+                                  style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                                  {manualB[row.id]?.sending ? 'Enviando...' : 'Enviar a María'}
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {/* Motivo de rechazo de María visible */}
