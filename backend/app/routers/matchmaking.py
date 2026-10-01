@@ -3240,6 +3240,7 @@ async def get_mesa_psicologa(
     en_revision = []
     aprobados = []
     por_proponer = []
+    rechazados = []   # propuestas que María no aprobó (NOT APPROVED / rechazos): la psicóloga las ve para rehacerlas
 
     clients_in_revision = set()
     clients_with_pending_date = set()
@@ -3332,6 +3333,10 @@ async def get_mesa_psicologa(
         }
 
         cli_k = d.get("user_id_a") or pa.strip().lower()
+
+        # Rechazados por María: se muestran en su propia bandeja (además de seguir en el historial)
+        if (not app_maria) and ("NOT APPROVED" in st or st == "NO ACCEPT" or st.startswith("RECHAZADO")):
+            rechazados.append(item)
 
         # Aprobados: María o estados confirmados de cita
         if app_maria or st in ("APROBADO", "AGENDADO", "CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA"):
@@ -3453,13 +3458,16 @@ async def get_mesa_psicologa(
     por_proponer.sort(key=lambda x: (x["dias_esperando"] if x["dias_esperando"] is not None else -1, x["id"]), reverse=True)
     en_revision.sort(key=lambda x: x["id"], reverse=True)
     aprobados.sort(key=lambda x: x["id"], reverse=True)
+    rechazados.sort(key=lambda x: x["id"], reverse=True)
 
     return {
         "psychologist": canonical_psyc,
         "por_proponer": por_proponer,
         "en_revision": en_revision,
         "aprobados": aprobados,
+        "rechazados": rechazados,
         "summary": {
+            "total_rechazados": len(rechazados),
             "total_por_proponer": len(por_proponer),
             "total_en_revision": len(en_revision),
             "total_aprobados": len(aprobados)

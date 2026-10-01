@@ -289,7 +289,7 @@ def create_third_party_vip_event(
     En cualquier otro caso retorna status "error" con meet_link vacío: NUNCA se inventa un enlace de Meet.
     (Para desarrollo local existe DL_CALENDAR_MOCK=1, que devuelve un evento simulado.)
     """
-    summary = f"💎 Entrevista Matchmaking Service Daily Lover — {client_name} & María Salinas"
+    summary = f"Entrevista Matchmaking Service Daily Lover — {client_name} & María Salinas"
     description = (
         f"Entrevista de Admisión y Matchmaking Personalizado plan Matchmaking Service con María Paula Salinas.\n\n"
         f"• Cliente: {client_name}\n"
@@ -300,14 +300,14 @@ def create_third_party_vip_event(
 
     if os.environ.get("DL_CALENDAR_MOCK") == "1":
         mock_meet = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
-        logger.info(f"📅 [MOCK GOOGLE CALENDAR] '{summary}' con Meet simulado: {mock_meet}")
+        logger.info(f"[MOCK GOOGLE CALENDAR] '{summary}' con Meet simulado: {mock_meet}")
         return {"status": "success", "mode": "mock", "event_id": f"mock_evt_{uuid.uuid4().hex[:8]}",
                 "meet_link": mock_meet, "summary": summary}
 
     service = get_organizer_calendar_client()
     if not service:
         msg = "Organizador de Google Calendar no configurado (faltan GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN)."
-        logger.error(f"❌ {msg}")
+        logger.error(f"{msg}")
         return {"status": "error", "mode": "not_configured", "error": msg, "meet_link": "", "summary": summary}
 
     try:
@@ -354,15 +354,15 @@ def create_third_party_vip_event(
                     break
 
         if not meet_link:
-            logger.error(f"❌ Evento {created_event.get('id')} creado pero Google no devolvió enlace de Meet.")
+            logger.error(f"Evento {created_event.get('id')} creado pero Google no devolvió enlace de Meet.")
             return {"status": "error", "mode": "no_meet", "error": "Google no devolvió enlace de Meet",
                     "event_id": created_event.get("id"), "html_link": created_event.get("htmlLink"),
                     "meet_link": "", "summary": summary}
 
-        logger.info(f"✅ Evento VIP creado: ID={created_event.get('id')} Meet={meet_link}")
+        logger.info(f"Evento VIP creado: ID={created_event.get('id')} Meet={meet_link}")
         return {"status": "success", "mode": "live", "event_id": created_event.get("id"),
                 "meet_link": meet_link, "html_link": created_event.get("htmlLink"), "summary": summary}
     except Exception as e:
-        logger.error(f"❌ Error creando evento VIP en Google Calendar: {e}")
+        logger.error(f"Error creando evento VIP en Google Calendar: {e}")
         return {"status": "error", "mode": "error", "error": f"{type(e).__name__}: {e}",
                 "meet_link": "", "summary": summary}

@@ -31,10 +31,10 @@ def send_email_html(to_email: str, subject: str, html_content: str) -> bool:
     msg.attach(part)
 
     if not SMTP_USER or not SMTP_PASSWORD:
-        logger.info(f"💌 [SMTP MOCK/LOG] Correo enviado a {to_email} | Asunto: '{subject}'")
+        logger.info(f"[SMTP MOCK/LOG] Correo enviado a {to_email} | Asunto: '{subject}'")
         print(f"\n==========================================")
-        print(f"💌 EMAIL SIMULADO -> Para: {to_email}")
-        print(f"📌 Asunto: {subject}")
+        print(f"EMAIL SIMULADO -> Para: {to_email}")
+        print(f"Asunto: {subject}")
         print(f"==========================================\n")
         return True
 
@@ -43,10 +43,10 @@ def send_email_html(to_email: str, subject: str, html_content: str) -> bool:
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SENDER_EMAIL, [to_email], msg.as_string())
-        logger.info(f"✅ Correo SMTP enviado exitosamente a {to_email}")
+        logger.info(f"Correo SMTP enviado exitosamente a {to_email}")
         return True
     except Exception as e:
-        logger.error(f"❌ Error enviando correo SMTP a {to_email}: {str(e)}")
+        logger.error(f"Error enviando correo SMTP a {to_email}: {str(e)}")
         return False
 
 
@@ -79,7 +79,7 @@ def build_feedback_email_html(
     if simulation_mode:
         simulation_banner = f"""
         <div style="background-color: rgba(212, 175, 55, 0.15); border: 1.5px dashed #D4AF37; border-radius: 10px; padding: 14px 18px; margin-bottom: 22px; color: #FFF; font-size: 13px; line-height: 1.5;">
-          <strong style="color: #FFD700; font-size: 14px;">⚠️ MODO PILOTO DE PRUEBA ACTIVO (Seguridad):</strong><br/>
+          <strong style="color: #FFD700; font-size: 14px;">MODO PILOTO DE PRUEBA ACTIVO (Seguridad):</strong><br/>
           Este correo fue generado por el despachador automático para el cliente: <strong>{user_name}</strong> (<code>{real_user_email or 'Sin correo en perfil'}</code>).<br/>
           Encuentro: Con <strong>{partner_name}</strong> {f'en {venue} ({city})' if venue else ''} {f'· {date_time_str}' if date_time_str else ''}.<br/>
           <em>(El envío real a clientes está deshabilitado temporalmente; este mensaje fue despachado a <code>{TEST_SAFE_FEEDBACK_EMAIL}</code> para validación).</em>
@@ -108,7 +108,7 @@ def build_feedback_email_html(
     <body>
       <div class="card">
         <div class="header">
-          <div class="logo">🌹 DAILY LOVER</div>
+          <div class="logo">DAILY LOVER</div>
           <div class="subtitle">Acompañamiento Clínico & Matchmaking Humano</div>
         </div>
 
@@ -119,7 +119,7 @@ def build_feedback_email_html(
           <p>Esperamos que tu reciente encuentro con <strong>{partner_name}</strong> haya sido una experiencia enriquecedora.</p>
           
           <div class="alert-box">
-            📌 <strong>RETROALIMENTACIÓN DE TU DATE:</strong> Para el equipo de psicología y matchmaking de Daily Lover es fundamental conocer cómo te sentiste antes, durante y después del encuentro, para afinar tus criterios y desbloquear tus siguientes propuestas de matching.
+            <strong>RETROALIMENTACIÓN DE TU DATE:</strong> Para el equipo de psicología y matchmaking de Daily Lover es fundamental conocer cómo te sentiste antes, durante y después del encuentro, para afinar tus criterios y desbloquear tus siguientes propuestas de matching.
           </div>
 
           <p>Nos interesa conocer tu opinión honesta sobre:</p>
@@ -130,7 +130,7 @@ def build_feedback_email_html(
           </ul>
 
           <div class="btn-container">
-            <a href="{feedback_link}" class="btn" style="color: #ffffff !important;">⭐ Calificar mi Cita con {partner_name}</a>
+            <a href="{feedback_link}" class="btn" style="color: #ffffff !important;">Calificar mi Cita con {partner_name}</a>
           </div>
 
           <p style="font-size: 12px; color: #9A8A8D; text-align: center;">
@@ -169,9 +169,9 @@ def send_automated_feedback_email(
     """
     to_email = TEST_SAFE_FEEDBACK_EMAIL if simulation_mode else (real_user_email or TEST_SAFE_FEEDBACK_EMAIL)
     if simulation_mode:
-        subject = f"[TEST FEEDBACK] Para: {user_name} ({real_user_email or 'Sin correo'}) — ¿Cómo estuvo tu date con {partner_name}? ⭐"
+        subject = f"[TEST FEEDBACK] Para: {user_name} ({real_user_email or 'Sin correo'}) — ¿Cómo estuvo tu date con {partner_name}? "
     else:
-        subject = f"¿Cómo estuvo tu date con {partner_name}? ⭐ Cuéntanos tu experiencia — Daily Lover"
+        subject = f"¿Cómo estuvo tu date con {partner_name}? Cuéntanos tu experiencia — Daily Lover"
 
     html = build_feedback_email_html(
         user_name=user_name,
@@ -217,7 +217,7 @@ def build_vip_650k_notification_html(
 
     crm_link = f"{APP_BASE_URL}/admin/personas?search={customer_email}" if customer_email else f"{APP_BASE_URL}/admin"
 
-    wa_btn_html = f'<a href="{wa_link}" style="background-color: #25D366; color: #ffffff !important; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 24px; border-radius: 8px; display: inline-block; margin-right: 10px;" target="_blank">💬 Contactar por WhatsApp</a>' if wa_link else ""
+    wa_btn_html = f'<a href="{wa_link}" style="background-color: #25D366; color: #ffffff !important; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 24px; border-radius: 8px; display: inline-block; margin-right: 10px;" target="_blank">Contactar por WhatsApp</a>' if wa_link else ""
 
     return f"""
     <!DOCTYPE html>
@@ -241,7 +241,7 @@ def build_vip_650k_notification_html(
     <body>
       <div class="card">
         <div class="header">
-          <div class="badge">⭐ NUEVO PAGO · MATCHMAKING SERVICE</div>
+          <div class="badge">NUEVO PAGO · MATCHMAKING SERVICE</div>
           <div class="logo">DAILY LOVER</div>
           <div class="subtitle">Entrevista Personal Asignada a María Paula Salinas</div>
         </div>
@@ -251,11 +251,11 @@ def build_vip_650k_notification_html(
           <p>Se acaba de confirmar un nuevo pago en Stripe correspondiente al plan <strong>Matchmaking Service</strong> (${amount_cop:,.0f} {currency}).</p>
           
           <div class="data-box">
-            <p style="margin: 4px 0;"><strong>👤 Cliente:</strong> {customer_name}</p>
-            <p style="margin: 4px 0;"><strong>✉️ Email:</strong> {customer_email}</p>
-            <p style="margin: 4px 0;"><strong>📱 Teléfono:</strong> {customer_phone}</p>
-            <p style="margin: 4px 0;"><strong>💎 Plan:</strong> Matchmaking Service · 3 citas curadas en 90 días (${amount_cop:,.0f} {currency})</p>
-            <p style="margin: 4px 0;"><strong>🎯 Responsable asignada:</strong> MPS (María Paula Salinas)</p>
+            <p style="margin: 4px 0;"><strong>Cliente:</strong> {customer_name}</p>
+            <p style="margin: 4px 0;"><strong>Email:</strong> {customer_email}</p>
+            <p style="margin: 4px 0;"><strong>Teléfono:</strong> {customer_phone}</p>
+            <p style="margin: 4px 0;"><strong>Plan:</strong> Matchmaking Service · 3 citas curadas en 90 días (${amount_cop:,.0f} {currency})</p>
+            <p style="margin: 4px 0;"><strong>Responsable asignada:</strong> MPS (María Paula Salinas)</p>
           </div>
 
           <p>Acciones inmediatas sugeridas:</p>
@@ -266,7 +266,7 @@ def build_vip_650k_notification_html(
 
           <div style="text-align: center; margin: 26px 0;">
             {wa_btn_html}
-            <a href="{crm_link}" class="btn-gold" target="_blank">📋 Ver Ficha en CRM</a>
+            <a href="{crm_link}" class="btn-gold" target="_blank">Ver Ficha en CRM</a>
           </div>
         </div>
 
@@ -290,7 +290,7 @@ def send_vip_650k_alert_to_owner(
 ) -> bool:
     """Envía la alerta inmediata del pago de 650k al correo de la dueña (María Salinas)."""
     to_owner = OWNER_EMAIL
-    subject = f"💎 NUEVO PAGO MATCHMAKING SERVICE $650.000 COP — Entrevista Requerida: {customer_name}"
+    subject = f"NUEVO PAGO MATCHMAKING SERVICE $650.000 COP — Entrevista Requerida: {customer_name}"
     html = build_vip_650k_notification_html(
         customer_name=customer_name,
         customer_email=customer_email,
@@ -313,7 +313,7 @@ def build_vip_slot_selection_email_html(
     booking_url = f"{APP_BASE_URL}/admin/agendar-entrevista?token={booking_token}"
     slots_buttons_html = f"""
         <div style="text-align: center; margin: 8px 0;">
-          <a href="{booking_url}" style="background: linear-gradient(135deg, #D4AF37 0%, #AA820A 100%); color: #0D0A0B !important; font-weight: 700; font-size: 16px; text-decoration: none; padding: 16px 34px; border-radius: 8px; display: inline-block;">📅 Elegir mi día y hora</a>
+          <a href="{booking_url}" style="background: linear-gradient(135deg, #D4AF37 0%, #AA820A 100%); color: #0D0A0B !important; font-weight: 700; font-size: 16px; text-decoration: none; padding: 16px 34px; border-radius: 8px; display: inline-block;">Elegir mi día y hora</a>
         </div>
         <p style="font-size: 12px; color: #9A8A8D; text-align: center; margin: 12px 0 0;">
           Si el botón no abre, copia y pega este enlace en tu navegador:<br>
@@ -342,7 +342,7 @@ def build_vip_slot_selection_email_html(
     <body>
       <div class="card">
         <div class="header">
-          <div class="badge">💎 MATCHMAKING SERVICE CONFIRMADO</div>
+          <div class="badge">MATCHMAKING SERVICE CONFIRMADO</div>
           <div class="logo">DAILY LOVER</div>
           <div class="subtitle">Acompañamiento Personalizado con María Paula Salinas</div>
         </div>
@@ -353,7 +353,7 @@ def build_vip_slot_selection_email_html(
           <p>Tu plan incluye <strong>3 citas curadas en 90 días</strong> y una sola matchmaker asignada a ti: <strong>María Paula Salinas</strong>.</p>
           
           <div class="info-box">
-            📌 <strong>Tu Entrevista Privada:</strong> La sesión de evaluación personalizada tiene una duración de 30 minutos vía <strong>Google Meet</strong> y será conducida directamente por <strong>María Paula Salinas</strong>.
+            <strong>Tu Entrevista Privada:</strong> La sesión de evaluación personalizada tiene una duración de 30 minutos vía <strong>Google Meet</strong> y será conducida directamente por <strong>María Paula Salinas</strong>.
           </div>
 
           <p>Para tu comodidad, la agenda de María está conectada en tiempo real. <strong>Entra al enlace, elige el día en el calendario y luego la hora que mejor se adapte a ti:</strong></p>
@@ -384,7 +384,7 @@ def send_vip_slot_selection_email(
     booking_token: str
 ) -> bool:
     """Envía el correo de bienvenida y selección de huecos a la clienta del plan Matchmaking Service."""
-    subject = f"💎 ¡Bienvenida a Matchmaking Service! Elige tu horario de entrevista con María Salinas"
+    subject = f"¡Bienvenida a Matchmaking Service! Elige tu horario de entrevista con María Salinas"
     html = build_vip_slot_selection_email_html(
         customer_name=customer_name,
         customer_email=customer_email,
@@ -404,7 +404,7 @@ def build_vip_confirmation_email_html(
     """Plantilla de confirmación final de la entrevista agendada con sala de Google Meet."""
     if meet_link:
         meet_block = f"""<p style="text-align: center; margin: 24px 0;">
-            <a href="{meet_link}" class="btn-meet" target="_blank">📹 Entrar a la Sala de Google Meet</a>
+            <a href="{meet_link}" class="btn-meet" target="_blank">Entrar a la Sala de Google Meet</a>
           </p>
 
           <p style="font-size: 13px; color: #9A8A8D; text-align: center;">
@@ -442,7 +442,7 @@ def build_vip_confirmation_email_html(
     <body>
       <div class="card">
         <div class="header">
-          <div class="badge">✅ ENTREVISTA CONFIRMADA</div>
+          <div class="badge">ENTREVISTA CONFIRMADA</div>
           <div class="logo">DAILY LOVER</div>
         </div>
 
@@ -450,10 +450,10 @@ def build_vip_confirmation_email_html(
           <p>{intro_text}</p>
           
           <div class="data-box">
-            <p style="margin: 4px 0;"><strong>📅 Fecha:</strong> {display_date}</p>
-            <p style="margin: 4px 0;"><strong>⏰ Hora:</strong> {display_time} (Hora Colombia)</p>
-            <p style="margin: 4px 0;"><strong>💻 Modalidad:</strong> Videollamada Google Meet (30 min)</p>
-            <p style="margin: 4px 0;"><strong>🎟️ Asistentes:</strong> María Paula Salinas & {customer_name}</p>
+            <p style="margin: 4px 0;"><strong>Fecha:</strong> {display_date}</p>
+            <p style="margin: 4px 0;"><strong>Hora:</strong> {display_time} (Hora Colombia)</p>
+            <p style="margin: 4px 0;"><strong>Modalidad:</strong> Videollamada Google Meet (30 min)</p>
+            <p style="margin: 4px 0;"><strong>Asistentes:</strong> María Paula Salinas & {customer_name}</p>
           </div>
 
           {meet_block}
@@ -477,7 +477,7 @@ def send_vip_confirmation_emails(
 ) -> bool:
     """Envía los correos de confirmación tanto al cliente como a María Salinas."""
     # 1. Al cliente
-    subj_cli = f"✅ Confirmado: Tu entrevista con María Salinas ({display_date} - {display_time})"
+    subj_cli = f"Confirmado: Tu entrevista con María Salinas ({display_date} - {display_time})"
     html_cli = build_vip_confirmation_email_html(
         customer_name=customer_name,
         display_date=display_date,
@@ -488,7 +488,7 @@ def send_vip_confirmation_emails(
     res_cli = send_email_html(to_email=customer_email, subject=subj_cli, html_content=html_cli)
 
     # 2. A María Salinas
-    subj_owner = f"📅 CITA AGENDADA: Entrevista Matchmaking Service con {customer_name} ({display_date} - {display_time})"
+    subj_owner = f"CITA AGENDADA: Entrevista Matchmaking Service con {customer_name} ({display_date} - {display_time})"
     html_owner = build_vip_confirmation_email_html(
         customer_name=customer_name,
         display_date=display_date,
@@ -554,10 +554,10 @@ def build_interview_reschedule_email_html(user_name: str, no_show_count: int, re
     remaining = max(INTERVIEW_MAX_NO_SHOWS - no_show_count, 0)
     body = f"""
       <p>Hola <strong>{first}</strong>,</p>
-      <p>Notamos que no pudiste asistir a tu entrevista {with_whom}. ¡No te preocupes, pasa! 💛</p>
+      <p>Notamos que no pudiste asistir a tu entrevista {with_whom}. ¡No te preocupes, pasa! </p>
       <p>La entrevista es el paso que activa tu proceso para que empecemos a presentarte personas compatibles, así que queremos ayudarte a retomarla. Elige un nuevo horario aquí:</p>
       <div style="text-align:center;margin:24px 0;">
-        <a href="{url}" style="background:linear-gradient(135deg,#D4AF37 0%,#AA820A 100%);color:#0D0A0B !important;font-weight:700;font-size:16px;text-decoration:none;padding:14px 30px;border-radius:8px;display:inline-block;">📅 Reprogramar mi entrevista</a>
+        <a href="{url}" style="background:linear-gradient(135deg,#D4AF37 0%,#AA820A 100%);color:#0D0A0B !important;font-weight:700;font-size:16px;text-decoration:none;padding:14px 30px;border-radius:8px;display:inline-block;">Reprogramar mi entrevista</a>
       </div>
       <p style="font-size:12px;color:#9A8A8D;text-align:center;margin:0 0 16px;">Si el botón no abre, copia y pega este enlace:<br><span style="word-break:break-all;color:#C5B083;">{url}</span></p>
       <p style="font-size:13px;color:#9A8A8D;">Tienes un máximo de {INTERVIEW_MAX_NO_SHOWS} oportunidades para reprogramar. Esta fue la número {no_show_count}; te {'queda' if remaining == 1 else 'quedan'} {remaining}.</p>"""

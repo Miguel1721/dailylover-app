@@ -48,10 +48,10 @@ export default function MiMesaPsicologa() {
   }
 
   const [currentPsyc, setCurrentPsyc] = useState(getInitialPsyc())
-  const [activeTab, setActiveTab] = useState('por_proponer') // 'por_proponer', 'en_revision', 'aprobados'
+  const [activeTab, setActiveTab] = useState('por_proponer') // 'por_proponer', 'en_revision', 'aprobados', 'rechazados'
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], summary: {} })
+  const [data, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], summary: {} })
   const [notification, setNotification] = useState('')
 
   // Panel "Proponer match"
@@ -82,12 +82,12 @@ export default function MiMesaPsicologa() {
     fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(res => {
-        setData(res || { por_proponer: [], en_revision: [], aprobados: [], summary: {} })
+        setData(res || { por_proponer: [], en_revision: [], aprobados: [], rechazados: [], summary: {} })
         setLoading(false)
       })
       .catch(err => {
         console.error('Error cargando mesa de psicóloga:', err)
-        setData({ por_proponer: [], en_revision: [], aprobados: [], summary: {} })
+        setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], summary: {} })
         setLoading(false)
       })
   }, [currentPsyc, searchTerm, token])
@@ -459,6 +459,37 @@ export default function MiMesaPsicologa() {
             {data.aprobados?.length || 0}
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('rechazados')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            border: activeTab === 'rechazados' ? '1.5px solid #EF4444' : '1px solid var(--border-color)',
+            background: activeTab === 'rechazados' ? 'rgba(239, 68, 68, 0.15)' : 'var(--bg-card)',
+            color: activeTab === 'rechazados' ? '#FFFFFF' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+        >
+          <span>Not approved</span>
+          <span style={{
+            background: activeTab === 'rechazados' ? '#EF4444' : 'rgba(255,255,255,0.08)',
+            color: '#FFFFFF',
+            padding: '2px 8px',
+            borderRadius: 20,
+            fontSize: 11,
+            fontWeight: 800
+          }}>
+            {data.rechazados?.length || 0}
+          </span>
+        </button>
       </div>
 
       {/* CONTENIDO DE BANDEJAS */}
@@ -714,6 +745,62 @@ export default function MiMesaPsicologa() {
           )}
 
           {/* BANDEJA 3: APROBADOS */}
+          {activeTab === 'rechazados' && (
+            <div>
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                Propuestas que María no aprobó. Revisa el motivo y propone otra opción.
+              </p>
+              {(data.rechazados || []).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 60, background: 'var(--bg-card)', borderRadius: 14 }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>No hay propuestas rechazadas en esta vista</h3>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {data.rechazados.map(row => (
+                    <div
+                      key={row.id}
+                      style={{
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-color)',
+                        borderLeft: '4px solid #EF4444',
+                        borderRadius: 14,
+                        padding: 18,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 16
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 280 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={40} />
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>
+                          <span style={{ color: '#EF4444', fontWeight: 800 }}>con</span>
+                          <UserAvatar url={row.person_b_photo_url} name={row.person_b || '?'} size={40} />
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#EF4444' }}>{row.person_b || 'Sin candidata registrada'}</span>
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                          {row.status} · {row.fecha_creacion}{row.is_inherited && row.inherited_from ? ' · heredada de ' + row.inherited_from : ''}
+                        </div>
+                        {(row.rejection_reason || row.observations) && (
+                          <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: 760 }}>
+                            {(row.rejection_reason || row.observations || '').slice(0, 400)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                      <button type="button" onClick={() => handleOpenProponer(row)} style={{ background: '#B8324F', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                        Proponer otro match
+                      </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'aprobados' && (
             <div>
               {data.aprobados.length === 0 ? (
