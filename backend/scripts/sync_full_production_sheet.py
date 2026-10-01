@@ -482,9 +482,9 @@ def fetch_excel_data(xlsx_path: str) -> dict:
             if r and len(r) > 2 and clean_str(r[2]):
                 nm = clean_str(r[2])
                 vip_650_by_name[normalize_name(nm)] = {
-                    "no": clean_str(r[0]),
-                    "date": clean_str(r[1]),
-                    "interviewer": clean_str(r[3]) or "MPS",
+                    "no": clean_str(r[0]) if len(r) > 0 else "",
+                    "date": clean_str(r[1]) if len(r) > 1 else "",
+                    "interviewer": (clean_str(r[3]) if len(r) > 3 else "") or "MPS",
                     "notes": clean_str(r[5]) if len(r) > 5 else ""
                 }
 
@@ -827,9 +827,9 @@ def fetch_sheet_data(creds_path: str) -> dict:
         if r and len(r) > 2 and clean_str(r[2]):
             nm = clean_str(r[2])
             vip_650_by_name[normalize_name(nm)] = {
-                "no": clean_str(r[0]),
-                "date": clean_str(r[1]),
-                "interviewer": clean_str(r[3]) or "MPS",
+                "no": clean_str(r[0]) if len(r) > 0 else "",
+                "date": clean_str(r[1]) if len(r) > 1 else "",
+                "interviewer": (clean_str(r[3]) if len(r) > 3 else "") or "MPS",
                 "notes": clean_str(r[5]) if len(r) > 5 else ""
             }
 
@@ -1232,17 +1232,18 @@ async def run_sync():
                             await session.execute(
                                 text("""
                                     UPDATE users 
-                                    SET email = COALESCE(NULLIF(email, ''), :email),
-                                        client_code = COALESCE(NULLIF(client_code, ''), :code)
+                                    SET email = COALESCE(NULLIF(email, ''), CAST(:email AS text)),
+                                        client_code = COALESCE(NULLIF(client_code, ''), CAST(:code AS text))
                                     WHERE id = :uid
-                                      AND ((email IS NULL OR email = '') AND :email IS NOT NULL 
-                                           OR (client_code IS NULL OR client_code = '') AND :code IS NOT NULL)
+                                      AND ((email IS NULL OR email = '') AND CAST(:email AS text) IS NOT NULL 
+                                           OR (client_code IS NULL OR client_code = '') AND CAST(:code AS text) IS NOT NULL)
                                 """),
                                 {"email": c_email or None, "code": c_code or None, "uid": user_id}
                             )
                         users_updated += 1
 
                     # 2. Profiles: Solo llenar campos vacíos (COALESCE / CASE), nunca sobreescribir
+                    # REGLA: La hoja no toca search_preferences (proyectado desde el CRM).
                     if user_id in existing_prof_user_ids:
                         if not is_dry_run:
                             await session.execute(
@@ -1255,42 +1256,29 @@ async def run_sync():
                                             WHEN difficult_notes IS NULL OR TRIM(difficult_notes) = '' THEN :d_notes 
                                             ELSE difficult_notes 
                                         END,
-                                        search_preferences = CASE 
-                                            WHEN (search_preferences IS NULL OR search_preferences = '{}'::jsonb) 
-                                                 AND CAST(:pref AS text) != '{}' 
-                                            THEN CAST(:pref AS jsonb) 
-                                            ELSE search_preferences 
-                                        END,
                                         updated_at = NOW()
                                     WHERE user_id = :uid
                                 """),
                                 {
                                     "resp": c_resp, "city": c_city, "plan": c_plan,
-                                    "d_notes": c_diff_notes, "pref": c_pref,
+                                    "d_notes": c_diff_notes,
                                     "uid": user_id
                                 }
                             )
                         profiles_updated += 1
                     else:
-                        if not is_dry_run:
-                            await session.execute(
-                                text("""
-                                    INSERT INTO profiles (
-                                        user_id, full_name_raw, responsable, city, plan_tier, 
-                                        is_difficult, difficult_notes, search_preferences, updated_at
-                                    ) VALUES (
-                                        :uid, :name, :resp, :city, :plan,
-                                        :diff, :d_notes, CAST(:pref AS jsonb), NOW()
-                                    )
-                                """),
-                                {
-                                    "uid": user_id, "name": c_name, "resp": c_resp,
-                                    "city": c_city, "plan": c_plan, "diff": c_diff,
-                                    "d_notes": c_diff_notes, "pref": c_pref
-                                }
-                            )
-                            existing_prof_user_ids.add(user_id)
-                        profiles_inserted += 1
+                        # REGLA: La hoja no crea perfiles (lo crea el CRM). Se registra en discrepancias.
+                        unmatched_discrepancies.append({
+                            "name": c_name,
+                            "norm_name": c_norm,
+                            "client_code": c_code,
+                            "email": c_email,
+                            "responsable": c_resp,
+                            "city": c_city,
+                            "plan_tier": c_plan,
+                            "source": "PROFILES / Clients plans",
+                            "reason": "usuario sin perfil: lo crea el CRM"
+                        })
                 else:
                     # PROHIBIDO INSERTAR A CIEGAS: Se registra en discrepancias para revisión humana
                     users_unmatched_count += 1
@@ -1323,7 +1311,7 @@ async def run_sync():
             om_map = {}
             for r in om_res.fetchall():
                 m_id, pa, pb, psyc = r
-                om_map[(pa or "", pb or "", (psyc or "").strip().upper())] = m_id
+                om_map[(normalize_name(pa or ""), normalize_name(pb or ""), (psyc or "").strip().upper())] = m_id
 
             for m in op_matches:
                 pa = m["person_a"].strip()
@@ -1407,7 +1395,7 @@ async def run_sync():
             sched_map = {}
             for r in sched_res.fetchall():
                 s_id, pa, pb = r
-                sched_map[(pa or "", pb or "")] = s_id
+                sched_map[(normalize_name(pa or ""), normalize_name(pb or ""))] = s_id
 
             for cm in canonical_matches:
                 pa = cm["person_a"].strip()
@@ -1433,11 +1421,11 @@ async def run_sync():
                         await session.execute(
                             text("""
                                 UPDATE scheduled_dates
-                                SET date_time = COALESCE(NULLIF(:dt, ''), date_time),
-                                    venue = COALESCE(NULLIF(:venue, ''), venue),
-                                    city = COALESCE(NULLIF(:city, ''), city),
+                                SET date_time = COALESCE(NULLIF(CAST(:dt AS text), ''), date_time),
+                                    venue = COALESCE(NULLIF(CAST(:venue AS text), ''), venue),
+                                    city = COALESCE(NULLIF(CAST(:city AS text), ''), city),
                                     reservation_confirmed = :res_conf,
-                                    feedback_ella = COALESCE(NULLIF(:fb, ''), feedback_ella),
+                                    feedback_ella = COALESCE(NULLIF(CAST(:fb AS text), ''), feedback_ella),
                                     had_date = :had_date,
                                     match_id = COALESCE(:mid, match_id),
                                     updated_at = NOW()

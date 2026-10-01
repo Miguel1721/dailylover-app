@@ -66,3 +66,6 @@ scratch/
 sync_sheet_status.json
 **/sync_sheet_status.json
 
+
+# Google Service Account (nunca commitear)
+*service_account*.json
