@@ -1,0 +1,59 @@
+{
+  "version": "2026-10-01-borrador",
+  "duracion_minutos": 30,
+  "nota": "Borrador de Claude para revisar con María. Cada pregunta dice qué campo del perfil llena. Las preguntas marcadas 'clave' alimentan el cálculo de compatibilidad (pesan más). Pregunta abierta primero; repregunta solo si la respuesta no fue clara.",
+  "bloques": [
+    {
+      "titulo": "1. Apertura y contexto (3 min)",
+      "preguntas": [
+        {"id": "p01", "texto": "Antes de empezar: ¿cómo llegaste a Daily Lover y qué te gustaría que saliera de este proceso?", "campos": ["what_searches_in_partner", "synthesis_who_really_is"], "clave": false},
+        {"id": "p02", "texto": "¿Hace cuánto estás soltera/o y cómo terminó tu última relación?", "campos": ["months_single", "emotional_processing"], "clave": false, "repregunta": "¿Qué aprendiste de esa relación?"}
+      ]
+    },
+    {
+      "titulo": "2. Quién es: vida diaria (6 min)",
+      "preguntas": [
+        {"id": "p03", "texto": "¿A qué te dedicas y qué estudiaste? ¿En qué colegio y universidad estudiaste?", "campos": ["education_level", "work_style"], "clave": true, "nota": "Colegio y universidad por separado: alimentan el Social Group."},
+        {"id": "p04", "texto": "¿En qué barrio vives y con quién vives?", "campos": ["housing_status"], "clave": true, "nota": "Barrio exacto (no solo la ciudad): alimenta el Social Group."},
+        {"id": "p05", "texto": "Cuéntame un fin de semana típico tuyo, de sábado a domingo.", "campos": ["weekend_style", "rumba", "sociability", "energy_level"], "clave": true},
+        {"id": "p06", "texto": "¿Haces deporte? ¿Cuál y cuántas veces por semana?", "campos": ["fitness_level", "physical_activity_level"], "clave": true},
+        {"id": "p07", "texto": "¿Viajas seguido? ¿Qué idiomas hablas?", "campos": ["mobility_travel"], "clave": false}
+      ]
+    },
+    {
+      "titulo": "3. Valores y proyecto de vida (7 min)",
+      "preguntas": [
+        {"id": "p08", "texto": "¿Tienes hijos? ¿Quieres tener hijos? ¿Qué tan importante es eso para ti en una pareja?", "campos": ["has_children", "wants_children", "kids_importance"], "clave": true, "nota": "Distinguir 'quiero' de 'lo dejaría a la pareja'. Si dice 'tal vez', preguntar qué lo inclinaría."},
+        {"id": "p09", "texto": "¿Qué tres valores son los más importantes para ti en tu vida?", "campos": ["values"], "clave": true},
+        {"id": "p10", "texto": "¿La religión o la espiritualidad tienen un lugar en tu vida? ¿Necesitas que tu pareja la comparta?", "campos": ["religion_importance"], "clave": false, "nota": "Dato sensible: solo si lo cuenta voluntariamente."},
+        {"id": "p11", "texto": "¿Cómo te imaginas la repartición de roles en casa y en las finanzas con tu pareja?", "campos": ["traditionalism_level", "financial_vibe"], "clave": false},
+        {"id": "p12", "texto": "¿Fumas? ¿Tomas? ¿Con qué frecuencia?", "campos": ["smoker", "drinks_alcohol"], "clave": true}
+      ]
+    },
+    {
+      "titulo": "4. Cómo es en pareja (7 min)",
+      "preguntas": [
+        {"id": "p13", "texto": "Cuando estás en una relación, ¿qué necesitas para sentirte querida/o? ¿Y cómo demuestras tú el cariño?", "campos": ["love_language_received", "love_language_given"], "clave": true},
+        {"id": "p14", "texto": "Cuando la otra persona tarda en responder o se aleja un poco, ¿qué sientes y qué haces?", "campos": ["attachment_style"], "clave": true, "nota": "Conducta, no autoetiqueta. Ansioso: busca, insiste, se angustia. Evitativo: se aleja, necesita espacio. Seguro: lo habla con calma."},
+        {"id": "p15", "texto": "¿Qué es lo que más te ha costado en tus relaciones anteriores y qué harías distinto?", "campos": ["self_awareness", "emotional_processing"], "clave": false}
+      ]
+    },
+    {
+      "titulo": "5. Qué busca (5 min)",
+      "preguntas": [
+        {"id": "p16", "texto": "Descríbeme a tu pareja ideal: cómo es, a qué se dedica, cómo pasa el tiempo.", "campos": ["what_searches_in_partner", "attraction_cues"], "clave": true},
+        {"id": "p17", "texto": "¿En qué rango de edad buscas? ¿Hay algo físico importante para ti (estatura, contextura, estilo)?", "campos": ["min_age", "max_age", "physical_importance"], "clave": true},
+        {"id": "p18", "texto": "¿Qué cosas NO tolerarías en una pareja, aunque todo lo demás encaje?", "campos": ["non_negotiables", "red_flags"], "clave": true, "nota": "Marcar cuáles son absolutos y cuáles son preferencia fuerte."},
+        {"id": "p19", "texto": "¿Estarías dispuesta/o a salir con alguien de otra ciudad?", "campos": [], "clave": true, "nota": "Define el filtro de ciudad."}
+      ]
+    },
+    {
+      "titulo": "6. Cierre y observación (2 min, la psicóloga)",
+      "preguntas": [
+        {"id": "p20", "texto": "¿Hay algo que quieras que tu futura pareja entienda de ti y que no te haya preguntado?", "campos": ["what_partner_should_understand"], "clave": false},
+        {"id": "o01", "texto": "OBSERVACIÓN (no se pregunta): puntualidad, presentación en cámara, seguridad al hablar, quién lleva la conversación, señales de riesgo.", "campos": ["punctuality", "presentation_style", "speaking_confidence", "conversation_lead", "behavioral_risk_level"], "clave": false},
+        {"id": "o02", "texto": "SÍNTESIS (la psicóloga, en 3 líneas): quién es realmente, cómo será en la primera cita, qué tipo de persona le conviene.", "campos": ["synthesis_who_really_is", "synthesis_first_date_behavior", "synthesis_best_match_type"], "clave": true}
+      ]
+    }
+  ]
+}

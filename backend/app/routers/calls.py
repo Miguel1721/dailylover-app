@@ -445,3 +445,10 @@ async def buscar_clientes(q: str = Query(..., min_length=3), db: AsyncSession = 
         WHERE unaccent(lower(u.name)) LIKE '%' || unaccent(lower(:q)) || '%' AND u.crm_id ~ '^[0-9]+$'
         ORDER BY u.id DESC LIMIT 10"""), {"q": q.strip()})).fetchall()
     return [{"id": r.id, "nombre": r.name, "crm_id": r.crm_id, "ciudad": r.city, "edad": r.age} for r in rows]
+
+
+@router.get("/recursos/guion")
+async def guion(user: dict = Depends(require_staff)):
+    """Guion de entrevista (borrador) con el campo del perfil que llena cada pregunta."""
+    import json as _json
+    return _json.loads((Path(__file__).resolve().parent.parent / "data" / "guion_entrevista.json").read_text(encoding="utf-8"))

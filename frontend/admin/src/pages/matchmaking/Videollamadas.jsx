@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import SalaLiveKit from '../../components/SalaLiveKit'
 import RevisionEntrevista from './RevisionEntrevista'
+import GuionEntrevista from './GuionEntrevista'
 
 // Videollamadas de entrevista (equipo). Crear llamada -> copiar enlace para la cliente -> entrar -> finalizar.
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
@@ -67,13 +68,18 @@ export default function Videollamadas() {
   if (revisar) return <RevisionEntrevista call={revisar} headers={headers} onBack={() => { setRevisar(null); cargar() }} />
 
   if (enSala) return (
-    <div style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ padding: 16, maxWidth: 1300, margin: '0 auto' }}>
       <h2 style={{ marginTop: 0 }}>Entrevista con {enSala.call.client_name}</h2>
       {!enSala.join.recording_enabled && <p style={{ color: '#92400e' }}>La cliente no ha autorizado la grabación (o aún no responde): esta llamada no se graba.</p>}
-      <SalaLiveKit join={enSala.join} uploadChunk={upload(enSala.call)} labelLocal="Tú" labelRemote={enSala.call.client_name}
-        onLeave={() => { setEnSala(null); cargar() }} />
-      <div style={{ marginTop: 14, textAlign: 'center' }}>
-        <button style={btn('#0f172a')} onClick={() => finalizar(enSala.call)}>Finalizar la entrevista y guardar el audio</button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, alignItems: 'start' }}>
+        <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+          <SalaLiveKit join={enSala.join} uploadChunk={upload(enSala.call)} labelLocal="Tú" labelRemote={enSala.call.client_name}
+            onLeave={() => { setEnSala(null); cargar() }} />
+          <div style={{ marginTop: 14, textAlign: 'center' }}>
+            <button style={btn('#0f172a')} onClick={() => finalizar(enSala.call)}>Finalizar la entrevista y guardar el audio</button>
+          </div>
+        </div>
+        <GuionEntrevista callId={enSala.call.id} headers={headers} />
       </div>
     </div>
   )
