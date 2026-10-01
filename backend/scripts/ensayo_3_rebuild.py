@@ -587,15 +587,19 @@ async def main():
 
     # 5. Indexar usuarios en memoria
     print("\n--- PASO 5: Indexando usuarios en base de datos ---")
-    user_rows = await conn.fetch("SELECT id, name, client_code FROM users;")
+    user_rows = await conn.fetch("SELECT id, name, client_code, crm_id FROM users ORDER BY (crm_id IS NOT NULL AND crm_id <> '') DESC, id DESC;")
     users_by_norm = {}
     users_first_last = {}
+    PARTICULAS = {"DE", "DEL", "LA", "LAS", "LOS", "Y"}
+    users_by_first = {}   # primer nombre -> [(id, set de palabras)] para enlazar nombres cortos de la hoja
 
     for u in user_rows:
         n = normalize_text(u["name"])
         if n and n not in users_by_norm:
             users_by_norm[n] = u["id"]
         parts = n.split()
+        if parts:
+            users_by_first.setdefault(parts[0], []).append((u["id"], set(parts) - PARTICULAS))
         if len(parts) >= 2:
             fl_key = (parts[0], parts[-1])
             # Solo si no colisiona
@@ -640,9 +644,14 @@ async def main():
         # Fallback a (primer_nombre, ultimo_apellido) si es unívoco
         parts = norm_exact.split()
         if len(parts) >= 2:
-            fl = users_first_last.get((parts[0], parts[-1]))
-            if fl:
-                return fl
+            # (Se quitó el enlace por primer nombre + último apellido: unía "Karen Lorena Castaño" con "Karen Paola Tobar Castaño".)
+            # Nombre corto en la hoja ("Roberto Carrizosa") contenido en el nombre completo ("Roberto Carrizosa Gómez"):
+            # se enlaza solo si hay UNA persona que contiene todas las palabras.
+            toks = set(parts) - PARTICULAS
+            if len(toks) >= 2:
+                hits = {uid for uid, tk in users_by_first.get(parts[0], []) if toks <= tk}
+                if len(hits) == 1:
+                    return hits.pop()
         return None
 
     for psyc_orig, candidates in psych_tabs:
