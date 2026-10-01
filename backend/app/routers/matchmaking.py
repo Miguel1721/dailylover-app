@@ -163,8 +163,43 @@ def clean_plan_name(plan_str: Optional[str]) -> str:
     s = re.sub(r'est\?+ndar', 'Estándar', s, flags=re.IGNORECASE)
     return s
 
-# Slots = citas del plan + 1 (una opción de reserva): 1 cita -> 2 slots, 2 citas -> 3 slots, 3 citas -> 4 slots.
-SLOTS_EXTRA = 1
+# Slots = espacios para proponer una Persona B. Se definen por plan (no son las citas):
+#   Básico 40k 2 · Estándar 65k: 2 (desde 1-may-2026) / 3 (antes) · Estándar Plus 98k 3 · Premium 150k 4 · VIP 195k 4
+#   Matchmaking Service 650k 6 · VIP + Unlimited (195k + 45k) 6
+def get_total_slots_by_plan(plan_str: Optional[str], fecha: Optional[Any] = None) -> Optional[int]:
+    if not plan_str or not str(plan_str).strip():
+        return None
+    p = clean_plan_name(plan_str).lower().strip()
+    if p in ("sin plan", "none", "null", "no plan"):
+        return None
+    if "ilimitad" in p or "unlimited" in p or "vip done" in p:
+        return 6
+    if "matchmaking service" in p or "650k" in p or "experience" in p or "mape" in p:
+        return 6
+    if "vip" in p or "195k" in p:
+        return 4
+    if "premium" in p or "150k" in p:
+        return 4
+    if "98k" in p or "plus" in p:
+        return 3
+    antes_de_mayo = False
+    if fecha is not None:
+        try:
+            f = fecha.date() if hasattr(fecha, "date") else fecha
+            antes_de_mayo = f < datetime(2026, 5, 1).date()
+        except Exception:
+            antes_de_mayo = False
+    m = re.search(r'(\d+)\s*(?:citas?|dates?)\b', p)
+    if m:
+        try:
+            return int(m.group(1)) + 1
+        except Exception:
+            pass
+    if "65k" in p or "estandar" in p or "estándar" in p:
+        return 3 if antes_de_mayo else 2
+    if "40k" in p or "basico" in p or "básico" in p:
+        return 2
+    return None
 
 
 def get_slots_by_plan(plan_str: Optional[str], fecha: Optional[Any] = None) -> Optional[int]:
@@ -3312,8 +3347,8 @@ async def get_mesa_psicologa(
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
             "citas_label": citas_label,
-            "slots_total": (total_slots + SLOTS_EXTRA) if total_slots else None,
-            "slots_libres": ((citas_restantes + SLOTS_EXTRA) if citas_restantes else 0) if citas_restantes is not None else None,
+            "slots_total": get_total_slots_by_plan(clean_plan, d.get("person_a_pay_date")),
+            "slots_libres": (lambda ts: (max(0, ts - used) if ts else None))(get_total_slots_by_plan(clean_plan, d.get("person_a_pay_date"))),
             "dias_esperando": dias_esperando,
             "dias_label": dias_label,
             "slot_number": d.get("slot_number") or 1,
@@ -3436,8 +3471,8 @@ async def get_mesa_psicologa(
             "citas_restantes": citas_restantes,
             "citas_total": total_slots or 0,
             "citas_label": citas_label,
-            "slots_total": (total_slots + SLOTS_EXTRA) if total_slots else None,
-            "slots_libres": ((citas_restantes + SLOTS_EXTRA) if citas_restantes else 0) if citas_restantes is not None else None,
+            "slots_total": get_total_slots_by_plan(clean_plan, latest_r.get("person_a_pay_date")),
+            "slots_libres": (lambda ts: (max(0, ts - used) if ts else None))(get_total_slots_by_plan(clean_plan, latest_r.get("person_a_pay_date"))),
             "dias_esperando": dias_esperando,
             "dias_label": dias_label,
             "slot_number": latest_r.get("slot_number") or 1,
