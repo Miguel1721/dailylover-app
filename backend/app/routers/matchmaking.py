@@ -3551,11 +3551,11 @@ async def get_mesa_psicologa(
         clean_plan = normalize_plan(latest_r.get("plan_tier"))
         total_slots = get_slots_by_plan(clean_plan, latest_r.get("person_a_pay_date"))
         used = dates_used_map.get(latest_r.get("user_id_a"), 0)
+        _agotado = False
 
         if total_slots is not None and total_slots > 0:
             citas_restantes = max(0, total_slots - used)
-            if citas_restantes == 0:
-                continue  # Plan agotado
+            _agotado = (citas_restantes == 0)   # plan agotado: se oculta salvo que queden borradores por enviar
             citas_label = f"{citas_restantes} citas restantes"
         else:
             citas_restantes = None
@@ -3681,7 +3681,10 @@ async def get_mesa_psicologa(
             item["slots_libres"] = max(0, _ts - _noroj)
         item["slots_detalle"] = _det
         item["alerta_nuevo_match"] = any(_x["estado"] == "nogente" and _x.get("nuevos") for _x in _det)
-        if _ocupado and not ((item["slots_libres"] or 0) > 0):
+        # El cliente permanece en "Por proponer" mientras tenga slots libres o borradores sin enviar;
+        # desaparece solo cuando el check ya envió todo a María.
+        _borr = sum(1 for _x in _det if (_x.get("status") or "").upper() == "BORRADOR")
+        if _borr == 0 and (_agotado or (_ocupado and not ((item["slots_libres"] or 0) > 0))):
             continue
         por_proponer.append(item)
 
