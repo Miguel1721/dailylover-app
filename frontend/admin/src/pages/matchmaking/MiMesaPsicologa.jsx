@@ -64,6 +64,7 @@ export default function MiMesaPsicologa() {
   // Modal Elegir (confirmación con nota opcional para María)
   const [choosingCandidate, setChoosingCandidate] = useState(null)
   const [proposalNote, setProposalNote] = useState('')
+  const [sendingSlots, setSendingSlots] = useState(null)
   const [manualB, setManualB] = useState({})   // Persona B puesta a mano, por fila
   const [submittingProposal, setSubmittingProposal] = useState(false)
 
@@ -135,7 +136,8 @@ export default function MiMesaPsicologa() {
   const SLOT_ESTADO = {
     rojo: { label: 'Not approved', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.10)' },
     amarillo: { label: 'En proceso', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.10)' },
-    verde: { label: 'Listo para cita', color: '#10B981', bg: 'rgba(16, 185, 129, 0.10)' }
+    verde: { label: 'Listo para cita', color: '#10B981', bg: 'rgba(16, 185, 129, 0.10)' },
+    nogente: { label: 'No hay gente', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.10)' }
   }
 
   const buscarPersonaB = async (row, key) => {
@@ -163,7 +165,10 @@ export default function MiMesaPsicologa() {
     }
   }
 
-  const enviarPersonaB = async (row, key) => {
+  const esFilaNG = (row) => (row.status || '').toUpperCase().includes('NO HAY GENTE')
+
+  // Guarda la Persona B en el slot como borrador; el check del cliente la envía a María
+  const enviarPersonaB = async (row, key, opts = {}) => {
     const f = manualB[key]?.found
     if (!f) return
     setMB(key, { sending: true, error: '' })
@@ -172,7 +177,9 @@ export default function MiMesaPsicologa() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
-          match_id: row.id,
+          match_id: opts.targetId || row.id,
+          new_slot: opts.targetId ? false : esFilaNG(row),
+          borrador: true,
           candidate_user_id: f.user_id,
           candidate_name: f.name,
           candidate_crm_id: f.crm_id || '',
@@ -180,17 +187,136 @@ export default function MiMesaPsicologa() {
         })
       })
       if (res.ok) {
-        setNotification(`Propuesta enviada a María: ${row.person_a} x ${f.name}`)
-        setTimeout(() => setNotification(''), 6000)
+        setNotification(`Guardada en el slot: ${row.person_a} x ${f.name}. Cuando todos los slots estén llenos, envía a María con el check.`)
+        setTimeout(() => setNotification(''), 7000)
         setManualB(prev => { const n = { ...prev }; delete n[key]; return n })
         fetchMesa()
       } else {
         const err = await res.json().catch(() => ({}))
-        setMB(key, { sending: false, error: err.detail || 'No se pudo enviar la propuesta.' })
+        setMB(key, { sending: false, error: err.detail || 'No se pudo guardar en el slot.' })
       }
     } catch (e) {
       setMB(key, { sending: false, error: 'Error de conexión.' })
     }
+  }
+
+  const proponerNuevoDesdeAviso = async (row, sl, cand) => {
+    const key = `${sl.match_id}:aviso:${cand.user_id}`
+    setMB(key, { sending: true })
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/propose-candidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          match_id: sl.match_id, new_slot: false, borrador: true,
+          candidate_user_id: cand.user_id, candidate_name: cand.name, candidate_crm_id: cand.crm_id || '',
+          notes: 'Candidata nueva detectada por la revisión diaria de No hay gente'
+        })
+      })
+      if (res.ok) {
+        setNotification(`Guardada en el slot: ${row.person_a} x ${cand.name}.`)
+        setTimeout(() => setNotification(''), 6000)
+        fetchMesa()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.detail || 'No se pudo guardar en el slot.')
+      }
+    } catch (e) {
+      alert('Error de conexión.')
+    } finally {
+      setMB(key, { sending: false })
+    }
+  }
+
+  const marcarNoHayGente = async (row, key) => {
+    setMB(key, { marking: true, error: '' })
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/no-hay-gente`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ match_id: row.id })
+      })
+      if (res.ok) {
+        setManualB(prev => { const n = { ...prev }; delete n[key]; return n })
+        fetchMesa()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setMB(key, { marking: false, error: err.detail || 'No se pudo marcar.' })
+      }
+    } catch (e) {
+      setMB(key, { marking: false, error: 'Error de conexión.' })
+    }
+  }
+
+  const enviarSlotsAMaria = async (row) => {
+    setSendingSlots(row.id)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/enviar-slots-a-maria`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ match_id: row.id })
+      })
+      if (res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setNotification(`Enviado a María: ${d.enviados || ''} propuesta(s) de ${row.person_a}`)
+        setTimeout(() => setNotification(''), 6000)
+        fetchMesa()
+        setActiveTab('en_revision')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.detail || 'No se pudo enviar a María.')
+      }
+    } catch (e) {
+      alert('Error de conexión.')
+    } finally {
+      setSendingSlots(null)
+    }
+  }
+
+  // Campo de Persona B reutilizable: slot libre (con No hay gente) o slot en No hay gente (para cambiarlo)
+  const renderPersonaBInput = (row, key, opts = {}) => {
+    const mb = manualB[key] || {}
+    return (
+      <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={mb.text || ''}
+            onChange={(e) => setMB(key, { text: e.target.value, found: null, error: '' })}
+            onKeyDown={(e) => { if (e.key === 'Enter') buscarPersonaB(row, key) }}
+            placeholder="Pega la URL del CRM o escribe el nombre de la Persona B"
+            style={{ flex: '1 1 220px', minWidth: 0, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }}
+          />
+          <button type="button" onClick={() => buscarPersonaB(row, key)} disabled={mb.loading}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {mb.loading ? 'Buscando...' : 'Buscar'}
+          </button>
+          {opts.canNoGente && (
+            <button type="button" onClick={() => marcarNoHayGente(row, key)} disabled={mb.marking}
+              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #6B7280', background: 'transparent', color: '#6B7280', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              {mb.marking ? 'Marcando...' : 'No hay gente'}
+            </button>
+          )}
+        </div>
+        {mb.error && (
+          <div style={{ marginTop: 6, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{mb.error}</div>
+        )}
+        {mb.found && (
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+              <b>{mb.found.name}</b>
+              {mb.found.age ? ` · ${mb.found.age} años` : ''}
+              {mb.found.city ? ` · ${mb.found.city}` : ''}
+              {mb.found.plan_tier ? ` · ${mb.found.plan_tier}` : ''}
+            </span>
+            <button type="button" onClick={() => enviarPersonaB(row, key, opts)} disabled={mb.sending}
+              style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              {mb.sending ? 'Guardando...' : 'Guardar en el slot'}
+            </button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   // 3. Confirmar "Elegir" candidata -> Enviar propuesta a María
@@ -200,6 +326,8 @@ export default function MiMesaPsicologa() {
     try {
       const payload = {
         match_id: proposingClient.id,
+        new_slot: esFilaNG(proposingClient),
+        borrador: true,
         candidate_user_id: choosingCandidate.user_id,
         candidate_name: choosingCandidate.name,
         candidate_crm_id: choosingCandidate.crm_id || '',
@@ -219,13 +347,12 @@ export default function MiMesaPsicologa() {
       })
 
       if (res.ok) {
-        setNotification(`✓ Propuesta enviada a María: ${proposingClient.person_a} x ${choosingCandidate.name}`)
+        setNotification(`Guardada en el slot: ${proposingClient.person_a} x ${choosingCandidate.name}. Cuando todos los slots estén llenos, envía a María con el check.`)
         setTimeout(() => setNotification(''), 6000)
         setChoosingCandidate(null)
         setProposalNote('')
         setProposingClient(null)
         fetchMesa()
-        setActiveTab('en_revision')
       } else {
         const err = await res.json()
         alert(`Error al enviar propuesta: ${err.detail || 'Operación no completada'}`)
@@ -732,70 +859,89 @@ export default function MiMesaPsicologa() {
                         </div>
                       </div>
 
-                      {/* Lista de slots del plan: llenos bloqueados con color, libres con campo para la Persona B */}
-                          <div style={{ flex: '2 1 440px', minWidth: 300, maxWidth: 760 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                              {row.slots_total ? `Slots del plan: ${row.slots_total} (${row.slots_libres} libres)` : 'Slots: por confirmar'}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {(row.slots_detalle || []).map((sl, i) => {
-                                const est = SLOT_ESTADO[sl.estado] || SLOT_ESTADO.amarillo
-                                return (
-                                  <div key={sl.match_id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 10px', borderRadius: 8, background: est.bg, border: `1px solid ${est.color}55`, borderLeft: `4px solid ${est.color}` }}>
+                      {/* Lista de slots del plan: llenos bloqueados con color; libres con campo; No hay gente editable */}
+                      <div style={{ flex: '2 1 440px', minWidth: 300, maxWidth: 760 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                          {row.slots_total ? `Slots del plan: ${row.slots_total} (${row.slots_libres} libres)` : 'Slots: por confirmar'}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {(row.slots_detalle || []).map((sl, i) => {
+                            const est = SLOT_ESTADO[sl.estado] || SLOT_ESTADO.amarillo
+                            if (sl.estado === 'nogente') {
+                              return (
+                                <div key={sl.match_id} style={{ padding: '7px 10px', borderRadius: 8, background: est.bg, border: `1px solid ${est.color}55`, borderLeft: `4px solid ${est.color}` }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: 11, fontWeight: 800, color: est.color, minWidth: 46 }}>Slot {i + 1}</span>
-                                    <UserAvatar url={sl.person_b_photo_url} name={sl.person_b} size={26} />
                                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', flex: '1 1 160px' }}>
-                                      {sl.person_b}{sl.person_b_age ? ` · ${sl.person_b_age} años` : ''}
+                                      No hay gente{sl.dias_esperando != null ? ` · ${sl.dias_esperando} días esperando` : ''}
                                     </span>
                                     <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20, background: est.color, color: '#fff' }}>{est.label}</span>
-                                    {sl.estado === 'rojo' && sl.motivo && (
-                                      <span style={{ flexBasis: '100%', fontSize: 12, color: est.color, fontWeight: 600 }}>{sl.motivo}</span>
-                                    )}
                                   </div>
-                                )
-                              })}
-                              {Array.from({ length: row.slots_libres || 0 }).map((_, k) => {
-                                const key = `${row.id}:${k}`
-                                const mb = manualB[key] || {}
-                                return (
-                                  <div key={key} style={{ padding: '7px 10px', borderRadius: 8, border: '1px dashed var(--border-color)' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', minWidth: 46 }}>Slot {(row.slots_detalle || []).length + k + 1}</span>
-                                      <input
-                                        type="text"
-                                        value={mb.text || ''}
-                                        onChange={(e) => setMB(key, { text: e.target.value, found: null, error: '' })}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') buscarPersonaB(row, key) }}
-                                        placeholder="Pega la URL del CRM o escribe el nombre de la Persona B"
-                                        style={{ flex: '1 1 240px', minWidth: 0, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }}
-                                      />
-                                      <button type="button" onClick={() => buscarPersonaB(row, key)} disabled={mb.loading}
-                                        style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                                        {mb.loading ? 'Buscando...' : 'Buscar'}
-                                      </button>
-                                    </div>
-                                    {mb.error && (
-                                      <div style={{ marginTop: 6, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{mb.error}</div>
-                                    )}
-                                    {mb.found && (
-                                      <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
-                                        <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
-                                          <b>{mb.found.name}</b>
-                                          {mb.found.age ? ` · ${mb.found.age} años` : ''}
-                                          {mb.found.city ? ` · ${mb.found.city}` : ''}
-                                          {mb.found.plan_tier ? ` · ${mb.found.plan_tier}` : ''}
-                                        </span>
-                                        <button type="button" onClick={() => enviarPersonaB(row, key)} disabled={mb.sending}
-                                          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                                          {mb.sending ? 'Enviando...' : 'Enviar a María'}
-                                        </button>
+                                  {(sl.nuevos || []).length > 0 && (
+                                    <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.45)' }}>
+                                      <div style={{ fontSize: 12, fontWeight: 800, color: '#B45309' }}>
+                                        Posibilidad de nuevo match{sl.dias_esperando != null ? ` (${sl.dias_esperando} días esperando)` : ''}
                                       </div>
-                                    )}
+                                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                                        {sl.nuevos.slice(0, 4).map(c => (
+                                          <button key={c.user_id} type="button" onClick={() => proponerNuevoDesdeAviso(row, sl, c)} disabled={manualB[`${sl.match_id}:aviso:${c.user_id}`]?.sending}
+                                            style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #F59E0B', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                            Proponer a {c.name}{c.score ? ` (${Math.round(c.score)})` : ''}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div style={{ marginTop: 8 }}>
+                                    {renderPersonaBInput(row, `${sl.match_id}:ng`, { targetId: sl.match_id, canNoGente: false })}
                                   </div>
-                                )
-                              })}
+                                </div>
+                              )
+                            }
+                            const etiqueta = sl.status === 'BORRADOR' ? 'Borrador' : est.label
+                            return (
+                              <div key={sl.match_id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 10px', borderRadius: 8, background: est.bg, border: `1px solid ${est.color}55`, borderLeft: `4px solid ${est.color}` }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: est.color, minWidth: 46 }}>Slot {i + 1}</span>
+                                <UserAvatar url={sl.person_b_photo_url} name={sl.person_b} size={26} />
+                                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', flex: '1 1 160px' }}>
+                                  {sl.person_b}{sl.person_b_age ? ` · ${sl.person_b_age} años` : ''}
+                                </span>
+                                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20, background: est.color, color: '#fff' }}>{etiqueta}</span>
+                                {sl.estado === 'rojo' && sl.motivo && (
+                                  <span style={{ flexBasis: '100%', fontSize: 12, color: est.color, fontWeight: 600 }}>{sl.motivo}</span>
+                                )}
+                              </div>
+                            )
+                          })}
+                          {Array.from({ length: row.slots_libres || 0 }).map((_, k) => {
+                            const key = `${row.id}:${k}`
+                            return (
+                              <div key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', padding: '7px 10px', borderRadius: 8, border: '1px dashed var(--border-color)' }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', minWidth: 46, paddingTop: 9 }}>Slot {(row.slots_detalle || []).length + k + 1}</span>
+                                {renderPersonaBInput(row, key, { canNoGente: true })}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {(() => {
+                          const det = row.slots_detalle || []
+                          const borr = det.filter(x => x.status === 'BORRADOR').length
+                          const falta = row.slots_total ? (row.slots_libres || 0) : 0
+                          const listo = borr > 0 && falta === 0
+                          return (
+                            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                              <button type="button" onClick={() => enviarSlotsAMaria(row)} disabled={!listo || sendingSlots === row.id}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: 'none', background: listo ? '#10B981' : 'rgba(107, 114, 128, 0.25)', color: listo ? '#fff' : 'var(--text-muted)', fontSize: 12, fontWeight: 800, cursor: listo ? 'pointer' : 'not-allowed' }}>
+                                <CheckCircle size={14} />
+                                {sendingSlots === row.id ? 'Enviando...' : 'Enviar a María'}
+                              </button>
+                              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                {falta > 0 ? `Faltan ${falta} slots por llenar o marcar No hay gente` : (borr === 0 ? 'No hay propuestas nuevas por enviar' : `${borr} propuesta(s) listas para enviar`)}
+                              </span>
                             </div>
-                          </div>
+                          )
+                        })()}
+                      </div>
 
                       {/* Botón único para proponer match */}
                       <div>

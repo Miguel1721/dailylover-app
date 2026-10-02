@@ -3122,6 +3122,8 @@ async def discard_candidate(
 
 
 class ProposeCandidateRequest(BaseModel):
+    borrador: bool = False   # guarda en el slot sin enviar a María (el check del cliente la envía)
+    new_slot: bool = False   # fuerza fila nueva (slot libre) aunque la fila de referencia esté vacía
     match_id: int
     candidate_user_id: int
     candidate_name: str
@@ -3151,7 +3153,7 @@ async def propose_candidate_to_maria(
 
     # Slots bloqueados: si la fila ya tiene Persona B, no se sobrescribe; se crea un slot nuevo (fila nueva)
     cur = (await db.execute(text("SELECT person_b, user_id_a FROM operational_matches WHERE id = :m"), {"m": payload.match_id})).fetchone()
-    if cur and (cur.person_b or "").strip() and (cur.person_b or "").strip().lower() not in ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null"):
+    if cur and (payload.new_slot or ((cur.person_b or "").strip() and (cur.person_b or "").strip().lower() not in ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null"))):
         if cur.user_id_a and payload.candidate_user_id:
             dup = (await db.execute(text("""
                 SELECT 1 FROM operational_matches
@@ -3184,7 +3186,7 @@ async def propose_candidate_to_maria(
         SET person_b = :pb,
             user_id_b = :ub,
             person_b_crm_id = :cid,
-            status = 'HECHO',
+            status = :st,
             approved_by_maria = false,
             observations = :obs,
             compatibility_score = :score,
@@ -3195,6 +3197,7 @@ async def propose_candidate_to_maria(
         WHERE id = :mid
     """), {
         "mid": payload.match_id,
+        "st": "BORRADOR" if payload.borrador else "HECHO",
         "pb": cand_name,
         "ub": payload.candidate_user_id,
         "cid": payload.candidate_crm_id or "",
@@ -3204,9 +3207,10 @@ async def propose_candidate_to_maria(
         "analysis": analysis_str
     })
 
-    det = f"Propuesta enviada a María por {match_row.psychologist_name}: {match_row.person_a} x {cand_name}."
-    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": match_row.person_a, "mid": payload.match_id, "d": det})
-    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": cand_name, "mid": payload.match_id, "d": det})
+    if not payload.borrador:
+        det = f"Propuesta enviada a María por {match_row.psychologist_name}: {match_row.person_a} x {cand_name}."
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": match_row.person_a, "mid": payload.match_id, "d": det})
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": cand_name, "mid": payload.match_id, "d": det})
 
     await db.commit()
     return {
@@ -3214,6 +3218,94 @@ async def propose_candidate_to_maria(
         "match_id": payload.match_id,
         "message": f"Propuesta para {match_row.person_a} y {cand_name} enviada exitosamente a María para aprobación."
     }
+
+
+
+_PB_VACIOS = ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null", "")
+
+
+def _slot_rojo(status: str, obs: str) -> bool:
+    st = (status or "").upper().strip()
+    return (st in ("NOT APPROVED", "NO ACCEPT", "RECHAZADO") or st.startswith("RECHAZADO") or "TROUBLE" in st
+            or "DEVUELTO MARÍA" in (obs or "") or "Rechazado por María" in (obs or ""))
+
+
+class SlotNoGenteRequest(BaseModel):
+    match_id: int
+    notes: Optional[str] = None
+
+
+@router.post("/matches/no-hay-gente")
+async def marcar_slot_no_hay_gente(payload: SlotNoGenteRequest, db: AsyncSession = Depends(get_db)):
+    """Marca un slot como 'No hay gente'. No crea slots extra y se puede cambiar despues por una persona."""
+    row = (await db.execute(text("SELECT id, person_a, user_id_a, person_b, status FROM operational_matches WHERE id = :m"), {"m": payload.match_id})).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Fila de match no encontrada")
+    vacio = (row.person_b or "").strip().lower() in _PB_VACIOS
+    ya_ng = "NO HAY GENTE" in (row.status or "").upper()
+    nota = (payload.notes or "").strip() or "Slot marcado como No hay gente"
+    if vacio and not ya_ng:
+        await db.execute(text("UPDATE operational_matches SET status = 'NO HAY GENTE', observations = :o, updated_at = NOW() WHERE id = :m"), {"o": nota, "m": payload.match_id})
+        mid = payload.match_id
+    else:
+        mid = (await db.execute(text("""
+            INSERT INTO operational_matches (person_a, user_id_a, person_a_crm_id, psychologist_name, city, plan_tier, slot_number, status, approved_by_maria, observations, created_at, updated_at)
+            SELECT o.person_a, o.user_id_a, o.person_a_crm_id, o.psychologist_name, o.city, o.plan_tier,
+                   COALESCE((SELECT MAX(x.slot_number) FROM operational_matches x WHERE x.user_id_a = o.user_id_a), 0) + 1,
+                   'NO HAY GENTE', false, :o, NOW(), NOW()
+            FROM operational_matches o WHERE o.id = :m
+            RETURNING id
+        """), {"m": payload.match_id, "o": nota})).scalar()
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'NO_HAY_GENTE', :d, NOW())"),
+                     {"n": row.person_a, "mid": mid, "d": f"Slot marcado como No hay gente para {row.person_a}."})
+    await db.commit()
+    return {"status": "success", "match_id": mid}
+
+
+class EnviarSlotsRequest(BaseModel):
+    match_id: int
+
+
+@router.post("/matches/enviar-slots-a-maria")
+async def enviar_slots_a_maria(payload: EnviarSlotsRequest, db: AsyncSession = Depends(get_db)):
+    """Check del cliente: envia a María los borradores. Exige todos los slots llenos (o en 'No hay gente')."""
+    base = (await db.execute(text("""
+        SELECT m.id, m.person_a, m.user_id_a, m.plan_tier, pA.last_payment_date AS pay_date
+        FROM operational_matches m LEFT JOIN profiles pA ON pA.user_id = m.user_id_a
+        WHERE m.id = :m
+    """), {"m": payload.match_id})).fetchone()
+    if not base:
+        raise HTTPException(status_code=404, detail="Fila de match no encontrada")
+    if base.user_id_a:
+        rows = (await db.execute(text("SELECT id, person_a, person_b, status, observations FROM operational_matches WHERE user_id_a = :u"), {"u": base.user_id_a})).fetchall()
+    else:
+        rows = (await db.execute(text("SELECT id, person_a, person_b, status, observations FROM operational_matches WHERE LOWER(TRIM(person_a)) = :p"), {"p": (base.person_a or "").strip().lower()})).fetchall()
+    llenos = 0
+    borradores = []
+    for r in rows:
+        pb = (r.person_b or "").strip()
+        st = (r.status or "").upper().strip()
+        if pb and pb.lower() not in _PB_VACIOS:
+            if _slot_rojo(r.status, r.observations):
+                continue
+            llenos += 1
+            if st == "BORRADOR":
+                borradores.append(r)
+        elif "NO HAY GENTE" in st:
+            llenos += 1
+    if not borradores:
+        raise HTTPException(status_code=400, detail="No hay propuestas en borrador para enviar a María.")
+    ts = get_total_slots_by_plan(normalize_plan(base.plan_tier), base.pay_date)
+    if ts and llenos < ts:
+        raise HTTPException(status_code=400, detail=f"Faltan {ts - llenos} slots por llenar o marcar como No hay gente.")
+    ids = [r.id for r in borradores]
+    await db.execute(text("UPDATE operational_matches SET status = 'HECHO', approved_by_maria = false, updated_at = NOW() WHERE id = ANY(:ids)"), {"ids": ids})
+    for r in borradores:
+        det = f"Propuesta enviada a María: {r.person_a} x {r.person_b}."
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": r.person_a, "mid": r.id, "d": det})
+        await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": r.person_b, "mid": r.id, "d": det})
+    await db.commit()
+    return {"status": "success", "enviados": len(ids), "match_ids": ids}
 
 
 @router.get("/mesa-psicologa")
@@ -3428,6 +3520,20 @@ async def get_mesa_psicologa(
                 en_revision.append(item)
                 clients_in_revision.add(cli_k)
 
+    _vig = {}
+    try:
+        for _x in (await db.execute(text("SELECT match_id, nuevos FROM no_gente_vigilancia WHERE jsonb_array_length(nuevos) > 0"))).fetchall():
+            _nv = _x.nuevos
+            if isinstance(_nv, str):
+                try:
+                    _nv = json.loads(_nv)
+                except Exception:
+                    _nv = []
+            _vig[_x.match_id] = _nv or []
+    except Exception:
+        await db.rollback()
+        _vig = {}
+
     # 2. Por proponer: BANDEJA POR CLIENTE (deduplicada)
     for cli_k, c_rows in rows_by_client.items():
         _ocupado = (cli_k in clients_in_revision) or (cli_k in clients_with_pending_date)
@@ -3439,7 +3545,7 @@ async def get_mesa_psicologa(
         st = (latest_r.get("status") or "").upper().strip()
 
         # Excluir clientes con estados de exclusión
-        if any(term in st for term in ("TROUBLE", "REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO", "NO HAY GENTE")):
+        if any(term in st for term in ("TROUBLE", "REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO")):
             continue
 
         clean_plan = normalize_plan(latest_r.get("plan_tier"))
@@ -3527,9 +3633,22 @@ async def get_mesa_psicologa(
         _det = []
         for _r in sorted(c_rows, key=lambda x: x.get("id") or 0):
             _pb = (_r.get("person_b") or "").strip()
+            _st0 = (_r.get("status") or "").upper().strip()
+            if (not _pb) and "NO HAY GENTE" in _st0:
+                _upd = _r.get("updated_at") or _r.get("created_at")
+                _dias_ng = None
+                if _upd and not is_mass_migration_date(_upd):
+                    _dias_ng = max(0, (now - _upd).days)
+                _det.append({
+                    "match_id": _r.get("id"), "person_b": "", "user_id_b": None, "person_b_crm_id": "",
+                    "person_b_photo_url": "", "person_b_age": None, "estado": "nogente", "status": _r.get("status"),
+                    "motivo": "", "compatibility_score": None, "dias_esperando": _dias_ng,
+                    "nuevos": _vig.get(_r.get("id")) or [],
+                })
+                continue
             if not _pb or _pb.lower() in ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null"):
                 continue
-            _st = (_r.get("status") or "").upper().strip()
+            _st = _st0
             _ob = _r.get("observations") or ""
             if _st in ("NOT APPROVED", "NO ACCEPT", "RECHAZADO") or _st.startswith("RECHAZADO") or "DEVUELTO MARÍA" in _ob or "Rechazado por María" in _ob:
                 _est = "rojo"
@@ -3561,11 +3680,12 @@ async def get_mesa_psicologa(
             item["slots_total"] = _ts + (len(_det) - _noroj)
             item["slots_libres"] = max(0, _ts - _noroj)
         item["slots_detalle"] = _det
+        item["alerta_nuevo_match"] = any(_x["estado"] == "nogente" and _x.get("nuevos") for _x in _det)
         if _ocupado and not ((item["slots_libres"] or 0) > 0):
             continue
         por_proponer.append(item)
 
-    por_proponer.sort(key=lambda x: (x["dias_esperando"] if x["dias_esperando"] is not None else -1, x["id"]), reverse=True)
+    por_proponer.sort(key=lambda x: (1 if x.get("alerta_nuevo_match") else 0, x["dias_esperando"] if x["dias_esperando"] is not None else -1, x["id"]), reverse=True)
     en_revision.sort(key=lambda x: x["id"], reverse=True)
     aprobados.sort(key=lambda x: x["id"], reverse=True)
     rechazados.sort(key=lambda x: x["id"], reverse=True)
