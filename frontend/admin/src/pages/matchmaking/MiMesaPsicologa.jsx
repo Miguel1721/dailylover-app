@@ -54,12 +54,24 @@ export default function MiMesaPsicologa() {
   const [vista, setVista] = useState('todos')   // 'todos' | 'propios' | 'heredados'
   const [limite, setLimite] = useState(40)         // tarjetas dibujadas por bandeja (la lista completa pesa mucho)
   const [rawData, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+  const [fNuevos, setFNuevos] = useState(false)   // clientes nuevos: sin ningún slot todavía
+  const [fGenero, setFGenero] = useState('')
+  const [fCiudad, setFCiudad] = useState('')
+  const [orden, setOrden] = useState('defecto')      // 'defecto' | 'recientes' | 'antiguos' | 'az'
   const data = (() => {
-    if (vista === 'todos') return rawData
     const want = vista === 'heredados'
-    const fl = (a) => (a || []).filter(r => !!r.is_inherited === want)
-    return { ...rawData, por_proponer: fl(rawData.por_proponer), en_revision: fl(rawData.en_revision), aprobados: fl(rawData.aprobados), rechazados: fl(rawData.rechazados), troublemakers: fl(rawData.troublemakers) }
+    const fl = (a) => (vista === 'todos' ? (a || []) : (a || []).filter(r => !!r.is_inherited === want))
+    let pp = fl(rawData.por_proponer)
+    if (fNuevos) pp = pp.filter(r => (r.slots_detalle || []).length === 0)
+    if (fGenero) pp = pp.filter(r => (r.person_a_gender || '') === fGenero)
+    if (fCiudad) pp = pp.filter(r => (r.person_a_city || '') === fCiudad)
+    if (orden === 'az') pp = [...pp].sort((a, b) => (a.person_a || '').localeCompare(b.person_a || '', 'es'))
+    else if (orden === 'recientes') pp = [...pp].sort((a, b) => (b.fecha_creacion || '').localeCompare(a.fecha_creacion || ''))
+    else if (orden === 'antiguos') pp = [...pp].sort((a, b) => (a.fecha_creacion || '').localeCompare(b.fecha_creacion || ''))
+    return { ...rawData, por_proponer: pp, en_revision: fl(rawData.en_revision), aprobados: fl(rawData.aprobados), rechazados: fl(rawData.rechazados), troublemakers: fl(rawData.troublemakers) }
   })()
+  const ciudadesPP = [...new Set((rawData.por_proponer || []).map(r => r.person_a_city).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+  const generosPP = [...new Set((rawData.por_proponer || []).map(r => r.person_a_gender).filter(Boolean))].sort()
   const [notification, setNotification] = useState('')
 
   // Panel "Proponer match"
@@ -109,7 +121,7 @@ export default function MiMesaPsicologa() {
     fetchMesa()
   }, [fetchMesa])
 
-  useEffect(() => { setLimite(40) }, [activeTab, vista, searchTerm])
+  useEffect(() => { setLimite(40) }, [activeTab, vista, searchTerm, fNuevos, fGenero, fCiudad, orden])
 
   // Cambia una fila de Por proponer al instante en pantalla; la recarga real corre después sin spinner
   const patchFila = (rowId, fn) => setData(prev => ({ ...prev, por_proponer: (prev.por_proponer || []).map(r => (r.id === rowId ? fn(r) : r)) }))
@@ -759,6 +771,39 @@ export default function MiMesaPsicologa() {
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Los números cuentan clientes en Por proponer</span>
       </div>
 
+{activeTab === 'por_proponer' && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '0 0 14px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={fNuevos} onChange={(e) => setFNuevos(e.target.checked)} />
+            Clientes nuevos (sin ningún slot)
+          </label>
+          <select value={fGenero} onChange={(e) => setFGenero(e.target.value)}
+            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12 }}>
+            <option value="">Género: todos</option>
+            {generosPP.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={fCiudad} onChange={(e) => setFCiudad(e.target.value)}
+            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12 }}>
+            <option value="">Ciudad: todas</option>
+            {ciudadesPP.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={orden} onChange={(e) => setOrden(e.target.value)}
+            style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12 }}>
+            <option value="defecto">Orden: más días esperando</option>
+            <option value="recientes">Fecha: más recientes primero</option>
+            <option value="antiguos">Fecha: más antiguos primero</option>
+            <option value="az">Alfabético A-Z</option>
+          </select>
+          {(fNuevos || fGenero || fCiudad || orden !== 'defecto') && (
+            <button type="button" onClick={() => { setFNuevos(false); setFGenero(''); setFCiudad(''); setOrden('defecto') }}
+              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              Quitar filtros
+            </button>
+          )}
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{data.por_proponer.length} clientes</span>
+        </div>
+      )}
+
       {/* CONTENIDO DE BANDEJAS */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60, background: 'var(--bg-card)', borderRadius: 14 }}>
@@ -906,7 +951,7 @@ export default function MiMesaPsicologa() {
                       {/* Lista de slots del plan: llenos bloqueados con color; libres con campo; No hay gente editable */}
                       <div style={{ flex: '2 1 440px', minWidth: 300, maxWidth: 760 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                          {row.slots_total ? `Slots del plan: ${row.slots_total} (${row.slots_libres} libres)` : 'Slots: por confirmar'}
+                          {(() => { const pers = (row.slots_detalle || []).filter(x => x.estado === 'verde' || x.estado === 'amarillo').length; return row.slots_total ? `Personas: ${pers} de ${row.slots_total} (faltan ${row.slots_libres})` : `Personas: ${pers}` })()}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {(row.slots_detalle || []).map((sl, i) => {
