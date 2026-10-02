@@ -3589,6 +3589,7 @@ async def enviar_slots_a_maria(payload: EnviarSlotsRequest, db: AsyncSession = D
 async def get_mesa_psicologa(
     psychologist: str = Query(...),
     search: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -8181,6 +8182,7 @@ async def get_matches_pending_service(
     all_items: Optional[bool] = Query(False),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=5000),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
