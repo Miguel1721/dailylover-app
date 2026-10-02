@@ -87,6 +87,21 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     logger.info(f"Stripe Webhook recibido: {event_type}")
 
+    # Auditoria: guarda un resumen (sin datos personales) de cada evento de Stripe recibido, para saber que tipos llegan
+    try:
+        await db.execute(text("INSERT INTO webhook_events_raw (source, event_type, payload, processed, received_at) VALUES ('stripe', :t, :p, true, NOW())"),
+                         {"t": str(event_type or "")[:80], "p": json.dumps({"id": payload.get("id"), "type": event_type, "object_id": data_object.get("id"),
+                                                                              "amount": data_object.get("amount_total") or data_object.get("amount"),
+                                                                              "payment_link": data_object.get("payment_link") if not isinstance(data_object.get("payment_link"), dict) else None,
+                                                                              "mode": data_object.get("mode"), "status": data_object.get("status") or data_object.get("payment_status")})})
+        await db.commit()
+    except Exception as e_log:
+        logger.warning(f"No se pudo guardar el resumen del evento de Stripe: {e_log}")
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
     # ─── CASO 1: PAGO EXITOSO O CHECKOUT COMPLETADO ─────────────────────────────
     if event_type in ["checkout.session.completed", "invoice.payment_succeeded", "charge.succeeded"]:
         customer_email = data_object.get("customer_email") or data_object.get("billing_details", {}).get("email")
