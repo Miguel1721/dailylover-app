@@ -1,3 +1,5 @@
+from fastapi import Depends as _Depends
+from app.core.auth_guard import exigir_sesion
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -411,7 +413,7 @@ app.include_router(incidents.router)
 app.include_router(vendors.router)
 app.include_router(reports.router)
 app.include_router(webhooks.router)
-app.include_router(matchmaking.router)
+app.include_router(matchmaking.router, dependencies=[_Depends(exigir_sesion)])
 app.include_router(scheduling.router)
 from app.routers import shift_changes_api
 app.include_router(shift_changes_api.router)
