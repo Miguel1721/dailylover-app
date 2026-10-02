@@ -2644,6 +2644,22 @@ def _exigir_direccion(current_user: dict) -> None:
         raise HTTPException(status_code=403, detail="Solo María o la dirección pueden aprobar, devolver o reembolsar un match.")
 
 
+async def _exigir_psicologa_b(db, match_id: int, current_user: dict) -> None:
+    """Responder un match cruzado (aprobar, rechazar o votar) es solo de la psicóloga de la persona B o de la dirección."""
+    from app.routers.scheduling import hides_costs
+    if not current_user or current_user.get("is_client"):
+        raise HTTPException(status_code=403, detail="Sin permiso.")
+    if not hides_costs(current_user):
+        return                                           # dirección
+    row = (await db.execute(text("""SELECT UPPER(COALESCE(p.responsable, '')) AS r FROM operational_matches m
+        LEFT JOIN profiles p ON p.user_id = m.user_id_b WHERE m.id = :m"""), {"m": match_id})).fetchone()
+    if not row or not row.r:
+        return
+    code = await _psicologa_proponente(db, current_user)
+    if not code or row.r not in {a.upper() for a in get_psychologist_aliases(code)}:
+        raise HTTPException(status_code=403, detail="Solo la psicóloga de la persona B (o la dirección) puede responder este match cruzado.")
+
+
 _ESTADOS_CERRADOS = ("CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA", "CITA RESERVADA", "REFUND", "REFUND DONE", "ARCHIVADO", "INACTIVO", "DESCALIFICADO")
 
 
@@ -2772,6 +2788,7 @@ class VotoCruzadoRequest(BaseModel):
 @router.post("/matches/{match_id}/voto-cruzado")
 async def votar_match_cruzado(match_id: int, payload: VotoCruzadoRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Voto de la psicologa B sobre un match cruzado. No cambia el estado (la palabra final es de María) y no se puede modificar."""
+    await _exigir_psicologa_b(db, match_id, current_user)
     voto = (payload.voto or "").strip().lower()
     if voto not in ("aprobado", "rechazado"):
         raise HTTPException(status_code=400, detail="Voto inválido.")
@@ -2812,7 +2829,7 @@ async def adjuntar_votos_cruzados(db, items):
         r = por_id.get(it.get("id"))
         if not r:
             continue
-        a, b = normalize_psychologist(it.get("psychologist_name")), normalize_psychologist(r.psyc_b)
+        a, b = _duena(it.get("psychologist_name")), _duena(r.psyc_b)
         if a and b and a != b:
             it["cruzado"] = {"psicologa_b": b, "voto": r.voto, "motivo": r.motivo or "", "fecha": r.votado_en.strftime("%Y-%m-%d %H:%M") if r.votado_en else ""}
 
@@ -2826,8 +2843,7 @@ async def analizar_par_con_ia(
 ):
     """Analisis con IA de la pareja (metodo de María): puntaje 1-10, puntos fuertes, puntos a considerar y preguntas para la psicologa."""
     from app.services.analisis_pareja import analizar_par
-    if str((current_user or {}).get('role') or '').strip() == 'Servicio al Cliente':
-        raise HTTPException(status_code=403, detail='El análisis de la pareja es solo para María.')
+    _exigir_direccion(current_user)   # solo María y la dirección (antes la comprobación miraba una clave que no existe y dejaba pasar a todos)
     try:
         return {"status": "success", "analisis": await analizar_par(db, match_id, regenerar)}
     except LookupError:
@@ -2852,8 +2868,7 @@ async def get_approval_queue(
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    if str((current_user or {}).get('role') or '').strip() == 'Servicio al Cliente':
-        raise HTTPException(status_code=403, detail='La cola de aprobación es solo para María.')
+    _exigir_direccion(current_user)   # solo María y la dirección
     """
     Retorna todos los matches en estado 'HECHO', 'HECHO POR MAPE' o 'HECHO POR OTRA PSICÓLOGA' que aún no han sido aprobados por María,
     ordenados de más antiguo a más reciente por defecto con paginación ultrarrápida.
@@ -3174,7 +3189,7 @@ async def approve_match_by_maria(
 
     # ── HARD-BLOCKING DE DOBLE APROBACIÓN PREVIA ─────────────────────────
     # Si el match involucra a un candidato B de otra psicóloga, debe estar validado previamente por ella
-    psyc_a = normalize_psychologist(match_row.psychologist_name)
+    psyc_a = _duena(match_row.psychologist_name)
     psyc_b = None
     if match_row.person_b:
         psyc_b_res = await db.execute(text("""
@@ -3186,7 +3201,7 @@ async def approve_match_by_maria(
         """), {"b_name": match_row.person_b.strip()})
         psyc_b_row = psyc_b_res.fetchone()
         if psyc_b_row and psyc_b_row.responsable:
-            psyc_b = normalize_psychologist(psyc_b_row.responsable)
+            psyc_b = _duena(psyc_b_row.responsable)
 
     is_cross = (psyc_b and psyc_b != psyc_a)
     force_approval = bool(payload and payload.force)
@@ -6575,8 +6590,16 @@ def normalize_plan(raw_plan: Optional[str]) -> str:
 
 
 ACTIVE_PSYCHOLOGISTS_SET = {
-    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU 1", "MANU 2", "MANU", "PIA"
+    "JENN", "ANA", "SILVI", "STEFFY", "SOFI", "MAPE D", "ALEJA", "MANU 1", "MANU 2", "MANU", "PIA", "ISA"
 }
+
+
+def _duena(raw_psyc: Optional[str]) -> str:
+    """Psicóloga que hoy atiende esa cartera: si el código es de una que ya no está (Sofi, Aleja, Manu, Lau), la que la heredó.
+    Sirve para decidir si un match es cruzado: Sofi con Silvi NO es cruzado porque Silvi heredó a Sofi."""
+    from app.services.psychologist_helper import RETIRED_TO_ACTIVE_PSYCHOLOGIST
+    n = normalize_psychologist(raw_psyc)
+    return RETIRED_TO_ACTIVE_PSYCHOLOGIST.get(n, n)
 
 def normalize_psychologist(raw_psyc: Optional[str]) -> str:
     """
@@ -6611,7 +6634,14 @@ def normalize_psychologist(raw_psyc: Optional[str]) -> str:
         "SOFIA": "SOFI",
         "SOFI": "SOFI",
         "ALEJA": "ALEJA",
-        "PIA": "PIA"
+        "PIA": "PIA",
+        # Isa no estaba en la lista y por eso todo lo suyo se tomaba como "de nadie" (cruces mal detectados); Lau es su cartera heredada
+        "ISA": "ISA",
+        "ISA MARQUEZ": "ISA",
+        "ISABELA": "ISA",
+        "ISABELA MARQUEZ": "ISA",
+        "LAU": "ISA",
+        "LAURA": "ISA"
     }
     for k, v in aliases.items():
         if k == p or k in p.split():
@@ -8709,12 +8739,14 @@ class RejectCrossMatchRequest(BaseModel):
 async def approve_cross_match_by_psyc_b(
     match_id: int,
     payload: Optional[ApproveCrossMatchRequest] = None,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     La Psicóloga B aprueba la propuesta de match enviada por la Psicóloga A.
     El match queda con 'APROBADO POR PSICÓLOGAS (LISTO PARA MARÍA)'.
     """
+    await _exigir_psicologa_b(db, match_id, current_user)
     exist_res = await db.execute(text("""
         SELECT id, person_a, person_b, psychologist_name, observations
         FROM operational_matches
@@ -8742,6 +8774,7 @@ async def approve_cross_match_by_psyc_b(
 async def reject_cross_match_by_psyc_b(
     match_id: int,
     payload: Optional[RejectCrossMatchRequest] = None,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -8749,6 +8782,7 @@ async def reject_cross_match_by_psyc_b(
     1. Marca el match como 'RECHAZADA POR PSICÓLOGA B'.
     2. Crea automáticamente una nueva fila para Persona A en el pool de Psicóloga A ('Listo para match').
     """
+    await _exigir_psicologa_b(db, match_id, current_user)
     exist_res = await db.execute(text("""
         SELECT id, person_a, person_b, psychologist_name, city, pref, plan_tier, person_a_crm_id, observations
         FROM operational_matches
