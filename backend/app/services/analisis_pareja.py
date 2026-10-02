@@ -9,12 +9,15 @@ import hashlib
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 
-MODEL = os.environ.get("ANALISIS_MODEL", "gemini-2.5-flash")
+# Modelos en orden de preferencia: si uno devuelve 429 (sin cuota) o 404 (retirado) se prueba el siguiente
+MODELOS = [m.strip() for m in os.environ.get("ANALISIS_MODEL", "gemini-3.8-flash,gemini-2.5-flash").split(",") if m.strip()]
+MODEL = MODELOS[0]
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "prompt_analisis_pareja.md")
 
 # Campos del CRM que no se envian a la IA (contacto, foto, redes)
@@ -122,18 +125,28 @@ async def construir_contexto(db, match_id: int) -> Dict[str, Any]:
     }
 
 
-def _llamar_ia(prompt: str) -> Dict[str, Any]:
+def _llamar_ia(prompt: str):
+    """Devuelve (json, modelo_usado)."""
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Falta GEMINI_API_KEY")
     body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"}}
-    req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent",
-                                 data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key})
-    with urllib.request.urlopen(req, timeout=150) as r:
-        out = json.loads(r.read().decode())
-    raw = "".join(p.get("text", "") for p in out["candidates"][0]["content"]["parts"])
-    raw = re.sub(r"^```(json)?|```$", "", raw.strip()).strip()
-    return json.loads(raw)
+    ultimo = ""
+    for modelo in MODELOS:
+        req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent",
+                                     data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=150) as r:
+                out = json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            ultimo = f"{modelo}: HTTP {e.code}"
+            if e.code in (404, 429, 503):
+                continue
+            raise
+        raw = "".join(p.get("text", "") for p in out["candidates"][0]["content"]["parts"])
+        raw = re.sub(r"^```(json)?|```$", "", raw.strip()).strip()
+        return json.loads(raw), modelo
+    raise RuntimeError(f"Ningún modelo de IA disponible ({ultimo}). Revisa la cuota de la clave de Gemini.")
 
 
 def _lista(v: Any) -> List[str]:
@@ -184,13 +197,13 @@ async def analizar_par(db, match_id: int, regenerar: bool = False) -> Dict[str, 
     with open(PROMPT_PATH, encoding="utf-8") as f:
         instrucciones = f.read()
     prompt = instrucciones + "\n\n## Datos de la pareja a evaluar\n\n" + entrada + "\n\nDevuelve solo el JSON del formato de salida."
-    crudo = await asyncio.to_thread(_llamar_ia, prompt)
+    crudo, modelo_usado = await asyncio.to_thread(_llamar_ia, prompt)
     res = _validar(crudo)
     await db.execute(text("""
         INSERT INTO match_ia_analysis (match_id, analisis, modelo, entrada_hash, creado_en)
         VALUES (:m, CAST(:a AS jsonb), :mo, :h, NOW())
         ON CONFLICT (match_id) DO UPDATE SET analisis = CAST(:a AS jsonb), modelo = :mo, entrada_hash = :h, creado_en = NOW()
-    """), {"m": match_id, "a": json.dumps(res, ensure_ascii=False), "mo": MODEL, "h": h})
+    """), {"m": match_id, "a": json.dumps(res, ensure_ascii=False), "mo": modelo_usado, "h": h})
     await db.commit()
     c = (await db.execute(text("SELECT match_id, analisis, creado_en, modelo FROM match_ia_analysis WHERE match_id = :m"), {"m": match_id})).fetchone()
     return _fila(c)
