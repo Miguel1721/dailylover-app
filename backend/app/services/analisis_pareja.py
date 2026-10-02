@@ -19,8 +19,9 @@ from sqlalchemy import text
 # Modelos en orden de preferencia: si uno devuelve 429 (sin cuota) o 404 (retirado) se prueba el siguiente
 MODELOS = [m.strip() for m in os.environ.get("ANALISIS_MODEL", "gemini-3.8-flash,gemini-2.5-flash").split(",") if m.strip()]
 MODEL = MODELOS[0]
+NVIDIA_TIMEOUT = 170
 # NVIDIA (API compatible con OpenAI): modelos en orden de preferencia; la clave va en ANALISIS_NVIDIA_API_KEY del .env
-NVIDIA_MODELOS = [m.strip() for m in os.environ.get("ANALISIS_MODEL_NVIDIA", "nvidia/nemotron-3-super-120b-a12b,moonshotai/kimi-k2.6,deepseek-ai/deepseek-v4.1-flash,z-ai/glm-5.3").split(",") if m.strip()]
+NVIDIA_MODELOS = [m.strip() for m in os.environ.get("ANALISIS_MODEL_NVIDIA", "moonshotai/kimi-k3,nvidia/nemotron-3-super-120b-a12b").split(",") if m.strip()]
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "prompt_analisis_pareja.md")
 
 # Campos del CRM que no se envian a la IA (contacto, foto, redes)
@@ -291,7 +292,7 @@ def _llamar_nvidia(prompt: str, modelo: str) -> Dict[str, Any]:
     body = {"model": modelo, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3, "max_tokens": 5000}
     req = urllib.request.Request("https://integrate.api.nvidia.com/v1/chat/completions", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=170) as r:
+    with urllib.request.urlopen(req, timeout=NVIDIA_TIMEOUT) as r:
         out = json.loads(r.read().decode())
     txt = out["choices"][0]["message"].get("content") or ""
     txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S)
@@ -307,10 +308,15 @@ def _llamar_ia(prompt: str):
     errores: List[str] = []
     if (os.environ.get("ANALISIS_NVIDIA_API_KEY") or "").strip():
         for modelo in NVIDIA_MODELOS:
-            try:
-                return _llamar_nvidia(prompt, modelo), "nvidia/" + modelo
-            except Exception as e:
-                errores.append(f"{modelo}: {str(e)[:60]}")
+            for intento in range(2):      # a veces el modelo devuelve la respuesta sin JSON: se reintenta una vez
+                try:
+                    return _llamar_nvidia(prompt, modelo), "nvidia/" + modelo
+                except ValueError as e:
+                    errores.append(f"{modelo}: {str(e)[:60]}")
+                    continue
+                except Exception as e:
+                    errores.append(f"{modelo}: {str(e)[:60]}")
+                    break
     try:
         return _llamar_gemini(prompt)
     except Exception as e:
