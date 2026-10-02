@@ -3698,6 +3698,46 @@ async def get_mesa_psicologa(
     rechazados.sort(key=lambda x: x["id"], reverse=True)
     troublemakers.sort(key=lambda x: x["id"], reverse=True)
 
+    # Social Group del CRM (prof_248 = el de la persona, pref_69 = el que busca, pref_60 = nivel social del match)
+    def _uid_int(v):
+        try:
+            return int(v)
+        except Exception:
+            return None
+
+    _todas = por_proponer + en_revision + aprobados + rechazados + troublemakers
+    _uids = set()
+    for _it in _todas:
+        for _k in ("user_id_a", "user_id_b"):
+            _u = _uid_int(_it.get(_k))
+            if _u is not None:
+                _uids.add(_u)
+    _sg = {}
+    if _uids:
+        try:
+            for _x in (await db.execute(text("SELECT user_id, field_id, value FROM crm_profile_fields WHERE field_id IN ('prof_248', 'pref_69', 'pref_60') AND user_id = ANY(:u)"), {"u": list(_uids)})).fetchall():
+                _v = _x.value
+                if isinstance(_v, str):
+                    try:
+                        _v = json.loads(_v)
+                    except Exception:
+                        _v = None
+                if isinstance(_v, dict):
+                    _t = str(_v.get("choice_label") or _v.get("choice") or "")
+                elif isinstance(_v, list):
+                    _t = ", ".join(str(_e.get("label") or _e.get("choice")) for _e in _v if isinstance(_e, dict))
+                else:
+                    _t = ""
+                _sg.setdefault(_x.user_id, {})[_x.field_id] = _t
+        except Exception:
+            await db.rollback()
+    for _it in _todas:
+        for _lado, _k in (("a", "user_id_a"), ("b", "user_id_b")):
+            _d = _sg.get(_uid_int(_it.get(_k)), {})
+            _it["person_%s_social_group" % _lado] = _d.get("prof_248", "")
+            _it["person_%s_social_pref" % _lado] = _d.get("pref_69", "")
+            _it["person_%s_nivel_match" % _lado] = _d.get("pref_60", "")
+
     return {
         "psychologist": canonical_psyc,
         "por_proponer": por_proponer,
