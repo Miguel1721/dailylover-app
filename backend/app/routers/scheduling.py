@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 
+from app.core.auth_guard import exigir_sesion
 router = APIRouter(prefix="/api/v1", tags=["Scheduling, 7shifts & Booking"])
 
 PSYCHOLOGISTS_METADATA = {
@@ -2007,7 +2008,7 @@ INNEGOCIABLES & DEALBREAKERS: Conexión mandatoria con el amor hacia los animale
     }
 
 
-@router.get("/scheduling/appointments")
+@router.get("/scheduling/appointments", dependencies=[Depends(exigir_sesion)])
 async def list_interview_appointments(
     status: Optional[str] = Query(None),
     psychologist: Optional[str] = Query(None),
@@ -2087,7 +2088,7 @@ def classify_cs_city(raw_city: Optional[str]) -> str:
     return "Otras"
 
 
-@router.get("/scheduling/cs-daily-metrics")
+@router.get("/scheduling/cs-daily-metrics", dependencies=[Depends(exigir_sesion)])
 async def get_cs_daily_metrics(
     start_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="YYYY-MM-DD"),

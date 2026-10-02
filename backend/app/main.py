@@ -20,7 +20,8 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version="1.0.0",
-    description="Backend orquestador para Daily Lover - CRM, Panel Admin y Matching con IA"
+    description="Backend orquestador para Daily Lover - CRM, Panel Admin y Matching con IA",
+    docs_url=None, redoc_url=None, openapi_url=None   # no se publica el mapa de la API
 )
 
 # Configure CORS with strict origins and regex for Daily Lover and future AWS domains
@@ -422,7 +423,7 @@ app.include_router(calls_router.router)
 from app.routers import ops as ops_router
 app.include_router(ops_router.router)
 app.include_router(form_builder.router)
-app.include_router(work_time.router)
+app.include_router(work_time.router, dependencies=[_Depends(exigir_sesion)])
 
 # ─── STATIC FILES (Admin Panel & App Preview) ─────────────────────────────────
 
