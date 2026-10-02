@@ -2602,6 +2602,26 @@ async def enriquecer_con_crm(db, items):
     return items
 
 
+@router.post("/matches/{match_id}/analisis-ia")
+async def analizar_par_con_ia(
+    match_id: int,
+    regenerar: bool = Query(False),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Analisis con IA de la pareja (metodo de María): puntaje 1-10, puntos fuertes, puntos a considerar y preguntas para la psicologa."""
+    from app.services.analisis_pareja import analizar_par
+    try:
+        return {"status": "success", "analisis": await analizar_par(db, match_id, regenerar)}
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.warning(f"analisis-ia match {match_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"No se pudo generar el análisis: {str(e)[:160]}")
+
+
 @router.get("/approval-queue")
 async def get_approval_queue(
     psychologist: Optional[str] = Query(None),
@@ -2883,6 +2903,8 @@ async def get_approval_queue(
     total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
 
     await enriquecer_con_crm(db, queue)
+    from app.services.analisis_pareja import adjuntar_analisis
+    await adjuntar_analisis(db, queue)
     return {
         "queue": queue,
         "total": total_items,

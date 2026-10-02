@@ -71,6 +71,9 @@ export default function AprobadosMaria() {
   const [selectedCity, setSelectedCity] = useState('Todas')
   const [searchTerm, setSearchTerm] = useState('')
   const [approvalDate, setApprovalDate] = useState('')
+  const [analisisIA, setAnalisisIA] = useState({})      // match_id -> analisis generado en esta sesion
+  const [analizando, setAnalizando] = useState(null)
+  const [errorIA, setErrorIA] = useState({})
   const [ordenRev, setOrdenRev] = useState('cliente_antiguo')   // cliente_antiguo | oldest_first | newest_first
 
   // Estado de Cola de Revisión de María
@@ -94,6 +97,24 @@ export default function AprobadosMaria() {
 
   // Notificaciones y UI
   const [notification, setNotification] = useState('')
+
+  const analizarPar = async (item, regenerar = false) => {
+    setAnalizando(item.id)
+    setErrorIA(prev => ({ ...prev, [item.id]: '' }))
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${item.id}/analisis-ia?regenerar=${regenerar}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok && d.analisis) setAnalisisIA(prev => ({ ...prev, [item.id]: d.analisis }))
+      else setErrorIA(prev => ({ ...prev, [item.id]: d.detail || 'No se pudo generar el análisis.' }))
+    } catch (e) {
+      setErrorIA(prev => ({ ...prev, [item.id]: 'Error de conexión.' }))
+    } finally {
+      setAnalizando(null)
+    }
+  }
 
   // 1. Cargar Cola de Revisión de María
   const fetchReviewQueue = useCallback(() => {
@@ -874,6 +895,71 @@ export default function AprobadosMaria() {
                         flexDirection: 'column',
                         gap: 12
                       }}>
+                        {/* Análisis con IA de la pareja (método de María) */}
+                        {(() => {
+                          const an = analisisIA[item.id] || item.analisis_ia
+                          const col = !an ? '#6B7280' : an.puntaje >= 7 ? '#10B981' : an.puntaje >= 5 ? '#F59E0B' : '#EF4444'
+                          const lista = (titulo, arr, color) => (arr && arr.length > 0) ? (
+                            <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: color || 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase' }}>{titulo}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                {arr.map((t, k) => (
+                                  <div key={k} style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.45, paddingLeft: 10, borderLeft: `3px solid ${color || 'var(--border-color)'}` }}>{t}</div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null
+                          return (
+                            <div style={{ border: `1px solid ${col}55`, borderLeft: `4px solid ${col}`, borderRadius: 10, padding: 14, background: 'var(--bg-base)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>Análisis con IA de la pareja</div>
+                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                  {an && (
+                                    <button type="button" onClick={() => analizarPar(item, true)} disabled={analizando === item.id}
+                                      style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                      {analizando === item.id ? 'Analizando...' : 'Volver a analizar'}
+                                    </button>
+                                  )}
+                                  {!an && (
+                                    <button type="button" onClick={() => analizarPar(item)} disabled={analizando === item.id}
+                                      style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#B8324F', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                                      {analizando === item.id ? 'Analizando, puede tardar unos segundos...' : 'Analizar con IA'}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {errorIA[item.id] && <div style={{ marginTop: 8, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{errorIA[item.id]}</div>}
+                              {an && (
+                                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: 22, fontWeight: 900, color: col }}>{an.puntaje}/10</span>
+                                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: col, color: '#fff' }}>{an.veredicto}</span>
+                                    {an.confirmar_foto && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, border: '1px solid #F59E0B', color: '#B45309' }}>CONFIRMAR FOTO (máximo 7)</span>}
+                                  </div>
+                                  {an.resumen && <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>{an.resumen}</div>}
+                                  {(an.perfil_a || an.perfil_b) && (
+                                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                                      {an.perfil_a && <div style={{ flex: '1 1 280px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}><strong style={{ color: 'var(--text-primary)' }}>{item.person_a}: </strong>{an.perfil_a}</div>}
+                                      {an.perfil_b && <div style={{ flex: '1 1 280px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}><strong style={{ color: '#10B981' }}>{item.person_b}: </strong>{an.perfil_b}</div>}
+                                    </div>
+                                  )}
+                                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                    {lista('Puntos fuertes', an.puntos_fuertes, '#10B981')}
+                                    {lista('Puntos a considerar', an.puntos_a_considerar, '#F59E0B')}
+                                  </div>
+                                  {lista('Vetos', an.vetos, '#EF4444')}
+                                  {lista('Preguntas para la psicóloga', an.preguntas_para_psicologa, '#3B82F6')}
+                                  {an.condicion_para_subir_puntaje && <div style={{ fontSize: 12.5, color: 'var(--text-primary)' }}><strong>Para subir el puntaje: </strong>{an.condicion_para_subir_puntaje}</div>}
+                                  {an.recomendacion && <div style={{ fontSize: 12.5, color: 'var(--text-primary)', background: 'rgba(255,255,255,0.04)', padding: 10, borderRadius: 8 }}><strong>Qué haría: </strong>{an.recomendacion}</div>}
+                                  {lista('Alertas de ficha', an.alertas_ficha, '#7C3AED')}
+                                  {an.flag_inventario && <div style={{ fontSize: 12, color: '#B45309', fontWeight: 700 }}>Inventario: {an.flag_inventario}</div>}
+                                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Generado {an.generado_en} con {an.modelo}. Es una ayuda para decidir: la psicóloga confirma círculo social y fotos.</div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
+
                         {/* Veredicto */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                           <span style={{
