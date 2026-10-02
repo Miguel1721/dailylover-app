@@ -19,6 +19,8 @@ from sqlalchemy import text
 # Modelos en orden de preferencia: si uno devuelve 429 (sin cuota) o 404 (retirado) se prueba el siguiente
 MODELOS = [m.strip() for m in os.environ.get("ANALISIS_MODEL", "gemini-3.8-flash,gemini-2.5-flash").split(",") if m.strip()]
 MODEL = MODELOS[0]
+# NVIDIA (API compatible con OpenAI): modelos en orden de preferencia; la clave va en ANALISIS_NVIDIA_API_KEY del .env
+NVIDIA_MODELOS = [m.strip() for m in os.environ.get("ANALISIS_MODEL_NVIDIA", "nvidia/nemotron-3-super-120b-a12b,moonshotai/kimi-k2.6,deepseek-ai/deepseek-v4.1-flash,z-ai/glm-5.3").split(",") if m.strip()]
 PROMPT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "prompt_analisis_pareja.md")
 
 # Campos del CRM que no se envian a la IA (contacto, foto, redes)
@@ -254,7 +256,7 @@ async def construir_contexto(db, match_id: int) -> Dict[str, Any]:
     }
 
 
-def _llamar_ia(prompt: str):
+def _llamar_gemini(prompt: str):
     """Devuelve (json, modelo_usado)."""
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
@@ -280,6 +282,40 @@ def _llamar_ia(prompt: str):
             raw = re.sub(r"^```(json)?|```$", "", raw.strip()).strip()
             return json.loads(raw), modelo
     raise RuntimeError(f"Ningún modelo de IA disponible ({ultimo}). Revisa la cuota de la clave de Gemini.")
+
+
+def _llamar_nvidia(prompt: str, modelo: str) -> Dict[str, Any]:
+    key = (os.environ.get("ANALISIS_NVIDIA_API_KEY") or "").strip()
+    if not key:
+        raise RuntimeError("falta ANALISIS_NVIDIA_API_KEY")
+    body = {"model": modelo, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3, "max_tokens": 5000}
+    req = urllib.request.Request("https://integrate.api.nvidia.com/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=170) as r:
+        out = json.loads(r.read().decode())
+    txt = out["choices"][0]["message"].get("content") or ""
+    txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S)
+    txt = re.sub(r"```(?:json)?", "", txt)
+    m = re.search(r"\{.*\}", txt, re.S)
+    if not m:
+        raise ValueError("la respuesta no trae JSON")
+    return json.loads(m.group(0))
+
+
+def _llamar_ia(prompt: str):
+    """Prueba los modelos de NVIDIA y, si ninguno responde, Gemini. Devuelve (json, modelo_usado)."""
+    errores: List[str] = []
+    if (os.environ.get("ANALISIS_NVIDIA_API_KEY") or "").strip():
+        for modelo in NVIDIA_MODELOS:
+            try:
+                return _llamar_nvidia(prompt, modelo), "nvidia/" + modelo
+            except Exception as e:
+                errores.append(f"{modelo}: {str(e)[:60]}")
+    try:
+        return _llamar_gemini(prompt)
+    except Exception as e:
+        errores.append(f"gemini: {str(e)[:80]}")
+    raise RuntimeError("Ningún modelo de IA disponible (" + " | ".join(errores) + ")")
 
 
 def _lista(v: Any) -> List[str]:
