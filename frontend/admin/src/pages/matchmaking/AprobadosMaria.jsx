@@ -71,6 +71,7 @@ export default function AprobadosMaria() {
   const [selectedCity, setSelectedCity] = useState('Todas')
   const [searchTerm, setSearchTerm] = useState('')
   const [approvalDate, setApprovalDate] = useState('')
+  const [ordenRev, setOrdenRev] = useState('cliente_antiguo')   // cliente_antiguo | oldest_first | newest_first
 
   // Estado de Cola de Revisión de María
   const [reviewQueue, setReviewQueue] = useState([])
@@ -97,7 +98,7 @@ export default function AprobadosMaria() {
   // 1. Cargar Cola de Revisión de María
   const fetchReviewQueue = useCallback(() => {
     setLoadingReview(true)
-    let url = `${API}/api/v1/matchmaking/approval-queue?sort_by=oldest_first&page=${pageReview}&page_size=${pageSizeReview}&`
+    let url = `${API}/api/v1/matchmaking/approval-queue?sort_by=${ordenRev}&page=${pageReview}&page_size=${pageSizeReview}&`
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
     if (selectedCity && selectedCity !== 'Todas') url += `city=${encodeURIComponent(selectedCity)}&`
     if (searchTerm) url += `search=${encodeURIComponent(searchTerm)}&`
@@ -120,7 +121,7 @@ export default function AprobadosMaria() {
         setTotalPagesReview(1)
         setLoadingReview(false)
       })
-  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, pageReview, pageSizeReview, token])
+  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, ordenRev, pageReview, pageSizeReview, token])
 
   // 2. Cargar Cola de Servicio al Cliente (Aprobados por María)
   const fetchServiceQueue = useCallback(() => {
@@ -559,6 +560,18 @@ export default function AprobadosMaria() {
         </div>
       </div>
 
+      {activeTab === 'revision' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px' }}>
+          <label htmlFor="orden-rev" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Ordenar por</label>
+          <select id="orden-rev" value={ordenRev} onChange={e => { setOrdenRev(e.target.value); setPageReview(1) }}
+            style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13, fontWeight: 600 }}>
+            <option value="cliente_antiguo">Cliente que más lleva esperando</option>
+            <option value="oldest_first">Propuesta más antigua</option>
+            <option value="newest_first">Propuesta más reciente</option>
+          </select>
+        </div>
+      )}
+
       {/* ==================================================================== */}
       {/* VISTA 1: COLA DE REVISIÓN Y APROBACIÓN DE MARÍA                     */}
       {/* ==================================================================== */}
@@ -763,6 +776,11 @@ export default function AprobadosMaria() {
                               <Briefcase size={12} /> {item.person_a_occupation || 'Ocupación no especificada'}
                             </div>
                             {burbujasCrm(item.person_a_social_group, item.person_a_estatura, item.person_a_religion, item.person_a_politica)}
+                            {item.cliente_desde && (
+                              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                Cliente en espera desde {item.cliente_desde}{item.dias_espera_cliente != null ? ` (${item.dias_espera_cliente} días)` : ''}
+                              </div>
+                            )}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                               <span style={{
                                 fontSize: 11,

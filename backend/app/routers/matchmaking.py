@@ -2621,6 +2621,7 @@ async def get_approval_queue(
     query = """
         SELECT 
             m.id, m.psychologist_name, m.person_a, m.person_b, m.city, m.plan_tier, m.pref,
+            COALESCE((SELECT p.last_payment_date FROM profiles p WHERE p.user_id = m.user_id_a LIMIT 1), (SELECT MIN(x.created_at) FROM operational_matches x WHERE x.user_id_a = m.user_id_a)) AS cliente_desde,
             m.created_at, m.updated_at, m.observations, m.status,
             COALESCE(m.person_a_crm_id, uA.crm_id, '') AS person_a_crm_id,
             COALESCE(m.person_b_crm_id, uB.crm_id, '') AS person_b_crm_id,
@@ -2678,7 +2679,9 @@ async def get_approval_queue(
         query += " AND (m.person_a ILIKE :srch OR m.person_b ILIKE :srch OR m.city ILIKE :srch OR m.observations ILIKE :srch)"
         params["srch"] = f"%{search.strip()}%"
 
-    if sort_by in ("oldest_first", "asc"):
+    if sort_by == "cliente_antiguo":
+        query += " ORDER BY cliente_desde ASC NULLS LAST, m.id ASC"
+    elif sort_by in ("oldest_first", "asc"):
         query += " ORDER BY m.updated_at ASC, m.id ASC"
     else:
         query += " ORDER BY m.updated_at DESC, m.id DESC"
@@ -2852,6 +2855,8 @@ async def get_approval_queue(
             "person_a_city": d.get("person_a_city") or d.get("city") or "",
             "person_a_plan_tier": plan_a,
             "person_a_dates_remaining": saldo_a,
+            "cliente_desde": d["cliente_desde"].strftime("%Y-%m-%d") if d.get("cliente_desde") else "",
+            "dias_espera_cliente": (datetime.utcnow() - d["cliente_desde"]).days if d.get("cliente_desde") else None,
             "person_b": d.get("person_b") or "",
             "person_b_crm_id": d.get("person_b_crm_id") or d.get("ub_crm_id") or "",
             "person_b_photo_url": d.get("person_b_photo_url") or "",
