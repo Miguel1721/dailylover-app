@@ -98,7 +98,7 @@ Transcripción:
 """
 
 
-def _llamar_ia(prompt: str) -> List[Dict[str, Any]]:
+def _llamar_gemini(prompt: str) -> List[Dict[str, Any]]:
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("Falta GEMINI_API_KEY")
@@ -110,6 +110,24 @@ def _llamar_ia(prompt: str) -> List[Dict[str, Any]]:
     raw = "".join(p.get("text", "") for p in out["candidates"][0]["content"]["parts"])
     raw = re.sub(r"^```(json)?|```$", "", raw.strip()).strip()
     return json.loads(raw).get("propuestas", [])
+
+
+def _llamar_ia(prompt: str):
+    """(propuestas, modelo_usado): primero Kimi K3 en NVIDIA; si no responde, Gemini."""
+    from app.services import analisis_pareja as ap
+    errores: List[str] = []
+    if (os.environ.get("ANALISIS_NVIDIA_API_KEY") or "").strip():
+        for modelo in ap.NVIDIA_MODELOS:
+            try:
+                d = ap._llamar_nvidia(prompt, modelo)
+                return list(d.get("propuestas", [])), "nvidia/" + modelo
+            except Exception as exc:
+                errores.append(f"{modelo}: {str(exc)[:60]}")
+    try:
+        return _llamar_gemini(prompt), MODEL
+    except Exception as exc:
+        errores.append(f"gemini: {str(exc)[:80]}")
+    raise RuntimeError("Ningún modelo de IA disponible (" + " | ".join(errores) + ")")
 
 
 def _validar(p: Dict[str, Any], dicho_cliente: str) -> Tuple[Optional[Any], str]:
@@ -181,7 +199,7 @@ async def extract_session(db: AsyncSession, session_id: int) -> Dict[str, Any]:
     user_id = (await db.execute(text("SELECT user_id FROM call_sessions WHERE id = :s"), {"s": session_id})).scalar()
     lineas = [f"[{int(s['inicio'] // 60):02d}:{int(s['inicio'] % 60):02d}] {'Psicóloga' if s['quien'] == 'PSICOLOGA' else 'Cliente'}: {s['texto']}" for s in tr]
     dicho_cliente = " ".join(_norm(s["texto"]) for s in tr if s["quien"] == "CLIENTE")
-    propuestas = await asyncio.to_thread(_llamar_ia, PROMPT.format(catalogo=_catalogo_para_prompt(), transcripcion="\n".join(lineas)))
+    propuestas, modelo_usado = await asyncio.to_thread(_llamar_ia, PROMPT.format(catalogo=_catalogo_para_prompt(), transcripcion="\n".join(lineas)))
     guardadas, descartadas = 0, []
     for p in propuestas:
         valor, motivo = _validar(p, dicho_cliente)
@@ -200,7 +218,7 @@ async def extract_session(db: AsyncSession, session_id: int) -> Dict[str, Any]:
                 estado = CASE WHEN profile_field_proposals.estado = 'PROPUESTA' THEN 'PROPUESTA' ELSE profile_field_proposals.estado END
         """), {"s": session_id, "u": user_id, "c": p["campo"], "e": c["label"], "d": c["target"], "v": json.dumps(valor, ensure_ascii=False),
                "ci": str(p.get("cita"))[:500], "mi": str(p.get("minuto") or "")[:8], "co": str(p.get("confianza") or "")[:10],
-               "ss": p["campo"] in OBSERVACION, "va": str(actual)[:300], "cf": conflicto, "mo": MODEL})
+               "ss": p["campo"] in OBSERVACION, "va": str(actual)[:300], "cf": conflicto, "mo": modelo_usado})
         guardadas += 1
     await db.commit()
     return {"propuestas": guardadas, "descartadas": descartadas}

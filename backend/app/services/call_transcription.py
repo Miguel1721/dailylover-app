@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,6 +21,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("TRANSCRIPTION_MODEL", "gemini-2.5-flash")
+NVIDIA_LABEL = "nvidia/canary-1b-asr"
+ASR_PYTHON = Path(os.environ.get("ASR_VENV_PYTHON", "/app/.venv_asr/bin/python"))
+ASR_WORKER = Path(__file__).with_name("riva_asr_worker.py")
 MAX_INLINE_BYTES = 18 * 1024 * 1024
 ROLES = ("PSICOLOGA", "CLIENTE")
 
@@ -45,6 +49,37 @@ async def ensure_transcript_tables(db: AsyncSession) -> None:
         )"""))
     await db.commit()
     _ready = True
+
+
+def nvidia_disponible() -> bool:
+    return ASR_PYTHON.exists() and ASR_WORKER.exists() and bool((os.environ.get("ANALISIS_NVIDIA_API_KEY") or "").strip())
+
+
+def _nvidia_transcribe(path: Path) -> List[Dict[str, Any]]:
+    """Canary (NVIDIA) por el servicio de voz Riva, en un proceso aparte con su propio entorno."""
+    env = {**os.environ, "NVIDIA_ASR_KEY": os.environ["ANALISIS_NVIDIA_API_KEY"].strip()}
+    r = subprocess.run([str(ASR_PYTHON), str(ASR_WORKER), str(path)], capture_output=True, text=True, timeout=3600, env=env)
+    if r.returncode != 0:
+        raise RuntimeError("Canary: " + (r.stderr or "sin detalle")[-300:])
+    d = json.loads(r.stdout.strip().splitlines()[-1])
+    if d["errores"] > max(2, int(0.2 * d["ventanas"])):
+        raise RuntimeError(f"Canary falló en {d['errores']} de {d['ventanas']} tramos de audio")
+    return d["segmentos"]
+
+
+def _transcribir_pista(path: Path):
+    """(segmentos, modelo_usado): primero Canary; si falla, Gemini."""
+    error = ""
+    if nvidia_disponible():
+        try:
+            return _nvidia_transcribe(path), NVIDIA_LABEL
+        except Exception as exc:
+            error = str(exc)
+            logger.warning("Transcripción con Canary falló (%s); se intenta con Gemini", error[:200])
+    try:
+        return _gemini_transcribe(path), MODEL
+    except Exception as exc:
+        raise RuntimeError(f"No se pudo transcribir el audio. Canary: {error or 'no disponible'} | Gemini: {str(exc)[:150]}")
 
 
 def _gemini_transcribe(path: Path) -> List[Dict[str, Any]]:
@@ -136,19 +171,21 @@ async def transcribe_session(db: AsyncSession, session_id: int, audio_dir: Path)
     base_ms = min((v for k, v in starts.items() if k in files and v), default=None)
     await db.execute(text("""INSERT INTO call_transcripts (session_id, status, model) VALUES (:s, 'EN_PROCESO', :m)
         ON CONFLICT (session_id) DO UPDATE SET status = 'EN_PROCESO', model = :m, error = NULL, updated_at = NOW()"""),
-        {"s": session_id, "m": MODEL})
+        {"s": session_id, "m": NVIDIA_LABEL if nvidia_disponible() else MODEL})
     await db.commit()
+    modelos = set()
     merged: List[Dict[str, Any]] = []
     try:
         for role, path in files.items():
-            segs = await asyncio.to_thread(_gemini_transcribe, path)
+            segs, usado = await asyncio.to_thread(_transcribir_pista, path)
+            modelos.add(usado)
             off = ((starts.get(role) or base_ms or 0) - (base_ms or 0)) / 1000.0
             for s in segs:
                 merged.append({"quien": role, "inicio": round(s["inicio"] + off, 1), "fin": round(s["fin"] + off, 1), "texto": s["texto"]})
         merged.sort(key=lambda x: (x["inicio"], x["quien"]))
         full = "\n".join(f"[{int(s['inicio'] // 60):02d}:{int(s['inicio'] % 60):02d}] {'Psicóloga' if s['quien'] == 'PSICOLOGA' else 'Cliente'}: {s['texto']}" for s in merged)
-        await db.execute(text("""UPDATE call_transcripts SET status = 'LISTA', segments = CAST(:g AS jsonb), full_text = :f, updated_at = NOW()
-            WHERE session_id = :s"""), {"g": json.dumps(merged, ensure_ascii=False), "f": full, "s": session_id})
+        await db.execute(text("""UPDATE call_transcripts SET status = 'LISTA', model = :m, segments = CAST(:g AS jsonb), full_text = :f, updated_at = NOW()
+            WHERE session_id = :s"""), {"g": json.dumps(merged, ensure_ascii=False), "f": full, "s": session_id, "m": ", ".join(sorted(modelos))})
         await db.commit()
         return {"status": "LISTA", "segmentos": len(merged), "pistas": list(files)}
     except Exception as exc:

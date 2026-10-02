@@ -27,14 +27,16 @@ router = APIRouter(prefix="/api/v1/calls", tags=["Videollamadas"])
 AUDIO_DIR = Path(os.environ.get("CALL_AUDIO_DIR", "/app/private_call_audio"))
 MAX_CHUNK_BYTES = 8 * 1024 * 1024
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://daily-lover.agentesia.cloud").rstrip("/")
-CONSENT_VERSION = "2026-09-30-borrador"
+CONSENT_VERSION = "2026-10-02-borrador-nvidia"
 # BORRADOR: debe revisarlo un abogado antes de usarse con clientes reales (Ley 1581 de 2012, habeas data).
 CONSENT_TEXT = (
     "Autorizo a Daily Lover a grabar únicamente el AUDIO de esta videollamada y a transcribirlo, con el fin de "
     "completar mi perfil y encontrar personas más compatibles conmigo. Entiendo que: (1) la grabación es voluntaria y "
     "puedo negarme: si no acepto, la entrevista se realiza igual y no se graba nada; (2) la psicóloga revisa lo que se "
     "extraiga antes de que entre a mi perfil; (3) puedo pedir en cualquier momento consultar, corregir o eliminar mi "
-    "audio, mi transcripción y mis datos; (4) solo personal autorizado de Daily Lover accede a ellos."
+    "audio, mi transcripción y mis datos; (4) solo personal autorizado de Daily Lover accede a ellos; (5) para transcribir y "
+    "analizar la conversación Daily Lover usa proveedores tecnológicos externos (NVIDIA, en Estados Unidos), que reciben el audio y "
+    "el texto únicamente para prestarnos ese servicio, por lo que mis datos pueden ser tratados fuera de Colombia."
 )
 _ready = False
 
