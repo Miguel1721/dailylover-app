@@ -1329,7 +1329,7 @@ async def copy_week(payload: CopyWeekRequest, db: AsyncSession = Depends(get_db)
             "message": f"Se copiaron {copied} franjas. {len(skipped_days)} día(s) ya tenían turnos y no se tocaron."}
 
 
-@router.post("/shifts/publish-week", dependencies=[Depends(require_staff)])
+@router.post("/shifts/publish-week", dependencies=[Depends(require_admin)])
 async def publish_week_schedule(
     payload: PublishWeekRequest,
     db: AsyncSession = Depends(get_db)
@@ -1646,11 +1646,38 @@ async def reserve_booking_slot(
     1. Registra en interview_appointments con videocall_token.
     2. Genera confirmación, enlace y contenido .ics.
     """
+    # Validaciones que la pantalla ya hace y la ruta debe repetir (es pública): hora válida, futura, dentro de 14 días
+    try:
+        t_start = datetime.strptime(payload.time_slot, "%H:%M").time()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Hora inválida.")
+    start_dt = datetime.combine(payload.date, t_start)
+    end_dt = start_dt + timedelta(minutes=45)
+    from zoneinfo import ZoneInfo
+    ahora = datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)   # los turnos se guardan en hora de Colombia
+    if start_dt < ahora + timedelta(hours=2):
+        raise HTTPException(status_code=422, detail="Ese horario ya no está disponible: se reserva con al menos 2 horas de anticipación.")
+    if payload.date > ahora.date() + timedelta(days=14):
+        raise HTTPException(status_code=422, detail="Solo se puede reservar dentro de los próximos 14 días.")
+    # Un candado por día: dos reservas al mismo tiempo no pueden quedar en el mismo horario
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"reserva|{payload.date}"})
+
     # Auto-asignación de psicóloga si no se especifica o viene 'AUTO'
     p_name = (payload.psychologist_name or "").upper().strip()
+    if p_name and p_name != "AUTO":
+        # psicóloga explícita: debe tener turno publicado de entrevistas que cubra el horario y sin permiso aprobado
+        ok = (await db.execute(text("""
+            SELECT 1 FROM staff_shifts
+            WHERE shift_date = :d AND UPPER(psychologist_name) = :p AND start_time <= :t AND end_time >= :te
+              AND is_published = true AND shift_type IN ('ENTREVISTAS', 'DISPONIBLE')
+              AND NOT EXISTS (SELECT 1 FROM staff_time_off o WHERE UPPER(o.psychologist_name) = :p AND o.start_date <= :d AND o.end_date >= :d
+                              AND UPPER(COALESCE(o.status, 'APPROVED')) = 'APPROVED')
+            LIMIT 1
+        """), {"d": payload.date, "p": p_name, "t": t_start, "te": end_dt.time()})).fetchone()
+        if not ok:
+            raise HTTPException(status_code=409, detail="Esa psicóloga no tiene turno de entrevistas en ese horario. Por favor selecciona otro.")
     if not p_name or p_name == "AUTO":
-        t_start = datetime.strptime(payload.time_slot, "%H:%M").time()
-        t_end = (datetime.combine(payload.date, t_start) + timedelta(minutes=45)).time()
+        t_end = end_dt.time()
         
         lookup = await db.execute(text("""
             SELECT psychologist_name
@@ -1666,11 +1693,11 @@ async def reserve_booking_slot(
               )
               AND UPPER(psychologist_name) NOT IN (
                   SELECT UPPER(psychologist_name) FROM interview_appointments
-                  WHERE DATE(appointment_date) = :d AND time_slot ILIKE :ts AND status != 'CANCELADA'
+                  WHERE status != 'CANCELADA' AND appointment_date < :edt AND appointment_date + INTERVAL '45 minutes' > :sdt
               )
             ORDER BY id ASC
             LIMIT 1
-        """), {"d": payload.date, "t": t_start, "te": t_end, "ts": f"{payload.time_slot}%"})
+        """), {"d": payload.date, "t": t_start, "te": t_end, "sdt": start_dt, "edt": end_dt})
         row = lookup.fetchone()
         if row:
             p_name = row[0].upper().strip()
@@ -1681,10 +1708,9 @@ async def reserve_booking_slot(
     check = await db.execute(text("""
         SELECT id FROM interview_appointments
         WHERE UPPER(psychologist_name) = :p
-          AND DATE(appointment_date) = :d
-          AND time_slot ILIKE :ts
           AND status != 'CANCELADA'
-    """), {"p": p_name, "d": payload.date, "ts": f"{payload.time_slot}%"})
+          AND appointment_date < :edt AND appointment_date + INTERVAL '45 minutes' > :sdt
+    """), {"p": p_name, "sdt": start_dt, "edt": end_dt})
     if check.fetchone():
         raise HTTPException(status_code=409, detail="Este horario acaba de ser ocupado. Por favor selecciona otro.")
 
@@ -1951,8 +1977,8 @@ INNEGOCIABLES & DEALBREAKERS: Conexión mandatoria con el amor hacia los animale
         WHERE id = :id
     """), {
         "tr": payload.transcript_text,
-        "qn": quick_notes,
-        "db": json.dumps(dealbreakers),
+        "qn": "",                      # no se guardan notas ni "innegociables" inventados por palabras clave
+        "db": json.dumps({}),
         "dur": payload.duration_seconds or 2700,
         "obs": payload.psychologist_observations or "",
         "id": session_id
@@ -2003,11 +2029,11 @@ INNEGOCIABLES & DEALBREAKERS: Conexión mandatoria con el amor hacia los animale
 
     return {
         "status": "success",
-        "message": "Entrevista analizada y expediente clínico actualizado exitosamente con IA.",
-        "quick_notes_ai": quick_notes,
-        "dealbreakers_ai": dealbreakers,
-        "dinamica": dinamica,
-        "apego": apego,
+        "message": "Entrevista cerrada. El perfil del cliente se actualiza con las propuestas de la llamada que la psicóloga revisa y aprueba (Videollamadas), no con un resumen automático.",
+        "quick_notes_ai": "",
+        "dealbreakers_ai": {},
+        "dinamica": "",
+        "apego": "",
         "client_name": client_name,
         "user_id": uid
     }

@@ -514,6 +514,7 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
 
     # 2. Si hay cal_id o coincide en scheduled_dates, actualizarlo
     cal_target_id = req.cal_id
+    op_id_cerrado = None
     if not cal_target_id and req.match_id:
         c_check = await db.execute(text("SELECT id, match_id, person_a, person_b FROM scheduled_dates WHERE id = :m OR match_id = :m ORDER BY id DESC LIMIT 1"), {"m": req.match_id})
         c_row = c_check.fetchone()
@@ -532,13 +533,15 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
             WHERE id = :cid
         """), {"cid": cal_target_id, "summary": summary_txt})
 
-        # Si tiene match_id en operational_matches, actualizar status a CITA COMPLETADA
-        if req.match_id:
+        # El match que se cierra es el de la cita del calendario (no el id que venga en el enlace, que puede ser otro)
+        _om = (await db.execute(text("SELECT match_id FROM scheduled_dates WHERE id = :c"), {"c": cal_target_id})).fetchone()
+        op_id_cerrado = _om.match_id if _om else None
+        if op_id_cerrado:
             await db.execute(text("""
                 UPDATE operational_matches
-                SET status = 'CITA COMPLETADA', updated_at = NOW()
-                WHERE id = :mid
-            """), {"mid": req.match_id})
+                SET status = 'CITA REALIZADA', updated_at = NOW()
+                WHERE id = :mid AND UPPER(COALESCE(status, '')) NOT IN ('CITA REALIZADA', 'CITA COMPLETADA', 'REFUND', 'REFUND DONE')
+            """), {"mid": op_id_cerrado})
 
     # 3. Si existe en historical_matches, actualizar flags
     if req.match_id:
@@ -552,6 +555,16 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
                 await db.execute(text("UPDATE historical_matches SET feedback_completed_b = TRUE WHERE id = :mid"), {"mid": req.match_id})
 
     await db.commit()
+
+    # Si al cliente le quedan citas en su plan, se reabre su siguiente slot (antes solo lo hacía el registro del equipo)
+    if op_id_cerrado:
+        try:
+            from app.routers.matchmaking import check_and_create_next_slot_if_eligible
+            await check_and_create_next_slot_if_eligible(db, op_id_cerrado)
+            await db.commit()
+        except Exception as e:
+            logger.warning(f"No se pudo reabrir el siguiente slot tras el feedback: {e}")
+            await db.rollback()
 
     return {
         "ok": True,

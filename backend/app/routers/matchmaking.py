@@ -2637,6 +2637,16 @@ def _autor_actual(current_user) -> str:
     return str((current_user or {}).get("name") or (current_user or {}).get("email") or "Equipo")
 
 
+def _exigir_direccion(current_user: dict) -> None:
+    """Aprobar, devolver o reembolsar un match es solo de María y la dirección (roles de sistema), no de psicólogas ni Servicio al Cliente."""
+    rol = str((current_user or {}).get("role_name") or "")
+    if not ((current_user or {}).get("is_system") or rol in ("Super Admin", "Admin")):
+        raise HTTPException(status_code=403, detail="Solo María o la dirección pueden aprobar, devolver o reembolsar un match.")
+
+
+_ESTADOS_CERRADOS = ("CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA", "CITA RESERVADA", "REFUND", "REFUND DONE", "ARCHIVADO", "INACTIVO", "DESCALIFICADO")
+
+
 @router.get("/matches/{match_id}/notas")
 async def listar_notas_match(match_id: int, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Chat de notas de la pareja: todos los mensajes en orden, marcando cuales son del usuario actual."""
@@ -3136,6 +3146,7 @@ class ApproveByMariaRequest(BaseModel):
 async def approve_match_by_maria(
     match_id: int,
     payload: Optional[ApproveByMariaRequest] = None,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -3145,6 +3156,7 @@ async def approve_match_by_maria(
     3. NO COPIA a otra tabla — todo vive y se gestiona en operational_matches.
     4. Registra en person_history para Persona A y Persona B.
     """
+    _exigir_direccion(current_user)
     exist_res = await db.execute(text("""
         SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id, approved_by_maria, status
         FROM operational_matches
@@ -3157,6 +3169,8 @@ async def approve_match_by_maria(
 
     if match_row.approved_by_maria:
         return {"status": "already_approved", "message": f"Match {match_id} ya fue aprobado previamente."}
+    if (match_row.status or "").strip().upper() in _ESTADOS_CERRADOS:
+        raise HTTPException(status_code=409, detail=f"Este match está en '{match_row.status}': ya no se puede aprobar.")
 
     # ── HARD-BLOCKING DE DOBLE APROBACIÓN PREVIA ─────────────────────────
     # Si el match involucra a un candidato B de otra psicóloga, debe estar validado previamente por ella
@@ -3195,7 +3209,7 @@ async def approve_match_by_maria(
 
     notes_str = f" [Nota: {payload.notes}]" if payload and payload.notes else ""
     force_str = " (con anulación de Dirección)" if force_approval and is_cross else ""
-    det = f"Match aprobado directamente por María{force_str} ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}).{notes_str}"
+    det = f"Match aprobado por {_autor_actual(current_user)}{force_str} ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}).{notes_str}"
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pA, "mid": match_id, "d": det})
     if pB and pB != "Candidato B":
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_APPROVED', :d, NOW())"), {"n": pB, "mid": match_id, "d": det})
@@ -3228,6 +3242,7 @@ async def approve_match_by_maria(
 async def refund_match_by_maria(
     match_id: int,
     payload: Optional[RejectMatchRequest] = None,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -3236,8 +3251,9 @@ async def refund_match_by_maria(
     2. Registra en person_history para Persona A y Persona B.
     3. Enruta a la cola de Lina (REFUNDS PENDIENTES).
     """
+    _exigir_direccion(current_user)
     exist_res = await db.execute(text("""
-        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id
+        SELECT id, person_a, person_b, psychologist_name, city, plan_tier, pref, slot_number, person_a_crm_id, person_b_crm_id, status
         FROM operational_matches
         WHERE id = :id
     """), {"id": match_id})
@@ -3245,6 +3261,8 @@ async def refund_match_by_maria(
 
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
+    if (match_row.status or "").strip().upper() in ("REFUND", "REFUND DONE"):
+        raise HTTPException(status_code=409, detail="Este match ya está en reembolso.")
 
     reason = (payload.reason if payload and payload.reason else "Refund directo ordenado por María").strip()
 
@@ -3256,7 +3274,7 @@ async def refund_match_by_maria(
 
     pA = match_row.person_a
     pB = match_row.person_b or "Candidato B"
-    det = f"Match marcado para REFUND por María ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}). Motivo: {reason}"
+    det = f"Match marcado para REFUND por {_autor_actual(current_user)} ({pA} x {pB}, Psicóloga: {match_row.psychologist_name}). Motivo: {reason}"
     await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'REFUND', :d, NOW())"), {"n": pA, "mid": match_id, "d": det})
     if pB and pB != "Candidato B":
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'REFUND', :d, NOW())"), {"n": pB, "mid": match_id, "d": det})
@@ -3275,6 +3293,7 @@ class RejectByMariaRequest(BaseModel):
 async def reject_match_by_maria(
     match_id: int,
     payload: Optional[RejectByMariaRequest] = None,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -3283,14 +3302,17 @@ async def reject_match_by_maria(
     2. Libera el bloqueo de María para que la psicóloga pueda proponer un nuevo candidato B.
     3. Registra en person_history y alimenta el filtro 2 del motor.
     """
+    _exigir_direccion(current_user)
     exist_res = await db.execute(text("""
         SELECT id, person_a, person_b, psychologist_name, city, plan_tier, observations,
-               pref, slot_number, person_a_crm_id
+               pref, slot_number, person_a_crm_id, user_id_a, status
         FROM operational_matches WHERE id = :id
     """), {"id": match_id})
     match_row = exist_res.fetchone()
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
+    if (match_row.status or "").strip().upper() in _ESTADOS_CERRADOS:
+        raise HTTPException(status_code=409, detail=f"Este match está en '{match_row.status}': ya no se puede devolver.")
 
     category = (payload.rejection_category if payload else None) or ""
     detail = ""
@@ -3315,7 +3337,7 @@ async def reject_match_by_maria(
         WHERE id = :id
     """), {"id": match_id, "obs": f"[DEVUELTO MARÍA] {formatted_reason}"})
 
-    det = f"Match devuelto por María a {match_row.psychologist_name}. Motivo: {formatted_reason}."
+    det = f"Match devuelto por {_autor_actual(current_user)} a {match_row.psychologist_name}. Motivo: {formatted_reason}."
 
     # La persona vuelve a "Listo para match" en la mesa de su psicóloga (fila nueva; la original conserva su estado),
     # salvo que ya tenga otra fila abierta sin candidato.
@@ -3335,17 +3357,17 @@ async def reject_match_by_maria(
             next_slot = int(next_slot_row.scalar() or 1)
             await db.execute(text("""
                 INSERT INTO operational_matches (
-                    person_a, person_a_crm_id, person_b, psychologist_name,
+                    person_a, person_a_crm_id, user_id_a, person_b, psychologist_name,
                     city, plan_tier, pref, status, slot_number,
                     approved_by_maria, observations, created_at, updated_at
                 ) VALUES (
-                    :pa, :cid, '', :psyc,
+                    :pa, :cid, :uida, '', :psyc,
                     :city, :plan, :pref, 'Listo para match',
                     :slot,
                     false, :obs, NOW(), NOW()
                 )
             """), {
-                "pa": match_row.person_a, "cid": match_row.person_a_crm_id or "",
+                "pa": match_row.person_a, "cid": match_row.person_a_crm_id or "", "uida": match_row.user_id_a,
                 "psyc": match_row.psychologist_name, "city": match_row.city or None,
                 "plan": match_row.plan_tier or "", "pref": match_row.pref or None,
                 "slot": next_slot,
@@ -3811,9 +3833,9 @@ async def get_mesa_psicologa(
             rechazados.append(item)
 
         # Troublemakers: María aprobó, Servicio al Cliente rechazó -> bandeja propia
-        if "TROUBLE" in st and (app_maria or "[ALERTA TROUBLE" in (d.get("observations") or "")):
+        if "TROUBLE" in st:
             _mt = re.search(r"\[ALERTA TROUBLE: ([^\]]+)\]", d.get("observations") or "")
-            item["trouble_detalle"] = ("Servicio al Cliente: " + _mt.group(1)) if _mt else "Rechazado por Servicio al Cliente"
+            item["trouble_detalle"] = ("Servicio al Cliente: " + _mt.group(1)) if _mt else ("Rechazado por Servicio al Cliente" if app_maria else "Trouble de la hoja (sin detalle): revisar si la persona puede recibir otro match")
             troublemakers.append(item)
             continue
 
@@ -5673,7 +5695,7 @@ async def record_calendar_feedback(
     if cal_row.match_id:
         await db.execute(text("""
             UPDATE operational_matches
-            SET status = 'CITA COMPLETADA', updated_at = NOW()
+            SET status = 'CITA REALIZADA', updated_at = NOW()
             WHERE id = :mid
         """), {"mid": cal_row.match_id})
         await check_and_create_next_slot_if_eligible(db, cal_row.match_id)
@@ -6063,6 +6085,9 @@ async def dispatch_automated_feedback_emails(
         ORDER BY s.id DESC
         LIMIT 100
     """
+    if simulation_mode:
+        # en simulación no se vuelve a mandar la prueba de una cita que ya se probó, pero la cita NO queda como enviada al cliente
+        query = query.replace("AND s.feedback_email_sent_at IS NULL", "AND s.feedback_email_sent_at IS NULL AND COALESCE(s.feedback_email_status, '') <> 'ENVIADO_TEST'")
     res = await db.execute(text(query))
     rows = res.fetchall()
 
@@ -6111,7 +6136,7 @@ async def dispatch_automated_feedback_emails(
 
         await db.execute(text("""
             UPDATE scheduled_dates
-            SET feedback_email_sent_at = NOW(),
+            SET feedback_email_sent_at = CASE WHEN :st = 'ENVIADO_TEST' THEN NULL ELSE NOW() END,
                 feedback_email_status = :st,
                 feedback_email_target = :tgt,
                 updated_at = NOW()
@@ -8419,12 +8444,25 @@ async def schedule_match(
     if not payload.scheduled_date or not payload.venue or "por definir" in payload.scheduled_date.lower() or "por definir" in payload.venue.lower():
         raise HTTPException(status_code=400, detail="Debe especificar una fecha, hora y restaurante válidos.")
 
-    exist_res = await db.execute(text("SELECT id, person_a, person_b, city FROM operational_matches WHERE id = :id"), {"id": match_id})
+    exist_res = await db.execute(text("SELECT id, person_a, person_b, city, status, approved_by_maria FROM operational_matches WHERE id = :id"), {"id": match_id})
     match_row = exist_res.fetchone()
     if not match_row:
         raise HTTPException(status_code=404, detail="Match no encontrado")
 
+    # Solo se agenda lo que María ya aprobó (o ya está en gestión de cita)
+    _st = (match_row.status or "").strip().upper()
+    _AGENDABLES = ("APROBADO", "AGENDANDO", "POR CONFIRMAR", "REPROGRAMAR", "REPROGRAMAR POR NO-SHOW", "EN PAUSA", "CITA PROGRAMADA", "CITA RESERVADA", "CONFIRMADA")
+    if not match_row.approved_by_maria and _st not in _AGENDABLES:
+        raise HTTPException(status_code=409, detail=f"Este match está en '{match_row.status}': María debe aprobarlo antes de agendar la cita.")
+
     city_val = payload.city or match_row.city or None  # nunca fabricar ciudad si no se conoce
+
+    # Cupo del restaurante en esa media hora (la misma regla que ya usa el editor de detalles)
+    _cupo = await check_restaurant_slot_availability(db, payload.venue, city_val, payload.scheduled_date, exclude_match_id=match_id)
+    if _cupo and _cupo.get("is_full"):
+        raise HTTPException(status_code=400, detail=(
+            f"Sin cupos en {_cupo['restaurant_name']} para el {_cupo['date_ymd']} a las {_cupo['slot_display']}: "
+            f"ya tiene {_cupo['occupied']}/{_cupo['max_slots']} cupos ocupados en esa media hora. Elige otra media hora o un restaurante diferente."))
 
     # Upsert en scheduled_dates
     existing_cal = await db.execute(text("SELECT id FROM scheduled_dates WHERE match_id = :mid LIMIT 1"), {"mid": match_id})
@@ -8468,7 +8506,7 @@ async def schedule_match(
     except Exception:
         dt_val = payload.scheduled_date
 
-    exist_conf = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid LIMIT 1"), {"mid": match_id})
+    exist_conf = await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :mid ORDER BY id DESC LIMIT 1"), {"mid": match_id})
     conf_row = exist_conf.fetchone()
     if conf_row:
         await db.execute(text("""
