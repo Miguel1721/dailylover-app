@@ -51,7 +51,15 @@ export default function MiMesaPsicologa() {
   const [activeTab, setActiveTab] = useState('por_proponer') // 'por_proponer', 'en_revision', 'aprobados', 'rechazados'
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+  const [vista, setVista] = useState('todos')   // 'todos' | 'propios' | 'heredados'
+  const [limite, setLimite] = useState(40)         // tarjetas dibujadas por bandeja (la lista completa pesa mucho)
+  const [rawData, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+  const data = (() => {
+    if (vista === 'todos') return rawData
+    const want = vista === 'heredados'
+    const fl = (a) => (a || []).filter(r => !!r.is_inherited === want)
+    return { ...rawData, por_proponer: fl(rawData.por_proponer), en_revision: fl(rawData.en_revision), aprobados: fl(rawData.aprobados), rechazados: fl(rawData.rechazados), troublemakers: fl(rawData.troublemakers) }
+  })()
   const [notification, setNotification] = useState('')
 
   // Panel "Proponer match"
@@ -75,9 +83,10 @@ export default function MiMesaPsicologa() {
   const [submittingDiscard, setSubmittingDiscard] = useState(false)
 
   // 1. Cargar mesa de psicóloga (3 bandejas)
-  const fetchMesa = useCallback(() => {
+  const fetchMesa = useCallback((opts) => {
     if (!token) return
-    setLoading(true)
+    const silencioso = !!(opts && opts.silent === true)
+    if (!silencioso) setLoading(true)
     let url = `${API}/api/v1/matchmaking/mesa-psicologa?psychologist=${encodeURIComponent(currentPsyc)}`
     if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`
 
@@ -85,18 +94,25 @@ export default function MiMesaPsicologa() {
       .then(r => r.json())
       .then(res => {
         setData(res || { por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
-        setLoading(false)
+        if (!silencioso) setLoading(false)
       })
       .catch(err => {
         console.error('Error cargando mesa de psicóloga:', err)
-        setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
-        setLoading(false)
+        if (!silencioso) {
+          setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+          setLoading(false)
+        }
       })
   }, [currentPsyc, searchTerm, token])
 
   useEffect(() => {
     fetchMesa()
   }, [fetchMesa])
+
+  useEffect(() => { setLimite(40) }, [activeTab, vista, searchTerm])
+
+  // Cambia una fila de Por proponer al instante en pantalla; la recarga real corre después sin spinner
+  const patchFila = (rowId, fn) => setData(prev => ({ ...prev, por_proponer: (prev.por_proponer || []).map(r => (r.id === rowId ? fn(r) : r)) }))
 
   // 2. Abrir panel "Proponer match": busca 3 a 5 candidatas filtradas por el motor
   const handleOpenProponer = (clientRow) => {
@@ -190,7 +206,11 @@ export default function MiMesaPsicologa() {
         setNotification(`Guardada en el slot: ${row.person_a} x ${f.name}. Cuando todos los slots estén llenos, envía a María con el check.`)
         setTimeout(() => setNotification(''), 7000)
         setManualB(prev => { const n = { ...prev }; delete n[key]; return n })
-        fetchMesa()
+        const nuevoSlot = { match_id: -Date.now(), person_b: f.name, person_b_age: f.age, person_b_photo_url: '', user_id_b: f.user_id, estado: 'amarillo', status: 'BORRADOR', motivo: '' }
+        patchFila(row.id, r => (opts.targetId
+          ? { ...r, slots_detalle: (r.slots_detalle || []).map(s => (s.match_id === opts.targetId ? nuevoSlot : s)) }
+          : { ...r, slots_detalle: [...(r.slots_detalle || []), nuevoSlot], slots_libres: Math.max(0, (r.slots_libres || 0) - 1) }))
+        fetchMesa({ silent: true })
       } else {
         const err = await res.json().catch(() => ({}))
         setMB(key, { sending: false, error: err.detail || 'No se pudo guardar en el slot.' })
@@ -216,7 +236,8 @@ export default function MiMesaPsicologa() {
       if (res.ok) {
         setNotification(`Guardada en el slot: ${row.person_a} x ${cand.name}.`)
         setTimeout(() => setNotification(''), 6000)
-        fetchMesa()
+        patchFila(row.id, r => ({ ...r, alerta_nuevo_match: false, slots_detalle: (r.slots_detalle || []).map(s => (s.match_id === sl.match_id ? { match_id: sl.match_id, person_b: cand.name, estado: 'amarillo', status: 'BORRADOR', motivo: '' } : s)) }))
+        fetchMesa({ silent: true })
       } else {
         const err = await res.json().catch(() => ({}))
         alert(err.detail || 'No se pudo guardar en el slot.')
@@ -238,7 +259,12 @@ export default function MiMesaPsicologa() {
       })
       if (res.ok) {
         setManualB(prev => { const n = { ...prev }; delete n[key]; return n })
-        fetchMesa()
+        patchFila(row.id, r => ({
+          ...r,
+          slots_detalle: [...(r.slots_detalle || []), { match_id: -Date.now(), person_b: '', estado: 'nogente', status: 'NO HAY GENTE', dias_esperando: 0, nuevos: [] }],
+          slots_libres: Math.max(0, (r.slots_libres || 0) - 1)
+        }))
+        fetchMesa({ silent: true })
       } else {
         const err = await res.json().catch(() => ({}))
         setMB(key, { marking: false, error: err.detail || 'No se pudo marcar.' })
@@ -260,8 +286,8 @@ export default function MiMesaPsicologa() {
         const d = await res.json().catch(() => ({}))
         setNotification(`Enviado a María: ${d.enviados || ''} propuesta(s) de ${row.person_a}`)
         setTimeout(() => setNotification(''), 6000)
-        fetchMesa()
-        setActiveTab('en_revision')
+        setData(prev => ({ ...prev, por_proponer: (prev.por_proponer || []).filter(r => r.id !== row.id) }))
+        fetchMesa({ silent: true })
       } else {
         const err = await res.json().catch(() => ({}))
         alert(err.detail || 'No se pudo enviar a María.')
@@ -352,7 +378,7 @@ export default function MiMesaPsicologa() {
         setChoosingCandidate(null)
         setProposalNote('')
         setProposingClient(null)
-        fetchMesa()
+        fetchMesa({ silent: true })
       } else {
         const err = await res.json()
         alert(`Error al enviar propuesta: ${err.detail || 'Operación no completada'}`)
@@ -715,6 +741,24 @@ export default function MiMesaPsicologa() {
         </button>
       </div>
 
+      {/* Vista: propios / heredados (los heredados vienen de las psicólogas que se fueron) */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '0 0 14px' }}>
+        {[
+          ['todos', 'Todos', (rawData.por_proponer || []).length],
+          ['propios', 'Propios', (rawData.por_proponer || []).filter(r => !r.is_inherited).length],
+          ['heredados', 'Heredados', (rawData.por_proponer || []).filter(r => r.is_inherited).length]
+        ].map(([k, label, n]) => (
+          <button key={k} type="button" onClick={() => setVista(k)}
+            style={{ padding: '7px 16px', borderRadius: 20, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+              border: vista === k ? '1.5px solid #B8324F' : '1px solid var(--border-color)',
+              background: vista === k ? 'rgba(184, 50, 79, 0.15)' : 'var(--bg-card)',
+              color: vista === k ? '#B8324F' : 'var(--text-secondary)' }}>
+            {label} <span style={{ opacity: 0.7, marginLeft: 4 }}>{n}</span>
+          </button>
+        ))}
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Los números cuentan clientes en Por proponer</span>
+      </div>
+
       {/* CONTENIDO DE BANDEJAS */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60, background: 'var(--bg-card)', borderRadius: 14 }}>
@@ -734,7 +778,7 @@ export default function MiMesaPsicologa() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {data.por_proponer.map(row => (
+                  {data.por_proponer.slice(0, limite).map(row => (
                     <div
                       key={row.id}
                       style={{
@@ -970,6 +1014,12 @@ export default function MiMesaPsicologa() {
                       </div>
                     </div>
                   ))}
+                  {data.por_proponer.length > limite && (
+                    <button type="button" onClick={() => setLimite(l => l + 40)}
+                      style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      Mostrar más ({data.por_proponer.length - limite} restantes)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1063,7 +1113,7 @@ export default function MiMesaPsicologa() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {data.rechazados.map(row => (
+                  {data.rechazados.slice(0, limite).map(row => (
                     <div
                       key={row.id}
                       style={{
@@ -1103,6 +1153,12 @@ export default function MiMesaPsicologa() {
                       </div>
                     </div>
                   ))}
+                  {data.rechazados.length > limite && (
+                    <button type="button" onClick={() => setLimite(l => l + 40)}
+                      style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      Mostrar más ({data.rechazados.length - limite} restantes)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1173,7 +1229,7 @@ export default function MiMesaPsicologa() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {data.aprobados.map(row => (
+                  {data.aprobados.slice(0, limite).map(row => (
                     <div
                       key={row.id}
                       style={{
@@ -1237,6 +1293,12 @@ export default function MiMesaPsicologa() {
                       </div>
                     </div>
                   ))}
+                  {data.aprobados.length > limite && (
+                    <button type="button" onClick={() => setLimite(l => l + 40)}
+                      style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                      Mostrar más ({data.aprobados.length - limite} restantes)
+                    </button>
+                  )}
                 </div>
               )}
             </div>
