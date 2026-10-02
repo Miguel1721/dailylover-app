@@ -3568,7 +3568,8 @@ async def get_mesa_psicologa(
         if prof_city and sheet_city and norm_city(prof_city) != norm_city(sheet_city):
             city_warning = f"Hoja: {sheet_city}"
 
-        created = latest_r.get("created_at") or now
+        _crs = [_c.get("created_at") for _c in c_rows if _c.get("created_at") and not is_mass_migration_date(_c.get("created_at"))]
+        created = min(_crs) if _crs else (latest_r.get("created_at") or now)
         if is_mass_migration_date(created):
             dias_esperando = None
             dias_label = "-"
@@ -3680,6 +3681,7 @@ async def get_mesa_psicologa(
             item["slots_total"] = _ts + (len(_det) - _noroj)
             item["slots_libres"] = max(0, _ts - _noroj)
         item["slots_detalle"] = _det
+        item["orden_id"] = min((_c.get("id") or 0) for _c in c_rows)
         item["alerta_nuevo_match"] = any(_x["estado"] == "nogente" and _x.get("nuevos") for _x in _det)
         # El cliente permanece en "Por proponer" mientras tenga slots libres o borradores sin enviar;
         # desaparece solo cuando el check ya envió todo a María.
@@ -3689,7 +3691,7 @@ async def get_mesa_psicologa(
             continue
         por_proponer.append(item)
 
-    por_proponer.sort(key=lambda x: (1 if x.get("alerta_nuevo_match") else 0, x["dias_esperando"] if x["dias_esperando"] is not None else -1, x["id"]), reverse=True)
+    por_proponer.sort(key=lambda x: (1 if x.get("alerta_nuevo_match") else 0, x["dias_esperando"] if x["dias_esperando"] is not None else -1, x.get("orden_id") or x["id"]), reverse=True)
     en_revision.sort(key=lambda x: x["id"], reverse=True)
     aprobados.sort(key=lambda x: x["id"], reverse=True)
     rechazados.sort(key=lambda x: x["id"], reverse=True)
