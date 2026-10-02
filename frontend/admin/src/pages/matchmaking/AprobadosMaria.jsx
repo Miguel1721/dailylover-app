@@ -366,10 +366,14 @@ export default function AprobadosMaria() {
     )
   }
 
+  const ESTADOS_CS = { 'por llamar': 'Por Llamar', 'llamado 1': 'Llamado 1', 'en conversación': 'En Conversación', 'en conversacion': 'En Conversación', 'rechazó match': 'Rechazó Match' }
+  const estadoCsEtiqueta = (stage) => ESTADOS_CS[(stage || '').toLowerCase()] || 'Por Llamar'
+
   const handleUpdateServiceStatus = async (matchId, statusVal) => {
+    if (statusVal === 'Rechazó Match' && !window.confirm('Vas a registrar que este match fue rechazado. Se quita de esta lista y se genera la alerta de nuevo match para las psicólogas de las personas a las que les falten citas. ¿Continuar?')) return
     setUpdatingId(matchId)
     try {
-      const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}`, {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}/service-status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1483,7 +1487,7 @@ export default function AprobadosMaria() {
                     </div>
 
                     <select
-                      value={match.service_status || 'Por Llamar'}
+                      value={estadoCsEtiqueta(match.cs_stage)}
                       onChange={e => handleUpdateServiceStatus(match.id, e.target.value)}
                       disabled={updatingId === match.id}
                       style={{

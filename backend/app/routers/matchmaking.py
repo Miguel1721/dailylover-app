@@ -2470,6 +2470,7 @@ class ServiceStatusPayload(BaseModel):
 async def update_match_service_status(
     match_id: int,
     payload: ServiceStatusPayload,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -2527,8 +2528,13 @@ async def update_match_service_status(
         det = f"Estado de servicio CS actualizado a: '{new_stage}'"
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'CS_STATUS_CHANGED', :d, NOW())"), {"n": m_row.person_a, "mid": match_id, "d": det})
 
+    # "Rechazó Match" (Servicio al Cliente) dispara el mismo flujo de trouble matches que los botones Rechazó Persona A/B
+    trouble = None
+    if new_stage in ("rechazó match", "rechazo match"):
+        trouble = await _disparar_trouble(db, match_id, None, current_user)
+
     await db.commit()
-    return {"status": "success", "match_id": match_id, "stage": new_stage}
+    return {"status": "success", "match_id": match_id, "stage": new_stage, "trouble": trouble}
 
 
 def is_mass_migration_date(dt: Optional[datetime]) -> bool:
@@ -2716,7 +2722,8 @@ async def _disparar_trouble(db, match_id, lado, current_user):
     pend_b = await _citas_pendientes(db, m.user_id_b, plan_b.plan_tier if plan_b else None, pb.last_payment_date if pb else None)
     alerta_a = pend_a is None or pend_a > 0
     alerta_b = pend_b is None or pend_b > 0
-    rechazo = f"rechazó la Persona {'A' if lado == 'a' else 'B'} ({m.person_a if lado == 'a' else m.person_b})"
+    rechazo = ("rechazó el match (Servicio al Cliente)" if lado not in ("a", "b")
+               else f"rechazó la Persona {'A' if lado == 'a' else 'B'} ({m.person_a if lado == 'a' else m.person_b})")
     marca_a = f" [ALERTA TROUBLE: {rechazo}]" if alerta_a else f" [TROUBLE sin alerta: {m.person_a} ya cumplió sus citas]"
     await db.execute(text("UPDATE operational_matches SET status = 'TROUBLE', observations = :o, updated_at = NOW() WHERE id = :m"), {"o": obs0 + marca_a, "m": match_id})
     espejo_id = None
@@ -8254,7 +8261,7 @@ async def get_matches_pending_service(
                      id DESC
         ) uB ON LOWER(TRIM(uB.name)) = LOWER(TRIM(m.person_b))
         WHERE (m.status = 'APROBADO' OR m.approved_by_maria = true)
-          AND (c.stage IS NULL OR c.stage IN ('pendiente', 'agendando', 'por confirmar', 'esperar', 'de viaje', 'problemas personales', 'no contestan', 'reprogramar'))
+          AND (c.stage IS NULL OR c.stage IN ('pendiente', 'agendando', 'por confirmar', 'esperar', 'de viaje', 'problemas personales', 'no contestan', 'reprogramar', 'por llamar', 'llamado 1', 'en conversación', 'en conversacion'))
           AND (c.scheduled_date IS NULL)
           AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
     """

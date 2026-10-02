@@ -173,6 +173,10 @@ export function NotificationProvider({ children }) {
     }, 7000)
   }, [playChime, triggerDesktopNotification, dismissToast])
 
+  // La función de avisos se guarda en una referencia: así el sondeo no se reinicia cada vez que cambia su identidad
+  const triggerToastRef = useRef(null)
+  triggerToastRef.current = triggerToast
+
   // Polling de alertas en vivo desde el backend con deduplicación estricta
   const fetchLiveAlerts = useCallback(async () => {
     if (!token) return
@@ -197,7 +201,7 @@ export function NotificationProvider({ children }) {
             for (const alert of incomingAlerts) {
               if (!seenAlertIdsRef.current.has(alert.id)) {
                 seenAlertIdsRef.current.add(alert.id)
-                triggerToast({
+                triggerToastRef.current && triggerToastRef.current({
                   id: alert.id,
                   title: alert.title,
                   message: alert.message,
@@ -215,7 +219,7 @@ export function NotificationProvider({ children }) {
     } catch (e) {
       // Silenciar errores de red periódicos
     }
-  }, [token, triggerToast])
+  }, [token])
 
   useEffect(() => {
     fetchLiveAlerts()

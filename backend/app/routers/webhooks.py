@@ -22,6 +22,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+from app.core.auth_guard import exigir_sesion
 router = APIRouter(prefix="/api/v1/webhooks", tags=["Webhooks"])
 
 import asyncio
@@ -1121,6 +1122,22 @@ async def smartmatchapp_webhook(request: Request, background_tasks: BackgroundTa
     return {"status": "success", "message": "Evento recibido y encolado correctamente"}
 
 
+def _calendly_firma_valida(body: bytes, cabecera: str, clave: str) -> bool:
+    """Calendly-Webhook-Signature: t=<timestamp>,v1=<hmac sha256 de "t.cuerpo">. Tolerancia de 5 minutos."""
+    import hashlib
+    import hmac
+    import time as _t
+    try:
+        partes = dict(x.split("=", 1) for x in (cabecera or "").split(","))
+        t, v1 = partes["t"], partes["v1"]
+        if abs(_t.time() - int(t)) > 300:
+            return False
+        esperado = hmac.new(clave.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(esperado, v1)
+    except Exception:
+        return False
+
+
 @router.post("/calendly")
 async def calendly_webhook(
     request: Request,
@@ -1132,8 +1149,15 @@ async def calendly_webhook(
     Cruza los datos del invitado contra SmartMatchApp CRM y registra automáticamente
     al usuario en la pestaña PROFILES con Responsable vacío en amarillo (#FFF2CC).
     """
+    import os as _os
+    body_bytes = await request.body()
+    _clave = _os.environ.get("CALENDLY_WEBHOOK_SIGNING_KEY", "").strip()
+    if not _clave:
+        raise HTTPException(status_code=403, detail="Webhook de Calendly no configurado.")
+    if not _calendly_firma_valida(body_bytes, request.headers.get("calendly-webhook-signature", ""), _clave):
+        raise HTTPException(status_code=403, detail="Firma inválida.")
     try:
-        payload = await request.json()
+        payload = json.loads(body_bytes.decode("utf-8"))
     except Exception as e:
         logger.error(f"Error parseando JSON de Calendly: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
@@ -1161,7 +1185,7 @@ async def calendly_webhook(
     return {"status": "success", "result": result}
 
 
-@router.post("/calendly/sync")
+@router.post("/calendly/sync", dependencies=[Depends(exigir_sesion)])
 async def calendly_poll_sync(
     request: Request,
     db: AsyncSession = Depends(get_db)
