@@ -2261,7 +2261,7 @@ async def _slots_libres_psicologa(db: AsyncSession, p_name: str, ignore_id: Opti
     """), {"p": p, "a": ahora.date(), "b": hasta})).fetchall()
     booked = [r[0] for r in (await db.execute(text("""
         SELECT appointment_date FROM interview_appointments
-        WHERE UPPER(psychologist_name) = :p AND status != 'CANCELADA' AND appointment_date >= :a AND (:ig IS NULL OR id <> :ig)
+        WHERE UPPER(psychologist_name) = :p AND status != 'CANCELADA' AND appointment_date >= :a AND (CAST(:ig AS integer) IS NULL OR id <> CAST(:ig AS integer))
     """), {"p": p, "a": ahora - timedelta(hours=1), "ig": ignore_id})).fetchall()]
     out: Dict[str, List[str]] = {}
     for sh in shifts:
