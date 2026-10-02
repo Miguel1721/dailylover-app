@@ -28,7 +28,7 @@ async def main():
     async with AsyncSessionLocal() as db:
         filas = (await db.execute(text("""
             SELECT m.id, m.user_id_a, m.person_a, m.psychologist_name, m.plan_tier, m.city, m.status, m.slot_number, m.person_a_crm_id,
-                   p.last_payment_date, p.plan_tier AS plan_perfil, p.responsable
+                   COALESCE(p.last_payment_date, p.plan_fecha_pago) AS last_payment_date, p.plan_tier AS plan_perfil, p.responsable
             FROM operational_matches m LEFT JOIN profiles p ON p.user_id = m.user_id_a
             WHERE m.user_id_a IS NOT NULL AND (m.batch_tag IS NULL OR m.batch_tag <> 'agosto27_backlog')
             ORDER BY m.user_id_a, m.id"""))).fetchall()

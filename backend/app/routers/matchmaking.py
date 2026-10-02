@@ -2739,7 +2739,7 @@ async def _disparar_trouble(db, match_id, lado, current_user):
     perf = {}
     ids = [x for x in (m.user_id_a, m.user_id_b) if x]
     if ids:
-        for r in (await db.execute(text("SELECT user_id, responsable, last_payment_date, city FROM profiles WHERE user_id = ANY(:u)"), {"u": ids})).fetchall():
+        for r in (await db.execute(text("SELECT user_id, responsable, COALESCE(last_payment_date, plan_fecha_pago) AS last_payment_date, city FROM profiles WHERE user_id = ANY(:u)"), {"u": ids})).fetchall():
             perf[r.user_id] = r
     pa, pb = perf.get(m.user_id_a), perf.get(m.user_id_b)
     plan_b = None
@@ -3621,7 +3621,7 @@ class EnviarSlotsRequest(BaseModel):
 async def enviar_slots_a_maria(payload: EnviarSlotsRequest, db: AsyncSession = Depends(get_db)):
     """Check del cliente: envia a María los borradores. Exige todos los slots llenos (o en 'No hay gente')."""
     base = (await db.execute(text("""
-        SELECT m.id, m.person_a, m.user_id_a, m.plan_tier, pA.last_payment_date AS pay_date
+        SELECT m.id, m.person_a, m.user_id_a, m.plan_tier, COALESCE(pA.last_payment_date, pA.plan_fecha_pago) AS pay_date
         FROM operational_matches m LEFT JOIN profiles pA ON pA.user_id = m.user_id_a
         WHERE m.id = :m
     """), {"m": payload.match_id})).fetchone()
@@ -3969,7 +3969,7 @@ async def get_mesa_psicologa(
             COALESCE(pA.photo_url, '') AS person_a_photo_url,
             COALESCE(pB.photo_url, '') AS person_b_photo_url,
             pA.age AS person_a_age, pA.occupation AS person_a_occupation, pA.responsable AS person_a_responsable,
-            pA.city AS person_a_profile_city, pA.last_payment_date AS person_a_pay_date, pA.gender AS person_a_gender,
+            pA.city AS person_a_profile_city, COALESCE(pA.last_payment_date, pA.plan_fecha_pago) AS person_a_pay_date, pA.gender AS person_a_gender,
             pB.age AS person_b_age, pB.occupation AS person_b_occupation,
             pB.city AS person_b_profile_city,
             sd.venue AS scheduled_venue, sd.date_time AS scheduled_date_time, sd.had_date AS scheduled_had_date,
