@@ -9,6 +9,22 @@ import CrmPersonLink from '../../components/CrmPersonLink'
 import UserAvatar from '../../components/UserAvatar'
 import RestaurantFilterModal from '../../components/RestaurantFilterModal'
 
+// Burbujas del CRM: Social Group, estatura, religión y política (cada una independiente)
+const burbujaCrm = (t, strong) => (
+  <span key={t} style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap',
+    background: strong ? 'rgba(124, 58, 237, 0.12)' : 'rgba(255,255,255,0.06)',
+    color: strong ? '#7C3AED' : 'var(--text-secondary)',
+    border: strong ? '1px solid rgba(124, 58, 237, 0.3)' : '1px solid var(--border-color)' }}>{t}</span>
+)
+const burbujasCrm = (sg, est, rel, pol) => (
+  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '4px 0 8px' }}>
+    {burbujaCrm(sg ? `Social Group ${sg}` : 'Social Group: sin dato', true)}
+    {est ? burbujaCrm(`Estatura ${est}`) : null}
+    {rel ? burbujaCrm(`Religión ${rel}`) : null}
+    {pol ? burbujaCrm(`Política ${pol}`) : null}
+  </div>
+)
+
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const PSYCHOLOGIST_LIST = [
@@ -746,6 +762,7 @@ export default function AprobadosMaria() {
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
                               <Briefcase size={12} /> {item.person_a_occupation || 'Ocupación no especificada'}
                             </div>
+                            {burbujasCrm(item.person_a_social_group, item.person_a_estatura, item.person_a_religion, item.person_a_politica)}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                               <span style={{
                                 fontSize: 11,
@@ -800,6 +817,7 @@ export default function AprobadosMaria() {
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
                               <Briefcase size={12} /> {item.person_b_occupation || 'Ocupación no especificada'}
                             </div>
+                            {burbujasCrm(item.person_b_social_group, item.person_b_estatura, item.person_b_religion, item.person_b_politica)}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                               <span style={{
                                 fontSize: 11,
@@ -1154,6 +1172,7 @@ export default function AprobadosMaria() {
                             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                               <CrmPersonLink crmId={match.person_a_crm_id} name={match.person_a} style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }} />
                             </div>
+                            {burbujasCrm(match.person_a_social_group, match.person_a_estatura, match.person_a_religion, match.person_a_politica)}
                             {match.person_a_phone && (
                               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
                                 📞 {match.person_a_phone}
@@ -1180,6 +1199,7 @@ export default function AprobadosMaria() {
                                 <span style={{ color: 'var(--text-muted)' }}>Por definir</span>
                               )}
                             </div>
+                            {burbujasCrm(match.person_b_social_group, match.person_b_estatura, match.person_b_religion, match.person_b_politica)}
                             {match.person_b_phone && (
                               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
                                 📞 {match.person_b_phone}

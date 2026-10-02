@@ -2558,6 +2558,50 @@ def is_invalid_person_a(name: Optional[str]) -> bool:
 
 # ─── 2. PANTALLA 2: COLA DE APROBACIÓN (MARÍA) ──────────────────────────────
 
+async def enriquecer_con_crm(db, items):
+    """Agrega a cada item el Social Group, estatura, religion y politica del CRM (por crm_id) de la Persona A y B."""
+    def _cid(v):
+        v = str(v or "").strip()
+        return int(v) if v.isdigit() else None
+    ids = set()
+    for it in items:
+        for k in ("person_a_crm_id", "person_b_crm_id"):
+            c = _cid(it.get(k))
+            if c is not None:
+                ids.add(c)
+    datos = {}
+    if ids:
+        try:
+            for x in (await db.execute(text("SELECT crm_id, field_id, value FROM crm_profile_fields WHERE field_id IN ('prof_248', 'pref_69', 'pref_60', 'prof_203', 'prof_197', 'prof_226') AND crm_id = ANY(:c)"), {"c": list(ids)})).fetchall():
+                v = x.value
+                if isinstance(v, str):
+                    try:
+                        v = json.loads(v)
+                    except Exception:
+                        v = None
+                if isinstance(v, dict):
+                    t = str(v.get("choice_label") or v.get("choice") or "")
+                elif isinstance(v, list):
+                    t = ", ".join(str(e.get("label") or e.get("choice")) for e in v if isinstance(e, dict))
+                elif isinstance(v, (int, float)):
+                    t = (f"{v / 1000:.2f} m".replace(".", ",")) if x.field_id == "prof_203" else str(v)
+                else:
+                    t = ""
+                if x.field_id == "prof_226":
+                    t = {"Left": "Izquierda", "Moderate left": "Centro-izquierda", "Center": "Centro", "Moderate right": "Centro-derecha", "Right": "Derecha"}.get(t, t)
+                datos.setdefault(x.crm_id, {})[x.field_id] = t
+        except Exception:
+            await db.rollback()
+    for it in items:
+        for lado in ("a", "b"):
+            d = datos.get(_cid(it.get("person_%s_crm_id" % lado)), {})
+            it["person_%s_social_group" % lado] = d.get("prof_248", "")
+            it["person_%s_estatura" % lado] = d.get("prof_203", "")
+            it["person_%s_religion" % lado] = d.get("prof_197", "")
+            it["person_%s_politica" % lado] = d.get("prof_226", "")
+    return items
+
+
 @router.get("/approval-queue")
 async def get_approval_queue(
     psychologist: Optional[str] = Query(None),
@@ -2833,6 +2877,7 @@ async def get_approval_queue(
         total_items = len(queue)
     total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
 
+    await enriquecer_con_crm(db, queue)
     return {
         "queue": queue,
         "total": total_items,
@@ -8008,6 +8053,7 @@ async def get_matches_pending_service(
         total_items = len(matches)
     total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
 
+    await enriquecer_con_crm(db, matches)
     return {
         "matches": matches,
         "total": total_items,
