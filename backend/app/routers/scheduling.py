@@ -1051,6 +1051,11 @@ async def save_availability(
     """Reemplaza la disponibilidad semanal recurrente de una persona (cada día: sin definir, todo el día, no disponible o varias franjas)."""
     await ensure_shift_tables(db)
     name = canonical_name(payload.employee_name)
+    if hides_costs(user):
+        from app.routers.shift_changes_api import my_staff_name
+        mine = await my_staff_name(db, user)
+        if not mine or mine.lower() != name.lower():
+            raise HTTPException(status_code=403, detail="Solo puedes cambiar tu propia disponibilidad.")
 
     to_insert = []  # (weekday, mode, start, end)
     for key, day in payload.days.items():

@@ -55,6 +55,7 @@ import EntrevistaHub from './pages/matchmaking/EntrevistaHub'
 import SupervisionMaria from './pages/matchmaking/SupervisionMaria'
 import Prioritarios from './pages/matchmaking/Prioritarios'
 import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
+import MisTurnos from './pages/matchmaking/MisTurnos'
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
@@ -297,7 +298,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
   const psycNavItems = [
     { to: '/matchmaking/profiles', icon: Sparkles, label: 'Profiles (ingreso)' },
     { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa' },
-    { to: '/matchmaking/calendario', icon: Calendar, label: '📅 Mis Turnos' },
+    { to: '/matchmaking/mis-turnos', icon: Calendar, label: '📅 Mi Semana' },
     { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevistas' },
     { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' }
   ]
@@ -326,6 +327,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
         { to: '/matchmaking/mis-matches', icon: Heart, label: '💖 Matches Psicólogas (Admin)' },
         { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar (María)' },
         { to: '/matchmaking/calendario', icon: Calendar, label: '🗓️ Calendario & Turnos' },
+        { to: '/matchmaking/mis-turnos', icon: Calendar, label: '📅 Mi Semana (vista psicóloga)' },
         { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' },
         { to: '/matchmaking/videollamadas', icon: Sparkles, label: '📹 Videollamadas' },
         { to: '/clientes', icon: Users, label: '👥 Directorio Clientes' },
@@ -988,6 +990,7 @@ function AppContent() {
                     <Route path="/matchmaking/prioritarios" element={<AreaErrorBoundary areaName="Casos Prioritarios"><ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/todos-los-matches" element={<AreaErrorBoundary areaName="Matriz Global de Matches"><ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/agenda" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/mis-turnos" element={<AreaErrorBoundary areaName="Mi Semana"><ProtectedRoute module="matching" action="view"><MisTurnos /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/calendario" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/sala/:sessionId" element={<AreaErrorBoundary areaName="Sala de Videollamada"><ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/horas-psicologas" element={<AreaErrorBoundary areaName="Control de Horas Clínicas"><ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute></AreaErrorBoundary>} />

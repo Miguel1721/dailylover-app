@@ -14,7 +14,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.routers.scheduling import ensure_shift_tables, local_monday, require_staff, hides_costs
+from app.routers.scheduling import (ensure_shift_tables, local_monday, require_staff, hides_costs, save_availability,
+                                    AvailabilityRequest, AvailabilityDay, ShiftRange, DAY_KEYS, DAY_LABELS_ES)
 from app.services import shift_changes as RULES
 from app.services import shift_planning as SP
 
@@ -28,6 +29,17 @@ ACCOUNT_EMAILS = {
     "Mara Paula de la Espriella": "mapa.delae@gmail.com",
 }
 _ready = False
+
+# codigo corto con el que las citas antiguas guardaron a cada persona
+CODIGO_CITAS = {"ana maria tolosa": "ANA", "estefania rodriguez": "STEFFY", "isabela marquez": "ISA", "jennifer pimiento": "JENN",
+                "mara paula de la espriella": "MAPE D", "maria pia cottrino": "PIA", "silvana manrique": "SILVI"}
+
+
+def _nombres_cita(person: str) -> List[str]:
+    out = [person.upper()]
+    if person.lower() in CODIGO_CITAS:
+        out.append(CODIGO_CITAS[person.lower()])
+    return out
 
 
 async def ensure_change_tables(db: AsyncSession) -> None:
@@ -156,6 +168,15 @@ async def my_week(week_date: Optional[str] = Query(None), db: AsyncSession = Dep
         return out
     shifts, _, _ = await _week_context(db, monday)
     now = _now()
+    sunday = monday + timedelta(days=6)
+    st = (await db.execute(text("SELECT status FROM staff_weeks WHERE week_monday = :m"), {"m": monday})).scalar()
+    out["week_status"] = st or "SIN_GENERAR"
+    out["weekly_hours"] = (await db.execute(text("SELECT weekly_hours FROM staff_team WHERE LOWER(name) = LOWER(:n)"), {"n": me})).scalar()
+    out["availability_set"] = bool((await db.execute(text("SELECT COUNT(*) FROM staff_availability WHERE LOWER(employee_name) = LOWER(:n)"), {"n": me})).scalar())
+    published = {r[0] for r in (await db.execute(text("SELECT id FROM staff_shifts WHERE shift_date BETWEEN :a AND :b AND is_published = true"), {"a": monday, "b": sunday})).fetchall()}
+    out["published"] = bool(published)
+    if hides_costs(user):
+        shifts = [s for s in shifts if s["id"] in published]
     out["shifts"] = [{**_public(s), "can_move": s["type"] == "MATCHMAKING" and RULES._starts_at(s["date"], RULES._m(s["start"])) > now,
                       "can_swap": RULES._starts_at(s["date"], RULES._m(s["start"])) > now}
                      for s in shifts if s["name"].lower() == me.lower()]
@@ -185,9 +206,12 @@ async def swap_candidates(shift_id: int, db: AsyncSession = Depends(get_db), use
     monday = local_monday(mine["date"])
     shifts, av, off = await _week_context(db, monday)
     now = _now()
+    published = {r[0] for r in (await db.execute(text("SELECT id FROM staff_shifts WHERE shift_date BETWEEN :a AND :b AND is_published = true"), {"a": monday, "b": monday + timedelta(days=6)})).fetchall()}
+    if mine["id"] not in published:
+        raise HTTPException(status_code=409, detail="El horario de esa semana todavía no está aprobado, por eso aún no se puede pedir cambios.")
     cands = []
     for s in shifts:
-        if s["name"].lower() == me.lower() or s["type"] != mine["type"]:
+        if s["name"].lower() == me.lower() or s["type"] != mine["type"] or s["id"] not in published:
             continue
         if not RULES.validate_swap(mine, s, all_shifts=shifts, availability=av, time_off=off, now=now):
             cands.append(_public(s))
@@ -329,9 +353,9 @@ async def accept_swap(swap_id: int, db: AsyncSession = Depends(get_db), user: di
         async def appts(person: str, s: dict) -> List[int]:
             return [x[0] for x in (await db.execute(text("""
                 SELECT id FROM interview_appointments
-                WHERE UPPER(psychologist_name) = UPPER(:p) AND DATE(appointment_date) = :d AND status != 'CANCELADA'
+                WHERE UPPER(psychologist_name) = ANY(:p) AND DATE(appointment_date) = :d AND status != 'CANCELADA'
                   AND LEFT(time_slot, 5) >= :s AND LEFT(time_slot, 5) < :e
-            """), {"p": person, "d": s["date"], "s": _hhmm(s["start"]), "e": _hhmm(s["end"])})).fetchall()]
+            """), {"p": _nombres_cita(person), "d": s["date"], "s": _hhmm(s["start"]), "e": _hhmm(s["end"])})).fetchall()]
         a_ids, b_ids = await appts(a["name"], a), await appts(b["name"], b)
         if a_ids:
             await db.execute(text("UPDATE interview_appointments SET psychologist_name = :n WHERE id = ANY(:ids)"), {"n": b["name"].upper(), "ids": a_ids})
@@ -370,3 +394,103 @@ async def cancel_swap(swap_id: int, db: AsyncSession = Depends(get_db), user: di
         raise HTTPException(status_code=403, detail="Solo quien la propuso (o administración) puede cancelarla.")
     await _close(db, swap_id, "CANCELADA", me or str(user.get("email") or "admin"))
     return {"status": "success"}
+
+
+# ------------------------------------------------------------------ Mi semana: disponibilidad propia y citas
+
+VENTANA = {0: (540, 1200), 1: (540, 1200), 2: (540, 1200), 3: (540, 1200), 4: (540, 1200), 5: (540, 780)}   # minutos desde 00:00
+
+
+def _min(hhmm: str) -> int:
+    h, m = hhmm.strip()[:5].split(":")
+    return int(h) * 60 + int(m)
+
+
+@router.get("/my-availability")
+async def my_availability(db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Mi disponibilidad semanal recurrente (la que usa el generador del horario)."""
+    await ensure_shift_tables(db)
+    me = await my_staff_name(db, user)
+    out: Dict[str, Any] = {"me": me, "days": {k: {"mode": "UNSET", "ranges": []} for k in DAY_KEYS}, "labels": DAY_LABELS_ES,
+                           "weekly_hours": None, "updated_at": None, "defined": False}
+    if not me:
+        return out
+    out["weekly_hours"] = (await db.execute(text("SELECT weekly_hours FROM staff_team WHERE LOWER(name) = LOWER(:n)"), {"n": me})).scalar()
+    rows = (await db.execute(text("SELECT weekday, mode, start_time, end_time, updated_at FROM staff_availability WHERE LOWER(employee_name) = LOWER(:n) ORDER BY weekday, start_time"), {"n": me})).fetchall()
+    for r in rows:
+        d = out["days"][DAY_KEYS[int(r.weekday)]]
+        d["mode"] = r.mode
+        if r.mode == "RANGES" and r.start_time and r.end_time:
+            d["ranges"].append({"start_time": _hhmm(r.start_time), "end_time": _hhmm(r.end_time)})
+        if r.updated_at and (out["updated_at"] is None or r.updated_at.isoformat() > out["updated_at"]):
+            out["updated_at"] = r.updated_at.isoformat()
+    out["defined"] = bool(rows)
+    return out
+
+
+class MyAvailabilityDay(BaseModel):
+    mode: str = "UNSET"
+    ranges: List[Dict[str, str]] = []
+
+
+class MyAvailability(BaseModel):
+    days: Dict[str, MyAvailabilityDay]
+
+
+@router.put("/my-availability")
+async def save_my_availability(payload: MyAvailability, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Guarda MI disponibilidad. Cada dia de lunes a sabado debe quedar elegido y dentro del horario del equipo."""
+    me = await _require_me(db, user)
+    days: Dict[str, AvailabilityDay] = {}
+    for i, key in enumerate(DAY_KEYS):
+        d = payload.days.get(key)
+        mode = (d.mode if d else "UNSET").upper()
+        if i == 6:
+            days[key] = AvailabilityDay(mode="UNAVAILABLE", ranges=[])      # domingo: el equipo no atiende
+            continue
+        if mode not in ("ALL_DAY", "UNAVAILABLE", "RANGES"):
+            raise HTTPException(status_code=422, detail=f"{DAY_LABELS_ES[i]}: elige si puedes o no puedes ese día.")
+        ranges: List[ShiftRange] = []
+        if mode == "RANGES":
+            for r in (d.ranges or []):
+                a, b = r.get("start_time", ""), r.get("end_time", "")
+                try:
+                    ma, mb = _min(a), _min(b)
+                except Exception:
+                    raise HTTPException(status_code=422, detail=f"{DAY_LABELS_ES[i]}: hora inválida.")
+                w0, w1 = VENTANA[i]
+                if ma < w0 or mb > w1:
+                    raise HTTPException(status_code=422, detail=f"{DAY_LABELS_ES[i]}: el equipo solo atiende de {w0 // 60}:00 a {w1 // 60}:00.")
+                ranges.append(ShiftRange(start_time=a, end_time=b))
+            if not ranges:
+                raise HTTPException(status_code=422, detail=f"{DAY_LABELS_ES[i]}: agrega al menos una franja o elige otra opción.")
+        days[key] = AvailabilityDay(mode=mode, ranges=ranges)
+    if all(v.mode == "UNAVAILABLE" for v in days.values()):
+        raise HTTPException(status_code=422, detail="Marcaste todos los días como no disponible. Elige al menos un día en el que sí puedas.")
+    res = await save_availability(AvailabilityRequest(employee_name=me, days=days), db, user)
+    return {"status": "success", "me": me, "rows": res.get("rows")}
+
+
+@router.get("/my-appointments")
+async def my_appointments(week_date: Optional[str] = Query(None), db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """Mis entrevistas agendadas por clientes en la semana (por el nombre completo o el codigo corto historico)."""
+    try:
+        monday = local_monday(datetime.strptime(week_date, "%Y-%m-%d").date()) if week_date else local_monday(_now().date())
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha inválida.")
+    me = await my_staff_name(db, user)
+    if not me:
+        return {"me": None, "appointments": []}
+    rows = (await db.execute(text("""
+        SELECT id, appointment_date, time_slot, client_name, client_city, status, meet_link, videocall_token
+        FROM interview_appointments
+        WHERE UPPER(psychologist_name) = ANY(:n) AND DATE(appointment_date) BETWEEN :a AND :b AND status != 'CANCELADA'
+        ORDER BY appointment_date, time_slot
+    """), {"n": _nombres_cita(me), "a": monday, "b": monday + timedelta(days=6)})).fetchall()
+    out = []
+    for r in rows:
+        ini = str(r.time_slot).strip()[:5]
+        fin = (datetime.combine(r.appointment_date.date(), datetime.strptime(ini, "%H:%M").time()) + timedelta(minutes=45)).strftime("%H:%M")
+        out.append({"id": r.id, "date": r.appointment_date.date().isoformat(), "start": ini, "end": fin, "client": r.client_name or "Cliente",
+                    "city": r.client_city, "status": r.status, "meet_link": r.meet_link, "token": r.videocall_token})
+    return {"me": me, "week_monday": monday.isoformat(), "appointments": out}
