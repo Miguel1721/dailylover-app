@@ -510,7 +510,7 @@ async def get_current_session(
 
 # ─── ENDPOINTS: AUDITORÍA & LIQUIDACIÓN PARA DIRECCIÓN ───────────────────────
 
-@router.get("/sessions")
+@router.get("/sessions", dependencies=[Depends(require_permission("nomina", "view"))])
 async def list_work_sessions(
     psychologist: Optional[str] = Query(None, description="Filtro por psicóloga"),
     start_date: Optional[str] = Query(None, description="Fecha inicio YYYY-MM-DD"),
@@ -636,7 +636,7 @@ async def list_work_sessions(
     }
 
 
-@router.get("/sessions/{session_id}/activities")
+@router.get("/sessions/{session_id}/activities", dependencies=[Depends(require_permission("nomina", "view"))])
 async def get_session_activities(session_id: UUID, db: AsyncSession = Depends(get_db)):
     """Retorna la bitácora cronológica minuto a minuto de todo lo que hizo en el turno."""
     await ensure_work_time_tables(db)
@@ -784,7 +784,7 @@ def json_dumps_safe(obj):
 
 # ─── ENDPOINTS: CONFIGURACIÓN DE TARIFAS ($ / HORA) ──────────────────────────
 
-@router.get("/rates")
+@router.get("/rates", dependencies=[Depends(require_permission("nomina", "view"))])
 async def get_psychologist_rates(db: AsyncSession = Depends(get_db)):
     """Obtiene la lista de tarifas por hora configuradas para cada psicóloga."""
     await ensure_work_time_tables(db)
@@ -810,7 +810,7 @@ async def get_psychologist_rates(db: AsyncSession = Depends(get_db)):
     return {"status": "success", "rates": rates, "total": len(rates)}
 
 
-@router.put("/rates/{psychologist_key}")
+@router.put("/rates/{psychologist_key}", dependencies=[Depends(require_permission("nomina", "generate"))])
 async def update_psychologist_rate(
     psychologist_key: str,
     req: RateUpdateRequest,
@@ -892,7 +892,7 @@ async def ensure_commitment_table(db: AsyncSession):
     """))
 
 
-@router.get("/matchmaker-shift-efficiency")
+@router.get("/matchmaker-shift-efficiency", dependencies=[Depends(require_permission("nomina", "view"))])
 async def get_matchmaker_shift_efficiency(
     year: Optional[int] = Query(None),
     month: Optional[int] = Query(None),
@@ -1037,7 +1037,7 @@ async def get_matchmaker_shift_efficiency(
     }
 
 
-@router.get("/commitment-scores")
+@router.get("/commitment-scores", dependencies=[Depends(require_permission("nomina", "view"))])
 async def get_commitment_scores(
     year: Optional[int] = Query(None),
     month: Optional[int] = Query(None),
@@ -1095,7 +1095,7 @@ async def get_commitment_scores(
     }
 
 
-@router.post("/commitment-scores")
+@router.post("/commitment-scores", dependencies=[Depends(require_permission("nomina", "generate"))])
 async def upsert_commitment_score(
     req: CommitmentScoreUpsertRequest,
     db: AsyncSession = Depends(get_db),

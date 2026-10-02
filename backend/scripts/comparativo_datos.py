@@ -52,6 +52,15 @@ def monto(plan):
     return int(m.group(1)) if m else None
 
 
+def actual(cod):
+    """Psicóloga que atiende hoy: si el código es de una psicóloga que ya no está, la que heredó su cartera."""
+    return HEREDA.get(cod, cod)
+
+
+def cartera(cod):
+    return f"heredada de {cod}" if cod in HEREDA else "propia"
+
+
 def psi(x):
     c = canon(x) if x else ""
     return c or "(sin psicóloga)"
@@ -109,9 +118,9 @@ async def main():
                 if tipo == "falta en la hoja" and campo != "plan":
                     continue
                 psico = h_resp if c.get("responsable") else s_resp
-                f1.append({"psicologa": psico, "cliente": c["name"], "user_id": uid, "campo": campo, "hoja": h, "sistema": s_, "tipo": tipo, "nota": nota})
-                resumen1[(psico, campo, tipo)] += 1
-    escribir("1_clientes_hoja_vs_sistema.csv", sorted(f1, key=lambda r: (r["psicologa"], r["campo"], r["cliente"])), ["psicologa", "cliente", "user_id", "campo", "hoja", "sistema", "tipo", "nota"])
+                f1.append({"psicologa_actual": actual(psico), "cartera": cartera(psico), "psicologa": psico, "cliente": c["name"], "user_id": uid, "campo": campo, "hoja": h, "sistema": s_, "tipo": tipo, "nota": nota})
+                resumen1[(actual(psico), campo, tipo)] += 1
+    escribir("1_clientes_hoja_vs_sistema.csv", sorted(f1, key=lambda r: (r["psicologa_actual"], r["cartera"], r["campo"], r["cliente"])), ["psicologa_actual", "cartera", "psicologa", "cliente", "user_id", "campo", "hoja", "sistema", "tipo", "nota"])
 
     # ---------- 2. sistema vs CRM
     f2, resumen2, hoy = [], Counter(), date.today()
@@ -158,9 +167,9 @@ async def main():
                 nota = "revisar a quién corresponde el perfil"
             elif campo == "ciudad":
                 nota = "puede ser un municipio cercano (Chía, Cota, Envigado...): revisar solo si no lo es"
-            f2.append({"psicologa": psico, "cliente": u.name, "user_id": uid, "crm_id": u.crm_id, "campo": campo, "sistema": s_, "crm": c_, "tipo": tipo, "nota": nota})
-            resumen2[(psico, campo, tipo)] += 1
-    escribir("2_clientes_sistema_vs_crm.csv", sorted(f2, key=lambda r: (r["psicologa"], r["campo"], r["cliente"])), ["psicologa", "cliente", "user_id", "crm_id", "campo", "sistema", "crm", "tipo", "nota"])
+            f2.append({"psicologa_actual": actual(psico), "cartera": cartera(psico), "psicologa": psico, "cliente": u.name, "user_id": uid, "crm_id": u.crm_id, "campo": campo, "sistema": s_, "crm": c_, "tipo": tipo, "nota": nota})
+            resumen2[(actual(psico), campo, tipo)] += 1
+    escribir("2_clientes_sistema_vs_crm.csv", sorted(f2, key=lambda r: (r["psicologa_actual"], r["cartera"], r["campo"], r["cliente"])), ["psicologa_actual", "cartera", "psicologa", "cliente", "user_id", "crm_id", "campo", "sistema", "crm", "tipo", "nota"])
 
     # ---------- 3. matches hoja vs sistema
     AVANCE = {("APROBADO", "CITA PROGRAMADA"), ("APROBADO", "CITA REALIZADA"), ("APROBADO", "HECHO POR MAPE"), ("APROBADO", "CITA COMPLETADA"),
@@ -178,24 +187,24 @@ async def main():
         m = key.get(k)
         vistos.add(k)
         if not m:
-            f3.append({"psicologa": psi(o["psychologist_name"]), "pestaña": o["tab"], "fila_hoja": o["row"], "persona_a": o["person_a"], "persona_b": o["person_b"], "estado_hoja": o["status"], "estado_sistema": "", "obs_hoja": o["observations"][:200], "obs_sistema": "", "tipo": "solo en la hoja"})
-            resumen3[(psi(o["psychologist_name"]), "solo en la hoja")] += 1
+            f3.append({"psicologa_actual": actual(psi(o["psychologist_name"])), "cartera": cartera(psi(o["psychologist_name"])), "psicologa": psi(o["psychologist_name"]), "pestaña": o["tab"], "fila_hoja": o["row"], "persona_a": o["person_a"], "persona_b": o["person_b"], "estado_hoja": o["status"], "estado_sistema": "", "obs_hoja": o["observations"][:200], "obs_sistema": "", "tipo": "solo en la hoja"})
+            resumen3[(actual(psi(o["psychologist_name"])), "solo en la hoja")] += 1
             continue
         if n(o["status"]) != n(m.status):
             esperado = ((o["status"] or "").strip().upper(), (m.status or "").strip().upper()) in AVANCE
             tipo = "el sistema avanzó (esperado)" if esperado else "estado distinto: REVISAR"
-            f3.append({"psicologa": psi(o["psychologist_name"]), "pestaña": o["tab"], "fila_hoja": o["row"], "persona_a": o["person_a"], "persona_b": o["person_b"], "estado_hoja": o["status"], "estado_sistema": m.status, "obs_hoja": o["observations"][:200], "obs_sistema": (m.observations or "")[:200], "tipo": tipo, "id_sistema": m.id})
-            resumen3[(psi(o["psychologist_name"]), tipo)] += 1
+            f3.append({"psicologa_actual": actual(psi(o["psychologist_name"])), "cartera": cartera(psi(o["psychologist_name"])), "psicologa": psi(o["psychologist_name"]), "pestaña": o["tab"], "fila_hoja": o["row"], "persona_a": o["person_a"], "persona_b": o["person_b"], "estado_hoja": o["status"], "estado_sistema": m.status, "obs_hoja": o["observations"][:200], "obs_sistema": (m.observations or "")[:200], "tipo": tipo, "id_sistema": m.id})
+            resumen3[(actual(psi(o["psychologist_name"])), tipo)] += 1
         elif o["observations"] and n(o["observations"]) != n(m.observations) and n(o["observations"]) not in n(m.observations):
-            f3.append({"psicologa": psi(o["psychologist_name"]), "pestaña": o["tab"], "fila_hoja": o["row"], "persona_a": o["person_a"], "persona_b": o["person_b"], "estado_hoja": o["status"], "estado_sistema": m.status, "obs_hoja": o["observations"][:200], "obs_sistema": (m.observations or "")[:200], "tipo": "observaciones distintas", "id_sistema": m.id})
-            resumen3[(psi(o["psychologist_name"]), "observaciones distintas")] += 1
+            f3.append({"psicologa_actual": actual(psi(o["psychologist_name"])), "cartera": cartera(psi(o["psychologist_name"])), "psicologa": psi(o["psychologist_name"]), "pestaña": o["tab"], "fila_hoja": o["row"], "persona_a": o["person_a"], "persona_b": o["person_b"], "estado_hoja": o["status"], "estado_sistema": m.status, "obs_hoja": o["observations"][:200], "obs_sistema": (m.observations or "")[:200], "tipo": "observaciones distintas", "id_sistema": m.id})
+            resumen3[(actual(psi(o["psychologist_name"])), "observaciones distintas")] += 1
     en_sistema_sin_hoja = [m for m in oms if m.sheet_row_index is not None and (n(m.person_a), n(m.person_b), (m.psychologist_name or "").strip().upper()) not in vistos]
     for m in en_sistema_sin_hoja:
         otras = pares_hoja.get((n(m.person_a), n(m.person_b)), set()) - {psi(m.psychologist_name)}
         tipo = f"la fila pasó a otra psicóloga en la hoja ({', '.join(sorted(otras))})" if otras else "ya no está en la hoja (borrada o cambió de nombre)"
-        f3.append({"psicologa": psi(m.psychologist_name), "pestaña": "", "fila_hoja": m.sheet_row_index, "persona_a": m.person_a, "persona_b": m.person_b, "estado_hoja": "", "estado_sistema": m.status, "obs_hoja": "", "obs_sistema": (m.observations or "")[:200], "tipo": tipo, "id_sistema": m.id})
-        resumen3[(psi(m.psychologist_name), "pasó a otra psicóloga" if otras else "ya no está en la hoja")] += 1
-    escribir("3_matches_hoja_vs_sistema.csv", sorted(f3, key=lambda r: (r["psicologa"], r["tipo"], r["persona_a"])), ["psicologa", "pestaña", "fila_hoja", "persona_a", "persona_b", "estado_hoja", "estado_sistema", "obs_hoja", "obs_sistema", "tipo", "id_sistema"])
+        f3.append({"psicologa_actual": actual(psi(m.psychologist_name)), "cartera": cartera(psi(m.psychologist_name)), "psicologa": psi(m.psychologist_name), "pestaña": "", "fila_hoja": m.sheet_row_index, "persona_a": m.person_a, "persona_b": m.person_b, "estado_hoja": "", "estado_sistema": m.status, "obs_hoja": "", "obs_sistema": (m.observations or "")[:200], "tipo": tipo, "id_sistema": m.id})
+        resumen3[(actual(psi(m.psychologist_name)), "pasó a otra psicóloga" if otras else "ya no está en la hoja")] += 1
+    escribir("3_matches_hoja_vs_sistema.csv", sorted(f3, key=lambda r: (r["psicologa_actual"], r["cartera"], r["tipo"], r["persona_a"])), ["psicologa_actual", "cartera", "psicologa", "pestaña", "fila_hoja", "persona_a", "persona_b", "estado_hoja", "estado_sistema", "obs_hoja", "obs_sistema", "tipo", "id_sistema"])
 
     # ---------- resumen
     print("\n=== 1. Clientes HOJA vs SISTEMA (por psicóloga, campo y tipo)")
