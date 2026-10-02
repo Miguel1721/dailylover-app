@@ -336,6 +336,7 @@ export default function AprobadosMaria() {
   ]
 
   const cambiarConfirmacion = async (match, lado, estado) => {
+    if (estado === 'Rechazó' && !window.confirm(`Vas a registrar que ${lado === 'a' ? match.person_a : match.person_b} rechazó la cita. Esto quita la cita de esta lista y genera la alerta de nuevo match para las psicólogas de las personas a las que les falten citas. ¿Continuar?`)) return
     setUpdatingId(match.id)
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/confirmacion-persona`, {
@@ -1127,6 +1128,17 @@ export default function AprobadosMaria() {
                         )
                       })()}
 
+                      {item.cruzado && (() => {
+                        const c = item.cruzado
+                        const col = c.voto === 'aprobado' ? '#10B981' : c.voto === 'rechazado' ? '#EF4444' : '#6B7280'
+                        return (
+                          <div style={{ padding: '9px 14px', borderRadius: 8, background: `${col}15`, border: `1px solid ${col}55`, color: col, fontSize: 13, fontWeight: 700 }}>
+                            Match cruzado · Psicóloga B ({c.psicologa_b}): {c.voto === 'aprobado' ? 'aprobó' : c.voto === 'rechazado' ? `rechazó${c.motivo ? '. Motivo: ' + c.motivo : ''}` : 'aún no vota. Puedes resolverlo tú.'}
+                            {c.voto && <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}> {c.fecha}. La palabra final es tuya.</span>}
+                          </div>
+                        )
+                      })()}
+
                       <ChatNotas matchId={item.id} total={item.notas_total} API={API} token={token} />
 
                       {/* Botones de Acción: Aprobar (1 clic) vs Rechazar (1 clic con motivo) */}
@@ -1458,6 +1470,17 @@ export default function AprobadosMaria() {
                       <CalendarIcon size={14} />
                       Agendar Cita en Restaurante
                     </button>
+
+                    <div style={{ display: 'flex', gap: 6, width: '100%' }}>
+                      <button type="button" onClick={() => cambiarConfirmacion(match, 'a', 'Rechazó')} disabled={updatingId === match.id}
+                        style={{ flex: 1, padding: '8px 6px', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.5)', background: 'transparent', color: '#EF4444', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
+                        Rechazó Persona A
+                      </button>
+                      <button type="button" onClick={() => cambiarConfirmacion(match, 'b', 'Rechazó')} disabled={updatingId === match.id}
+                        style={{ flex: 1, padding: '8px 6px', borderRadius: 8, border: '1px solid rgba(239, 68, 68, 0.5)', background: 'transparent', color: '#EF4444', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
+                        Rechazó Persona B
+                      </button>
+                    </div>
 
                     <select
                       value={match.service_status || 'Por Llamar'}

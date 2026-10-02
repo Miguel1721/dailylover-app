@@ -2668,6 +2668,7 @@ async def actualizar_confirmacion_persona(match_id: int, payload: ConfirmacionPe
     if lado not in ("a", "b") or payload.estado not in ESTADOS_CONFIRMACION:
         raise HTTPException(status_code=400, detail="Estado o persona inválidos.")
     col = "person_a_confirmation" if lado == "a" else "person_b_confirmation"
+    trouble = None
     fila = (await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :m ORDER BY id DESC LIMIT 1"), {"m": match_id})).fetchone()
     if fila:
         await db.execute(text(f"UPDATE match_confirmations SET {col} = :e, updated_at = NOW() WHERE id = :i"), {"e": payload.estado, "i": fila.id})
@@ -2676,8 +2677,127 @@ async def actualizar_confirmacion_persona(match_id: int, payload: ConfirmacionPe
         if not existe:
             raise HTTPException(status_code=404, detail="Match no encontrado")
         await db.execute(text(f"INSERT INTO match_confirmations (match_id, {col}, stage, created_at, updated_at) VALUES (:m, :e, 'pendiente', NOW(), NOW())"), {"m": match_id, "e": payload.estado})
+    if payload.estado == "Rechazó":
+        trouble = await _disparar_trouble(db, match_id, lado, current_user)
     await db.commit()
-    return {"status": "success", "persona": lado, "estado": payload.estado}
+    return {"status": "success", "persona": lado, "estado": payload.estado, "trouble": trouble}
+
+
+async def _citas_pendientes(db, user_id, plan_tier, pay_date):
+    """Citas que le faltan a la persona segun su plan (None si no se puede saber: se trata como pendiente)."""
+    if not user_id:
+        return None
+    total = get_slots_by_plan(normalize_plan(plan_tier), pay_date)
+    if not total:
+        return None
+    usadas = (await db.execute(text("SELECT COUNT(*) FROM scheduled_dates sd JOIN operational_matches m ON m.id = sd.match_id WHERE m.user_id_a = :u OR m.user_id_b = :u"), {"u": user_id})).scalar() or 0
+    return max(0, total - usadas)
+
+
+async def _disparar_trouble(db, match_id, lado, current_user):
+    """Rechazo de la cita (por la Persona A o la B): trouble match para la psicologa de cada persona a la que aun le falten citas.
+    No hace commit: lo hace quien llama."""
+    m = (await db.execute(text("SELECT id, person_a, person_b, user_id_a, user_id_b, person_a_crm_id, person_b_crm_id, plan_tier, psychologist_name, city, observations FROM operational_matches WHERE id = :m"), {"m": match_id})).fetchone()
+    if not m:
+        return {"ya_registrado": False, "alertas": []}
+    obs0 = m.observations or ""
+    if "[ALERTA TROUBLE" in obs0 or "[TROUBLE sin alerta" in obs0:
+        return {"ya_registrado": True, "alertas": []}
+    perf = {}
+    ids = [x for x in (m.user_id_a, m.user_id_b) if x]
+    if ids:
+        for r in (await db.execute(text("SELECT user_id, responsable, last_payment_date, city FROM profiles WHERE user_id = ANY(:u)"), {"u": ids})).fetchall():
+            perf[r.user_id] = r
+    pa, pb = perf.get(m.user_id_a), perf.get(m.user_id_b)
+    plan_b = None
+    if m.user_id_b:
+        plan_b = (await db.execute(text("SELECT plan_tier, psychologist_name FROM operational_matches WHERE user_id_a = :b AND plan_tier IS NOT NULL AND TRIM(plan_tier) <> '' ORDER BY id DESC LIMIT 1"), {"b": m.user_id_b})).fetchone()
+    pend_a = await _citas_pendientes(db, m.user_id_a, m.plan_tier, pa.last_payment_date if pa else None)
+    pend_b = await _citas_pendientes(db, m.user_id_b, plan_b.plan_tier if plan_b else None, pb.last_payment_date if pb else None)
+    alerta_a = pend_a is None or pend_a > 0
+    alerta_b = pend_b is None or pend_b > 0
+    rechazo = f"rechazó la Persona {'A' if lado == 'a' else 'B'} ({m.person_a if lado == 'a' else m.person_b})"
+    marca_a = f" [ALERTA TROUBLE: {rechazo}]" if alerta_a else f" [TROUBLE sin alerta: {m.person_a} ya cumplió sus citas]"
+    await db.execute(text("UPDATE operational_matches SET status = 'TROUBLE', observations = :o, updated_at = NOW() WHERE id = :m"), {"o": obs0 + marca_a, "m": match_id})
+    espejo_id = None
+    if alerta_b and m.user_id_b:
+        ya = (await db.execute(text("SELECT id FROM operational_matches WHERE user_id_a = :b AND user_id_b = :a AND observations LIKE :k LIMIT 1"), {"b": m.user_id_b, "a": m.user_id_a, "k": f"%espejo de #{match_id}%"})).fetchone()
+        if ya:
+            espejo_id = ya.id
+        else:
+            psic_b = (plan_b.psychologist_name if plan_b and plan_b.psychologist_name else (pb.responsable if pb else None))
+            espejo_id = (await db.execute(text("""
+                INSERT INTO operational_matches (person_a, user_id_a, person_a_crm_id, person_b, user_id_b, person_b_crm_id, psychologist_name, city, plan_tier, slot_number, status, approved_by_maria, observations, created_at, updated_at)
+                VALUES (:pa, :ua, :ca, :pb, :ub, :cb, :ps, :ci, :pl,
+                        COALESCE((SELECT MAX(x.slot_number) FROM operational_matches x WHERE x.user_id_a = :ua), 0) + 1,
+                        'TROUBLE', false, :ob, NOW(), NOW())
+                RETURNING id
+            """), {"pa": m.person_b, "ua": m.user_id_b, "ca": m.person_b_crm_id, "pb": m.person_a, "ub": m.user_id_a, "cb": m.person_a_crm_id,
+                   "ps": psic_b, "ci": (pb.city if pb and pb.city else m.city), "pl": plan_b.plan_tier if plan_b else None,
+                   "ob": f"[ALERTA TROUBLE: {rechazo}] (espejo de #{match_id})"})).scalar()
+    fila = (await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :m ORDER BY id DESC LIMIT 1"), {"m": match_id})).fetchone()
+    if fila:
+        await db.execute(text("UPDATE match_confirmations SET stage = 'trouble', updated_at = NOW() WHERE id = :i"), {"i": fila.id})
+    else:
+        await db.execute(text("INSERT INTO match_confirmations (match_id, stage, created_at, updated_at) VALUES (:m, 'trouble', NOW(), NOW())"), {"m": match_id})
+    quien = _autor_actual(current_user)
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :m, 'TROUBLE', :d, NOW())"),
+                     {"n": m.person_a, "m": match_id, "d": f"{quien} registró que {rechazo}. Alerta A: {'sí' if alerta_a else 'no'}; alerta B: {'sí' if alerta_b else 'no'}."})
+    return {"ya_registrado": False, "alerta_a": alerta_a, "alerta_b": alerta_b, "espejo_id": espejo_id}
+
+
+class VotoCruzadoRequest(BaseModel):
+    voto: str                       # 'aprobado' | 'rechazado'
+    motivo: Optional[str] = None
+    psicologa: Optional[str] = None
+
+
+@router.post("/matches/{match_id}/voto-cruzado")
+async def votar_match_cruzado(match_id: int, payload: VotoCruzadoRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Voto de la psicologa B sobre un match cruzado. No cambia el estado (la palabra final es de María) y no se puede modificar."""
+    voto = (payload.voto or "").strip().lower()
+    if voto not in ("aprobado", "rechazado"):
+        raise HTTPException(status_code=400, detail="Voto inválido.")
+    if voto == "rechazado" and not (payload.motivo or "").strip():
+        raise HTTPException(status_code=400, detail="Escribe el motivo del rechazo.")
+    if not (await db.execute(text("SELECT 1 FROM operational_matches WHERE id = :m"), {"m": match_id})).fetchone():
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+    ins = await db.execute(text("""
+        INSERT INTO match_cruzado_votos (match_id, psicologa, voto, motivo, votado_por, votado_en)
+        VALUES (:m, :p, :v, :mo, :a, NOW()) ON CONFLICT (match_id) DO NOTHING RETURNING match_id
+    """), {"m": match_id, "p": (payload.psicologa or "")[:60], "v": voto, "mo": (payload.motivo or "").strip()[:600], "a": _autor_actual(current_user)})
+    if not ins.fetchone():
+        raise HTTPException(status_code=409, detail="Ya votaste este match. El voto no se puede cambiar; escríbele directamente a María.")
+    await db.commit()
+    return {"status": "success", "voto": voto}
+
+
+async def adjuntar_votos_cruzados(db, items):
+    """Para María: si el match es cruzado (las psicologas de A y B son distintas) muestra el voto de la psicologa B."""
+    for it in items:
+        it["cruzado"] = None
+    ids = [it.get("id") for it in items if it.get("id")]
+    if not ids:
+        return
+    try:
+        rows = (await db.execute(text("""
+            SELECT m.id, pB.responsable AS psyc_b, v.psicologa, v.voto, v.motivo, v.votado_en
+            FROM operational_matches m
+            LEFT JOIN profiles pB ON pB.user_id = m.user_id_b
+            LEFT JOIN match_cruzado_votos v ON v.match_id = m.id
+            WHERE m.id = ANY(:i)
+        """), {"i": ids})).fetchall()
+    except Exception:
+        await db.rollback()
+        return
+    por_id = {r.id: r for r in rows}
+    for it in items:
+        r = por_id.get(it.get("id"))
+        if not r:
+            continue
+        a, b = normalize_psychologist(it.get("psychologist_name")), normalize_psychologist(r.psyc_b)
+        if a and b and a != b:
+            it["cruzado"] = {"psicologa_b": b, "voto": r.voto, "motivo": r.motivo or "", "fecha": r.votado_en.strftime("%Y-%m-%d %H:%M") if r.votado_en else ""}
 
 
 @router.post("/matches/{match_id}/analisis-ia")
@@ -2989,6 +3109,7 @@ async def get_approval_queue(
     from app.services.analisis_pareja import adjuntar_analisis
     await adjuntar_analisis(db, queue)
     await adjuntar_notas(db, queue)
+    await adjuntar_votos_cruzados(db, queue)
     return {
         "queue": queue,
         "total": total_items,
@@ -3653,7 +3774,9 @@ async def get_mesa_psicologa(
             rechazados.append(item)
 
         # Troublemakers: María aprobó, Servicio al Cliente rechazó -> bandeja propia
-        if app_maria and "TROUBLE" in st:
+        if "TROUBLE" in st and (app_maria or "[ALERTA TROUBLE" in (d.get("observations") or "")):
+            _mt = re.search(r"\[ALERTA TROUBLE: ([^\]]+)\]", d.get("observations") or "")
+            item["trouble_detalle"] = ("Servicio al Cliente: " + _mt.group(1)) if _mt else "Rechazado por Servicio al Cliente"
             troublemakers.append(item)
             continue
 
@@ -3701,7 +3824,7 @@ async def get_mesa_psicologa(
         st = (latest_r.get("status") or "").upper().strip()
 
         # Excluir clientes con estados de exclusión
-        if any(term in st for term in ("TROUBLE", "REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO")):
+        if any(term in st for term in ("REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO")) or ("TROUBLE" in st and "[ALERTA TROUBLE" not in (latest_r.get("observations") or "")):
             continue
 
         clean_plan = normalize_plan(latest_r.get("plan_tier"))
@@ -3813,7 +3936,8 @@ async def get_mesa_psicologa(
                 _mot = _ob.replace("[DEVUELTO MARÍA]", "").strip()
             elif "TROUBLE" in _st:
                 _est = "rojo"
-                _mot = "Rechazado por Servicio al Cliente"
+                _mt2 = re.search(r"\[ALERTA TROUBLE: ([^\]]+)\]", _ob)
+                _mot = ("Servicio al Cliente: " + _mt2.group(1)) if _mt2 else "Rechazado por Servicio al Cliente"
             elif _r.get("approved_by_maria") or _st in ("APROBADO", "AGENDADO", "CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA"):
                 _est = "verde"
                 _mot = ""
@@ -3853,6 +3977,35 @@ async def get_mesa_psicologa(
     aprobados.sort(key=lambda x: x["id"], reverse=True)
     rechazados.sort(key=lambda x: x["id"], reverse=True)
     troublemakers.sort(key=lambda x: x["id"], reverse=True)
+
+    cruzados = []
+    try:
+        for r in (await db.execute(text("""
+            SELECT m.id, m.person_a, m.person_b, m.psychologist_name, m.city, m.plan_tier, m.status, m.observations, m.created_at,
+                   COALESCE(pA.photo_url, '') AS photo_a, COALESCE(pB.photo_url, '') AS photo_b, pA.age AS age_a, pB.age AS age_b,
+                   pA.occupation AS occ_a, pB.occupation AS occ_b, m.person_a_crm_id, m.person_b_crm_id, m.user_id_a, m.user_id_b,
+                   v.voto, v.motivo, v.votado_por, v.votado_en
+            FROM operational_matches m
+            LEFT JOIN profiles pA ON pA.user_id = m.user_id_a
+            LEFT JOIN profiles pB ON pB.user_id = m.user_id_b
+            LEFT JOIN match_cruzado_votos v ON v.match_id = m.id
+            WHERE UPPER(COALESCE(pB.responsable, '')) = ANY(:al)
+              AND UPPER(COALESCE(m.psychologist_name, '')) <> ALL(:al)
+              AND COALESCE(m.approved_by_maria, false) = false
+              AND UPPER(COALESCE(m.status, '')) IN ('HECHO', 'HECHO POR MAPE', 'HECHO POR OTRA PSICÓLOGA', 'PROPUESTO', 'EN REVISION', 'PENDIENTE APROBACIÓN MARÍA', 'APROBADO POR PSICÓLOGAS')
+              AND (m.batch_tag IS NULL OR m.batch_tag != 'agosto27_backlog')
+            ORDER BY m.id DESC LIMIT 200
+        """), {"al": [a.upper() for a in aliases]})).fetchall():
+            cruzados.append({
+                "id": r.id, "person_a": r.person_a, "person_b": r.person_b, "psychologist_a": normalize_psychologist(r.psychologist_name) or (r.psychologist_name or ""),
+                "city": normalize_city(r.city), "plan_tier": normalize_plan(r.plan_tier), "status": r.status, "observations": r.observations or "",
+                "person_a_photo_url": r.photo_a, "person_b_photo_url": r.photo_b, "person_a_age": r.age_a, "person_b_age": r.age_b,
+                "person_a_occupation": r.occ_a or "", "person_b_occupation": r.occ_b or "", "person_a_crm_id": r.person_a_crm_id or "", "person_b_crm_id": r.person_b_crm_id or "",
+                "voto": r.voto, "motivo_voto": r.motivo or "", "votado_por": r.votado_por or "", "fecha_voto": r.votado_en.strftime("%Y-%m-%d %H:%M") if r.votado_en else "",
+            })
+    except Exception as e_cx:
+        logger.warning(f"cruzados mesa-psicologa: {e_cx}")
+        await db.rollback()
 
     # Social Group del CRM (prof_248 = el de la persona, pref_69 = el que busca, pref_60 = nivel social del match)
     def _uid_int(v):
@@ -3908,7 +4061,9 @@ async def get_mesa_psicologa(
         "aprobados": aprobados,
         "rechazados": rechazados,
         "troublemakers": troublemakers,
+        "cruzados": cruzados,
         "summary": {
+            "total_cruzados": len(cruzados),
             "total_troublemakers": len(troublemakers),
             "total_rechazados": len(rechazados),
             "total_por_proponer": len(por_proponer),

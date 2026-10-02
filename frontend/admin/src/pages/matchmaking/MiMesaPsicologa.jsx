@@ -53,7 +53,7 @@ export default function MiMesaPsicologa() {
   const [loading, setLoading] = useState(true)
   const [vista, setVista] = useState('todos')   // 'todos' | 'propios' | 'heredados'
   const [limite, setLimite] = useState(40)         // tarjetas dibujadas por bandeja (la lista completa pesa mucho)
-  const [rawData, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+  const [rawData, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], cruzados: [], summary: {} })
   const [fNuevos, setFNuevos] = useState(false)   // clientes nuevos: sin ningún slot todavía
   const [fGenero, setFGenero] = useState('')
   const [fCiudad, setFCiudad] = useState('')
@@ -68,7 +68,7 @@ export default function MiMesaPsicologa() {
     if (orden === 'az') pp = [...pp].sort((a, b) => (a.person_a || '').localeCompare(b.person_a || '', 'es'))
     else if (orden === 'recientes') pp = [...pp].sort((a, b) => (b.fecha_creacion || '').localeCompare(a.fecha_creacion || ''))
     else if (orden === 'antiguos') pp = [...pp].sort((a, b) => (a.fecha_creacion || '').localeCompare(b.fecha_creacion || ''))
-    return { ...rawData, por_proponer: pp, en_revision: fl(rawData.en_revision), aprobados: fl(rawData.aprobados), rechazados: fl(rawData.rechazados), troublemakers: fl(rawData.troublemakers) }
+    return { ...rawData, por_proponer: pp, en_revision: fl(rawData.en_revision), aprobados: fl(rawData.aprobados), rechazados: fl(rawData.rechazados), troublemakers: fl(rawData.troublemakers), cruzados: rawData.cruzados || [] }
   })()
   const ciudadesPP = [...new Set((rawData.por_proponer || []).map(r => r.person_a_city).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
   const generosPP = [...new Set((rawData.por_proponer || []).map(r => r.person_a_gender).filter(Boolean))].sort()
@@ -105,13 +105,13 @@ export default function MiMesaPsicologa() {
     fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(res => {
-        setData(res || { por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+        setData(res || { por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], cruzados: [], summary: {} })
         if (!silencioso) setLoading(false)
       })
       .catch(err => {
         console.error('Error cargando mesa de psicóloga:', err)
         if (!silencioso) {
-          setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
+          setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], cruzados: [], summary: {} })
           setLoading(false)
         }
       })
@@ -212,6 +212,30 @@ export default function MiMesaPsicologa() {
         ))}
       </>
     )
+  }
+
+  const votarCruzado = async (row, voto) => {
+    const k = `cx:${row.id}`
+    const motivo = (manualB[k]?.text || '').trim()
+    if (voto === 'rechazado' && !motivo) { setMB(k, { error: 'Escribe el motivo del rechazo.' }); return }
+    if (!window.confirm(`Vas a ${voto === 'aprobado' ? 'aprobar' : 'rechazar'} este match. El voto no se puede cambiar después. ¿Continuar?`)) return
+    setMB(k, { sending: true, error: '' })
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${row.id}/voto-cruzado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ voto, motivo, psicologa: currentPsyc })
+      })
+      if (res.ok) {
+        setManualB(prev => { const n = { ...prev }; delete n[k]; return n })
+        fetchMesa({ silent: true })
+      } else {
+        const err = await res.json().catch(() => ({}))
+        setMB(k, { sending: false, error: err.detail || 'No se pudo registrar el voto.' })
+      }
+    } catch (e) {
+      setMB(k, { sending: false, error: 'Error de conexión.' })
+    }
   }
 
   const esFilaNG = (row) => (row.status || '').toUpperCase().includes('NO HAY GENTE')
@@ -772,6 +796,37 @@ export default function MiMesaPsicologa() {
             {data.troublemakers?.length || 0}
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('cruzados')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            border: activeTab === 'cruzados' ? '1.5px solid #3B82F6' : '1px solid var(--border-color)',
+            background: activeTab === 'cruzados' ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg-card)',
+            color: activeTab === 'cruzados' ? '#FFFFFF' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+        >
+          <span>Match cruzado</span>
+          <span style={{
+            background: activeTab === 'cruzados' ? '#3B82F6' : 'rgba(255,255,255,0.08)',
+            color: '#FFFFFF',
+            padding: '2px 8px',
+            borderRadius: 20,
+            fontSize: 11,
+            fontWeight: 800
+          }}>
+            {data.cruzados?.length || 0}
+          </span>
+        </button>
       </div>
 
       {/* Vista: propios / heredados (los heredados vienen de las psicólogas que se fueron) */}
@@ -1271,7 +1326,7 @@ export default function MiMesaPsicologa() {
                         </div>
                         {(row.rejection_reason || row.observations) && (
                           <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: 760 }}>
-                            {(row.rejection_reason || row.observations || '').slice(0, 400)}
+                            <strong>{row.trouble_detalle || 'Rechazado por Servicio al Cliente'}</strong>{' '}{(row.observations || '').replace(/\[[^\]]*TROUBLE[^\]]*\]/g, '').slice(0, 300)}
                           </div>
                         )}
                       </div>
@@ -1282,6 +1337,76 @@ export default function MiMesaPsicologa() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'cruzados' && (
+            <div>
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                Propuestas de otras psicólogas que usan a una persona de tu cartera (Persona B). Aprueba o rechaza: María tiene la palabra final, pero tu voto queda registrado y no se puede cambiar.
+              </p>
+              {(data.cruzados || []).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 60, background: 'var(--bg-card)', borderRadius: 14 }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>No hay matches cruzados por votar</h3>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {data.cruzados.map(row => {
+                    const k = `cx:${row.id}`
+                    const mb = manualB[k] || {}
+                    const col = row.voto === 'aprobado' ? '#10B981' : row.voto === 'rechazado' ? '#EF4444' : '#3B82F6'
+                    return (
+                      <div key={row.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: `4px solid ${col}`, borderRadius: 14, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          Lo propone la psicóloga <strong style={{ color: 'var(--text-primary)' }}>{row.psychologist_a}</strong> · {row.city} · {row.plan_tier}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={42} />
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>PERSONA A (cliente de {row.psychologist_a})</div>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{row.person_a_age ? `${row.person_a_age} años` : ''}{row.person_a_occupation ? ` · ${row.person_a_occupation}` : ''}</div>
+                            </div>
+                          </div>
+                          <div style={{ color: col, fontWeight: 800 }}>x</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <UserAvatar url={row.person_b_photo_url} name={row.person_b} size={42} bg="linear-gradient(135deg, #065f46, #10b981)" />
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: '#10B981' }}>PERSONA B (tu cliente)</div>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>{row.person_b}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{row.person_b_age ? `${row.person_b_age} años` : ''}{row.person_b_occupation ? ` · ${row.person_b_occupation}` : ''}</div>
+                            </div>
+                          </div>
+                        </div>
+                        {row.observations && (
+                          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 10 }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>Nota de {row.psychologist_a}: </strong><em>{row.observations.slice(0, 400)}</em>
+                          </div>
+                        )}
+                        {row.voto ? (
+                          <div style={{ padding: '10px 14px', borderRadius: 8, background: `${col}18`, border: `1px solid ${col}55`, color: col, fontSize: 13, fontWeight: 700 }}>
+                            Tu voto: {row.voto === 'aprobado' ? 'aprobado' : 'rechazado'}{row.fecha_voto ? ` (${row.fecha_voto})` : ''}{row.motivo_voto ? `. Motivo: ${row.motivo_voto}` : ''}
+                            <div style={{ fontSize: 11.5, fontWeight: 500, marginTop: 4, color: 'var(--text-muted)' }}>El voto no se puede cambiar. Si necesitas modificarlo, escríbele directamente a María.</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <textarea value={mb.text || ''} onChange={(e) => setMB(k, { text: e.target.value, error: '' })} placeholder="Motivo (obligatorio si rechazas)"
+                              style={{ width: '100%', boxSizing: 'border-box', minHeight: 60, padding: 10, borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13, fontFamily: 'inherit' }} />
+                            {mb.error && <div style={{ marginTop: 6, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{mb.error}</div>}
+                            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                              <button type="button" disabled={mb.sending} onClick={() => votarCruzado(row, 'aprobado')}
+                                style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Aprobar</button>
+                              <button type="button" disabled={mb.sending} onClick={() => votarCruzado(row, 'rechazado')}
+                                style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid #EF4444', background: 'transparent', color: '#EF4444', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>Rechazar</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
