@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { CalendarCheck, AlertTriangle, CheckCircle2, Clock, UserCheck, Heart } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
+
+const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) ? window.location.origin : 'https://daily-lover.agentesia.cloud'
 
 const TONO = {
   'Aprobado por María - falta agendar': ['#10B981', CheckCircle2],
@@ -19,10 +22,22 @@ const TONO = {
 
 // Lista de seguimiento: lo que pasa con cada match después de que María lo aprueba. La ven María y las DOS psicólogas (la de A y la de B).
 export default function SeguimientoLista({ items = [], titulo = 'Seguimiento', dias = 21 }) {
+  const { token } = useAuth()
+  const [cambios, setCambios] = useState({})   // id -> estado nuevo (se refleja al instante)
+  const [aviso, setAviso] = useState('')
   const [estado, setEstado] = useState('todos')
   const [q, setQ] = useState('')
-  const conteo = useMemo(() => items.reduce((acc, x) => { acc[x.estado] = (acc[x.estado] || 0) + 1; return acc }, {}), [items])
-  const lista = items.filter(x => (estado === 'todos' || x.estado === estado) && (!q.trim() || `${x.person_a} ${x.person_b} ${x.psicologa_a} ${x.psicologa_b}`.toLowerCase().includes(q.trim().toLowerCase())))
+  const itemsVista = useMemo(() => items.map(x => (cambios[x.id] ? { ...x, estado: cambios[x.id] } : x)), [items, cambios])
+  const marcar = async (x, accion) => {
+    const url = `${API}/api/v1/matchmaking/matches/${x.id}/enamorados${accion === 'deshacer' ? '/deshacer' : ''}`
+    if (accion !== 'deshacer' && !window.confirm(`¿Marcar a ${x.person_a} y ${x.person_b} como enamorados? Sus otros slots abiertos se cierran (se puede deshacer).`)) return
+    const r = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}' })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { setAviso(typeof j.detail === 'string' ? j.detail : 'No se pudo cambiar el estado.'); return }
+    setAviso(''); setCambios(c => ({ ...c, [x.id]: accion === 'deshacer' ? 'Cita realizada' : 'Enamorados' }))
+  }
+  const conteo = useMemo(() => itemsVista.reduce((acc, x) => { acc[x.estado] = (acc[x.estado] || 0) + 1; return acc }, {}), [itemsVista])
+  const lista = itemsVista.filter(x => (estado === 'todos' || x.estado === estado) && (!q.trim() || `${x.person_a} ${x.person_b} ${x.psicologa_a} ${x.psicologa_b}`.toLowerCase().includes(q.trim().toLowerCase())))
   const chip = (activo, color) => ({
     padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap',
     border: activo ? `1.5px solid ${color}` : '1px solid var(--border-color)', background: activo ? `${color}26` : 'var(--bg-card)', color: activo ? color : 'var(--text-secondary)',
@@ -33,9 +48,10 @@ export default function SeguimientoLista({ items = [], titulo = 'Seguimiento', d
         {titulo}: novedades de los últimos {dias} días en matches que ya aprobó María. Aquí ven lo mismo María, la psicóloga de la persona A y la de la persona B.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <button type="button" onClick={() => setEstado('todos')} style={chip(estado === 'todos', '#B8324F')}>Todos {items.length}</button>
+        <button type="button" onClick={() => setEstado('todos')} style={chip(estado === 'todos', '#B8324F')}>Todos {itemsVista.length}</button>
         {Object.keys(conteo).sort().map(e => <button key={e} type="button" onClick={() => setEstado(e)} style={chip(estado === e, (TONO[e] || ['#94A3B8'])[0])}>{e} {conteo[e]}</button>)}
       </div>
+      {aviso && <div style={{ color: '#dc2626', marginBottom: 8, fontSize: 13 }}>{aviso}</div>}
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por persona o psicóloga..."
         style={{ width: '100%', maxWidth: 420, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', marginBottom: 12 }} />
       {lista.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 12 }}>No hay novedades en este momento.</div>}
@@ -59,6 +75,8 @@ export default function SeguimientoLista({ items = [], titulo = 'Seguimiento', d
               {(x.cita_fecha || x.cita_lugar) && <div style={{ fontSize: 13, marginTop: 6 }}><CalendarCheck size={13} style={{ verticalAlign: 'middle' }} /> {x.cita_fecha} {x.cita_lugar ? `· ${x.cita_lugar}` : ''} {x.cita_realizada ? '· realizada' : ''}</div>}
               {(x.confirmacion_a || x.confirmacion_b) && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>Confirmación: A {x.confirmacion_a || '-'} · B {x.confirmacion_b || '-'}{x.etapa_cs ? ` · etapa: ${x.etapa_cs}` : ''}</div>}
               {x.motivo_rechazo && <div style={{ fontSize: 12.5, marginTop: 4, color: '#8B5CF6' }}>Motivo: {x.motivo_rechazo}</div>}
+              {x.estado === 'Cita realizada' && <button type="button" onClick={() => marcar(x, 'marcar')} style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid #EC4899', background: 'transparent', color: '#EC4899', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Marcar enamorados</button>}
+              {x.estado === 'Enamorados' && <button type="button" onClick={() => marcar(x, 'deshacer')} style={{ marginTop: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Deshacer</button>}
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Última novedad: {x.ultima_novedad}{x.aprobado_en ? ` · aprobado ${x.aprobado_en}` : ''}</div>
             </div>
           )

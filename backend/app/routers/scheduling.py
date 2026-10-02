@@ -1773,10 +1773,12 @@ async def reserve_booking_slot(
         "ia": json.dumps(payload.intake_answers or {})
     })
     appt_id = ins_res.scalar()
+    from app.routers.calls import ensure_call_for_appointment, APP_BASE_URL
+    await ensure_call_for_appointment(db, appt_id)          # una sola videollamada por cita (la nueva)
     await db.commit()
 
     meta = await person_meta(db, p_name)
-    videocall_url = f"https://daily-lover.agentesia.cloud/admin/matchmaking/sala/{token}"
+    videocall_url = f"{APP_BASE_URL}/admin/llamada/{token}"
 
     # Contenido de archivo .ICS (Google / Apple Calendar)
     ics_content = f"""BEGIN:VCALENDAR
@@ -2234,3 +2236,159 @@ async def get_cs_daily_metrics(
     }
 
 
+# ==============================================================================
+# CANCELAR Y REAGENDAR ENTREVISTAS (equipo y cliente con su enlace)
+# ==============================================================================
+
+def _ahora_col() -> datetime:
+    from zoneinfo import ZoneInfo
+    return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
+
+
+async def _slots_libres_psicologa(db: AsyncSession, p_name: str, ignore_id: Optional[int] = None) -> Dict[str, List[str]]:
+    """Horarios libres de UNA psicóloga en los próximos 14 días (mismas reglas que la reserva pública: turnos publicados, sin permisos aprobados, 45 min cada 60, 2 h de anticipación)."""
+    ahora = _ahora_col()
+    hasta = ahora.date() + timedelta(days=14)
+    p = (p_name or "").upper().strip()
+    shifts = (await db.execute(text("""
+        SELECT shift_date, start_time, end_time FROM staff_shifts
+        WHERE UPPER(psychologist_name) = :p AND is_published = true AND shift_type IN ('ENTREVISTAS', 'DISPONIBLE')
+          AND shift_date >= :a AND shift_date <= :b ORDER BY shift_date, start_time
+    """), {"p": p, "a": ahora.date(), "b": hasta})).fetchall()
+    offs = (await db.execute(text("""
+        SELECT start_date, end_date FROM staff_time_off WHERE UPPER(psychologist_name) = :p AND end_date >= :a AND start_date <= :b
+          AND UPPER(COALESCE(status, 'APPROVED')) = 'APPROVED'
+    """), {"p": p, "a": ahora.date(), "b": hasta})).fetchall()
+    booked = [r[0] for r in (await db.execute(text("""
+        SELECT appointment_date FROM interview_appointments
+        WHERE UPPER(psychologist_name) = :p AND status != 'CANCELADA' AND appointment_date >= :a AND (:ig IS NULL OR id <> :ig)
+    """), {"p": p, "a": ahora - timedelta(hours=1), "ig": ignore_id})).fetchall()]
+    out: Dict[str, List[str]] = {}
+    for sh in shifts:
+        if any(o.start_date <= sh.shift_date <= o.end_date for o in offs):
+            continue
+        cur = datetime.combine(sh.shift_date, sh.start_time)
+        fin = datetime.combine(sh.shift_date, sh.end_time)
+        while cur + timedelta(minutes=45) <= fin:
+            if cur >= ahora + timedelta(hours=2) and not any(b < cur + timedelta(minutes=45) and b + timedelta(minutes=45) > cur for b in booked):
+                out.setdefault(cur.strftime("%Y-%m-%d"), []).append(cur.strftime("%H:%M"))
+            cur += timedelta(minutes=60)
+    return out
+
+
+async def _cita_o_404(db: AsyncSession, appt_id: int):
+    a = (await db.execute(text("""SELECT id, psychologist_name, appointment_date, time_slot, status, client_name, videocall_token, notes
+                                  FROM interview_appointments WHERE id = :i"""), {"i": appt_id})).fetchone()
+    if not a:
+        raise HTTPException(status_code=404, detail="Cita no encontrada.")
+    return a
+
+
+async def _puede_gestionar(db: AsyncSession, user: dict, a) -> bool:
+    if not hides_costs(user):
+        return True                                  # administración
+    from app.routers.shift_changes_api import my_staff_name, _nombres_cita
+    me = await my_staff_name(db, user)
+    return bool(me) and (a.psychologist_name or "").upper().strip() in _nombres_cita(me)
+
+
+async def _cancelar(db: AsyncSession, a, quien: str, motivo: str) -> None:
+    if a.status not in ("CONFIRMADA", "PROGRAMADA"):
+        raise HTTPException(status_code=409, detail=f"La cita está en '{a.status}': ya no se puede cancelar.")
+    marca = f" [CANCELADA por {quien}: {motivo or 'sin motivo'} | {_ahora_col().strftime('%Y-%m-%d %H:%M')}]"
+    await db.execute(text("UPDATE interview_appointments SET status = 'CANCELADA', notes = COALESCE(notes, '') || :m WHERE id = :i"), {"m": marca, "i": a.id})
+    await db.execute(text("UPDATE call_sessions SET status = 'FINALIZADA' WHERE appointment_id = :i AND status = 'PROGRAMADA'"), {"i": a.id})
+
+
+async def _reagendar(db: AsyncSession, a, quien: str, d: date, slot: str) -> Dict[str, Any]:
+    if a.status not in ("CONFIRMADA", "PROGRAMADA"):
+        raise HTTPException(status_code=409, detail=f"La cita está en '{a.status}': ya no se puede reagendar.")
+    try:
+        hh = datetime.strptime(slot, "%H:%M").time()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Hora inválida.")
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"reserva|{d}"})
+    libres = await _slots_libres_psicologa(db, a.psychologist_name, ignore_id=a.id)
+    if slot not in libres.get(str(d), []):
+        raise HTTPException(status_code=409, detail="Ese horario no está disponible. Elige otro de la lista.")
+    nueva = datetime.combine(d, hh)
+    marca = f" [REAGENDADA de {a.appointment_date.strftime('%Y-%m-%d %H:%M')} a {nueva.strftime('%Y-%m-%d %H:%M')} por {quien}]"
+    await db.execute(text("UPDATE interview_appointments SET appointment_date = :d, time_slot = :t, notes = COALESCE(notes, '') || :m WHERE id = :i"),
+                     {"d": nueva, "t": slot, "m": marca, "i": a.id})
+    return {"appointment_id": a.id, "date": str(d), "time_slot": slot}
+
+
+class CitaCancelReq(BaseModel):
+    reason: Optional[str] = None
+
+
+class CitaReagendarReq(BaseModel):
+    date: date
+    time_slot: str
+
+
+@router.get("/scheduling/appointments/{appt_id}/slots")
+async def slots_para_reagendar(appt_id: int, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    a = await _cita_o_404(db, appt_id)
+    if not await _puede_gestionar(db, user, a):
+        raise HTTPException(status_code=403, detail="Solo la psicóloga de la cita o administración pueden cambiarla.")
+    return {"appointment_id": a.id, "psychologist": a.psychologist_name, "slots_by_day": await _slots_libres_psicologa(db, a.psychologist_name, ignore_id=a.id)}
+
+
+@router.post("/scheduling/appointments/{appt_id}/cancel")
+async def cancelar_cita_equipo(appt_id: int, payload: CitaCancelReq, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    a = await _cita_o_404(db, appt_id)
+    if not await _puede_gestionar(db, user, a):
+        raise HTTPException(status_code=403, detail="Solo la psicóloga de la cita o administración pueden cancelarla.")
+    await _cancelar(db, a, str(user.get("email") or "equipo"), (payload.reason or "").strip())
+    await db.commit()
+    return {"status": "success", "appointment_id": a.id}
+
+
+@router.post("/scheduling/appointments/{appt_id}/reschedule")
+async def reagendar_cita_equipo(appt_id: int, payload: CitaReagendarReq, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    a = await _cita_o_404(db, appt_id)
+    if not await _puede_gestionar(db, user, a):
+        raise HTTPException(status_code=403, detail="Solo la psicóloga de la cita o administración pueden reagendarla.")
+    r = await _reagendar(db, a, str(user.get("email") or "equipo"), payload.date, payload.time_slot)
+    await db.commit()
+    return {"status": "success", **r}
+
+
+# --- la clienta, con el enlace de su cita (el token es la credencial) ---
+async def _cita_por_token(db: AsyncSession, token: str):
+    a = (await db.execute(text("""SELECT id, psychologist_name, appointment_date, time_slot, status, client_name, videocall_token, notes
+                                  FROM interview_appointments WHERE videocall_token = :t"""), {"t": token})).fetchone()
+    if not a:
+        raise HTTPException(status_code=404, detail="Enlace inválido.")
+    return a
+
+
+@router.get("/booking/manage/{token}")
+async def ver_mi_cita(token: str, db: AsyncSession = Depends(get_db)):
+    a = await _cita_por_token(db, token)
+    editable = a.status in ("CONFIRMADA", "PROGRAMADA") and a.appointment_date >= _ahora_col() + timedelta(hours=2)
+    meta = await person_meta(db, (a.psychologist_name or "").upper().strip())
+    return {"client_name": a.client_name, "psychologist": meta, "date": a.appointment_date.strftime("%Y-%m-%d"), "time_slot": a.time_slot, "status": a.status,
+            "editable": editable, "slots_by_day": (await _slots_libres_psicologa(db, a.psychologist_name, ignore_id=a.id)) if editable else {},
+            "motivo_no_editable": None if editable else ("La cita ya pasó o está cancelada." if a.status != "CONFIRMADA" and a.status != "PROGRAMADA" else "Faltan menos de 2 horas: escríbenos para cambiarla.")}
+
+
+@router.post("/booking/manage/{token}/cancel")
+async def cancelar_mi_cita(token: str, payload: CitaCancelReq, db: AsyncSession = Depends(get_db)):
+    a = await _cita_por_token(db, token)
+    if a.appointment_date < _ahora_col() + timedelta(hours=2):
+        raise HTTPException(status_code=409, detail="Faltan menos de 2 horas: escríbenos para cancelarla.")
+    await _cancelar(db, a, "la clienta", (payload.reason or "").strip())
+    await db.commit()
+    return {"status": "success"}
+
+
+@router.post("/booking/manage/{token}/reschedule")
+async def reagendar_mi_cita(token: str, payload: CitaReagendarReq, db: AsyncSession = Depends(get_db)):
+    a = await _cita_por_token(db, token)
+    if a.appointment_date < _ahora_col() + timedelta(hours=2):
+        raise HTTPException(status_code=409, detail="Faltan menos de 2 horas: escríbenos para cambiarla.")
+    r = await _reagendar(db, a, "la clienta", payload.date, payload.time_slot)
+    await db.commit()
+    return {"status": "success", **r}

@@ -125,10 +125,11 @@ STATUS_COLORS = {
     "RECHAZADO AMBOS": "#F4CCCC",
     "RECHAZÓ A LA OTRA PERSONA": "#F4CCCC",
     "RECHAZADO POR LA OTRA PERSONA": "#F4CCCC",
+    "ENAMORADOS": "#F9A8D4",
 }
 
 ALLOWED_STATUSES = [
-    "APROBADO", "HECHO", "HECHO POR MAPE", "HECHO POR OTRA PSICÓLOGA", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
+    "ENAMORADOS", "APROBADO", "HECHO", "HECHO POR MAPE", "HECHO POR OTRA PSICÓLOGA", "NOT APPROVED", "TROUBLE", "TROUBLEMAKER",
     "REFUND", "REFUND DONE", "REFUND APROBADO", "REFUND RECHAZADO", "REFUND PENDIENTE", "REFUND PROCESADO",
     "DESCALIFICADO", "NO HAY GENTE", "ESPERA O REFUND", "REVISAR",
     "REVISAR POR SI TOCA OTRO MATCH", "MATCH DONE", "RESUELTO", "Pendiente",
@@ -1833,7 +1834,7 @@ async def intake_client(payload: IntakeClientRequest, db: AsyncSession = Depends
             "total_slots": 1
         }
 
-    num_slots = get_slots_by_plan(plan_val) or 3
+    num_slots = get_total_slots_by_plan(plan_val) or get_slots_by_plan(plan_val) or 3
     # Los planes de 2+ citas creados a partir de aquí quedan marcados con sequential_gate=true:
     # el slot N solo se libera en Matches Psicóloga cuando el slot N-1 llega a status 'CITA REALIZADA'.
     # Los clientes que ya existían antes de este cambio no se tocan (no llevan esta marca).
@@ -2722,7 +2723,7 @@ async def _citas_pendientes(db, user_id, plan_tier, pay_date):
     total = get_slots_by_plan(normalize_plan(plan_tier), pay_date)
     if not total:
         return None
-    usadas = (await db.execute(text("SELECT COUNT(*) FROM scheduled_dates sd JOIN operational_matches m ON m.id = sd.match_id WHERE m.user_id_a = :u OR m.user_id_b = :u"), {"u": user_id})).scalar() or 0
+    usadas = (await db.execute(text("SELECT COUNT(DISTINCT sd.match_id) FROM scheduled_dates sd JOIN operational_matches m ON m.id = sd.match_id WHERE (m.user_id_a = :u OR m.user_id_b = :u) AND sd.reschedule IS NOT TRUE AND COALESCE(sd.date_time, '') NOT ILIKE '%por definir%' AND (sd.feedback IS NULL OR sd.feedback NOT ILIKE '%NO-SHOW%' OR m.status ILIKE '%PENALIDAD%')"), {"u": user_id})).scalar() or 0
     return max(0, total - usadas)
 
 
@@ -2973,20 +2974,20 @@ async def get_approval_queue(
     if user_ids:
         try:
             sd_counts_a = await db.execute(text("""
-                SELECT m.user_id_a, count(*) as cnt
+                SELECT m.user_id_a, COUNT(DISTINCT sd.match_id) as cnt
                 FROM scheduled_dates sd
                 JOIN operational_matches m ON m.id = sd.match_id
-                WHERE m.user_id_a = ANY(:uids)
+                WHERE m.user_id_a = ANY(:uids) AND sd.reschedule IS NOT TRUE AND COALESCE(sd.date_time, '') NOT ILIKE '%por definir%' AND (sd.feedback IS NULL OR sd.feedback NOT ILIKE '%NO-SHOW%' OR m.status ILIKE '%PENALIDAD%')
                 GROUP BY m.user_id_a
             """), {"uids": list(user_ids)})
             for sc in sd_counts_a.fetchall():
                 dates_used_map[sc.user_id_a] = sc.cnt
 
             sd_counts_b = await db.execute(text("""
-                SELECT m.user_id_b, count(*) as cnt
+                SELECT m.user_id_b, COUNT(DISTINCT sd.match_id) as cnt
                 FROM scheduled_dates sd
                 JOIN operational_matches m ON m.id = sd.match_id
-                WHERE m.user_id_b = ANY(:uids)
+                WHERE m.user_id_b = ANY(:uids) AND sd.reschedule IS NOT TRUE AND COALESCE(sd.date_time, '') NOT ILIKE '%por definir%' AND (sd.feedback IS NULL OR sd.feedback NOT ILIKE '%NO-SHOW%' OR m.status ILIKE '%PENALIDAD%')
                 GROUP BY m.user_id_b
             """), {"uids": list(user_ids)})
             for sc in sd_counts_b.fetchall():
@@ -3671,7 +3672,7 @@ _ETIQUETA_ESTADO = {
     "APROBADO": "Aprobado por María - falta agendar", "AGENDANDO": "Agendando la cita", "POR CONFIRMAR": "Por confirmar",
     "REPROGRAMAR": "Por reprogramar", "REPROGRAMAR POR NO-SHOW": "Por reprogramar (no-show)", "EN PAUSA": "En pausa",
     "CITA PROGRAMADA": "Cita programada", "CITA RESERVADA": "Cita reservada", "CITA REALIZADA": "Cita realizada",
-    "TROUBLE": "Rechazo (trouble)", "NO MATCH/CAMBIAR": "No match / cambiar", "REFUND": "Reembolso", "REFUND DONE": "Reembolso hecho",
+    "ENAMORADOS": "Enamorados", "TROUBLE": "Rechazo (trouble)", "NO MATCH/CAMBIAR": "No match / cambiar", "REFUND": "Reembolso", "REFUND DONE": "Reembolso hecho",
 }
 _ESTADOS_SEGUIMIENTO = tuple(_ETIQUETA_ESTADO.keys())
 
@@ -3724,6 +3725,165 @@ async def _seguimiento(db, aliases: Optional[List[str]] = None, dias: int = 21, 
             "aprobado_en": r.approved_at.strftime("%Y-%m-%d %H:%M") if r.approved_at else "",
         })
     return {"items": items, "conteo": conteo, "dias": params["d"], "total": len(items)}
+
+
+# ─── ENAMORADOS: la pareja se enamoró; el servicio de ambas personas se cierra con este estado ─────────────────────
+class EnamoradosRequest(BaseModel):
+    nota: Optional[str] = None
+
+
+_MARCA_ENAM = re.compile(r"\s*\[ENAMORADOS: antes ([^\]]+)\]")
+
+
+@router.post("/matches/{match_id}/enamorados")
+async def marcar_enamorados(match_id: int, payload: Optional[EnamoradosRequest] = None, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Pasa la pareja a ENAMORADOS (desde cita realizada). Sus slots abiertos también se cierran para que no sigan en Por proponer; se puede deshacer."""
+    if current_user.get("is_client"):
+        raise HTTPException(status_code=403, detail="Sin permiso.")
+    m = (await db.execute(text("SELECT id, person_a, person_b, user_id_a, user_id_b, status, observations FROM operational_matches WHERE id = :i"), {"i": match_id})).fetchone()
+    if not m:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+    st = (m.status or "").strip().upper()
+    if st == "ENAMORADOS":
+        return {"status": "already", "match_id": match_id}
+    if st not in ("CITA REALIZADA", "CITA COMPLETADA"):
+        raise HTTPException(status_code=409, detail=f"Solo se marca enamorados una pareja con la cita realizada (hoy está en '{m.status}').")
+    quien = _autor_actual(current_user)
+    nota = (payload.nota or "").strip() if payload else ""
+    await db.execute(text("UPDATE operational_matches SET status = 'ENAMORADOS', observations = COALESCE(observations, '') || :o, updated_at = NOW() WHERE id = :i"),
+                     {"i": match_id, "o": f" [ENAMORADOS: antes {m.status}]" + (f" {nota}" if nota else "")})
+    # los slots abiertos de ambos (sin persona B o 'No hay gente') se cierran con la misma marca para poder restaurarlos
+    uids = [u for u in (m.user_id_a, m.user_id_b) if u]
+    cerrados = 0
+    if uids:
+        abiertos = (await db.execute(text("""
+            SELECT id, status FROM operational_matches
+            WHERE user_id_a = ANY(:u) AND id <> :i AND (person_b IS NULL OR TRIM(person_b) = '')
+              AND UPPER(COALESCE(status, '')) IN ('LISTO PARA MATCH', 'NO HAY GENTE', 'BORRADOR', 'PENDIENTE')
+        """), {"u": uids, "i": match_id})).fetchall()
+        for r in abiertos:
+            await db.execute(text("UPDATE operational_matches SET status = 'ENAMORADOS', observations = COALESCE(observations, '') || :o, updated_at = NOW() WHERE id = :i"),
+                             {"i": r.id, "o": f" [ENAMORADOS: antes {r.status}]"})
+            cerrados += 1
+    for n in (m.person_a, m.person_b):
+        if n:
+            await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :m, 'ENAMORADOS', :d, NOW())"),
+                             {"n": n, "m": match_id, "d": f"{m.person_a} y {m.person_b} quedaron como enamorados (marcado por {quien}).{(' ' + nota) if nota else ''}"})
+    await db.commit()
+    return {"status": "success", "match_id": match_id, "slots_cerrados": cerrados}
+
+
+@router.post("/matches/{match_id}/enamorados/deshacer")
+async def deshacer_enamorados(match_id: int, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if current_user.get("is_client"):
+        raise HTTPException(status_code=403, detail="Sin permiso.")
+    m = (await db.execute(text("SELECT id, person_a, person_b, user_id_a, user_id_b, status FROM operational_matches WHERE id = :i"), {"i": match_id})).fetchone()
+    if not m:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+    if (m.status or "").strip().upper() != "ENAMORADOS":
+        raise HTTPException(status_code=409, detail="Esta pareja no está marcada como enamorados.")
+    uids = [u for u in (m.user_id_a, m.user_id_b) if u]
+    filas = (await db.execute(text("SELECT id, observations FROM operational_matches WHERE status = 'ENAMORADOS' AND (id = :i OR (user_id_a = ANY(:u) AND observations LIKE '%[ENAMORADOS: antes %'))"),
+                              {"i": match_id, "u": uids or [0]})).fetchall()
+    for r in filas:
+        mm = _MARCA_ENAM.search(r.observations or "")
+        antes = (mm.group(1) if mm else "CITA REALIZADA").strip()
+        await db.execute(text("UPDATE operational_matches SET status = :s, observations = :o, updated_at = NOW() WHERE id = :i"),
+                         {"s": antes, "o": _MARCA_ENAM.sub("", r.observations or "").strip(), "i": r.id})
+    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :m, 'ENAMORADOS_DESHECHO', :d, NOW())"),
+                     {"n": m.person_a, "m": match_id, "d": f"Se deshizo el estado enamorados (por {_autor_actual(current_user)})."})
+    await db.commit()
+    return {"status": "success", "match_id": match_id, "restaurados": len(filas)}
+
+
+# ─── NO HAY GENTE: seguimiento de las personas sin candidatas (pestaña + revisión diaria barata) ─────────────────
+async def _no_hay_gente_lista(db, aliases: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    q = """
+        SELECT m.id, m.user_id_a, m.person_a, m.city, m.plan_tier, m.psychologist_name, m.created_at,
+               (SELECT MIN(h.created_at) FROM person_history h WHERE h.match_id = m.id AND h.event_type = 'NO_HAY_GENTE') AS desde,
+               v.nuevos, v.ultima_revision, pA.age, pA.gender, pA.responsable
+        FROM operational_matches m
+        LEFT JOIN no_gente_vigilancia v ON v.match_id = m.id
+        LEFT JOIN profiles pA ON pA.user_id = m.user_id_a
+        WHERE UPPER(COALESCE(m.status, '')) LIKE '%NO HAY GENTE%' AND COALESCE(TRIM(m.person_b), '') = '' AND m.user_id_a IS NOT NULL
+    """
+    params: Dict[str, Any] = {}
+    if aliases:
+        q += " AND (UPPER(COALESCE(m.psychologist_name, '')) = ANY(:al) OR UPPER(COALESCE(pA.responsable, '')) = ANY(:al))"
+        params["al"] = [a.upper() for a in aliases]
+    rows = (await db.execute(text(q + " ORDER BY m.id"), params)).fetchall()
+    por: Dict[int, Dict[str, Any]] = {}
+    for r in rows:
+        d = por.get(r.user_id_a)
+        nuevos = r.nuevos if isinstance(r.nuevos, list) else (json.loads(r.nuevos) if isinstance(r.nuevos, str) else [])
+        if not d:
+            por[r.user_id_a] = d = {"user_id_a": r.user_id_a, "person_a": r.person_a, "city": r.city or "", "plan_tier": normalize_plan(r.plan_tier),
+                                    "age": r.age, "gender": r.gender, "psicologa": _mostrar_psicologa(r.psychologist_name or r.responsable),
+                                    "slots_sin_gente": 0, "match_ids": [], "desde": None, "ultima_revision": None, "nuevos": []}
+        d["slots_sin_gente"] += 1
+        d["match_ids"].append(r.id)
+        f = r.desde or r.created_at
+        if f and (d["desde"] is None or f < d["desde"]):
+            d["desde"] = f
+        if r.ultima_revision and (d["ultima_revision"] is None or r.ultima_revision > d["ultima_revision"]):
+            d["ultima_revision"] = r.ultima_revision
+        vistos_n = {str(x.get("user_id")) for x in d["nuevos"]}
+        d["nuevos"] += [x for x in nuevos if str(x.get("user_id")) not in vistos_n]
+    out = []
+    now = datetime.utcnow()
+    for d in por.values():
+        d["dias_sin_gente"] = max(0, (now - d["desde"].replace(tzinfo=None)).days) if d["desde"] else None
+        d["desde"] = d["desde"].strftime("%Y-%m-%d") if d["desde"] else ""
+        d["ultima_revision"] = d["ultima_revision"].strftime("%Y-%m-%d %H:%M") if d["ultima_revision"] else "sin revisar"
+        out.append(d)
+    out.sort(key=lambda x: (-len(x["nuevos"]), -(x["dias_sin_gente"] or 0)))
+    return out
+
+
+def _lista_motor(data) -> list:
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for k in ("candidates", "candidatas", "matches", "viable_matches", "suggested_matches", "results", "items"):
+            if isinstance(data.get(k), list):
+                return data[k]
+    return []
+
+
+class NHGRevisarRequest(BaseModel):
+    user_id_a: int
+
+
+class NHGDescartarRequest(BaseModel):
+    user_id_a: int
+    candidate_user_id: int
+
+
+@router.post("/matches/no-hay-gente/revisar")
+async def nhg_revisar(payload: NHGRevisarRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Revisa ahora a una persona en 'No hay gente' (filtros básicos sobre gente nueva y, si hay candidatas, el motor)."""
+    from app.services.no_hay_gente import revisar_persona
+
+    async def motor(uid):
+        return _lista_motor(await get_candidate_matches_engine_alias(client_id=str(uid), limit=8, response=None, force_refresh=True, current_user=current_user, db=db))
+
+    r = await revisar_persona(db, payload.user_id_a, motor, forzar=False)
+    return {"status": "success", **{k: v for k, v in r.items() if k != "nuevos"}, "nuevos": r.get("nuevos", [])}
+
+
+@router.post("/matches/no-hay-gente/descartar")
+async def nhg_descartar(payload: NHGDescartarRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Descarta una candidata nueva sugerida (no vuelve a aparecer en el aviso)."""
+    filas = (await db.execute(text("""SELECT v.match_id, v.nuevos FROM no_gente_vigilancia v WHERE v.user_id_a = :u"""), {"u": str(payload.user_id_a)})).fetchall()
+    quitadas = 0
+    for f in filas:
+        lista = f.nuevos if isinstance(f.nuevos, list) else (json.loads(f.nuevos) if isinstance(f.nuevos, str) else [])
+        nueva = [x for x in lista if str(x.get("user_id")) != str(payload.candidate_user_id)]
+        if len(nueva) != len(lista):
+            quitadas += 1
+            await db.execute(text("UPDATE no_gente_vigilancia SET nuevos = CAST(:n AS jsonb) WHERE match_id = :m"), {"n": json.dumps(nueva), "m": f.match_id})
+    await db.commit()
+    return {"status": "success", "descartada": quitadas > 0}
 
 
 @router.get("/matches/seguimiento")
@@ -3806,10 +3966,10 @@ async def get_mesa_psicologa(
     if uids_a:
         try:
             sd_res = await db.execute(text("""
-                SELECT m.user_id_a, COUNT(*) AS cnt 
+                SELECT m.user_id_a, COUNT(DISTINCT sd.match_id) AS cnt 
                 FROM scheduled_dates sd
                 JOIN operational_matches m ON m.id = sd.match_id
-                WHERE m.user_id_a = ANY(:uids)
+                WHERE m.user_id_a = ANY(:uids) AND sd.reschedule IS NOT TRUE AND COALESCE(sd.date_time, '') NOT ILIKE '%por definir%' AND (sd.feedback IS NULL OR sd.feedback NOT ILIKE '%NO-SHOW%' OR m.status ILIKE '%PENALIDAD%')
                 GROUP BY m.user_id_a
             """), {"uids": list(uids_a)})
             for r_sd in sd_res.fetchall():
@@ -3985,7 +4145,7 @@ async def get_mesa_psicologa(
         st = (latest_r.get("status") or "").upper().strip()
 
         # Excluir clientes con estados de exclusión
-        if any(term in st for term in ("REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO")) or ("TROUBLE" in st and "[ALERTA TROUBLE" not in (latest_r.get("observations") or "")):
+        if any(term in st for term in ("REFUND", "DESCALIFICADO", "INACTIVO", "ARCHIVADO", "ENAMORADOS")) or ("TROUBLE" in st and "[ALERTA TROUBLE" not in (latest_r.get("observations") or "")):
             continue
 
         clean_plan = normalize_plan(latest_r.get("plan_tier"))
@@ -4224,6 +4384,7 @@ async def get_mesa_psicologa(
         "troublemakers": troublemakers,
         "cruzados": cruzados,
         "seguimiento": (await _seguimiento(db, aliases, 21))["items"],
+        "no_hay_gente": await _no_hay_gente_lista(db, aliases),
         "summary": {
             "total_cruzados": len(cruzados),
             "total_troublemakers": len(troublemakers),

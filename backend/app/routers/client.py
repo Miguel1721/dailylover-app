@@ -774,7 +774,11 @@ async def confirm_vip_booking(
     time_str = start_dt.strftime("%H:%M")
     date_str = start_dt.strftime("%Y-%m-%d")
 
-    # 1. Evento real en Google Calendar (organizador info@) con Meet e invitaciones oficiales
+    # 1. Evento real en Google Calendar (organizador info@) como agenda e invitación; la videollamada es la de Daily Lover (una sola)
+    import secrets as _secrets
+    from app.routers.calls import APP_BASE_URL as _APP_URL, ensure_call_for_appointment as _ensure_call
+    _vtoken = _secrets.token_urlsafe(24)
+    _vurl = f"{_APP_URL}/admin/llamada/{_vtoken}"
     cal_res = await asyncio.to_thread(
         create_third_party_vip_event,
         client_name=client_name,
@@ -782,11 +786,12 @@ async def confirm_vip_booking(
         start_dt=start_dt,
         end_dt=end_dt,
         client_phone=client_phone,
+        meeting_url=_vurl,
     )
     # Nunca se entrega un enlace de Meet inventado: si Google no creó el evento real, meet_link queda vacío
     # y se deja un aviso URGENTE para MPS (más abajo) para que envíen la invitación a mano.
-    meet_link = cal_res.get("meet_link") or ""
-    cal_ok = cal_res.get("status") == "success" and bool(meet_link)
+    meet_link = _vurl                                   # siempre hay enlace: es la sala propia, no depende de Google
+    cal_ok = cal_res.get("status") == "success"
 
     # 2. Buscar user_id si ya existe en la DB
     user_res = await db.execute(text("""
@@ -810,11 +815,11 @@ async def confirm_vip_booking(
         INSERT INTO interview_appointments (
             user_id, client_name, client_email, client_phone,
             psychologist_name, appointment_date, time_slot,
-            meet_link, status, notes, duration_seconds, created_at
+            meet_link, status, notes, duration_seconds, created_at, videocall_token
         ) VALUES (
             :uid, :cname, :cemail, :cphone,
             'MPS', :adate, :tslot,
-            :mlink, 'PROGRAMADA', :notes, 1800, NOW()
+            :mlink, 'PROGRAMADA', :notes, 1800, NOW(), :vtoken
         )
         RETURNING id;
     """), {
@@ -826,8 +831,10 @@ async def confirm_vip_booking(
         "tslot": time_str,
         "mlink": meet_link,
         "notes": notes,
+        "vtoken": _vtoken,
     })
     appt_id = ins_res.scalar()
+    await _ensure_call(db, appt_id)
 
     if not cal_ok:
         try:

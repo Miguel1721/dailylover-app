@@ -61,6 +61,8 @@ import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import Videollamadas from './pages/matchmaking/Videollamadas'
+import SalaRedirect from './pages/matchmaking/SalaRedirect'
+import GestionarCita from './pages/public/GestionarCita'
 import LlamadaPublica from './pages/LlamadaPublica'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import TroubleMatches from './pages/matchmaking/TroubleMatches'
@@ -783,8 +785,9 @@ function AppContent() {
       <Route path="/agendar" element={<AgendadorCalendly />} />
       <Route path="/reservar" element={<AgendadorCalendly />} />
       <Route path="/agendar-entrevista" element={<AgendarVip />} />
+      <Route path="/cita/:token" element={<GestionarCita />} />
       <Route path="/agendar-vip" element={<AgendarVip />} />
-      <Route path="/sala/:sessionId" element={<SalaVideollamada />} />
+      <Route path="/sala/:sessionId" element={<SalaRedirect />} />
       <Route path="/llamada/:token" element={<LlamadaPublica />} />
       <Route
         path="/*"
@@ -996,7 +999,7 @@ function AppContent() {
                     <Route path="/matchmaking/seguimiento" element={<AreaErrorBoundary areaName="Seguimiento de matches"><ProtectedRoute module="matching" action="view"><SeguimientoMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/mis-turnos" element={<AreaErrorBoundary areaName="Mi Semana"><ProtectedRoute module="matching" action="view"><MisTurnos /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/calendario" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
-                    <Route path="/matchmaking/sala/:sessionId" element={<AreaErrorBoundary areaName="Sala de Videollamada"><ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/sala/:sessionId" element={<SalaRedirect />} />
                     <Route path="/horas-psicologas" element={<AreaErrorBoundary areaName="Control de Horas Clínicas"><ProtectedRoute module="empleados" action="view"><ControlHorasPsicologas /></ProtectedRoute></AreaErrorBoundary>} />
 
                     {/* MÓDULO: PORTAL DEL CLIENTE */}

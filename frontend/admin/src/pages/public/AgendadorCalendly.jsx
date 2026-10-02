@@ -202,8 +202,9 @@ export default function AgendadorCalendly() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <a href={`/admin/cita/${confirmation.videocall_token}`} style={{ color: '#c41a00', fontSize: 13, textAlign: 'center' }}>Cambiar o cancelar mi cita</a>
             <a
-              href={`/admin/matchmaking/sala/${confirmation.videocall_token}`}
+              href={confirmation.videocall_url || `/admin/llamada/${confirmation.videocall_token}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',

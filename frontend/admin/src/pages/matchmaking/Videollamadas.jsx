@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import SalaLiveKit from '../../components/SalaLiveKit'
 import RevisionEntrevista from './RevisionEntrevista'
@@ -12,6 +13,7 @@ const CONSENT = { ACEPTADO: ['#dcfce7', '#166534', 'Grabación autorizada'], REC
 export default function Videollamadas() {
   const { token } = useAuth()
   const headers = token ? { Authorization: `Bearer ${token}` } : {}
+  const [params] = useSearchParams()
   const [lista, setLista] = useState([])
   const [form, setForm] = useState({ client_name: '', psychologist_name: 'SILVI', is_test: true })
   const [enSala, setEnSala] = useState(null)   // { call, join }
@@ -53,6 +55,21 @@ export default function Videollamadas() {
     setMsg(pistas.length ? `Llamada finalizada. Audio guardado de: ${pistas.join(' y ')}.` : 'Llamada finalizada (sin audio grabado).')
     setEnSala(null); cargar()
   }
+
+  // Abrir desde una cita (?cita=id o token): se crea la llamada de esa cita si falta y se entra directo
+  useEffect(() => {
+    const ref = params.get('cita')
+    if (!ref || !token) return
+    ;(async () => {
+      setMsg('Abriendo la videollamada de la cita…')
+      const r = await fetch(`${API}/api/v1/calls/for-appointment/${encodeURIComponent(ref)}`, { method: 'POST', headers })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setMsg(d.detail || 'No se encontró la cita.'); return }
+      cargar()
+      await entrar(d)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, token])
 
   const copiar = async (url) => { try { await navigator.clipboard.writeText(url); setMsg('Enlace copiado') } catch { setMsg(url) } }
 
@@ -106,6 +123,7 @@ export default function Videollamadas() {
           <div key={c.id} style={{ ...card, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontWeight: 700 }}>{c.client_name} {c.is_test && <span style={{ fontSize: 11, color: '#64748b' }}>(prueba)</span>}</div>
+              {c.cita && <div style={{ fontSize: 13, fontWeight: 700, color: '#0f766e' }}>Cita de entrevista: {c.cita}{c.cita_estado ? ` (${c.cita_estado.toLowerCase()})` : ''}</div>}
               <div style={{ fontSize: 12, color: '#64748b' }}>{c.psychologist_name} · {c.status} · {c.created_at ? new Date(c.created_at).toLocaleString('es-CO') : ''}</div>
               <span style={{ display: 'inline-block', marginTop: 4, background: bg, color: fg, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>{txt}</span>
             </div>

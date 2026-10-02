@@ -58,6 +58,7 @@ export default function MisTurnos() {
   const [pick, setPick] = useState(null)
   const [note, setNote] = useState('')
   const [mv, setMv] = useState({ date: '', start: '09:00' })
+  const [citaMov, setCitaMov] = useState(null)   // cita que se reagenda o cancela: { cita, modo, slots, pick, motivo }
 
   const detail = async (res) => { const j = await res.json().catch(() => ({})); const d = j.detail; return typeof d === 'string' ? d : (d?.message || 'No se pudo completar la acción.') }
 
@@ -98,6 +99,26 @@ export default function MisTurnos() {
     setSwapFor(s); setCands([]); setPick(null); setErr('')
     const res = await fetch(`${API}/api/v1/shifts/swap-candidates?shift_id=${s.id}`, { headers })
     if (res.ok) setCands((await res.json()).candidates || []); else setErr(await detail(res))
+  }
+
+  const abrirCita = async (a, modo) => {
+    setErr(''); setMsg('')
+    setCitaMov({ cita: a, modo, slots: {}, pick: null, motivo: '' })
+    if (modo === 'reagendar') {
+      const res = await fetch(`${API}/api/v1/scheduling/appointments/${a.id}/slots`, { headers })
+      if (res.ok) { const j = await res.json(); setCitaMov(c => c && { ...c, slots: j.slots_by_day || {} }) } else setErr(await detail(res))
+    }
+  }
+  const confirmarCita = async () => {
+    const c = citaMov; if (!c) return
+    setBusy(true); setErr('')
+    try {
+      const url = `${API}/api/v1/scheduling/appointments/${c.cita.id}/${c.modo === 'cancelar' ? 'cancel' : 'reschedule'}`
+      const body = c.modo === 'cancelar' ? { reason: c.motivo } : { date: c.pick.d, time_slot: c.pick.h }
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) })
+      if (!res.ok) { setErr(await detail(res)); return }
+      setMsg(c.modo === 'cancelar' ? 'Cita cancelada.' : 'Cita reagendada.'); setCitaMov(null); load()
+    } catch (e) { setErr('Sin conexión, intenta otra vez.') } finally { setBusy(false) }
   }
 
   // ---- disponibilidad
@@ -325,12 +346,43 @@ export default function MisTurnos() {
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <Pill tone={a.status === 'COMPLETADA' ? 'green' : 'teal'}>{a.status === 'COMPLETADA' ? 'Realizada' : 'Agendada'}</Pill>
+                    {a.status !== 'COMPLETADA' && <button type="button" onClick={() => abrirCita(a, 'reagendar')} style={btn(false, { padding: '7px 10px' })}>Reagendar</button>}
+                    {a.status !== 'COMPLETADA' && <button type="button" onClick={() => abrirCita(a, 'cancelar')} style={btn(false, { padding: '7px 10px', color: '#dc2626' })}>Cancelar</button>}
                     {a.status !== 'COMPLETADA' && <button type="button" onClick={() => navigate('/matchmaking/sala/' + (a.token || a.id))} style={btn(true, { padding: '7px 12px' })}><Video size={14} />Entrar</button>}
                   </div>
                 </div>
               ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {citaMov && (
+        <div role="dialog" aria-label="Cambiar cita" style={overlay} onClick={() => setCitaMov(null)}>
+          <div style={sheet} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 4px' }}>{citaMov.modo === 'cancelar' ? 'Cancelar la entrevista' : 'Reagendar la entrevista'}</h3>
+            <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--text-secondary)' }}>{citaMov.cita.client} · {dayLabel(citaMov.cita.date)}, {range(citaMov.cita.start, citaMov.cita.end)}</p>
+            {citaMov.modo === 'cancelar' ? (
+              <input value={citaMov.motivo} onChange={(e) => setCitaMov({ ...citaMov, motivo: e.target.value })} placeholder="Motivo (opcional)" maxLength={200} style={field} />
+            ) : (
+              <>
+                {Object.keys(citaMov.slots).length === 0 && <div style={{ fontSize: 14 }}>No hay otros horarios libres en tus turnos de entrevistas de los próximos 14 días.</div>}
+                {Object.keys(citaMov.slots).sort().map(d => (
+                  <div key={d} style={{ margin: '8px 0' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{dayLabel(d)}</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {citaMov.slots[d].map(h => { const sel = citaMov.pick && citaMov.pick.d === d && citaMov.pick.h === h; return <button key={h} type="button" onClick={() => setCitaMov({ ...citaMov, pick: { d, h } })} style={btn(sel, { padding: '6px 10px' })}>{t12(h)}</button> })}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+            {err && <div role="alert" style={{ marginTop: 10, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>{err}</div>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button type="button" disabled={busy || (citaMov.modo === 'reagendar' && !citaMov.pick)} onClick={confirmarCita} style={btn(true, { opacity: (citaMov.modo === 'reagendar' && !citaMov.pick) ? 0.5 : 1 })}>{citaMov.modo === 'cancelar' ? 'Cancelar la cita' : 'Confirmar el cambio'}</button>
+              <button type="button" onClick={() => setCitaMov(null)} style={btn(false)}>Volver</button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -139,6 +139,31 @@ def assemble_audio(session_id: int, role: str) -> Optional[Path]:
 
 # ------------------------------------------------------------------ equipo (con sesión)
 
+async def ensure_call_for_appointment(db: AsyncSession, ref) -> Dict[str, Any]:
+    """UNA sola videollamada por cita de entrevista: la crea si no existe y deja el mismo token en la cita.
+    `ref` = id de la cita o su videocall_token. No hace commit (lo hace quien llama)."""
+    await ensure_call_tables(db)
+    q = "SELECT id, user_id, psychologist_name, client_name, videocall_token FROM interview_appointments WHERE "
+    if isinstance(ref, int) or str(ref).isdigit():
+        a = (await db.execute(text(q + "id = :r"), {"r": int(ref)})).fetchone()
+    else:
+        a = (await db.execute(text(q + "videocall_token = :r"), {"r": str(ref)})).fetchone()
+    if not a:
+        raise HTTPException(status_code=404, detail="Cita no encontrada.")
+    ya = (await db.execute(text("SELECT id, public_token FROM call_sessions WHERE appointment_id = :a ORDER BY id LIMIT 1"), {"a": a.id})).fetchone()
+    if ya:
+        return {"id": ya.id, "public_token": ya.public_token, "public_url": f"{APP_BASE_URL}/admin/llamada/{ya.public_token}", "appointment_id": a.id, "creada": False}
+    token = a.videocall_token or secrets.token_urlsafe(24)
+    room = "dl-" + secrets.token_hex(8)
+    sid = (await db.execute(text("""
+        INSERT INTO call_sessions (public_token, room_name, appointment_id, psychologist_name, client_name, user_id, is_test, created_by)
+        VALUES (:t, :r, :a, :p, :c, :u, false, 'cita') RETURNING id
+    """), {"t": token, "r": room, "a": a.id, "p": a.psychologist_name, "c": a.client_name or "Cliente", "u": a.user_id})).scalar()
+    if not a.videocall_token:
+        await db.execute(text("UPDATE interview_appointments SET videocall_token = :t WHERE id = :a"), {"t": token, "a": a.id})
+    return {"id": sid, "public_token": token, "public_url": f"{APP_BASE_URL}/admin/llamada/{token}", "appointment_id": a.id, "creada": True}
+
+
 class CreateCall(BaseModel):
     client_name: str
     psychologist_name: Optional[str] = None
@@ -147,12 +172,20 @@ class CreateCall(BaseModel):
 
 
 def _public(row) -> Dict[str, Any]:
-    return {"id": row.id, "client_name": row.client_name, "psychologist_name": row.psychologist_name, "status": row.status,
+    return {"id": row.id, "appointment_id": row.appointment_id, "user_id": row.user_id, "client_name": row.client_name, "psychologist_name": row.psychologist_name, "status": row.status,
             "consent": row.consent, "recording_enabled": bool(row.recording_enabled), "is_test": bool(row.is_test),
             "public_url": f"{APP_BASE_URL}/admin/llamada/{row.public_token}",
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "started_at": row.started_at.isoformat() if row.started_at else None,
             "ended_at": row.ended_at.isoformat() if row.ended_at else None}
+
+
+@router.post("/for-appointment/{ref}")
+async def call_for_appointment(ref: str, db: AsyncSession = Depends(get_db), user: dict = Depends(require_staff)):
+    """El equipo abre la videollamada de una cita (la crea si falta). `ref` = id de la cita o su token."""
+    r = await ensure_call_for_appointment(db, ref)
+    await db.commit()
+    return _public(await _by_id(db, r["id"]))
 
 
 @router.post("")
@@ -188,6 +221,11 @@ async def list_calls(db: AsyncSession = Depends(get_db), user: dict = Depends(re
         d = _public(r)
         ch = (await db.execute(text("SELECT role, count(*), coalesce(sum(size),0) FROM call_audio_chunks WHERE session_id=:i GROUP BY role"), {"i": r.id})).fetchall()
         d["audio"] = {c[0]: {"fragmentos": int(c[1]), "bytes": int(c[2])} for c in ch}
+        if r.appointment_id:
+            ap = (await db.execute(text("SELECT appointment_date, status FROM interview_appointments WHERE id = :a"), {"a": r.appointment_id})).fetchone()
+            if ap:
+                d["cita"] = ap.appointment_date.strftime("%Y-%m-%d %H:%M")
+                d["cita_estado"] = ap.status
         out.append(d)
     return {"calls": out}
 
@@ -215,6 +253,13 @@ async def end_call(sid: int, db: AsyncSession = Depends(get_db), user: dict = De
     await ensure_call_tables(db)
     await _by_id(db, sid)
     await db.execute(text("UPDATE call_sessions SET status = 'FINALIZADA', ended_at = COALESCE(ended_at, NOW()) WHERE id = :i"), {"i": sid})
+    # la entrevista de la cita queda realizada (antes nada la cerraba)
+    await db.execute(text("""
+        UPDATE interview_appointments a SET status = 'COMPLETADA',
+               duration_seconds = COALESCE(NULLIF(a.duration_seconds, 0), GREATEST(0, EXTRACT(EPOCH FROM (c.ended_at - COALESCE(c.started_at, c.ended_at)))::int))
+        FROM call_sessions c
+        WHERE c.id = :i AND c.appointment_id = a.id AND a.status IN ('CONFIRMADA', 'PROGRAMADA')
+    """), {"i": sid})
     await db.commit()
     return _public(await _by_id(db, sid))
 

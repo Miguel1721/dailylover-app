@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 import UserAvatar from '../../components/UserAvatar'
 import SeguimientoLista from '../../components/SeguimientoLista'
+import NoHayGenteLista from '../../components/NoHayGenteLista'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) 
   ? window.location.origin 
@@ -831,6 +832,22 @@ export default function MiMesaPsicologa() {
 
         <button
           type="button"
+          onClick={() => setActiveTab('no_hay_gente')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+            border: activeTab === 'no_hay_gente' ? '1.5px solid #F59E0B' : '1px solid var(--border-color)',
+            background: activeTab === 'no_hay_gente' ? 'rgba(245, 158, 11, 0.15)' : 'var(--bg-card)',
+            color: activeTab === 'no_hay_gente' ? '#FFFFFF' : 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.15s'
+          }}
+        >
+          <span>No hay gente</span>
+          <span style={{ background: activeTab === 'no_hay_gente' ? '#D97706' : 'rgba(255,255,255,0.08)', color: '#FFFFFF', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 800 }}>
+            {data.no_hay_gente?.length || 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('seguimiento')}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700,
@@ -1358,6 +1375,8 @@ export default function MiMesaPsicologa() {
               )}
             </div>
           )}
+
+          {activeTab === 'no_hay_gente' && <NoHayGenteLista items={data.no_hay_gente || []} onCambio={() => fetchMesa({ silent: true })} onProponer={(x) => { setSearchTerm(x.person_a); setActiveTab('por_proponer') }} />}
 
           {activeTab === 'seguimiento' && <SeguimientoLista items={data.seguimiento || []} />}
 
