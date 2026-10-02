@@ -623,7 +623,7 @@ export default function MiMesaPsicologa() {
                         boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 280 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: '1 1 300px', minWidth: 280 }}>
                         <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={48} />
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -710,8 +710,30 @@ export default function MiMesaPsicologa() {
                             </span>
                           </div>
 
-                          {/* Lista de slots del plan: llenos bloqueados con color, libres con campo para la Persona B */}
-                          <div style={{ marginTop: 12, maxWidth: 700 }}>
+                          {/* Motivo de rechazo de María visible */}
+                          {row.rejection_reason && (
+                            <div style={{
+                              marginTop: 10,
+                              padding: '8px 12px',
+                              borderRadius: 8,
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.3)',
+                              color: '#EF4444',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6
+                            }}>
+                              <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+                              <span>Devuelto por María: {row.rejection_reason}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Lista de slots del plan: llenos bloqueados con color, libres con campo para la Persona B */}
+                          <div style={{ flex: '2 1 440px', minWidth: 300, maxWidth: 760 }}>
                             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
                               {row.slots_total ? `Slots del plan: ${row.slots_total} (${row.slots_libres} libres)` : 'Slots: por confirmar'}
                             </div>
@@ -774,28 +796,6 @@ export default function MiMesaPsicologa() {
                               })}
                             </div>
                           </div>
-
-                          {/* Motivo de rechazo de María visible */}
-                          {row.rejection_reason && (
-                            <div style={{
-                              marginTop: 10,
-                              padding: '8px 12px',
-                              borderRadius: 8,
-                              background: 'rgba(239, 68, 68, 0.1)',
-                              border: '1px solid rgba(239, 68, 68, 0.3)',
-                              color: '#EF4444',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6
-                            }}>
-                              <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-                              <span>Devuelto por María: {row.rejection_reason}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
 
                       {/* Botón único para proponer match */}
                       <div>
