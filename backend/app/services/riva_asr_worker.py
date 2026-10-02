@@ -22,7 +22,6 @@ FUNCTION_ID = os.environ.get("NVIDIA_ASR_FUNCTION_ID", "b0e8b4a5-217c-40b7-9b96-
 IDIOMA = os.environ.get("NVIDIA_ASR_LANG", "es-US")
 VENTANA_S, BUSQUEDA_S = 28.0, 4.0
 UMBRAL_SILENCIO = 20          # volumen medio (int16) por debajo del cual una ventana se considera silencio
-PAUSA_SEGMENTO_S = 0.8        # una pausa mayor parte el texto en otro segmento
 
 
 def a_wav(entrada: str, salida: str) -> None:
@@ -50,27 +49,28 @@ def cortes(pcm: np.ndarray, sr: int):
 
 
 def segmentos_de(alt, desfase: float, fin_ventana: float):
-    """Parte lo reconocido en frases usando los tiempos de cada palabra."""
+    """Parte el texto reconocido en frases (con el texto tal como lo devuelve Canary) y reparte los tiempos de la ventana segun el largo de cada frase."""
     txt = alt.transcript.strip()
     if not txt:
         return []
     palabras = list(alt.words)
-    if not palabras:
-        return [{"inicio": round(desfase, 1), "fin": round(fin_ventana, 1), "texto": txt}]
-    out, actual, ini = [], [], None
-    prev_fin = None
-    for w in palabras:
-        t0, t1 = w.start_time / 1000.0, w.end_time / 1000.0
-        if actual and prev_fin is not None and (t0 - prev_fin > PAUSA_SEGMENTO_S or re.search(r"[.?!]$", actual[-1].word)):
-            out.append((ini, prev_fin, " ".join(x.word for x in actual)))
-            actual, ini = [], None
-        if ini is None:
-            ini = t0
-        actual.append(w)
-        prev_fin = t1
-    if actual:
-        out.append((ini, prev_fin, " ".join(x.word for x in actual)))
-    return [{"inicio": round(a + desfase, 1), "fin": round(b + desfase, 1), "texto": t.strip()} for a, b, t in out if t.strip()]
+    t_ini = palabras[0].start_time / 1000.0 if palabras else 0.0
+    t_fin = palabras[-1].end_time / 1000.0 if palabras else max(0.0, fin_ventana - desfase)
+    frases = [f.strip() for f in re.split(r"(?<=[.?!])\s+", txt) if f.strip()]
+    unidas = []
+    for f in frases:
+        if unidas and len(f) < 12:          # un fragmento muy corto se une a la frase anterior
+            unidas[-1] += " " + f
+        else:
+            unidas.append(f)
+    total = sum(len(f) for f in unidas) or 1
+    out, acum = [], 0
+    for f in unidas:
+        a = t_ini + (t_fin - t_ini) * acum / total
+        acum += len(f)
+        b = t_ini + (t_fin - t_ini) * acum / total
+        out.append({"inicio": round(a + desfase, 1), "fin": round(b + desfase, 1), "texto": f})
+    return out
 
 
 def main(ruta: str) -> None:

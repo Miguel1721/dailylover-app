@@ -85,6 +85,9 @@ Reglas obligatorias:
 6. No deduzcas un estilo o rasgo general a partir de una sola actividad (p. ej. un almuerzo familiar no define su fin de semana).
 7. No confundas lo que la cliente BUSCA o RECHAZA en una pareja con cómo es ELLA. "No soporto que fume" es un no negociable
    sobre la pareja; NO dice si ella fuma. Los campos de la cliente (fuma, bebe, hijos propios…) solo con lo que dijo de sí misma.
+8. El género que busca en una pareja solo si lo dice de forma explícita (p. ej. "busco una mujer"); no lo deduzcas de un pronombre
+   como "ella". La sociabilidad, la energía social y el estilo de fin de semana solo si la cliente habla de cómo es ELLA con la gente
+   en general; una o dos actividades sueltas no alcanzan.
 9. Datos sensibles (ingresos, salud, orientación, religión, política) solo si la cliente los dijo voluntariamente.
 10. "confianza": "alta" si lo dijo explícitamente, "media" si se deduce directamente de lo que dijo.
 
