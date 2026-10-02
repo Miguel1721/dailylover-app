@@ -80,6 +80,9 @@ async def atrasados_role_guard(request, call_next):
             try:
                 from app.services.auth_service import decode_token
                 payload = decode_token(token)
+                if payload and payload.get("view_as") and request.method not in ("GET", "HEAD", "OPTIONS"):
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(status_code=403, content={"detail": "Vista de revisión: solo lectura, no se puede guardar ni enviar nada."})
                 if payload and payload.get("role_id"):
                     atrasados_id = getattr(request.app.state, "atrasados_role_id", "5c528b9d-f2de-4e85-a03e-2ee2798e2da0")
                     if str(payload.get("role_id")) == str(atrasados_id):

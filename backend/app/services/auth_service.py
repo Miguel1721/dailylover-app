@@ -27,6 +27,17 @@ def create_access_token(user_account_id: str, role_id: Optional[str]) -> str:
     encoded_jwt = jwt.encode(to_encode, settings.jwt_secret_key, algorithm="HS256")
     return encoded_jwt
 
+def create_view_token(user_account_id: str, role_id: Optional[str], minutes: int = 45) -> str:
+    """Token de REVISION (solo lectura, 45 min). Solo se emite desde el servidor con scripts/ver_como.py."""
+    to_encode = {
+        "sub": str(user_account_id),
+        "role_id": str(role_id) if role_id else None,
+        "view_as": True,
+        "exp": datetime.utcnow() + timedelta(minutes=minutes),
+    }
+    return jwt.encode(to_encode, settings.jwt_secret_key, algorithm="HS256")
+
+
 def decode_token(token: str) -> Optional[dict]:
     """Decodes a JWT access token, returning its payload if valid."""
     try:

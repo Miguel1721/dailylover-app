@@ -40,3 +40,27 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   })
 }
 
+
+
+// Vista de revisión (solo lectura): barra fija con el nombre revisado y botón para volver a la sesión original
+try {
+  const raw = localStorage.getItem('dl_view_as')
+  if (raw) {
+    const v = JSON.parse(raw)
+    const bar = document.createElement('div')
+    bar.setAttribute('style', 'position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#7c2d12;color:#fff;font:600 12px system-ui;padding:6px 10px;display:flex;gap:10px;align-items:center;justify-content:center')
+    bar.textContent = `Vista de revisión como ${v.name} (${v.role}) - solo lectura`
+    const btn = document.createElement('button')
+    btn.textContent = 'Volver a mi sesión'
+    btn.setAttribute('style', 'background:#fff;color:#7c2d12;border:0;border-radius:6px;padding:3px 8px;font-weight:700;cursor:pointer')
+    btn.onclick = () => {
+      localStorage.setItem('dl_token', v.backup_token)
+      localStorage.setItem('dl_user', v.backup_user)
+      localStorage.removeItem('dl_view_as')
+      sessionStorage.removeItem('dl_preview_role')
+      location.reload()
+    }
+    bar.appendChild(btn)
+    document.body.appendChild(bar)
+  }
+} catch (e) { /* sin barra */ }
