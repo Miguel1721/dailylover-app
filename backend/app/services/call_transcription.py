@@ -21,7 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("TRANSCRIPTION_MODEL", "gemini-2.5-flash")
-NVIDIA_LABEL = "nvidia/canary-1b-asr"
+# Modelos de voz de NVIDIA (servicio Riva), en orden de preferencia. Whisper dio 0 % de error en la prueba; Canary deforma las palabras con ñ.
+ASR_MODELOS = [
+    ("nvidia/whisper-large-v3", "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"),
+    ("nvidia/parakeet-1.1b-multilingual", "71203149-d3b7-4460-8231-1be2543a1fca"),
+    ("nvidia/canary-1b-asr", "b0e8b4a5-217c-40b7-9b96-17d84e666317"),
+]
+NVIDIA_LABEL = ASR_MODELOS[0][0]
 ASR_PYTHON = Path(os.environ.get("ASR_VENV_PYTHON", "/app/.venv_asr/bin/python"))
 ASR_WORKER = Path(__file__).with_name("riva_asr_worker.py")
 MAX_INLINE_BYTES = 18 * 1024 * 1024
@@ -55,16 +61,25 @@ def nvidia_disponible() -> bool:
     return ASR_PYTHON.exists() and ASR_WORKER.exists() and bool((os.environ.get("ANALISIS_NVIDIA_API_KEY") or "").strip())
 
 
-def _nvidia_transcribe(path: Path) -> List[Dict[str, Any]]:
-    """Canary (NVIDIA) por el servicio de voz Riva, en un proceso aparte con su propio entorno."""
-    env = {**os.environ, "NVIDIA_ASR_KEY": os.environ["ANALISIS_NVIDIA_API_KEY"].strip()}
-    r = subprocess.run([str(ASR_PYTHON), str(ASR_WORKER), str(path)], capture_output=True, text=True, timeout=3600, env=env)
-    if r.returncode != 0:
-        raise RuntimeError("Canary: " + (r.stderr or "sin detalle")[-300:])
-    d = json.loads(r.stdout.strip().splitlines()[-1])
-    if d["errores"] > max(2, int(0.2 * d["ventanas"])):
-        raise RuntimeError(f"Canary falló en {d['errores']} de {d['ventanas']} tramos de audio")
-    return d["segmentos"]
+def _nvidia_transcribe(path: Path):
+    """(segmentos, modelo_usado) por el servicio de voz de NVIDIA, en un proceso aparte con su propio entorno."""
+    errores = []
+    for label, fid in ASR_MODELOS:
+        env = {**os.environ, "NVIDIA_ASR_KEY": os.environ["ANALISIS_NVIDIA_API_KEY"].strip(), "NVIDIA_ASR_FUNCTION_ID": fid}
+        try:
+            r = subprocess.run([str(ASR_PYTHON), str(ASR_WORKER), str(path)], capture_output=True, text=True, timeout=3600, env=env)
+        except subprocess.TimeoutExpired:
+            errores.append(f"{label}: tiempo agotado")
+            continue
+        if r.returncode != 0:
+            errores.append(f"{label}: {(r.stderr or 'sin detalle')[-120:]}")
+            continue
+        d = json.loads(r.stdout.strip().splitlines()[-1])
+        if d["errores"] > max(2, int(0.2 * d["ventanas"])):
+            errores.append(f"{label}: falló en {d['errores']} de {d['ventanas']} tramos")
+            continue
+        return d["segmentos"], label
+    raise RuntimeError(" | ".join(errores))
 
 
 def _transcribir_pista(path: Path):
@@ -72,7 +87,7 @@ def _transcribir_pista(path: Path):
     error = ""
     if nvidia_disponible():
         try:
-            return _nvidia_transcribe(path), NVIDIA_LABEL
+            return _nvidia_transcribe(path)
         except Exception as exc:
             error = str(exc)
             logger.warning("Transcripción con Canary falló (%s); se intenta con Gemini", error[:200])

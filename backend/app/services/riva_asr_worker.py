@@ -18,7 +18,7 @@ import wave
 
 import numpy as np
 
-FUNCTION_ID = os.environ.get("NVIDIA_ASR_FUNCTION_ID", "b0e8b4a5-217c-40b7-9b96-17d84e666317")   # canary-1b-asr
+FUNCTION_ID = os.environ.get("NVIDIA_ASR_FUNCTION_ID", "b702f636-f60c-4a3d-a6f4-f3568c13bd7d")   # whisper-large-v3
 IDIOMA = os.environ.get("NVIDIA_ASR_LANG", "es-US")
 VENTANA_S, BUSQUEDA_S = 28.0, 4.0
 UMBRAL_SILENCIO = 20          # volumen medio (int16) por debajo del cual una ventana se considera silencio
