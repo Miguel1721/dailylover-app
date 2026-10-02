@@ -2606,6 +2606,7 @@ async def adjuntar_notas(db, items):
     """Agrega a cada match sus ultimas notas (de Servicio al Cliente y María)."""
     for it in items:
         it["notas"] = []
+        it["notas_total"] = 0
     ids = [it.get("id") for it in items if it.get("id")]
     if not ids:
         return
@@ -2619,10 +2620,23 @@ async def adjuntar_notas(db, items):
         por_id.setdefault(r.match_id, []).append({"autor": r.autor or "", "texto": r.texto or "", "fecha": r.creado_en.strftime("%Y-%m-%d %H:%M") if r.creado_en else ""})
     for it in items:
         it["notas"] = por_id.get(it.get("id"), [])[:6]
+        it["notas_total"] = len(por_id.get(it.get("id"), []))
 
 
 class NotaMatchRequest(BaseModel):
     texto: str
+
+
+def _autor_actual(current_user) -> str:
+    return str((current_user or {}).get("name") or (current_user or {}).get("email") or "Equipo")
+
+
+@router.get("/matches/{match_id}/notas")
+async def listar_notas_match(match_id: int, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Chat de notas de la pareja: todos los mensajes en orden, marcando cuales son del usuario actual."""
+    yo = _autor_actual(current_user)
+    rows = (await db.execute(text("SELECT id, autor, texto, creado_en FROM match_notas WHERE match_id = :m ORDER BY id ASC LIMIT 300"), {"m": match_id})).fetchall()
+    return {"notas": [{"id": r.id, "autor": r.autor or "", "texto": r.texto or "", "fecha": r.creado_en.strftime("%Y-%m-%d %H:%M") if r.creado_en else "", "es_mio": (r.autor or "") == yo} for r in rows]}
 
 
 @router.post("/matches/{match_id}/notas")
@@ -2633,7 +2647,7 @@ async def agregar_nota_match(match_id: int, payload: NotaMatchRequest, current_u
     existe = (await db.execute(text("SELECT 1 FROM operational_matches WHERE id = :m"), {"m": match_id})).fetchone()
     if not existe:
         raise HTTPException(status_code=404, detail="Match no encontrado")
-    autor = str((current_user or {}).get("name") or (current_user or {}).get("email") or "Equipo")
+    autor = _autor_actual(current_user)
     await db.execute(text("INSERT INTO match_notas (match_id, autor, texto, creado_en) VALUES (:m, :a, :t, NOW())"), {"m": match_id, "a": autor, "t": texto[:2000]})
     await db.commit()
     return {"status": "success"}
@@ -2974,6 +2988,7 @@ async def get_approval_queue(
     await enriquecer_con_crm(db, queue)
     from app.services.analisis_pareja import adjuntar_analisis
     await adjuntar_analisis(db, queue)
+    await adjuntar_notas(db, queue)
     return {
         "queue": queue,
         "total": total_items,

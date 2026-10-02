@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { 
   ShieldCheck, Headphones, Search, RefreshCw, CheckCircle, Clock, MapPin, 
   User, AlertTriangle, PhoneCall, ExternalLink, Filter, X, Calendar as CalendarIcon,
@@ -45,6 +45,84 @@ const REJECTION_CATEGORIES = [
   { id: 'Otro', label: 'Otro' }
 ]
 
+// Chat de notas de la pareja: lo ven y lo escriben Servicio al Cliente y María
+function ChatNotas({ matchId, total, API, token }) {
+  const [abierto, setAbierto] = useState(false)
+  const [notas, setNotas] = useState([])
+  const [texto, setTexto] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [cuenta, setCuenta] = useState(total || 0)
+  const listaRef = useRef(null)
+
+  const cargar = useCallback(() => {
+    fetch(`${API}/api/v1/matchmaking/matches/${matchId}/notas`, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { setNotas(d.notas || []); setCuenta((d.notas || []).length) })
+      .catch(() => {})
+  }, [API, matchId, token])
+
+  useEffect(() => {
+    if (!abierto) return undefined
+    cargar()
+    const t = setInterval(cargar, 10000)   // se actualiza solo para ver lo que escriben las demás
+    return () => clearInterval(t)
+  }, [abierto, cargar])
+
+  useEffect(() => {
+    if (abierto && listaRef.current) listaRef.current.scrollTop = listaRef.current.scrollHeight
+  }, [notas.length, abierto])
+
+  const enviar = async () => {
+    const t = texto.trim()
+    if (!t || enviando) return
+    setEnviando(true)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${matchId}/notas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ texto: t })
+      })
+      if (res.ok) { setTexto(''); cargar() }
+      else alert('No se pudo enviar el mensaje.')
+    } catch (e) {
+      alert('Error de conexión.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button type="button" onClick={() => setAbierto(a => !a)}
+        style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-base)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+        {abierto ? 'Cerrar chat de notas' : `Chat de notas${cuenta > 0 ? ` (${cuenta})` : ''}`}
+      </button>
+      {abierto && (
+        <div style={{ marginTop: 8, border: '1px solid var(--border-color)', borderRadius: 12, background: 'var(--bg-base)', overflow: 'hidden' }}>
+          <div ref={listaRef} style={{ maxHeight: 280, minHeight: 90, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {notas.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center', padding: '18px 0' }}>Aún no hay mensajes de esta pareja. Escribe el primero.</div>}
+            {notas.map(n => (
+              <div key={n.id} style={{ alignSelf: n.es_mio ? 'flex-end' : 'flex-start', maxWidth: '82%' }}>
+                <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 2, textAlign: n.es_mio ? 'right' : 'left' }}>{n.es_mio ? 'Tú' : n.autor} · {n.fecha}</div>
+                <div style={{ padding: '8px 12px', borderRadius: n.es_mio ? '12px 12px 2px 12px' : '12px 12px 12px 2px', background: n.es_mio ? '#B8324F' : 'var(--bg-card)', color: n.es_mio ? '#fff' : 'var(--text-primary)', border: n.es_mio ? 'none' : '1px solid var(--border-color)', fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{n.texto}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid var(--border-color)' }}>
+            <input type="text" value={texto} onChange={e => setTexto(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') enviar() }}
+              placeholder="Escribe un mensaje sobre esta pareja (llamadas, novedades, preferencias)"
+              style={{ flex: 1, minWidth: 0, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }} />
+            <button type="button" onClick={enviar} disabled={enviando || !texto.trim()}
+              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: '#B8324F', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: texto.trim() ? 1 : 0.5 }}>
+              {enviando ? 'Enviando...' : 'Enviar'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function AprobadosMaria() {
   const { token, user } = useAuth()
 
@@ -74,8 +152,6 @@ export default function AprobadosMaria() {
   const [approvalDate, setApprovalDate] = useState('')
   const [analisisIA, setAnalisisIA] = useState({})      // match_id -> analisis generado en esta sesion
   const [analizando, setAnalizando] = useState(null)
-  const [notaTexto, setNotaTexto] = useState({})
-  const [guardandoNota, setGuardandoNota] = useState(null)
   const [modalAnalisis, setModalAnalisis] = useState(null)   // id del match cuyo analisis esta abierto
   const [errorIA, setErrorIA] = useState({})
   const [ordenRev, setOrdenRev] = useState('cliente_antiguo')   // cliente_antiguo | oldest_first | newest_first
@@ -287,29 +363,6 @@ export default function AprobadosMaria() {
         {lista.map(e => <option key={e[0]} value={e[0]}>{e[1]}</option>)}
       </select>
     )
-  }
-
-  const agregarNota = async (match) => {
-    const texto = (notaTexto[match.id] || '').trim()
-    if (!texto) return
-    setGuardandoNota(match.id)
-    try {
-      const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/notas`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ texto })
-      })
-      if (res.ok) {
-        setNotaTexto(prev => ({ ...prev, [match.id]: '' }))
-        fetchServiceQueue()
-      } else {
-        alert('No se pudo guardar la nota.')
-      }
-    } catch (e) {
-      alert('Error de conexión.')
-    } finally {
-      setGuardandoNota(null)
-    }
   }
 
   const handleUpdateServiceStatus = async (matchId, statusVal) => {
@@ -1074,6 +1127,8 @@ export default function AprobadosMaria() {
                         )
                       })()}
 
+                      <ChatNotas matchId={item.id} total={item.notas_total} API={API} token={token} />
+
                       {/* Botones de Acción: Aprobar (1 clic) vs Rechazar (1 clic con motivo) */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 4 }}>
                         <button
@@ -1374,29 +1429,8 @@ export default function AprobadosMaria() {
                       </div>
                     </div>
 
-                    {/* Notas de la propuesta */}
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>NOTAS</div>
-                      {(match.notas || []).length > 0 && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-                          {match.notas.map((n, k) => (
-                            <div key={k} style={{ fontSize: 12.5, color: 'var(--text-primary)', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '6px 10px', lineHeight: 1.45 }}>
-                              <strong>{n.autor}</strong> <span style={{ color: 'var(--text-muted)' }}>{n.fecha}</span><br />{n.texto}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <input type="text" value={notaTexto[match.id] || ''} onChange={e => setNotaTexto(prev => ({ ...prev, [match.id]: e.target.value }))}
-                          onKeyDown={e => { if (e.key === 'Enter') agregarNota(match) }}
-                          placeholder="Escribe una nota sobre esta cita (llamadas, preferencias, novedades)"
-                          style={{ flex: '1 1 260px', minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }} />
-                        <button type="button" onClick={() => agregarNota(match)} disabled={guardandoNota === match.id}
-                          style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#B8324F', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                          {guardandoNota === match.id ? 'Guardando...' : 'Agregar nota'}
-                        </button>
-                      </div>
-                    </div>
+                    {/* Chat de notas de la pareja */}
+                    <ChatNotas matchId={match.id} total={match.notas_total} API={API} token={token} />
                   </div>
 
                   {/* Acciones de CS */}
