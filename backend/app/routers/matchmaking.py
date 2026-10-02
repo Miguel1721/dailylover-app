@@ -5987,7 +5987,7 @@ def appointment_date_or_none(date_str: str):
              "octubre": 10, "noviembre": 11, "diciembre": 12}
     for nombre, num in meses.items():
         if nombre in s:
-            m_day = re.search(r"(\d{1,2})", s)
+            m_day = re.search(r"\b(\d{1,2})\b", s)
             if m_day and 1 <= int(m_day.group(1)) <= 31:
                 try:
                     return date(datetime.now().year, num, int(m_day.group(1)))
