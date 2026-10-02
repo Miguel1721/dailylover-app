@@ -3417,10 +3417,28 @@ class ProposeCandidateRequest(BaseModel):
     compatibility_verdict: Optional[str] = None
     analysis: Optional[Dict[str, Any]] = None
 
+async def _psicologa_proponente(db, user: dict) -> Optional[str]:
+    """Codigo de la psicologa que propone segun su cuenta (ANA, ISA, SILVI...). Administracion y Maria no cambian la psicologa de la fila."""
+    from app.routers.scheduling import hides_costs
+    if not user or user.get("is_client") or not hides_costs(user):
+        return None
+    from app.routers.shift_changes_api import my_staff_name, CODIGO_CITAS
+    from app.services.psychologist_helper import PSYCHOLOGIST_ALIASES, resolve_canonical_psychologist
+    staff = await my_staff_name(db, user)
+    if staff and staff.lower() in CODIGO_CITAS:
+        return CODIGO_CITAS[staff.lower()]
+    for tok in str(user.get("employee_name") or "").replace("(", " ").replace(")", " ").split():
+        c = resolve_canonical_psychologist(tok)
+        if c in PSYCHOLOGIST_ALIASES and c in ("ANA", "SILVI", "STEFFY", "JENN", "PIA", "ISA", "MAPE D"):
+            return c
+    return None
+
+
 @router.post("/matches/propose-candidate")
 @router.post("/propose-candidate")
 async def propose_candidate_to_maria(
     payload: ProposeCandidateRequest,
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -3461,13 +3479,23 @@ async def propose_candidate_to_maria(
 
     cand_name = payload.candidate_name.strip()
     notes = (payload.notes or "").strip()
-    obs = notes if notes else f"Propuesta clínica estructurada por {match_row.psychologist_name}"
+    # La propuesta queda a nombre de quien la hace (su cuenta), salvo que la fila ya sea de su cartera propia o heredada
+    proponente = await _psicologa_proponente(db, current_user)
+    psy_efectiva = match_row.psychologist_name
+    psy_nueva = None
+    if proponente:
+        propias = {a.upper() for a in get_psychologist_aliases(proponente)}
+        if (match_row.psychologist_name or "").strip().upper() not in propias:
+            psy_nueva = proponente
+            psy_efectiva = proponente
+    obs = notes if notes else f"Propuesta clínica estructurada por {psy_efectiva}"
 
     analysis_str = json.dumps(payload.analysis, default=str) if payload.analysis else None
 
     await db.execute(text("""
         UPDATE operational_matches
-        SET person_b = :pb,
+        SET psychologist_name = COALESCE(:psy, psychologist_name),
+            person_b = :pb,
             user_id_b = :ub,
             person_b_crm_id = :cid,
             status = :st,
@@ -3481,6 +3509,7 @@ async def propose_candidate_to_maria(
         WHERE id = :mid
     """), {
         "mid": payload.match_id,
+        "psy": psy_nueva,
         "st": "BORRADOR" if payload.borrador else "HECHO",
         "pb": cand_name,
         "ub": payload.candidate_user_id,
@@ -3492,7 +3521,7 @@ async def propose_candidate_to_maria(
     })
 
     if not payload.borrador:
-        det = f"Propuesta enviada a María por {match_row.psychologist_name}: {match_row.person_a} x {cand_name}."
+        det = f"Propuesta enviada a María por {psy_efectiva}: {match_row.person_a} x {cand_name}."
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": match_row.person_a, "mid": payload.match_id, "d": det})
         await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :mid, 'MATCH_PROPOSED', :d, NOW())"), {"n": cand_name, "mid": payload.match_id, "d": det})
 
