@@ -183,3 +183,36 @@ async def revisar_persona(db, user_id_a: int, motor, forzar: bool = False, gasta
         """), {"m": f.id, "u": str(user_id_a), "v": json.dumps(vistos_nuevo), "n": json.dumps(nuevos), "h": hay})
     await db.commit()
     return {"accion": accion, "motor_llamado": motor_llamado, "basicas": len(basicas), "nuevos": nuevos, "hay_nuevos": hay}
+
+
+# ---------------------------------------------------------------- IA sobre las candidatas nuevas (con tope diario)
+UMBRAL_MOTOR = 70          # solo se analiza con IA a quien el motor ya puntúa alto
+CANDIDATAS_POR_PERSONA = 2
+PUNTAJE_OCULTAR = 5.0      # si la IA da menos de 5/10 la candidata se oculta (queda en "ocultas por la IA")
+
+
+async def analizar_nuevas_con_ia(db, user_id_a: int, presupuesto: int) -> Dict[str, Any]:
+    """Para UNA persona: toma sus candidatas nuevas aún sin análisis, las más altas del motor (máx. 2), y las analiza con la IA.
+    Gasta como mucho `presupuesto` análisis. Devuelve cuántos se hicieron."""
+    from app.services.analisis_pareja import analizar_par_usuarios
+    filas = (await db.execute(text("SELECT match_id, nuevos FROM no_gente_vigilancia WHERE user_id_a = :u ORDER BY match_id"), {"u": str(user_id_a)})).fetchall()
+    if not filas or presupuesto <= 0:
+        return {"analizadas": 0}
+    nuevos = [x for x in _jl(filas[0].nuevos)]
+    pend = [c for c in nuevos if "ia" not in c and (c.get("score") is None or float(c.get("score") or 0) >= UMBRAL_MOTOR)]
+    pend.sort(key=lambda c: -(float(c.get("score") or 0)))
+    hechas = 0
+    for c in pend[:min(CANDIDATAS_POR_PERSONA, presupuesto)]:
+        try:
+            r = await analizar_par_usuarios(db, user_id_a, int(c["user_id"]))
+        except Exception as e:
+            c["ia_error"] = str(e)[:120]
+            continue
+        c["ia"] = {"puntaje": r.get("puntaje"), "veredicto": r.get("veredicto"), "resumen": (r.get("resumen") or "")[:600], "vetos": r.get("vetos") or [], "generado_en": r.get("generado_en")}
+        c["ocultar_por_ia"] = bool(r.get("puntaje") is not None and r["puntaje"] < PUNTAJE_OCULTAR)
+        hechas += 1
+    if hechas or any("ia_error" in c for c in nuevos):
+        for f in filas:
+            await db.execute(text("UPDATE no_gente_vigilancia SET nuevos = CAST(:n AS jsonb) WHERE match_id = :m"), {"n": json.dumps(nuevos), "m": f.match_id})
+        await db.commit()
+    return {"analizadas": hechas}

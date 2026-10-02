@@ -13,9 +13,10 @@ from sqlalchemy import text
 
 from app.database import AsyncSessionLocal as S
 from app.services.auth_service import create_access_token
-from app.services.no_hay_gente import revisar_persona
+from app.services.no_hay_gente import revisar_persona, analizar_nuevas_con_ia
 
 MOTOR_MAX = int(os.getenv("NOGENTE_MOTOR_MAX", os.getenv("NOGENTE_MAX", "60")))
+IA_MAX = int(os.getenv("NOGENTE_IA_MAX", "12"))          # analisis con IA por corrida (cada uno cuesta ~1 min y tokens)
 BASE = "http://localhost:8000/api/v1/matchmaking/candidate-matches-engine"
 
 
@@ -48,6 +49,7 @@ async def main():
         return lista(json.loads(urllib.request.urlopen(urllib.request.Request(url, headers=H), timeout=240).read().decode()))
 
     revisadas = con_nuevos = errores = sin_novedad = 0
+    ia_usadas = 0
     for uid in personas:
         try:
             async with S() as db:
@@ -57,6 +59,12 @@ async def main():
             print("error", uid, str(e)[:120])
             continue
         revisadas += 1
+        if ia_usadas < IA_MAX and r.get("nuevos"):
+            try:
+                async with S() as db:
+                    ia_usadas += (await analizar_nuevas_con_ia(db, uid, IA_MAX - ia_usadas))["analizadas"]
+            except Exception as e:
+                print("error IA", uid, str(e)[:120])
         if r.get("hay_nuevos"):
             con_nuevos += 1
             print("NUEVO", uid, [c["name"] for c in r["nuevos"]][-3:])
@@ -69,7 +77,7 @@ async def main():
                   AND UPPER(COALESCE(m.status, '')) LIKE '%NO HAY GENTE%' AND COALESCE(TRIM(m.person_b), '') = '')
         """))
         await db.commit()
-    print(f"{datetime.now():%Y-%m-%d %H:%M} personas={len(personas)} revisadas={revisadas} sin_gastar_motor={sin_novedad} consultas_al_motor={llamadas['n']} con_candidatas_nuevas={con_nuevos} errores={errores}")
+    print(f"{datetime.now():%Y-%m-%d %H:%M} personas={len(personas)} revisadas={revisadas} sin_gastar_motor={sin_novedad} consultas_al_motor={llamadas['n']} analisis_ia={ia_usadas} con_candidatas_nuevas={con_nuevos} errores={errores}")
 
 
 asyncio.run(main())

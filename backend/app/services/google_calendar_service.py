@@ -279,9 +279,11 @@ def create_third_party_vip_event(
     client_email: str,
     start_dt: datetime,
     end_dt: datetime,
-    client_phone: Optional[str] = None
+    client_phone: Optional[str] = None,
+    meeting_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
+    Con `meeting_url` la videollamada es la de Daily Lover (no se crea sala de Meet): el evento solo sirve de agenda e invitación.
     Crea la cita en el calendario de la cuenta ORGANIZADORA (info@dailylover.org, OAuth)
     e invita a María Salinas y al cliente VIP. Google genera la sala de Meet y envía las invitaciones oficiales.
 
@@ -297,6 +299,9 @@ def create_third_party_vip_event(
         f"• Teléfono: {client_phone or 'S/D'}\n\n"
         f"Esta reunión incluye sala oficial de Google Meet para la videollamada."
     )
+
+    if meeting_url:
+        description = description.replace("Esta reunión incluye sala oficial de Google Meet para la videollamada.", f"Videollamada de Daily Lover (entra con este enlace): {meeting_url}")
 
     if os.environ.get("DL_CALENDAR_MOCK") == "1":
         mock_meet = f"https://meet.google.com/dlv-{uuid.uuid4().hex[:4]}-{uuid.uuid4().hex[:3]}"
@@ -324,12 +329,12 @@ def create_third_party_vip_event(
                 {"email": OWNER_EMAIL, "displayName": "María Paula Salinas (Daily Lover)"},
                 {"email": client_email, "displayName": client_name},
             ],
-            "conferenceData": {
+            **({"location": meeting_url} if meeting_url else {"conferenceData": {
                 "createRequest": {
                     "requestId": f"dlvip-{uuid.uuid4().hex[:8]}",
                     "conferenceSolutionKey": {"type": "hangoutsMeet"},
                 }
-            },
+            }}),
             "reminders": {
                 "useDefault": False,
                 "overrides": [
@@ -346,7 +351,7 @@ def create_third_party_vip_event(
             sendUpdates="all",
         ).execute()
 
-        meet_link = created_event.get("hangoutLink") or ""
+        meet_link = meeting_url or created_event.get("hangoutLink") or ""
         if not meet_link:
             for ep in created_event.get("conferenceData", {}).get("entryPoints", []):
                 if ep.get("entryPointType") == "video":

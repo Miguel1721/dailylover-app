@@ -6,6 +6,7 @@ backend/app/data/prompt_analisis_pareja.md para poder editarlas sin tocar codigo
 """
 import asyncio
 import hashlib
+from datetime import datetime
 import json
 import os
 import re
@@ -398,3 +399,42 @@ async def adjuntar_analisis(db, items: List[Dict[str, Any]]) -> None:
         return
     for it in items:
         it["analisis_ia"] = por_id.get(it.get("id"))
+
+
+# ---------------------------------------------------------------- analisis de una pareja de PERSONAS (sin fila de match): candidatas nuevas de 'No hay gente'
+async def analizar_par_usuarios(db, user_a: int, user_b: int, regenerar: bool = False) -> Dict[str, Any]:
+    """Mismo método de María que `analizar_par`, pero para dos personas que todavía no son un match propuesto. Se guarda aparte (match_ia_analysis_pares)."""
+    await db.execute(text("""CREATE TABLE IF NOT EXISTS match_ia_analysis_pares (
+        user_a BIGINT NOT NULL, user_b BIGINT NOT NULL, analisis JSONB NOT NULL, modelo TEXT, entrada_hash TEXT, creado_en TIMESTAMPTZ DEFAULT NOW(), PRIMARY KEY (user_a, user_b))"""))
+    ua = (await db.execute(text("SELECT id, name, crm_id FROM users WHERE id = :u"), {"u": user_a})).fetchone()
+    ub = (await db.execute(text("SELECT id, name, crm_id FROM users WHERE id = :u"), {"u": user_b})).fetchone()
+    if not ua or not ub:
+        raise LookupError("persona no encontrada")
+    fa = (await db.execute(text("SELECT city, plan_tier FROM profiles WHERE user_id = :u"), {"u": user_a})).fetchone()
+    a = await _persona(db, ua.name, user_a, ua.crm_id, 0)
+    b = await _persona(db, ub.name, user_b, ub.crm_id, 0)
+    chequeos_objetivos = _chequeos(a["nombre"], a.pop("_raw"), b["nombre"], b.pop("_raw"))
+    ctx = {
+        "chequeos_objetivos": chequeos_objetivos,
+        "match": {"ciudad_registrada": fa.city if fa else None, "plan": fa.plan_tier if fa else None, "estado": "CANDIDATA NUEVA (todavia no propuesta)", "psicologa": None,
+                  "nota_de_la_psicologa_sobre_esta_propuesta": ""},
+        "persona_a": a, "persona_b": b,
+    }
+    entrada = json.dumps(ctx, ensure_ascii=False, sort_keys=True)
+    h = hashlib.sha1((entrada + MODEL).encode()).hexdigest()
+    if not regenerar:
+        c = (await db.execute(text("SELECT analisis, creado_en, modelo, entrada_hash FROM match_ia_analysis_pares WHERE user_a = :a AND user_b = :b"), {"a": user_a, "b": user_b})).fetchone()
+        if c and c.entrada_hash == h:
+            an = c.analisis if isinstance(c.analisis, dict) else json.loads(c.analisis)
+            return {**an, "generado_en": c.creado_en.strftime("%Y-%m-%d %H:%M") if c.creado_en else "", "modelo": c.modelo, "cache": True}
+    with open(PROMPT_PATH, encoding="utf-8") as f:
+        instrucciones = f.read()
+    prompt = instrucciones + "\n\n## Datos de la pareja a evaluar\n\n" + entrada + "\n\nDevuelve solo el JSON del formato de salida."
+    crudo, modelo_usado = await asyncio.to_thread(_llamar_ia, prompt)
+    res = _validar(crudo)
+    await db.execute(text("""
+        INSERT INTO match_ia_analysis_pares (user_a, user_b, analisis, modelo, entrada_hash, creado_en) VALUES (:a, :b, CAST(:an AS jsonb), :mo, :h, NOW())
+        ON CONFLICT (user_a, user_b) DO UPDATE SET analisis = CAST(:an AS jsonb), modelo = :mo, entrada_hash = :h, creado_en = NOW()
+    """), {"a": user_a, "b": user_b, "an": json.dumps(res, ensure_ascii=False), "mo": modelo_usado, "h": h})
+    await db.commit()
+    return {**res, "generado_en": datetime.now().strftime("%Y-%m-%d %H:%M"), "modelo": modelo_usado, "cache": False}

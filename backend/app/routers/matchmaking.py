@@ -3868,7 +3868,44 @@ async def nhg_revisar(payload: NHGRevisarRequest, current_user: dict = Depends(g
         return _lista_motor(await get_candidate_matches_engine_alias(client_id=str(uid), limit=8, response=None, force_refresh=True, current_user=current_user, db=db))
 
     r = await revisar_persona(db, payload.user_id_a, motor, forzar=False)
-    return {"status": "success", **{k: v for k, v in r.items() if k != "nuevos"}, "nuevos": r.get("nuevos", [])}
+    ia_hechas = 0
+    if r.get("nuevos"):
+        from app.services.no_hay_gente import analizar_nuevas_con_ia
+        try:
+            ia_hechas = (await analizar_nuevas_con_ia(db, payload.user_id_a, 3))["analizadas"]
+        except Exception as e:
+            logger.warning(f"IA en revisar no-hay-gente: {e}")
+        if ia_hechas:
+            r["nuevos"] = [dict(x) for x in (await db.execute(text("SELECT nuevos FROM no_gente_vigilancia WHERE user_id_a = :u LIMIT 1"), {"u": str(payload.user_id_a)})).scalar() or r["nuevos"]]
+    return {"status": "success", **{k: v for k, v in r.items() if k != "nuevos"}, "analisis_ia": ia_hechas, "nuevos": r.get("nuevos", [])}
+
+
+class NHGAnalizarRequest(BaseModel):
+    user_id_a: int
+    candidate_user_id: int
+
+
+@router.post("/matches/no-hay-gente/analizar")
+async def nhg_analizar(payload: NHGAnalizarRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Análisis con IA (método de María) de UNA candidata nueva, pedido por la psicóloga. Tarda cerca de un minuto."""
+    from app.services.analisis_pareja import analizar_par_usuarios
+    try:
+        r = await analizar_par_usuarios(db, payload.user_id_a, payload.candidate_user_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Persona no encontrada")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"No se pudo analizar: {str(e)[:120]}")
+    filas = (await db.execute(text("SELECT match_id, nuevos FROM no_gente_vigilancia WHERE user_id_a = :u"), {"u": str(payload.user_id_a)})).fetchall()
+    for f in filas:
+        lista = f.nuevos if isinstance(f.nuevos, list) else (json.loads(f.nuevos) if isinstance(f.nuevos, str) else [])
+        for c in lista:
+            if str(c.get("user_id")) == str(payload.candidate_user_id):
+                c["ia"] = {"puntaje": r.get("puntaje"), "veredicto": r.get("veredicto"), "resumen": (r.get("resumen") or "")[:600], "vetos": r.get("vetos") or [], "generado_en": r.get("generado_en")}
+                c["ocultar_por_ia"] = bool(r.get("puntaje") is not None and r["puntaje"] < 5.0)
+                c.pop("ia_error", None)
+        await db.execute(text("UPDATE no_gente_vigilancia SET nuevos = CAST(:n AS jsonb) WHERE match_id = :m"), {"n": json.dumps(lista), "m": f.match_id})
+    await db.commit()
+    return {"status": "success", "analisis": r}
 
 
 @router.post("/matches/no-hay-gente/descartar")
