@@ -51,7 +51,7 @@ export default function MiMesaPsicologa() {
   const [activeTab, setActiveTab] = useState('por_proponer') // 'por_proponer', 'en_revision', 'aprobados', 'rechazados'
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
-  const [data, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], summary: {} })
+  const [data, setData] = useState({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
   const [notification, setNotification] = useState('')
 
   // Panel "Proponer match"
@@ -83,12 +83,12 @@ export default function MiMesaPsicologa() {
     fetch(url, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(res => {
-        setData(res || { por_proponer: [], en_revision: [], aprobados: [], rechazados: [], summary: {} })
+        setData(res || { por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
         setLoading(false)
       })
       .catch(err => {
         console.error('Error cargando mesa de psicóloga:', err)
-        setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], summary: {} })
+        setData({ por_proponer: [], en_revision: [], aprobados: [], rechazados: [], troublemakers: [], summary: {} })
         setLoading(false)
       })
   }, [currentPsyc, searchTerm, token])
@@ -132,10 +132,16 @@ export default function MiMesaPsicologa() {
   // Persona B puesta a mano (URL del CRM o nombre) -> se envía a María igual que una candidata del motor
   const setMB = (id, patch) => setManualB(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }))
 
-  const buscarPersonaB = async (row) => {
-    const q = (manualB[row.id]?.text || '').trim()
+  const SLOT_ESTADO = {
+    rojo: { label: 'Not approved', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.10)' },
+    amarillo: { label: 'En proceso', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.10)' },
+    verde: { label: 'Listo para cita', color: '#10B981', bg: 'rgba(16, 185, 129, 0.10)' }
+  }
+
+  const buscarPersonaB = async (row, key) => {
+    const q = (manualB[key]?.text || '').trim()
     if (q.length < 3) return
-    setMB(row.id, { loading: true, error: '', found: null })
+    setMB(key, { loading: true, error: '', found: null })
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/resolve-profile`, {
         method: 'POST',
@@ -144,22 +150,23 @@ export default function MiMesaPsicologa() {
       })
       const d = await res.json().catch(() => ({}))
       if (res.ok && d.found && d.user_id) {
-        if (d.user_id === row.user_id_a) setMB(row.id, { loading: false, error: 'Esa es la misma persona que la Persona A.' })
-        else setMB(row.id, { loading: false, found: d })
+        if (d.user_id === row.user_id_a) setMB(key, { loading: false, error: 'Esa es la misma persona que la Persona A.' })
+        else if ((row.slots_detalle || []).some(s => s.user_id_b === d.user_id && s.estado !== 'rojo')) setMB(key, { loading: false, error: 'Esa persona ya está en otro slot de este cliente.' })
+        else setMB(key, { loading: false, found: d })
       } else if (res.ok && d.found) {
-        setMB(row.id, { loading: false, error: 'Esa persona no está registrada como usuaria del sistema.' })
+        setMB(key, { loading: false, error: 'Esa persona no está registrada como usuaria del sistema.' })
       } else {
-        setMB(row.id, { loading: false, error: 'No se encontró. Pega la URL del CRM o escribe el nombre completo.' })
+        setMB(key, { loading: false, error: 'No se encontró. Pega la URL del CRM o escribe el nombre completo.' })
       }
     } catch (e) {
-      setMB(row.id, { loading: false, error: 'Error de conexión.' })
+      setMB(key, { loading: false, error: 'Error de conexión.' })
     }
   }
 
-  const enviarPersonaB = async (row) => {
-    const f = manualB[row.id]?.found
+  const enviarPersonaB = async (row, key) => {
+    const f = manualB[key]?.found
     if (!f) return
-    setMB(row.id, { sending: true, error: '' })
+    setMB(key, { sending: true, error: '' })
     try {
       const res = await fetch(`${API}/api/v1/matchmaking/matches/propose-candidate`, {
         method: 'POST',
@@ -175,15 +182,14 @@ export default function MiMesaPsicologa() {
       if (res.ok) {
         setNotification(`Propuesta enviada a María: ${row.person_a} x ${f.name}`)
         setTimeout(() => setNotification(''), 6000)
-        setManualB(prev => { const n = { ...prev }; delete n[row.id]; return n })
+        setManualB(prev => { const n = { ...prev }; delete n[key]; return n })
         fetchMesa()
-        setActiveTab('en_revision')
       } else {
         const err = await res.json().catch(() => ({}))
-        setMB(row.id, { sending: false, error: err.detail || 'No se pudo enviar la propuesta.' })
+        setMB(key, { sending: false, error: err.detail || 'No se pudo enviar la propuesta.' })
       }
     } catch (e) {
-      setMB(row.id, { sending: false, error: 'Error de conexión.' })
+      setMB(key, { sending: false, error: 'Error de conexión.' })
     }
   }
 
@@ -549,6 +555,37 @@ export default function MiMesaPsicologa() {
             {data.rechazados?.length || 0}
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('troublemakers')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            border: activeTab === 'troublemakers' ? '1.5px solid #8B5CF6' : '1px solid var(--border-color)',
+            background: activeTab === 'troublemakers' ? 'rgba(139, 92, 246, 0.15)' : 'var(--bg-card)',
+            color: activeTab === 'troublemakers' ? '#FFFFFF' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            transition: 'all 0.15s'
+          }}
+        >
+          <span>Troublemakers</span>
+          <span style={{
+            background: activeTab === 'troublemakers' ? '#8B5CF6' : 'rgba(255,255,255,0.08)',
+            color: '#FFFFFF',
+            padding: '2px 8px',
+            borderRadius: 20,
+            fontSize: 11,
+            fontWeight: 800
+          }}>
+            {data.troublemakers?.length || 0}
+          </span>
+        </button>
       </div>
 
       {/* CONTENIDO DE BANDEJAS */}
@@ -673,51 +710,69 @@ export default function MiMesaPsicologa() {
                             </span>
                           </div>
 
-                          {/* Slots del plan */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                          {/* Lista de slots del plan: llenos bloqueados con color, libres con campo para la Persona B */}
+                          <div style={{ marginTop: 12, maxWidth: 700 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
                               {row.slots_total ? `Slots del plan: ${row.slots_total} (${row.slots_libres} libres)` : 'Slots: por confirmar'}
-                            </span>
-                            {Array.from({ length: Math.min(row.slots_libres || 0, 8) }).map((_, i) => (
-                              <span key={i} style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, border: '1px dashed #B8324F', color: '#B8324F' }}>
-                                Slot {i + 1}
-                              </span>
-                            ))}
-                          </div>
-
-                          {/* Persona B a mano */}
-                          <div style={{ marginTop: 10 }}>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                              <input
-                                type="text"
-                                value={manualB[row.id]?.text || ''}
-                                onChange={(e) => setMB(row.id, { text: e.target.value, found: null, error: '' })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') buscarPersonaB(row) }}
-                                placeholder="Persona B a mano: pega la URL del CRM o escribe el nombre"
-                                style={{ flex: '1 1 280px', minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }}
-                              />
-                              <button type="button" onClick={() => buscarPersonaB(row)} disabled={manualB[row.id]?.loading}
-                                style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                                {manualB[row.id]?.loading ? 'Buscando...' : 'Buscar'}
-                              </button>
                             </div>
-                            {manualB[row.id]?.error && (
-                              <div style={{ marginTop: 6, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{manualB[row.id].error}</div>
-                            )}
-                            {manualB[row.id]?.found && (
-                              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
-                                <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
-                                  <b>{manualB[row.id].found.name}</b>
-                                  {manualB[row.id].found.age ? ` · ${manualB[row.id].found.age} años` : ''}
-                                  {manualB[row.id].found.city ? ` · ${manualB[row.id].found.city}` : ''}
-                                  {manualB[row.id].found.plan_tier ? ` · ${manualB[row.id].found.plan_tier}` : ''}
-                                </span>
-                                <button type="button" onClick={() => enviarPersonaB(row)} disabled={manualB[row.id]?.sending}
-                                  style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                                  {manualB[row.id]?.sending ? 'Enviando...' : 'Enviar a María'}
-                                </button>
-                              </div>
-                            )}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {(row.slots_detalle || []).map((sl, i) => {
+                                const est = SLOT_ESTADO[sl.estado] || SLOT_ESTADO.amarillo
+                                return (
+                                  <div key={sl.match_id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 10px', borderRadius: 8, background: est.bg, border: `1px solid ${est.color}55`, borderLeft: `4px solid ${est.color}` }}>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: est.color, minWidth: 46 }}>Slot {i + 1}</span>
+                                    <UserAvatar url={sl.person_b_photo_url} name={sl.person_b} size={26} />
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', flex: '1 1 160px' }}>
+                                      {sl.person_b}{sl.person_b_age ? ` · ${sl.person_b_age} años` : ''}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20, background: est.color, color: '#fff' }}>{est.label}</span>
+                                    {sl.estado === 'rojo' && sl.motivo && (
+                                      <span style={{ flexBasis: '100%', fontSize: 12, color: est.color, fontWeight: 600 }}>{sl.motivo}</span>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                              {Array.from({ length: row.slots_libres || 0 }).map((_, k) => {
+                                const key = `${row.id}:${k}`
+                                const mb = manualB[key] || {}
+                                return (
+                                  <div key={key} style={{ padding: '7px 10px', borderRadius: 8, border: '1px dashed var(--border-color)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', minWidth: 46 }}>Slot {(row.slots_detalle || []).length + k + 1}</span>
+                                      <input
+                                        type="text"
+                                        value={mb.text || ''}
+                                        onChange={(e) => setMB(key, { text: e.target.value, found: null, error: '' })}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') buscarPersonaB(row, key) }}
+                                        placeholder="Pega la URL del CRM o escribe el nombre de la Persona B"
+                                        style={{ flex: '1 1 240px', minWidth: 0, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }}
+                                      />
+                                      <button type="button" onClick={() => buscarPersonaB(row, key)} disabled={mb.loading}
+                                        style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                        {mb.loading ? 'Buscando...' : 'Buscar'}
+                                      </button>
+                                    </div>
+                                    {mb.error && (
+                                      <div style={{ marginTop: 6, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{mb.error}</div>
+                                    )}
+                                    {mb.found && (
+                                      <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                                        <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>
+                                          <b>{mb.found.name}</b>
+                                          {mb.found.age ? ` · ${mb.found.age} años` : ''}
+                                          {mb.found.city ? ` · ${mb.found.city}` : ''}
+                                          {mb.found.plan_tier ? ` · ${mb.found.plan_tier}` : ''}
+                                        </span>
+                                        <button type="button" onClick={() => enviarPersonaB(row, key)} disabled={mb.sending}
+                                          style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                                          {mb.sending ? 'Enviando...' : 'Enviar a María'}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
                           </div>
 
                           {/* Motivo de rechazo de María visible */}
@@ -885,6 +940,62 @@ export default function MiMesaPsicologa() {
                           <span style={{ color: '#EF4444', fontWeight: 800 }}>con</span>
                           <UserAvatar url={row.person_b_photo_url} name={row.person_b || '?'} size={40} />
                           <span style={{ fontSize: 14, fontWeight: 800, color: '#EF4444' }}>{row.person_b || 'Sin candidata registrada'}</span>
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                          {row.status} · {row.fecha_creacion}{row.is_inherited && row.inherited_from ? ' · heredada de ' + row.inherited_from : ''}
+                        </div>
+                        {(row.rejection_reason || row.observations) && (
+                          <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: 760 }}>
+                            {(row.rejection_reason || row.observations || '').slice(0, 400)}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                      <button type="button" onClick={() => handleOpenProponer(row)} style={{ background: '#B8324F', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                        Proponer otro match
+                      </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'troublemakers' && (
+            <div>
+              <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                Matches que María aprobó pero Servicio al Cliente rechazó.
+              </p>
+              {(data.troublemakers || []).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 60, background: 'var(--bg-card)', borderRadius: 14 }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>No hay troublemakers en esta vista</h3>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {data.troublemakers.map(row => (
+                    <div
+                      key={row.id}
+                      style={{
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-color)',
+                        borderLeft: '4px solid #8B5CF6',
+                        borderRadius: 14,
+                        padding: 18,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 16
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 280 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={40} />
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>
+                          <span style={{ color: '#8B5CF6', fontWeight: 800 }}>con</span>
+                          <UserAvatar url={row.person_b_photo_url} name={row.person_b || '?'} size={40} />
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#8B5CF6' }}>{row.person_b || 'Sin candidata registrada'}</span>
                         </div>
                         <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
                           {row.status} · {row.fecha_creacion}{row.is_inherited && row.inherited_from ? ' · heredada de ' + row.inherited_from : ''}

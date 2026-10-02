@@ -3149,6 +3149,30 @@ async def propose_candidate_to_maria(
     if not match_row:
         raise HTTPException(status_code=404, detail="Fila de match no encontrada")
 
+    # Slots bloqueados: si la fila ya tiene Persona B, no se sobrescribe; se crea un slot nuevo (fila nueva)
+    cur = (await db.execute(text("SELECT person_b, user_id_a FROM operational_matches WHERE id = :m"), {"m": payload.match_id})).fetchone()
+    if cur and (cur.person_b or "").strip() and (cur.person_b or "").strip().lower() not in ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null"):
+        if cur.user_id_a and payload.candidate_user_id:
+            dup = (await db.execute(text("""
+                SELECT 1 FROM operational_matches
+                WHERE user_id_a = :ua AND user_id_b = :ub
+                  AND UPPER(COALESCE(status, '')) NOT IN ('NOT APPROVED', 'NO ACCEPT')
+                  AND UPPER(COALESCE(status, '')) NOT LIKE 'RECHAZADO%'
+                  AND UPPER(COALESCE(status, '')) NOT LIKE '%TROUBLE%'
+                LIMIT 1
+            """), {"ua": cur.user_id_a, "ub": payload.candidate_user_id})).fetchone()
+            if dup:
+                raise HTTPException(status_code=409, detail="Esa persona ya está en un slot de este cliente.")
+        new_id = (await db.execute(text("""
+            INSERT INTO operational_matches (person_a, user_id_a, person_a_crm_id, psychologist_name, city, plan_tier, slot_number, status, approved_by_maria, created_at, updated_at)
+            SELECT o.person_a, o.user_id_a, o.person_a_crm_id, o.psychologist_name, o.city, o.plan_tier,
+                   COALESCE((SELECT MAX(x.slot_number) FROM operational_matches x WHERE x.user_id_a = o.user_id_a), 0) + 1,
+                   'PENDIENTE', false, NOW(), NOW()
+            FROM operational_matches o WHERE o.id = :m
+            RETURNING id
+        """), {"m": payload.match_id})).scalar()
+        payload.match_id = new_id
+
     cand_name = payload.candidate_name.strip()
     notes = (payload.notes or "").strip()
     obs = notes if notes else f"Propuesta clínica estructurada por {match_row.psychologist_name}"
@@ -3279,6 +3303,7 @@ async def get_mesa_psicologa(
     en_revision = []
     aprobados = []
     por_proponer = []
+    troublemakers = []   # aprobados por María pero rechazados por Servicio al Cliente
     rechazados = []   # propuestas que María no aprobó (NOT APPROVED / rechazos): la psicóloga las ve para rehacerlas
 
     clients_in_revision = set()
@@ -3379,6 +3404,11 @@ async def get_mesa_psicologa(
         if (not app_maria) and ("NOT APPROVED" in st or st == "NO ACCEPT" or st.startswith("RECHAZADO")):
             rechazados.append(item)
 
+        # Troublemakers: María aprobó, Servicio al Cliente rechazó -> bandeja propia
+        if app_maria and "TROUBLE" in st:
+            troublemakers.append(item)
+            continue
+
         # Aprobados: María o estados confirmados de cita
         if app_maria or st in ("APROBADO", "AGENDADO", "CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA"):
             aprobados.append(item)
@@ -3400,10 +3430,7 @@ async def get_mesa_psicologa(
 
     # 2. Por proponer: BANDEJA POR CLIENTE (deduplicada)
     for cli_k, c_rows in rows_by_client.items():
-        if cli_k in clients_in_revision:
-            continue
-        if cli_k in clients_with_pending_date:
-            continue
+        _ocupado = (cli_k in clients_in_revision) or (cli_k in clients_with_pending_date)
 
         latest_r = c_rows[0]
         if is_invalid_person_a(latest_r.get("person_a")):
@@ -3496,12 +3523,53 @@ async def get_mesa_psicologa(
             "feedback_ella": latest_r.get("feedback_ella"),
             "feedback_el": latest_r.get("feedback_el")
         }
+        # Lista de slots: una entrada por Persona B ya propuesta (bloqueada) con su estado de color
+        _det = []
+        for _r in sorted(c_rows, key=lambda x: x.get("id") or 0):
+            _pb = (_r.get("person_b") or "").strip()
+            if not _pb or _pb.lower() in ("por definir", "se envía mns", "se envia mns", "pendiente", "none", "null"):
+                continue
+            _st = (_r.get("status") or "").upper().strip()
+            _ob = _r.get("observations") or ""
+            if _st in ("NOT APPROVED", "NO ACCEPT", "RECHAZADO") or _st.startswith("RECHAZADO") or "DEVUELTO MARÍA" in _ob or "Rechazado por María" in _ob:
+                _est = "rojo"
+                _mot = _ob.replace("[DEVUELTO MARÍA]", "").strip()
+            elif "TROUBLE" in _st:
+                _est = "rojo"
+                _mot = "Rechazado por Servicio al Cliente"
+            elif _r.get("approved_by_maria") or _st in ("APROBADO", "AGENDADO", "CITA PROGRAMADA", "CITA REALIZADA", "CITA COMPLETADA"):
+                _est = "verde"
+                _mot = ""
+            else:
+                _est = "amarillo"
+                _mot = ""
+            _det.append({
+                "match_id": _r.get("id"),
+                "person_b": _pb,
+                "user_id_b": _r.get("user_id_b"),
+                "person_b_crm_id": _r.get("person_b_crm_id") or "",
+                "person_b_photo_url": _r.get("person_b_photo_url") or "",
+                "person_b_age": _r.get("person_b_age"),
+                "estado": _est,
+                "status": _r.get("status"),
+                "motivo": _mot[:300],
+                "compatibility_score": _r.get("compatibility_score"),
+            })
+        _ts = item["slots_total"]
+        if _ts:
+            _noroj = sum(1 for _x in _det if _x["estado"] != "rojo")
+            item["slots_total"] = _ts + (len(_det) - _noroj)
+            item["slots_libres"] = max(0, _ts - _noroj)
+        item["slots_detalle"] = _det
+        if _ocupado and not ((item["slots_libres"] or 0) > 0):
+            continue
         por_proponer.append(item)
 
     por_proponer.sort(key=lambda x: (x["dias_esperando"] if x["dias_esperando"] is not None else -1, x["id"]), reverse=True)
     en_revision.sort(key=lambda x: x["id"], reverse=True)
     aprobados.sort(key=lambda x: x["id"], reverse=True)
     rechazados.sort(key=lambda x: x["id"], reverse=True)
+    troublemakers.sort(key=lambda x: x["id"], reverse=True)
 
     return {
         "psychologist": canonical_psyc,
@@ -3509,7 +3577,9 @@ async def get_mesa_psicologa(
         "en_revision": en_revision,
         "aprobados": aprobados,
         "rechazados": rechazados,
+        "troublemakers": troublemakers,
         "summary": {
+            "total_troublemakers": len(troublemakers),
             "total_rechazados": len(rechazados),
             "total_por_proponer": len(por_proponer),
             "total_en_revision": len(en_revision),
