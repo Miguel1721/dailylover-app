@@ -3684,7 +3684,8 @@ async def get_mesa_psicologa(
         # El cliente permanece en "Por proponer" mientras tenga slots libres o borradores sin enviar;
         # desaparece solo cuando el check ya envió todo a María.
         _borr = sum(1 for _x in _det if (_x.get("status") or "").upper() == "BORRADOR")
-        if _borr == 0 and (_agotado or (_ocupado and not ((item["slots_libres"] or 0) > 0))):
+        _ng = sum(1 for _x in _det if _x.get("estado") == "nogente")
+        if _borr == 0 and _ng == 0 and (_agotado or (_ocupado and not ((item["slots_libres"] or 0) > 0))):
             continue
         por_proponer.append(item)
 
