@@ -66,7 +66,7 @@ def segmentos_de(alt, desfase: float, t_ini: float, t_fin: float):
     txt = alt.transcript.strip()
     if not txt:
         return []
-    frases = [f.strip() for f in re.split(r"(?<=[.?!])\s+", txt) if f.strip()]
+    frases = [f.strip() for f in re.split(r"(?<=[.?!])\s+|(?<=[.?!])(?=¿)", txt) if f.strip()]
     unidas = []
     for f in frases:
         if unidas and len(f) < 12:          # un fragmento muy corto se une a la frase anterior
