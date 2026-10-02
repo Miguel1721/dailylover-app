@@ -3715,7 +3715,7 @@ async def get_mesa_psicologa(
     _sg = {}
     if _uids:
         try:
-            for _x in (await db.execute(text("SELECT user_id, field_id, value FROM crm_profile_fields WHERE field_id IN ('prof_248', 'pref_69', 'pref_60') AND user_id = ANY(:u)"), {"u": list(_uids)})).fetchall():
+            for _x in (await db.execute(text("SELECT user_id, field_id, value FROM crm_profile_fields WHERE field_id IN ('prof_248', 'pref_69', 'pref_60', 'prof_203', 'prof_197', 'prof_226') AND user_id = ANY(:u)"), {"u": list(_uids)})).fetchall():
                 _v = _x.value
                 if isinstance(_v, str):
                     try:
@@ -3726,8 +3726,12 @@ async def get_mesa_psicologa(
                     _t = str(_v.get("choice_label") or _v.get("choice") or "")
                 elif isinstance(_v, list):
                     _t = ", ".join(str(_e.get("label") or _e.get("choice")) for _e in _v if isinstance(_e, dict))
+                elif isinstance(_v, (int, float)):
+                    _t = (f"{_v / 1000:.2f} m".replace(".", ",")) if _x.field_id == "prof_203" else str(_v)
                 else:
                     _t = ""
+                if _x.field_id == "prof_226":
+                    _t = {"Left": "Izquierda", "Moderate left": "Centro-izquierda", "Center": "Centro", "Moderate right": "Centro-derecha", "Right": "Derecha"}.get(_t, _t)
                 _sg.setdefault(_x.user_id, {})[_x.field_id] = _t
         except Exception:
             await db.rollback()
@@ -3737,6 +3741,9 @@ async def get_mesa_psicologa(
             _it["person_%s_social_group" % _lado] = _d.get("prof_248", "")
             _it["person_%s_social_pref" % _lado] = _d.get("pref_69", "")
             _it["person_%s_nivel_match" % _lado] = _d.get("pref_60", "")
+            _it["person_%s_estatura" % _lado] = _d.get("prof_203", "")
+            _it["person_%s_religion" % _lado] = _d.get("prof_197", "")
+            _it["person_%s_politica" % _lado] = _d.get("prof_226", "")
 
     return {
         "psychologist": canonical_psyc,

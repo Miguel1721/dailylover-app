@@ -193,11 +193,22 @@ export default function MiMesaPsicologa() {
     }
   }
 
-  const sgChip = (sg, pref, nivel) => (
-    <span title="Social Group del CRM: el de la persona, el que busca y el nivel social del match" style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(124, 58, 237, 0.12)', color: sg ? '#7C3AED' : 'var(--text-muted)', border: '1px solid rgba(124, 58, 237, 0.3)', whiteSpace: 'nowrap' }}>
-      {sg ? `Social Group ${sg}` : 'Social Group: sin dato'}{pref ? ` · busca ${pref}` : ''}{nivel ? ` · ${nivel}` : ''}
+  const sgChip = (sg) => (
+    <span title="Social Group del CRM" style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(124, 58, 237, 0.12)', color: sg ? '#7C3AED' : 'var(--text-muted)', border: '1px solid rgba(124, 58, 237, 0.3)', whiteSpace: 'nowrap' }}>
+      {sg ? `Social Group ${sg}` : 'Social Group: sin dato'}
     </span>
   )
+
+  // Estatura, religión y política de la persona (CRM)
+  const extrasChip = (est, rel, pol) => {
+    const partes = [est ? `Estatura ${est}` : '', rel ? `Religión ${rel}` : '', pol ? `Política ${pol}` : ''].filter(Boolean)
+    if (!partes.length) return null
+    return (
+      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)' }}>
+        {partes.join(' · ')}
+      </span>
+    )
+  }
 
   const esFilaNG = (row) => (row.status || '').toUpperCase().includes('NO HAY GENTE')
 
@@ -906,7 +917,7 @@ export default function MiMesaPsicologa() {
                             }}>
                               Plan: {row.plan_tier || 'Estándar'}
                             </span>
-                            {sgChip(row.person_a_social_group, row.person_a_social_pref, row.person_a_nivel_match)}
+                            {sgChip(row.person_a_social_group)}{extrasChip(row.person_a_estatura, row.person_a_religion, row.person_a_politica)}
 
                             <span style={{
                               fontSize: 11,
@@ -1106,14 +1117,14 @@ export default function MiMesaPsicologa() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 280 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={42} />
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group, row.person_a_social_pref)}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group)}{extrasChip(row.person_a_estatura, row.person_a_religion, row.person_a_politica)}
                         </div>
 
                         <div style={{ color: '#B8324F', fontWeight: 800 }}>VS</div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <UserAvatar url={row.person_b_photo_url} name={row.person_b} size={42} bg="linear-gradient(135deg, #065f46, #10b981)" />
-                          <span style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>{row.person_b}</span>{sgChip(row.person_b_social_group, row.person_b_social_pref)}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>{row.person_b}</span>{sgChip(row.person_b_social_group)}{extrasChip(row.person_b_estatura, row.person_b_religion, row.person_b_politica)}
                         </div>
                       </div>
 
@@ -1184,7 +1195,7 @@ export default function MiMesaPsicologa() {
                       <div style={{ flex: 1, minWidth: 280 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                           <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={40} />
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group, row.person_a_social_pref)}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group)}{extrasChip(row.person_a_estatura, row.person_a_religion, row.person_a_politica)}
                           <span style={{ color: '#EF4444', fontWeight: 800 }}>con</span>
                           <UserAvatar url={row.person_b_photo_url} name={row.person_b || '?'} size={40} />
                           <span style={{ fontSize: 14, fontWeight: 800, color: '#EF4444' }}>{row.person_b || 'Sin candidata registrada'}</span>
@@ -1246,7 +1257,7 @@ export default function MiMesaPsicologa() {
                       <div style={{ flex: 1, minWidth: 280 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                           <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={40} />
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group, row.person_a_social_pref)}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group)}{extrasChip(row.person_a_estatura, row.person_a_religion, row.person_a_politica)}
                           <span style={{ color: '#8B5CF6', fontWeight: 800 }}>con</span>
                           <UserAvatar url={row.person_b_photo_url} name={row.person_b || '?'} size={40} />
                           <span style={{ fontSize: 14, fontWeight: 800, color: '#8B5CF6' }}>{row.person_b || 'Sin candidata registrada'}</span>
@@ -1299,14 +1310,14 @@ export default function MiMesaPsicologa() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 280 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <UserAvatar url={row.person_a_photo_url} name={row.person_a} size={42} />
-                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group, row.person_a_social_pref)}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{row.person_a}</span>{sgChip(row.person_a_social_group)}{extrasChip(row.person_a_estatura, row.person_a_religion, row.person_a_politica)}
                         </div>
 
                         <div style={{ color: '#10B981', fontWeight: 800 }}>♥</div>
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                           <UserAvatar url={row.person_b_photo_url} name={row.person_b} size={42} bg="linear-gradient(135deg, #065f46, #10b981)" />
-                          <span style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>{row.person_b}</span>{sgChip(row.person_b_social_group, row.person_b_social_pref)}
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#10B981' }}>{row.person_b}</span>{sgChip(row.person_b_social_group)}{extrasChip(row.person_b_estatura, row.person_b_religion, row.person_b_politica)}
                         </div>
                       </div>
 
