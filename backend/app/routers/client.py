@@ -565,6 +565,8 @@ class VipBookingConfirmRequest(BaseModel):
     token: str
     slot_iso: str
     notes: Optional[str] = ""
+    name: Optional[str] = None    # la clienta puede corregir su nombre y correo en la pantalla de datos
+    email: Optional[str] = None
 
 
 VIP_TOKEN_MAX_AGE_DAYS = 14
@@ -698,7 +700,7 @@ async def get_vip_available_slots(
     """
     info = await _resolve_vip_token(db, token)
     already = await _existing_vip_booking(db, info["token"])
-    base = {"status": "success", "client_name": info["client_name"], "first_name": info["first_name"], "timezone": "America/Bogota"}
+    base = {"status": "success", "client_name": info["client_name"], "first_name": info["first_name"], "client_email": info["client_email"], "timezone": "America/Bogota"}
     if already:
         return {**base, "already_booked": already, "days": []}
 
@@ -746,8 +748,9 @@ async def confirm_vip_booking(
     if start_dt.isoformat() not in {s["slot_iso"] for s in free}:
         raise HTTPException(status_code=409, detail="Ese horario ya no está disponible. Por favor elige otro.")
 
-    client_name = info["client_name"]
-    client_email = info["client_email"]
+    client_name = (req.name or "").strip() or info["client_name"]
+    _em = (req.email or "").strip()
+    client_email = _em if (_em and re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", _em)) else info["client_email"]
     client_phone = info["client_phone"]
     end_dt = start_dt + timedelta(minutes=30)
     time_str = start_dt.strftime("%H:%M")

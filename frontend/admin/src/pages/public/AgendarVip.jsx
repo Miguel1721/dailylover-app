@@ -5,6 +5,9 @@ const API = (typeof window !== 'undefined' && (window.location.origin.includes('
   ? window.location.origin
   : 'https://daily-lover.agentesia.cloud'
 
+// Despues de agendar, la persona llena su formulario en el CRM
+const CRM_FORM_URL = 'https://dailylover.smartmatchapp.com/sf65'
+
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
@@ -44,6 +47,16 @@ const css = `
 .av-err{background:rgba(220,60,60,.12);border-left:4px solid #dc3c3c;padding:12px 14px;border-radius:8px;margin:14px 0;font-size:14px}
 .av-center{text-align:center;padding:30px 0}
 .av-foot{font-size:12px;color:#7A6A6D;text-align:center;margin-top:24px}
+.av-det{display:grid;grid-template-columns:1fr 1.3fr;gap:28px}
+.av-det-left{border-right:1px solid rgba(212,175,55,.2);padding-right:24px}
+@media(max-width:720px){.av-det{grid-template-columns:1fr}.av-det-left{border-right:none;padding-right:0;border-bottom:1px solid rgba(212,175,55,.2);padding-bottom:16px}}
+.av-back{background:transparent;border:1px solid rgba(212,175,55,.4);color:#D4AF37;border-radius:50%;width:38px;height:38px;font-size:18px;cursor:pointer;margin-bottom:14px}
+.av-muted{font-size:13px;color:#C5B083}
+.av-meta{font-size:14px;color:#E5DFE1;margin:8px 0;line-height:1.5}
+.av-label{display:block;font-size:13px;font-weight:700;margin:14px 0 6px}
+.av-input,.av-area{width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);border:1px solid rgba(212,175,55,.4);color:#F5F0F1;border-radius:8px;padding:12px;font-size:15px;font-family:inherit}
+.av-area{min-height:90px;resize:vertical}
+.av-fine{font-size:12px;color:#9A8A8D;margin:14px 0}
 `
 
 function Shell({ children }) {
@@ -52,7 +65,7 @@ function Shell({ children }) {
       <style>{css}</style>
       <div className="av-card">
         <div className="av-head">
-          <div className="av-badge">💎 MATCHMAKING SERVICE</div>
+          <div className="av-badge">MATCHMAKING SERVICE</div>
           <div className="av-logo">DAILY LOVER</div>
           <div className="av-sub">3 citas curadas en 90 días · Una sola matchmaker asignada a ti: María Paula Salinas</div>
         </div>
@@ -80,6 +93,11 @@ export default function AgendarVip() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
   const [done, setDone] = useState(null)
+  const [step, setStep] = useState('pick')   // pick: elegir hora | details: nombre, correo y notas
+  const [fName, setFName] = useState('')
+  const [fEmail, setFEmail] = useState('')
+  const [fNotes, setFNotes] = useState('')
+  const [countdown, setCountdown] = useState(0)
 
   const loadSlots = () => {
     if (!token) {
@@ -95,6 +113,8 @@ export default function AgendarVip() {
       })
       .then((d) => {
         setFirstName(d.first_name || '')
+        setFName((prev) => prev || d.client_name || '')
+        setFEmail((prev) => prev || d.client_email || '')
         if (d.already_booked) {
           setAlready(d.already_booked)
           setState('booked')
@@ -118,6 +138,22 @@ export default function AgendarVip() {
     loadSlots()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
+
+  useEffect(() => {
+    if (state !== 'done') return undefined
+    setCountdown(12)
+    const t = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(t)
+          window.location.href = CRM_FORM_URL
+          return 0
+        }
+        return c - 1
+      })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [state])
 
   const byDate = useMemo(() => {
     const map = {}
@@ -154,18 +190,23 @@ export default function AgendarVip() {
 
   const confirm = async () => {
     if (!selSlot) return
+    if (!fName.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fEmail.trim())) {
+      setFormError('Escribe tu nombre y un correo válido.')
+      return
+    }
     setSaving(true)
     setFormError('')
     try {
       const r = await fetch(`${API}/api/v1/client/vip-booking/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, slot_iso: selSlot.slot_iso }),
+        body: JSON.stringify({ token, slot_iso: selSlot.slot_iso, name: fName.trim(), email: fEmail.trim(), notes: fNotes.trim() }),
       })
       const d = await r.json().catch(() => ({}))
       if (r.status === 409 && /ya no está disponible/i.test(d.detail || '')) {
         setFormError(d.detail)
         setSelSlot(null)
+        setStep('pick')
         await loadSlots()
         setSaving(false)
         return
@@ -200,14 +241,18 @@ export default function AgendarVip() {
   if (state === 'booked' && already) {
     return (
       <Shell>
-        <h2 className="av-title">Tu entrevista ya está agendada ✅</h2>
+        <h2 className="av-title">Tu entrevista ya está agendada </h2>
         <div className="av-box">
-          📅 <strong>{already.display_date}</strong><br />
+          <strong>{already.display_date}</strong><br />
           ⏰ <strong>{already.display_time}</strong> (Hora Colombia)
         </div>
         {already.meet_link
-          ? <div style={{ textAlign: 'center' }}><a className="av-link" href={already.meet_link} target="_blank" rel="noreferrer">📹 Entrar a Google Meet</a></div>
+          ? <div style={{ textAlign: 'center' }}><a className="av-link" href={already.meet_link} target="_blank" rel="noreferrer">Entrar a Google Meet</a></div>
           : <p className="av-text">Te enviaremos la invitación con el enlace de la videollamada a tu correo.</p>}
+        <div className="av-box" style={{ marginTop: 20 }}>
+          <strong>Falta tu formulario.</strong> Si aún no lo has llenado, complétalo para que preparemos tu entrevista y tus matches.
+        </div>
+        <div style={{ textAlign: 'center' }}><a className="av-link" href={CRM_FORM_URL}>Completar mi formulario</a></div>
       </Shell>
     )
   }
@@ -215,16 +260,16 @@ export default function AgendarVip() {
   if (state === 'done' && done) {
     return (
       <Shell>
-        <h2 className="av-title">¡Listo{firstName ? `, ${firstName}` : ''}! Tu entrevista está confirmada 🎉</h2>
+        <h2 className="av-title">¡Listo{firstName ? `, ${firstName}` : ''}! Tu entrevista está confirmada </h2>
         <div className="av-box">
-          📅 <strong>{done.display_date}</strong><br />
+          <strong>{done.display_date}</strong><br />
           ⏰ <strong>{done.display_time}</strong> (Hora Colombia)<br />
-          💻 Videollamada Google Meet · 30 minutos con María Paula Salinas
+          Videollamada Google Meet · 30 minutos con María Paula Salinas
         </div>
         {done.meet_link ? (
           <>
             <div style={{ textAlign: 'center', margin: '18px 0' }}>
-              <a className="av-link" href={done.meet_link} target="_blank" rel="noreferrer">📹 Enlace de Google Meet</a>
+              <a className="av-link" href={done.meet_link} target="_blank" rel="noreferrer">Enlace de Google Meet</a>
             </div>
             <p className="av-text" style={{ textAlign: 'center' }}>
               También te enviamos la invitación oficial a tu Google Calendar y un correo de confirmación.
@@ -233,6 +278,12 @@ export default function AgendarVip() {
         ) : (
           <p className="av-text">Tu horario quedó reservado. En breve te enviaremos la invitación con el enlace de la videollamada a tu correo.</p>
         )}
+        <div className="av-box" style={{ marginTop: 20 }}>
+          <strong>Último paso: completa tu formulario.</strong><br />
+          Lo necesitamos para preparar tu entrevista y buscar tus matches.
+          {countdown > 0 ? ` Te llevamos automáticamente en ${countdown} segundos.` : ''}
+        </div>
+        <div style={{ textAlign: 'center' }}><a className="av-link" href={CRM_FORM_URL}>Completar mi formulario</a></div>
       </Shell>
     )
   }
@@ -240,6 +291,39 @@ export default function AgendarVip() {
   // state === 'ready'
   const dayInfo = selDate ? byDate[selDate] : null
   const selLabel = dayInfo && selSlot ? `${dayInfo.display_date} · ${selSlot.display_time}` : ''
+
+  if (step === 'details' && selSlot && dayInfo) {
+    return (
+      <Shell>
+        <div className="av-det">
+          <div className="av-det-left">
+            <button className="av-back" onClick={() => { setStep('pick'); setFormError('') }} aria-label="Volver">&larr;</button>
+            <div className="av-muted">Daily Lover Matchmaking</div>
+            <h2 className="av-title">Entrevista Matchmaking Service</h2>
+            <div className="av-meta">30 minutos</div>
+            <div className="av-meta">Videollamada por Google Meet. El enlace llega a tu correo al confirmar.</div>
+            <div className="av-meta"><strong>{selLabel}</strong></div>
+            <div className="av-meta">Hora de Colombia (Bogotá)</div>
+          </div>
+          <div>
+            <h3 style={{ margin: '0 0 4px', fontSize: 20 }}>Tus datos</h3>
+            <label className="av-label" htmlFor="av-name">Nombre *</label>
+            <input id="av-name" className="av-input" type="text" value={fName} onChange={(e) => setFName(e.target.value)} autoComplete="name" />
+            <label className="av-label" htmlFor="av-email">Correo *</label>
+            <input id="av-email" className="av-input" type="email" value={fEmail} onChange={(e) => setFEmail(e.target.value)} autoComplete="email" />
+            <label className="av-label" htmlFor="av-notes">Cuéntanos algo que nos ayude a preparar la entrevista</label>
+            <textarea id="av-notes" className="av-area" value={fNotes} onChange={(e) => setFNotes(e.target.value)} />
+            <p className="av-fine">Al continuar aceptas que usemos estos datos para agendar tu entrevista y contactarte.</p>
+            {formError && <div className="av-err">{formError}</div>}
+            <button className="av-btn" disabled={saving} onClick={confirm}>
+              {saving ? 'Agendando…' : 'Agendar entrevista'}
+            </button>
+            <p className="av-fine">Después te llevaremos a tu formulario de perfil.</p>
+          </div>
+        </div>
+      </Shell>
+    )
+  }
 
   return (
     <Shell>
@@ -310,8 +394,8 @@ export default function AgendarVip() {
           <p className="av-summary">
             {selLabel ? <>Tu entrevista: <strong>{selLabel}</strong> (Hora Colombia)</> : 'Aún no has elegido día y hora.'}
           </p>
-          <button className="av-btn" disabled={!selSlot || saving} onClick={confirm}>
-            {saving ? 'Confirmando…' : 'Confirmar mi entrevista'}
+          <button className="av-btn" disabled={!selSlot} onClick={() => { setFormError(''); setStep('details') }}>
+            Continuar
           </button>
         </div>
       )}
