@@ -5970,6 +5970,32 @@ async def trigger_calendar_feedback_email(
     }
 
 
+MAX_DIAS_FEEDBACK = 3   # el despacho diario solo escribe por citas de los ultimos dias (no por todo el historico migrado)
+
+
+def appointment_date_or_none(date_str: str):
+    """Fecha de la cita si viene en formato ISO (2026-09-22) o 'septiembre 22'; None si no se puede leer."""
+    from datetime import date
+    s = (date_str or "").lower().strip()
+    m_iso = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m_iso:
+        try:
+            return date(int(m_iso.group(1)), int(m_iso.group(2)), int(m_iso.group(3)))
+        except Exception:
+            return None
+    meses = {"enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9,
+             "octubre": 10, "noviembre": 11, "diciembre": 12}
+    for nombre, num in meses.items():
+        if nombre in s:
+            m_day = re.search(r"(\d{1,2})", s)
+            if m_day and 1 <= int(m_day.group(1)) <= 31:
+                try:
+                    return date(datetime.now().year, num, int(m_day.group(1)))
+                except Exception:
+                    return None
+    return None
+
+
 @router.post("/calendar/feedback/dispatch-automated")
 async def dispatch_automated_feedback_emails(
     simulation_mode: bool = True,
@@ -6011,6 +6037,10 @@ async def dispatch_automated_feedback_emails(
         # Verificar que la cita ya haya ocurrido (ayer o pasada)
         if not force_all_pending and not is_appointment_past(r.date_time):
             continue
+        if not force_all_pending:
+            _f = appointment_date_or_none(r.date_time)
+            if _f is None or (datetime.now().date() - _f).days > MAX_DIAS_FEEDBACK:
+                continue   # cita vieja o con fecha ilegible: no se envia correo automatico
 
         id_a, email_a = await resolve_person_email_and_id(db, r.person_a)
         id_b, email_b = await resolve_person_email_and_id(db, r.person_b)
