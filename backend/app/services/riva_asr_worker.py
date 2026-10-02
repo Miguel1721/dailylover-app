@@ -48,14 +48,24 @@ def cortes(pcm: np.ndarray, sr: int):
     return puntos
 
 
-def segmentos_de(alt, desfase: float, fin_ventana: float):
-    """Parte el texto reconocido en frases (con el texto tal como lo devuelve Canary) y reparte los tiempos de la ventana segun el largo de cada frase."""
+def limites_voz(trozo: np.ndarray, sr: int):
+    """Segundo donde empieza y donde termina la voz dentro del tramo (se recorta el silencio de los bordes)."""
+    bloque = max(1, int(0.1 * sr))
+    m = len(trozo) // bloque
+    if m == 0:
+        return 0.0, len(trozo) / sr
+    e = np.abs(trozo[:m * bloque].astype(np.int32)).reshape(m, bloque).mean(axis=1)
+    activos = np.where(e > UMBRAL_SILENCIO * 2)[0]
+    if len(activos) == 0:
+        return 0.0, len(trozo) / sr
+    return float(activos[0] * bloque) / sr, float((activos[-1] + 1) * bloque) / sr
+
+
+def segmentos_de(alt, desfase: float, t_ini: float, t_fin: float):
+    """Parte el texto reconocido en frases (texto tal como lo devuelve Canary) y reparte el tiempo de la voz del tramo segun el largo de cada frase."""
     txt = alt.transcript.strip()
     if not txt:
         return []
-    palabras = list(alt.words)
-    t_ini = palabras[0].start_time / 1000.0 if palabras else 0.0
-    t_fin = palabras[-1].end_time / 1000.0 if palabras else max(0.0, fin_ventana - desfase)
     frases = [f.strip() for f in re.split(r"(?<=[.?!])\s+", txt) if f.strip()]
     unidas = []
     for f in frases:
@@ -86,7 +96,8 @@ def main(ruta: str) -> None:
     auth = riva.client.Auth(use_ssl=True, uri="grpc.nvcf.nvidia.com:443",
                             metadata_args=[["function-id", FUNCTION_ID], ["authorization", "Bearer " + key]])
     asr = riva.client.ASRService(auth)
-    cfg = riva.client.RecognitionConfig(language_code=IDIOMA, max_alternatives=1, enable_automatic_punctuation=True, enable_word_time_offsets=True,
+    cfg = riva.client.RecognitionConfig(language_code=IDIOMA, max_alternatives=1, enable_automatic_punctuation=True,   # sin tiempos por palabra: con ellos Canary deforma las palabras con ñ
+                                        
                                         encoding=riva.client.AudioEncoding.LINEAR_PCM, sample_rate_hertz=sr, audio_channel_count=1)
     puntos = cortes(pcm, sr)
     segs, errores, ventanas = [], 0, 0
@@ -96,13 +107,14 @@ def main(ruta: str) -> None:
             continue
         ventanas += 1
         desfase = a / sr
+        v_ini, v_fin = limites_voz(trozo, sr)
         listo = False
         for intento in range(4):
             try:
                 resp = asr.offline_recognize(trozo.tobytes(), cfg)
                 for res in resp.results:
                     if res.alternatives:
-                        segs.extend(segmentos_de(res.alternatives[0], desfase, b / sr))
+                        segs.extend(segmentos_de(res.alternatives[0], desfase, v_ini, v_fin))
                 listo = True
                 break
             except Exception:
