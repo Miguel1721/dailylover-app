@@ -88,12 +88,19 @@ async def _persona(db, nombre: str, user_id: Optional[int], crm_id: Any, match_i
         p = (await db.execute(text("SELECT bio_notes, difficult_notes, clinical_profile_360, city, age, gender FROM profiles WHERE user_id = :u"), {"u": user_id})).fetchone()
         if p:
             if p.bio_notes:
-                notas["notas_rapidas_psicologa"] = _limpio(p.bio_notes, 2500)
+                notas["notas_rapidas_psicologa"] = _limpio(p.bio_notes, 7000)
             if p.difficult_notes:
                 notas["notas_dificiles"] = _limpio(p.difficult_notes, 800)
             if p.clinical_profile_360:
                 notas["perfil_clinico_360"] = _limpio(json.dumps(p.clinical_profile_360, ensure_ascii=False) if not isinstance(p.clinical_profile_360, str) else p.clinical_profile_360, 3000)
             notas["ficha_basica"] = f"edad {p.age or 'SIN DATO'}, ciudad {p.city or 'SIN DATO'}, genero {p.gender or 'SIN DATO'}"
+            try:
+                cl = p.clinical_profile_360 if isinstance(p.clinical_profile_360, dict) else json.loads(p.clinical_profile_360 or "{}")
+                raw["_cl_city"] = str((cl.get("metadata") or {}).get("city") or "")
+                raw["_cl_estado"] = str((cl.get("metadata") or {}).get("availability_status") or "")
+                raw["_cl_politica"] = str((((cl.get("ejes") or {}).get("3_axiologia")) or {}).get("postura_politica") or "")
+            except Exception:
+                pass
         try:
             e = (await db.execute(text("SELECT flags_notes, physical_traits_notes FROM client_extended_profile WHERE user_id = :u"), {"u": user_id})).fetchone()
             if e:
@@ -114,6 +121,8 @@ async def _persona(db, nombre: str, user_id: Optional[int], crm_id: Any, match_i
             FROM operational_matches WHERE (user_id_a = :u OR user_id_b = :u) AND id <> :m ORDER BY id DESC LIMIT 10
         """), {"u": user_id, "m": match_id})).fetchall()
         hist = [f"{(r.otra or '(sin candidata)')} | {r.status} | {_limpio(r.obs, 140)}" for r in rows]
+        ABIERTOS = ("HECHO", "APROBADO", "PENDIENTE APROBACIÓN MARÍA", "AGENDADO", "CITA PROGRAMADA", "EN REVISION", "PROPUESTO", "APROBADO POR PSICÓLOGAS")
+        raw["_abiertas"] = [f"{r.otra} ({r.status})" for r in rows if (r.otra or "").strip() and str(r.status or "").upper().strip() in ABIERTOS]
     return {"nombre": nombre, "campos_crm": campos, "notas": notas, "historial_matches": hist, "_raw": raw}
 
 
@@ -182,7 +191,7 @@ def _chequeos(na: str, ra: Dict[str, Any], nb: str, rb: Dict[str, Any]) -> List[
 
     ca, cb = _ciudad(ra), _ciudad(rb)
     if ca and cb:
-        out.append(f"CIUDAD: {na} en {ca}, {nb} en {cb}: {'misma ciudad' if _norm(ca) == _norm(cb) else 'CIUDADES DISTINTAS'}")
+        out.append(f"CIUDAD (según el CRM): {na} en {ca}, {nb} en {cb}: {'misma ciudad' if _norm(ca.split(',')[0]) == _norm(cb.split(',')[0]) else 'CIUDADES DISTINTAS'}")
     else:
         out.append(f"CIUDAD: falta en la ficha de {na if not ca else nb}")
 
@@ -196,6 +205,22 @@ def _chequeos(na: str, ra: Dict[str, Any], nb: str, rb: Dict[str, Any]) -> List[
         out.append(f"HÁBITOS: {n} fuma: {_lab(r.get('prof_208')) or 'sin dato'}; alcohol: {_lab(r.get('prof_209')) or 'sin dato'}")
         out.append(f"CREENCIAS: {n} religión {_lab(r.get('prof_197')) or 'sin dato'}; política {_lab(r.get('prof_226')) or 'sin dato'}")
         out.append(f"LÍMITES ESCRITOS POR {n}: {r.get('prof_242') or 'ninguno'} | RED FLAGS: {r.get('prof_243') or 'ninguna'}")
+
+    def _pol(t: str) -> str:
+        t = _norm(t)
+        return "derecha" if "right" in t or "derecha" in t else ("izquierda" if "left" in t or "izquierda" in t else ("centro" if "center" in t or "centro" in t or "apolitic" in t else ""))
+
+    for n, r in ((na, ra), (nb, rb)):
+        c_crm, c_cl = _ciudad(r), r.get("_cl_city", "")
+        if c_crm and c_cl and _norm(c_crm.split(",")[0]) != _norm(c_cl.split(",")[0]):
+            out.append(f"DISCREPANCIA DE FICHA (ciudad): {n} figura en {c_crm} en el CRM pero su perfil clínico dice {c_cl}. Verificar dónde vive realmente")
+        p_crm, p_cl = _pol(_lab(r.get("prof_226"))), _pol(r.get("_cl_politica", ""))
+        if p_crm and p_cl and p_crm != p_cl:
+            out.append(f"DISCREPANCIA DE FICHA (política): {n} es {_lab(r.get('prof_226'))} en el CRM pero su perfil clínico dice {r.get('_cl_politica')}. Verificar con sus notas")
+        ab = r.get("_abiertas") or []
+        out.append(f"INTROS ABIERTAS (sin contar esta): {n} tiene {len(ab)}" + (": " + "; ".join(ab[:6]) if ab else "") + (" (REGLA: con 2 o más no se propone)" if len(ab) >= 2 else ""))
+        if r.get("_cl_estado") and r.get("_cl_estado").upper() != "ACTIVO":
+            out.append(f"ESTADO: {n} figura como {r.get('_cl_estado')} (no activo)")
 
     sa, sb = _lab(ra.get("prof_248")), _lab(rb.get("prof_248"))
     if sa and sb:
