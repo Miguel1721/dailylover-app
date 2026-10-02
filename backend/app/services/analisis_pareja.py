@@ -66,9 +66,17 @@ def _fmt(field_id: str, v: Any) -> str:
 
 async def _persona(db, nombre: str, user_id: Optional[int], crm_id: Any, match_id: int) -> Dict[str, Any]:
     campos: List[str] = []
+    raw: Dict[str, Any] = {}
     cid = int(str(crm_id)) if str(crm_id or "").strip().isdigit() else None
     if cid is not None:
         for r in (await db.execute(text("SELECT field_id, label, value FROM crm_profile_fields WHERE crm_id = :c ORDER BY field_id"), {"c": cid})).fetchall():
+            v_raw = r.value
+            if isinstance(v_raw, str):
+                try:
+                    v_raw = json.loads(v_raw)
+                except Exception:
+                    pass
+            raw[r.field_id] = v_raw
             if r.field_id in OMITIR:
                 continue
             t = _fmt(r.field_id, r.value)
@@ -106,7 +114,100 @@ async def _persona(db, nombre: str, user_id: Optional[int], crm_id: Any, match_i
             FROM operational_matches WHERE (user_id_a = :u OR user_id_b = :u) AND id <> :m ORDER BY id DESC LIMIT 10
         """), {"u": user_id, "m": match_id})).fetchall()
         hist = [f"{(r.otra or '(sin candidata)')} | {r.status} | {_limpio(r.obs, 140)}" for r in rows]
-    return {"nombre": nombre, "campos_crm": campos, "notas": notas, "historial_matches": hist}
+    return {"nombre": nombre, "campos_crm": campos, "notas": notas, "historial_matches": hist, "_raw": raw}
+
+
+
+def _lab(v: Any) -> str:
+    if isinstance(v, dict):
+        return str(v.get("choice_label") or "")
+    if isinstance(v, list):
+        return ", ".join(str(e.get("label") or e.get("choice_label") or "") for e in v if isinstance(e, dict))
+    return str(v or "")
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"[^a-z]", "", (t or "").lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u"))
+
+
+def _ciudad(raw: Dict[str, Any]) -> str:
+    v = raw.get("prof_191")
+    return str(v.get("city") or "") if isinstance(v, dict) else ""
+
+
+def _chequeos(na: str, ra: Dict[str, Any], nb: str, rb: Dict[str, Any]) -> List[str]:
+    """Hechos calculados por el sistema (no por la IA): rangos de edad y estatura, ciudad, hijos, fumar, religion, politica, social group."""
+    out: List[str] = []
+
+    def edad(r):
+        try:
+            return int(r.get("prof_247"))
+        except (TypeError, ValueError):
+            return None
+
+    ea, eb = edad(ra), edad(rb)
+    for (n1, r1, e1), (n2, r2, e2) in (((na, ra, ea), (nb, rb, eb)), ((nb, rb, eb), (na, ra, ea))):
+        rg = r1.get("pref_68")
+        if isinstance(rg, dict) and (rg.get("start") or rg.get("end")):
+            a, b = rg.get("start"), rg.get("end")
+            txt = f"{n1} pide edad {a or '?'} a {b or '?'}"
+            if e2 is None:
+                out.append(f"EDAD: {txt}; {n2} no tiene edad en la ficha (ERROR DE FICHA)")
+            elif (a and e2 < a) or (b and e2 > b):
+                dif = (a - e2) if (a and e2 < a) else (e2 - b)
+                out.append(f"EDAD: {txt}; {n2} tiene {e2}: FUERA DEL RANGO por {dif} años (veto explícito)")
+            else:
+                out.append(f"EDAD: {txt}; {n2} tiene {e2}: cumple")
+        else:
+            out.append(f"EDAD: {n1} no tiene rango de edad en sus preferencias (vacío)")
+    if ea and eb:
+        out.append(f"DIFERENCIA DE EDAD: {abs(ea - eb)} años ({na} {ea}, {nb} {eb})")
+
+    def mm(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+
+    for (n1, r1), (n2, r2) in (((na, ra), (nb, rb)), ((nb, rb), (na, ra))):
+        rg, h = r1.get("pref_70"), mm(r2.get("prof_203"))
+        if isinstance(rg, dict) and (rg.get("start") or rg.get("end")) and h:
+            a, b = rg.get("start"), rg.get("end")
+            ok = not ((a and h < a) or (b and h > b))
+            out.append(f"ESTATURA: {n1} pide {('desde %.2f m' % (a / 1000)) if a else ''}{(' hasta %.2f m' % (b / 1000)) if b else ''}; {n2} mide {h / 1000:.2f} m: {'cumple' if ok else 'NO cumple'}")
+        elif h:
+            out.append(f"ESTATURA: {n2} mide {h / 1000:.2f} m ({n1} no define preferencia)")
+        if h and (h < 1400 or h > 2200):
+            out.append(f"ALERTA DE FICHA: estatura imposible de {n2} ({h / 1000:.2f} m)")
+
+    ca, cb = _ciudad(ra), _ciudad(rb)
+    if ca and cb:
+        out.append(f"CIUDAD: {na} en {ca}, {nb} en {cb}: {'misma ciudad' if _norm(ca) == _norm(cb) else 'CIUDADES DISTINTAS'}")
+    else:
+        out.append(f"CIUDAD: falta en la ficha de {na if not ca else nb}")
+
+    for (n1, r1), (n2, r2) in (((na, ra), (nb, rb)), ((nb, rb), (na, ra))):
+        g_pref, g_otro = _lab(r1.get("pref_54")), _lab(r2.get("prof_192"))
+        if g_pref and g_otro:
+            out.append(f"GÉNERO: {n1} busca {g_pref}; {n2} es {g_otro}: {'cumple' if _norm(g_pref) == _norm(g_otro) else 'NO cumple'}")
+
+    for n, r in ((na, ra), (nb, rb)):
+        out.append(f"HIJOS: {n} tiene hijos: {_lab(r.get('prof_201')) or 'sin dato'}; quiere hijos: {_lab(r.get('prof_202')) or 'sin dato'}")
+        out.append(f"HÁBITOS: {n} fuma: {_lab(r.get('prof_208')) or 'sin dato'}; alcohol: {_lab(r.get('prof_209')) or 'sin dato'}")
+        out.append(f"CREENCIAS: {n} religión {_lab(r.get('prof_197')) or 'sin dato'}; política {_lab(r.get('prof_226')) or 'sin dato'}")
+        out.append(f"LÍMITES ESCRITOS POR {n}: {r.get('prof_242') or 'ninguno'} | RED FLAGS: {r.get('prof_243') or 'ninguna'}")
+
+    sa, sb = _lab(ra.get("prof_248")), _lab(rb.get("prof_248"))
+    if sa and sb:
+        try:
+            out.append(f"SOCIAL GROUP: {na} {sa}, {nb} {sb}: diferencia de {abs(int(sa) - int(sb))}")
+        except ValueError:
+            out.append(f"SOCIAL GROUP: {na} {sa}, {nb} {sb}")
+    for (n1, r1), (n2, _r2), s2 in (((na, ra), (nb, rb), sb), ((nb, rb), (na, ra), sa)):
+        pref = [x.strip() for x in _lab(r1.get("pref_69")).split(",") if x.strip()]
+        if pref and s2:
+            out.append(f"SOCIAL GROUP BUSCADO: {n1} busca {', '.join(pref)}; {n2} es {s2}: {'dentro de lo que busca' if s2 in pref else 'FUERA de lo que busca'}")
+    return out
 
 
 async def construir_contexto(db, match_id: int) -> Dict[str, Any]:
@@ -119,7 +220,9 @@ async def construir_contexto(db, match_id: int) -> Dict[str, Any]:
         raise ValueError("el match no tiene Persona B")
     a = await _persona(db, m.person_a, m.user_id_a, m.person_a_crm_id, match_id)
     b = await _persona(db, m.person_b, m.user_id_b, m.person_b_crm_id, match_id)
+    chequeos_objetivos = _chequeos(a["nombre"], a.pop("_raw"), b["nombre"], b.pop("_raw"))
     return {
+        "chequeos_objetivos": chequeos_objetivos,
         "match": {"ciudad_registrada": m.city, "plan": m.plan_tier, "estado": m.status, "psicologa": m.psychologist_name,
                   "nota_de_la_psicologa_sobre_esta_propuesta": _limpio(m.observations, 800)},
         "persona_a": a, "persona_b": b,

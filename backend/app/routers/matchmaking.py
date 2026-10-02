@@ -2602,6 +2602,70 @@ async def enriquecer_con_crm(db, items):
     return items
 
 
+async def adjuntar_notas(db, items):
+    """Agrega a cada match sus ultimas notas (de Servicio al Cliente y María)."""
+    for it in items:
+        it["notas"] = []
+    ids = [it.get("id") for it in items if it.get("id")]
+    if not ids:
+        return
+    try:
+        rows = (await db.execute(text("SELECT match_id, autor, texto, creado_en FROM match_notas WHERE match_id = ANY(:i) ORDER BY id DESC"), {"i": ids})).fetchall()
+    except Exception:
+        await db.rollback()
+        return
+    por_id = {}
+    for r in rows:
+        por_id.setdefault(r.match_id, []).append({"autor": r.autor or "", "texto": r.texto or "", "fecha": r.creado_en.strftime("%Y-%m-%d %H:%M") if r.creado_en else ""})
+    for it in items:
+        it["notas"] = por_id.get(it.get("id"), [])[:6]
+
+
+class NotaMatchRequest(BaseModel):
+    texto: str
+
+
+@router.post("/matches/{match_id}/notas")
+async def agregar_nota_match(match_id: int, payload: NotaMatchRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    texto = (payload.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="La nota está vacía.")
+    existe = (await db.execute(text("SELECT 1 FROM operational_matches WHERE id = :m"), {"m": match_id})).fetchone()
+    if not existe:
+        raise HTTPException(status_code=404, detail="Match no encontrado")
+    autor = str((current_user or {}).get("name") or (current_user or {}).get("email") or "Equipo")
+    await db.execute(text("INSERT INTO match_notas (match_id, autor, texto, creado_en) VALUES (:m, :a, :t, NOW())"), {"m": match_id, "a": autor, "t": texto[:2000]})
+    await db.commit()
+    return {"status": "success"}
+
+
+ESTADOS_CONFIRMACION = ("Pendiente", "Aceptó", "Rechazó", "No contesta", "De viaje", "Reprogramar")
+
+
+class ConfirmacionPersonaRequest(BaseModel):
+    persona: str   # 'a' o 'b'
+    estado: str
+
+
+@router.post("/matches/{match_id}/confirmacion-persona")
+async def actualizar_confirmacion_persona(match_id: int, payload: ConfirmacionPersonaRequest, current_user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Estado de cada persona frente a la cita: Pendiente, Aceptó (confirmó), Rechazó, No contesta, De viaje, Reprogramar."""
+    lado = (payload.persona or "").lower()
+    if lado not in ("a", "b") or payload.estado not in ESTADOS_CONFIRMACION:
+        raise HTTPException(status_code=400, detail="Estado o persona inválidos.")
+    col = "person_a_confirmation" if lado == "a" else "person_b_confirmation"
+    fila = (await db.execute(text("SELECT id FROM match_confirmations WHERE match_id = :m ORDER BY id DESC LIMIT 1"), {"m": match_id})).fetchone()
+    if fila:
+        await db.execute(text(f"UPDATE match_confirmations SET {col} = :e, updated_at = NOW() WHERE id = :i"), {"e": payload.estado, "i": fila.id})
+    else:
+        existe = (await db.execute(text("SELECT 1 FROM operational_matches WHERE id = :m"), {"m": match_id})).fetchone()
+        if not existe:
+            raise HTTPException(status_code=404, detail="Match no encontrado")
+        await db.execute(text(f"INSERT INTO match_confirmations (match_id, {col}, stage, created_at, updated_at) VALUES (:m, :e, 'pendiente', NOW(), NOW())"), {"m": match_id, "e": payload.estado})
+    await db.commit()
+    return {"status": "success", "persona": lado, "estado": payload.estado}
+
+
 @router.post("/matches/{match_id}/analisis-ia")
 async def analizar_par_con_ia(
     match_id: int,
@@ -2611,6 +2675,8 @@ async def analizar_par_con_ia(
 ):
     """Analisis con IA de la pareja (metodo de María): puntaje 1-10, puntos fuertes, puntos a considerar y preguntas para la psicologa."""
     from app.services.analisis_pareja import analizar_par
+    if str((current_user or {}).get('role') or '').strip() == 'Servicio al Cliente':
+        raise HTTPException(status_code=403, detail='El análisis de la pareja es solo para María.')
     try:
         return {"status": "success", "analisis": await analizar_par(db, match_id, regenerar)}
     except LookupError:
@@ -2632,8 +2698,11 @@ async def get_approval_queue(
     all_items: Optional[bool] = Query(False),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=5000),
+    current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    if str((current_user or {}).get('role') or '').strip() == 'Servicio al Cliente':
+        raise HTTPException(status_code=403, detail='La cola de aprobación es solo para María.')
     """
     Retorna todos los matches en estado 'HECHO', 'HECHO POR MAPE' o 'HECHO POR OTRA PSICÓLOGA' que aún no han sido aprobados por María,
     ordenados de más antiguo a más reciente por defecto con paginación ultrarrápida.
@@ -8081,6 +8150,7 @@ async def get_matches_pending_service(
     total_pages = max(1, (total_items + eff_page_size - 1) // eff_page_size) if eff_page_size else 1
 
     await enriquecer_con_crm(db, matches)
+    await adjuntar_notas(db, matches)
     return {
         "matches": matches,
         "total": total_items,

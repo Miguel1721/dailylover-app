@@ -65,6 +65,7 @@ export default function AprobadosMaria() {
   // Pestaña activa: 'revision' (Cola de Aprobación de María) o 'servicio' (CS - Citas por agendar)
   const isCsOnly = user?.role === 'Servicio al Cliente'
   const [activeTab, setActiveTab] = useState(isCsOnly ? 'servicio' : 'revision')
+  useEffect(() => { if (isCsOnly && activeTab !== 'servicio') setActiveTab('servicio') }, [isCsOnly, activeTab])
 
   // Filtros
   const [selectedPsyc, setSelectedPsyc] = useState('Todas')
@@ -73,6 +74,9 @@ export default function AprobadosMaria() {
   const [approvalDate, setApprovalDate] = useState('')
   const [analisisIA, setAnalisisIA] = useState({})      // match_id -> analisis generado en esta sesion
   const [analizando, setAnalizando] = useState(null)
+  const [notaTexto, setNotaTexto] = useState({})
+  const [guardandoNota, setGuardandoNota] = useState(null)
+  const [modalAnalisis, setModalAnalisis] = useState(null)   // id del match cuyo analisis esta abierto
   const [errorIA, setErrorIA] = useState({})
   const [ordenRev, setOrdenRev] = useState('cliente_antiguo')   // cliente_antiguo | oldest_first | newest_first
 
@@ -116,8 +120,14 @@ export default function AprobadosMaria() {
     }
   }
 
+  const abrirAnalisis = (item) => {
+    setModalAnalisis(item.id)
+    if (!(analisisIA[item.id] || item.analisis_ia)) analizarPar(item)
+  }
+
   // 1. Cargar Cola de Revisión de María
   const fetchReviewQueue = useCallback(() => {
+    if (!isMpsOrAdmin) { setReviewQueue([]); setTotalReview(0); setLoadingReview(false); return }
     setLoadingReview(true)
     let url = `${API}/api/v1/matchmaking/approval-queue?sort_by=${ordenRev}&page=${pageReview}&page_size=${pageSizeReview}&`
     if (selectedPsyc && selectedPsyc !== 'Todas') url += `psychologist=${encodeURIComponent(selectedPsyc)}&`
@@ -142,7 +152,7 @@ export default function AprobadosMaria() {
         setTotalPagesReview(1)
         setLoadingReview(false)
       })
-  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, ordenRev, pageReview, pageSizeReview, token])
+  }, [selectedPsyc, selectedCity, searchTerm, approvalDate, ordenRev, pageReview, pageSizeReview, token, isMpsOrAdmin])
 
   // 2. Cargar Cola de Servicio al Cliente (Aprobados por María)
   const fetchServiceQueue = useCallback(() => {
@@ -240,6 +250,68 @@ export default function AprobadosMaria() {
   }
 
   // Actualizar estado de CS (Por llamar, Llamado 1, etc.)
+  const ESTADOS_PERSONA = [
+    ['Pendiente', 'Pendiente', '#F59E0B'],
+    ['Aceptó', 'Confirmó la cita', '#10B981'],
+    ['Rechazó', 'Rechazó la cita', '#EF4444'],
+    ['No contesta', 'No contesta', '#6B7280'],
+    ['De viaje', 'De viaje', '#3B82F6'],
+    ['Reprogramar', 'Reprogramar', '#8B5CF6']
+  ]
+
+  const cambiarConfirmacion = async (match, lado, estado) => {
+    setUpdatingId(match.id)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/confirmacion-persona`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ persona: lado, estado })
+      })
+      if (res.ok) fetchServiceQueue()
+      else alert('No se pudo actualizar el estado de la persona.')
+    } catch (e) {
+      alert('Error de conexión.')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  // Estado de la persona frente a la cita, debajo de su nombre
+  const estadoPersona = (match, lado) => {
+    const actual = match[`confirmation_${lado}`] || 'Pendiente'
+    const lista = ESTADOS_PERSONA.some(e => e[0] === actual) ? ESTADOS_PERSONA : [...ESTADOS_PERSONA, [actual, actual, '#6B7280']]
+    const col = (lista.find(e => e[0] === actual) || [])[2] || '#6B7280'
+    return (
+      <select value={actual} onChange={e => cambiarConfirmacion(match, lado, e.target.value)} disabled={updatingId === match.id}
+        style={{ marginTop: 8, padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${col}`, background: `${col}18`, color: col, fontSize: 12, fontWeight: 800, cursor: 'pointer', maxWidth: '100%' }}>
+        {lista.map(e => <option key={e[0]} value={e[0]}>{e[1]}</option>)}
+      </select>
+    )
+  }
+
+  const agregarNota = async (match) => {
+    const texto = (notaTexto[match.id] || '').trim()
+    if (!texto) return
+    setGuardandoNota(match.id)
+    try {
+      const res = await fetch(`${API}/api/v1/matchmaking/matches/${match.id}/notas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ texto })
+      })
+      if (res.ok) {
+        setNotaTexto(prev => ({ ...prev, [match.id]: '' }))
+        fetchServiceQueue()
+      } else {
+        alert('No se pudo guardar la nota.')
+      }
+    } catch (e) {
+      alert('Error de conexión.')
+    } finally {
+      setGuardandoNota(null)
+    }
+  }
+
   const handleUpdateServiceStatus = async (matchId, statusVal) => {
     setUpdatingId(matchId)
     try {
@@ -389,6 +461,7 @@ export default function AprobadosMaria() {
         borderBottom: '1px solid var(--border-color)',
         paddingBottom: 12
       }}>
+        {!isCsOnly && (
         <button
           type="button"
           onClick={() => setActiveTab('revision')}
@@ -420,6 +493,7 @@ export default function AprobadosMaria() {
             {totalReview || reviewQueue.length}
           </span>
         </button>
+      )}
 
         <button
           type="button"
@@ -885,136 +959,120 @@ export default function AprobadosMaria() {
                         </div>
                       </div>
 
-                      {/* Puntaje único, 3 Razones y Justificación */}
-                      <div style={{
-                        background: 'rgba(255,255,255,0.02)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 12,
-                        padding: 16,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 12
-                      }}>
-                        {/* Análisis con IA de la pareja (método de María) */}
-                        {(() => {
-                          const an = analisisIA[item.id] || item.analisis_ia
-                          const col = !an ? '#6B7280' : an.puntaje >= 7 ? '#10B981' : an.puntaje >= 5 ? '#F59E0B' : '#EF4444'
-                          const lista = (titulo, arr, color) => (arr && arr.length > 0) ? (
-                            <div style={{ flex: '1 1 280px', minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 800, color: color || 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase' }}>{titulo}</div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                {arr.map((t, k) => (
-                                  <div key={k} style={{ fontSize: 12.5, color: 'var(--text-primary)', lineHeight: 1.45, paddingLeft: 10, borderLeft: `3px solid ${color || 'var(--border-color)'}` }}>{t}</div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null
-                          return (
-                            <div style={{ border: `1px solid ${col}55`, borderLeft: `4px solid ${col}`, borderRadius: 10, padding: 14, background: 'var(--bg-base)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-primary)' }}>Análisis con IA de la pareja</div>
-                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                  {an && (
-                                    <button type="button" onClick={() => analizarPar(item, true)} disabled={analizando === item.id}
-                                      style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                                      {analizando === item.id ? 'Analizando...' : 'Volver a analizar'}
-                                    </button>
-                                  )}
-                                  {!an && (
-                                    <button type="button" onClick={() => analizarPar(item)} disabled={analizando === item.id}
-                                      style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#B8324F', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                                      {analizando === item.id ? 'Analizando, puede tardar unos segundos...' : 'Analizar con IA'}
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                              {errorIA[item.id] && <div style={{ marginTop: 8, fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{errorIA[item.id]}</div>}
-                              {an && (
-                                <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: 22, fontWeight: 900, color: col }}>{an.puntaje}/10</span>
-                                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: col, color: '#fff' }}>{an.veredicto}</span>
-                                    {an.confirmar_foto && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, border: '1px solid #F59E0B', color: '#B45309' }}>CONFIRMAR FOTO (máximo 7)</span>}
-                                  </div>
-                                  {an.resumen && <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5 }}>{an.resumen}</div>}
-                                  {(an.perfil_a || an.perfil_b) && (
-                                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                                      {an.perfil_a && <div style={{ flex: '1 1 280px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}><strong style={{ color: 'var(--text-primary)' }}>{item.person_a}: </strong>{an.perfil_a}</div>}
-                                      {an.perfil_b && <div style={{ flex: '1 1 280px', fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}><strong style={{ color: '#10B981' }}>{item.person_b}: </strong>{an.perfil_b}</div>}
-                                    </div>
-                                  )}
-                                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                                    {lista('Puntos fuertes', an.puntos_fuertes, '#10B981')}
-                                    {lista('Puntos a considerar', an.puntos_a_considerar, '#F59E0B')}
-                                  </div>
-                                  {lista('Vetos', an.vetos, '#EF4444')}
-                                  {lista('Preguntas para la psicóloga', an.preguntas_para_psicologa, '#3B82F6')}
-                                  {an.condicion_para_subir_puntaje && <div style={{ fontSize: 12.5, color: 'var(--text-primary)' }}><strong>Para subir el puntaje: </strong>{an.condicion_para_subir_puntaje}</div>}
-                                  {an.recomendacion && <div style={{ fontSize: 12.5, color: 'var(--text-primary)', background: 'rgba(255,255,255,0.04)', padding: 10, borderRadius: 8 }}><strong>Qué haría: </strong>{an.recomendacion}</div>}
-                                  {lista('Alertas de ficha', an.alertas_ficha, '#7C3AED')}
-                                  {an.flag_inventario && <div style={{ fontSize: 12, color: '#B45309', fontWeight: 700 }}>Inventario: {an.flag_inventario}</div>}
-                                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Generado {an.generado_en} con {an.modelo}. Es una ayuda para decidir: la psicóloga confirma círculo social y fotos.</div>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })()}
-
-                        {/* Veredicto */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                          <span style={{
-                            fontSize: 13,
-                            fontWeight: 800,
-                            padding: '4px 12px',
-                            borderRadius: 8,
-                            background: item.compatibility_score >= 75 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                            color: item.compatibility_score >= 75 ? '#34D399' : '#FBBF24',
-                            border: `1px solid ${item.compatibility_score >= 75 ? '#10B98150' : '#F59E0B50'}`
-                          }}>
-                            {item.compatibility_score || 80}/100 • {item.compatibility_verdict || 'RECOMENDADO'}
-                          </span>
-                        </div>
-
-                        {/* 3 Razones Principales */}
-                        {item.reasons && item.reasons.length > 0 && (
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                              3 Razones Principales del Match:
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {item.reasons.map((r, i) => (
-                                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, color: 'var(--text-primary)' }}>
-                                  <CheckCircle size={14} color="#10B981" style={{ flexShrink: 0, marginTop: 2 }} />
-                                  <span>{r}</span>
-                                </div>
+                      {/* Análisis con IA de la pareja: se abre en un modal */}
+                      {(() => {
+                        const an = analisisIA[item.id] || item.analisis_ia
+                        const col = !an ? '#6B7280' : an.puntaje >= 7 ? '#10B981' : an.puntaje >= 5 ? '#F59E0B' : '#EF4444'
+                        const lista = (titulo, arr, color) => (arr && arr.length > 0) ? (
+                          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: color, marginBottom: 6, textTransform: 'uppercase' }}>{titulo}</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {arr.map((t, k) => (
+                                <div key={k} style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.5, paddingLeft: 10, borderLeft: `3px solid ${color}` }}>{t}</div>
                               ))}
                             </div>
                           </div>
-                        )}
-
-                        {/* Nota de la Psicóloga */}
-                        {item.observations && (
-                          <div style={{
-                            background: 'var(--bg-base)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: 8,
-                            padding: 10,
-                            fontSize: 12,
-                            color: 'var(--text-secondary)',
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 8
-                          }}>
-                            <Sparkles size={14} color="#F59E0B" style={{ flexShrink: 0, marginTop: 2 }} />
-                            <div>
-                              <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 2 }}>
-                                Nota de la Psicóloga ({item.psychologist_name}):
-                              </strong>
-                              <p style={{ margin: 0, fontStyle: 'italic', lineHeight: 1.4 }}>{item.observations}</p>
+                        ) : null
+                        return (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                              <button type="button" onClick={() => abrirAnalisis(item)}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: '1px solid #B8324F', background: 'rgba(184, 50, 79, 0.10)', color: '#B8324F', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                                <Sparkles size={15} />
+                                {an ? 'Ver análisis con IA' : 'Analizar con IA'}
+                              </button>
+                              {an && (
+                                <>
+                                  <span style={{ fontSize: 15, fontWeight: 900, color: col }}>{an.puntaje}/10</span>
+                                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: col, color: '#fff' }}>{an.veredicto}</span>
+                                </>
+                              )}
                             </div>
-                          </div>
-                        )}
-                      </div>
+
+                            {modalAnalisis === item.id && (
+                              <div onClick={() => setModalAnalisis(null)}
+                                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                                <div onClick={(e) => e.stopPropagation()}
+                                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 16, width: '100%', maxWidth: 920, maxHeight: '92vh', overflowY: 'auto', padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                                    <div>
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Análisis con IA de la pareja</div>
+                                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>
+                                        {item.person_a} <span style={{ color: '#B8324F' }}>x</span> <span style={{ color: '#10B981' }}>{item.person_b}</span>
+                                      </div>
+                                    </div>
+                                    <button type="button" onClick={() => setModalAnalisis(null)}
+                                      style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                                      Cerrar
+                                    </button>
+                                  </div>
+
+                                  {analizando === item.id && !an && (
+                                    <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14 }}>
+                                      Analizando la pareja con las notas y los datos del CRM. Puede tardar entre 10 y 40 segundos...
+                                    </div>
+                                  )}
+                                  {errorIA[item.id] && (
+                                    <div style={{ marginBottom: 12, padding: 12, borderRadius: 8, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#EF4444', fontSize: 13, fontWeight: 600 }}>
+                                      {errorIA[item.id]}
+                                      <div style={{ marginTop: 8 }}>
+                                        <button type="button" onClick={() => analizarPar(item)} disabled={analizando === item.id}
+                                          style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#B8324F', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                                          Intentar de nuevo
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {an && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: 34, fontWeight: 900, color: col }}>{an.puntaje}/10</span>
+                                        <span style={{ fontSize: 12, fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: col, color: '#fff' }}>{an.veredicto}</span>
+                                        {an.confirmar_foto && <span style={{ fontSize: 12, fontWeight: 800, padding: '4px 12px', borderRadius: 20, border: '1px solid #F59E0B', color: '#B45309' }}>CONFIRMAR FOTO (máximo 7)</span>}
+                                      </div>
+                                      {an.resumen && <div style={{ fontSize: 14.5, color: 'var(--text-primary)', lineHeight: 1.55 }}>{an.resumen}</div>}
+
+                                      {item.observations && (
+                                        <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: 10, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+                                          <strong style={{ color: 'var(--text-primary)' }}>Nota de la psicóloga ({item.psychologist_name}): </strong>
+                                          <em>{item.observations}</em>
+                                        </div>
+                                      )}
+
+                                      {(an.perfil_a || an.perfil_b) && (
+                                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                          {an.perfil_a && <div style={{ flex: '1 1 320px', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55 }}><strong style={{ color: 'var(--text-primary)' }}>{item.person_a}: </strong>{an.perfil_a}</div>}
+                                          {an.perfil_b && <div style={{ flex: '1 1 320px', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55 }}><strong style={{ color: '#10B981' }}>{item.person_b}: </strong>{an.perfil_b}</div>}
+                                        </div>
+                                      )}
+
+                                      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                                        {lista('Puntos fuertes', an.puntos_fuertes, '#10B981')}
+                                        {lista('Puntos a considerar', an.puntos_a_considerar, '#F59E0B')}
+                                      </div>
+                                      {lista('Vetos', an.vetos, '#EF4444')}
+                                      {lista('Preguntas para la psicóloga', an.preguntas_para_psicologa, '#3B82F6')}
+                                      {an.condicion_para_subir_puntaje && <div style={{ fontSize: 13.5, color: 'var(--text-primary)' }}><strong>Para subir el puntaje: </strong>{an.condicion_para_subir_puntaje}</div>}
+                                      {an.recomendacion && <div style={{ fontSize: 13.5, color: 'var(--text-primary)', background: 'rgba(255,255,255,0.04)', padding: 12, borderRadius: 8, lineHeight: 1.5 }}><strong>Qué haría: </strong>{an.recomendacion}</div>}
+                                      {lista('Alertas de ficha', an.alertas_ficha, '#7C3AED')}
+                                      {an.flag_inventario && <div style={{ fontSize: 13, color: '#B45309', fontWeight: 700 }}>Inventario: {an.flag_inventario}</div>}
+
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderTop: '1px solid var(--border-color)', paddingTop: 12 }}>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Generado {an.generado_en} con {an.modelo}. Es una ayuda para decidir: la psicóloga confirma círculo social y fotos.</div>
+                                        <button type="button" onClick={() => analizarPar(item, true)} disabled={analizando === item.id}
+                                          style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                          {analizando === item.id ? 'Analizando...' : 'Volver a analizar'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )
+                      })()}
 
                       {/* Botones de Acción: Aprobar (1 clic) vs Rechazar (1 clic con motivo) */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 4 }}>
@@ -1276,7 +1334,8 @@ export default function AprobadosMaria() {
                             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                               <CrmPersonLink crmId={match.person_a_crm_id} name={match.person_a} style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }} />
                             </div>
-                            {burbujasCrm(match.person_a_social_group, match.person_a_estatura, match.person_a_religion, match.person_a_politica)}
+                            {!isCsOnly && burbujasCrm(match.person_a_social_group, match.person_a_estatura, match.person_a_religion, match.person_a_politica)}
+                            {estadoPersona(match, 'a')}
                             {match.person_a_phone && (
                               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
                                 📞 {match.person_a_phone}
@@ -1303,7 +1362,8 @@ export default function AprobadosMaria() {
                                 <span style={{ color: 'var(--text-muted)' }}>Por definir</span>
                               )}
                             </div>
-                            {burbujasCrm(match.person_b_social_group, match.person_b_estatura, match.person_b_religion, match.person_b_politica)}
+                            {!isCsOnly && burbujasCrm(match.person_b_social_group, match.person_b_estatura, match.person_b_religion, match.person_b_politica)}
+                            {estadoPersona(match, 'b')}
                             {match.person_b_phone && (
                               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, fontFamily: 'monospace' }}>
                                 📞 {match.person_b_phone}
@@ -1311,6 +1371,30 @@ export default function AprobadosMaria() {
                             )}
                           </div>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Notas de la propuesta */}
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>NOTAS</div>
+                      {(match.notas || []).length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                          {match.notas.map((n, k) => (
+                            <div key={k} style={{ fontSize: 12.5, color: 'var(--text-primary)', background: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 8, padding: '6px 10px', lineHeight: 1.45 }}>
+                              <strong>{n.autor}</strong> <span style={{ color: 'var(--text-muted)' }}>{n.fecha}</span><br />{n.texto}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <input type="text" value={notaTexto[match.id] || ''} onChange={e => setNotaTexto(prev => ({ ...prev, [match.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') agregarNota(match) }}
+                          placeholder="Escribe una nota sobre esta cita (llamadas, preferencias, novedades)"
+                          style={{ flex: '1 1 260px', minWidth: 0, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-input, transparent)', color: 'var(--text-primary)', fontSize: 13 }} />
+                        <button type="button" onClick={() => agregarNota(match)} disabled={guardandoNota === match.id}
+                          style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#B8324F', color: '#fff', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                          {guardandoNota === match.id ? 'Guardando...' : 'Agregar nota'}
+                        </button>
                       </div>
                     </div>
                   </div>
