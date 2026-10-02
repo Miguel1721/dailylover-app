@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
@@ -133,19 +134,23 @@ def _llamar_ia(prompt: str):
     body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"}}
     ultimo = ""
     for modelo in MODELOS:
-        req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent",
-                                     data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key})
-        try:
-            with urllib.request.urlopen(req, timeout=150) as r:
-                out = json.loads(r.read().decode())
-        except urllib.error.HTTPError as e:
-            ultimo = f"{modelo}: HTTP {e.code}"
-            if e.code in (404, 429, 503):
-                continue
-            raise
-        raw = "".join(p.get("text", "") for p in out["candidates"][0]["content"]["parts"])
-        raw = re.sub(r"^```(json)?|```$", "", raw.strip()).strip()
-        return json.loads(raw), modelo
+        for intento in range(5):
+            req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent",
+                                         data=json.dumps(body).encode(), headers={"Content-Type": "application/json", "x-goog-api-key": key})
+            try:
+                with urllib.request.urlopen(req, timeout=150) as r:
+                    out = json.loads(r.read().decode())
+            except urllib.error.HTTPError as e:
+                ultimo = f"{modelo}: HTTP {e.code}"
+                if e.code == 503 and intento < 4:      # alta demanda pasajera: reintenta con espera creciente
+                    time.sleep(4 * (intento + 1))
+                    continue
+                if e.code in (404, 429, 503):
+                    break                               # sin cuota / retirado / sigue saturado: siguiente modelo
+                raise
+            raw = "".join(p.get("text", "") for p in out["candidates"][0]["content"]["parts"])
+            raw = re.sub(r"^```(json)?|```$", "", raw.strip()).strip()
+            return json.loads(raw), modelo
     raise RuntimeError(f"Ningún modelo de IA disponible ({ultimo}). Revisa la cuota de la clave de Gemini.")
 
 
