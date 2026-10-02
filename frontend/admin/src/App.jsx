@@ -56,6 +56,7 @@ import SupervisionMaria from './pages/matchmaking/SupervisionMaria'
 import Prioritarios from './pages/matchmaking/Prioritarios'
 import CalendarioTurnos7shifts from './pages/matchmaking/CalendarioTurnos7shifts'
 import MisTurnos from './pages/matchmaking/MisTurnos'
+import SeguimientoMatches from './pages/matchmaking/SeguimientoMatches'
 import AgendadorCalendly from './pages/public/AgendadorCalendly'
 import AgendarVip from './pages/public/AgendarVip'
 import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
@@ -305,6 +306,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
 
   const mpsNavItems = [
     { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar' },
+    { to: '/matchmaking/seguimiento', icon: Calendar, label: '📍 Seguimiento' },
     { to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión' },
     { to: '/kpis', icon: FileSpreadsheet, label: '📊 KPIs' }
   ]
@@ -326,6 +328,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
         { to: '/matchmaking/mi-mesa', icon: Heart, label: '💖 Mi Mesa (Psicóloga)' },
         { to: '/matchmaking/mis-matches', icon: Heart, label: '💖 Matches Psicólogas (Admin)' },
         { to: '/matchmaking/aprobados-maria', icon: ShieldCheck, label: '🛡️ Por Aprobar (María)' },
+        { to: '/matchmaking/seguimiento', icon: Calendar, label: '📍 Seguimiento de matches' },
         { to: '/matchmaking/calendario', icon: Calendar, label: '🗓️ Calendario & Turnos' },
         { to: '/matchmaking/mis-turnos', icon: Calendar, label: '📅 Mi Semana (vista psicóloga)' },
         { to: '/matchmaking/entrevista', icon: Sparkles, label: '🎙️ Entrevista Clínica & Evaluación' },
@@ -990,6 +993,7 @@ function AppContent() {
                     <Route path="/matchmaking/prioritarios" element={<AreaErrorBoundary areaName="Casos Prioritarios"><ProtectedRoute module="matching" action="view"><Prioritarios /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/todos-los-matches" element={<AreaErrorBoundary areaName="Matriz Global de Matches"><ProtectedRoute module="matching" action="view"><TodosLosMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/agenda" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/matchmaking/seguimiento" element={<AreaErrorBoundary areaName="Seguimiento de matches"><ProtectedRoute module="matching" action="view"><SeguimientoMatches /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/mis-turnos" element={<AreaErrorBoundary areaName="Mi Semana"><ProtectedRoute module="matching" action="view"><MisTurnos /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/calendario" element={<AreaErrorBoundary areaName="Agenda & Turnos"><ProtectedRoute module="matching" action="view"><CalendarioTurnos7shifts /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/matchmaking/sala/:sessionId" element={<AreaErrorBoundary areaName="Sala de Videollamada"><ProtectedRoute module="matching" action="view"><SalaVideollamada /></ProtectedRoute></AreaErrorBoundary>} />

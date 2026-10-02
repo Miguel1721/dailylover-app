@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import CrmPersonLink from '../../components/CrmPersonLink'
 import UserAvatar from '../../components/UserAvatar'
+import SeguimientoLista from '../../components/SeguimientoLista'
 
 const API = (typeof window !== 'undefined' && (window.location.origin.includes('daily') || window.location.origin.includes('agentesia'))) 
   ? window.location.origin 
@@ -827,6 +828,22 @@ export default function MiMesaPsicologa() {
             {data.cruzados?.length || 0}
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('seguimiento')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+            border: activeTab === 'seguimiento' ? '1.5px solid #EC4899' : '1px solid var(--border-color)',
+            background: activeTab === 'seguimiento' ? 'rgba(236, 72, 153, 0.15)' : 'var(--bg-card)',
+            color: activeTab === 'seguimiento' ? '#FFFFFF' : 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.15s'
+          }}
+        >
+          <span>Seguimiento</span>
+          <span style={{ background: activeTab === 'seguimiento' ? '#EC4899' : 'rgba(255,255,255,0.08)', color: '#FFFFFF', padding: '2px 8px', borderRadius: 20, fontSize: 11, fontWeight: 800 }}>
+            {data.seguimiento?.length || 0}
+          </span>
+        </button>
       </div>
 
       {/* Vista: propios / heredados (los heredados vienen de las psicólogas que se fueron) */}
@@ -1341,6 +1358,8 @@ export default function MiMesaPsicologa() {
               )}
             </div>
           )}
+
+          {activeTab === 'seguimiento' && <SeguimientoLista items={data.seguimiento || []} />}
 
           {activeTab === 'cruzados' && (
             <div>

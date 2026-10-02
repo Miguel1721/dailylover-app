@@ -542,6 +542,11 @@ async def submit_match_feedback(req: PostMatchFeedbackSubmit, db: AsyncSession =
                 SET status = 'CITA REALIZADA', updated_at = NOW()
                 WHERE id = :mid AND UPPER(COALESCE(status, '')) NOT IN ('CITA REALIZADA', 'CITA COMPLETADA', 'REFUND', 'REFUND DONE')
             """), {"mid": op_id_cerrado})
+            _p = (await db.execute(text("SELECT person_a, person_b FROM operational_matches WHERE id = :m"), {"m": op_id_cerrado})).fetchone()
+            for _n in ([_p.person_a, _p.person_b] if _p else []):
+                if _n:
+                    await db.execute(text("INSERT INTO person_history (person_name, match_id, event_type, details, created_at) VALUES (:n, :m, 'DATE_FEEDBACK', :d, NOW())"),
+                                     {"n": _n, "m": op_id_cerrado, "d": f"Cita realizada: evaluación enviada por {evaluator_name}."})
 
     # 3. Si existe en historical_matches, actualizar flags
     if req.match_id:

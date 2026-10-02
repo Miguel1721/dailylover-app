@@ -2919,8 +2919,8 @@ async def get_approval_queue(
     params = {}
 
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
-        params["psyc"] = psychologist.strip()
+        query += " AND UPPER(m.psychologist_name) = ANY(:psyc_al)"
+        params["psyc_al"] = [x.upper() for x in (get_psychologist_aliases(psychologist.strip()) or [psychologist.strip()])]
 
     if city and city.lower() not in ("all", "todas"):
         query += " AND m.city ILIKE :city"
@@ -3101,7 +3101,7 @@ async def get_approval_queue(
 
         queue.append({
             "id": d.get("id"),
-            "psychologist_name": d.get("psychologist_name"),
+            "psychologist_name": _mostrar_psicologa(d.get("psychologist_name")),
             "person_a": d.get("person_a"),
             "person_a_crm_id": d.get("person_a_crm_id") or d.get("ua_crm_id") or "",
             "person_a_photo_url": d.get("person_a_photo_url") or "",
@@ -3658,6 +3658,93 @@ async def enviar_slots_a_maria(payload: EnviarSlotsRequest, db: AsyncSession = D
     return {"status": "success", "enviados": len(ids), "match_ids": ids}
 
 
+
+
+# ─── SEGUIMIENTO: lo que pasa después de aprobar, visible para María y para AMBAS psicólogas ──────────────────────
+def _mostrar_psicologa(raw: Optional[str]) -> str:
+    """Nombre que se muestra: la psicóloga ACTUAL. Si el código es de una que ya no está (Sofi, Aleja, Manu, Lau), la que heredó su cartera."""
+    d = _duena(raw)
+    return d or (raw or "")
+
+
+_ETIQUETA_ESTADO = {
+    "APROBADO": "Aprobado por María - falta agendar", "AGENDANDO": "Agendando la cita", "POR CONFIRMAR": "Por confirmar",
+    "REPROGRAMAR": "Por reprogramar", "REPROGRAMAR POR NO-SHOW": "Por reprogramar (no-show)", "EN PAUSA": "En pausa",
+    "CITA PROGRAMADA": "Cita programada", "CITA RESERVADA": "Cita reservada", "CITA REALIZADA": "Cita realizada",
+    "TROUBLE": "Rechazo (trouble)", "NO MATCH/CAMBIAR": "No match / cambiar", "REFUND": "Reembolso", "REFUND DONE": "Reembolso hecho",
+}
+_ESTADOS_SEGUIMIENTO = tuple(_ETIQUETA_ESTADO.keys())
+
+
+async def _seguimiento(db, aliases: Optional[List[str]] = None, dias: int = 21, estado: Optional[str] = None, psicologa: Optional[str] = None) -> Dict[str, Any]:
+    """Matches con novedades en los últimos `dias` días y que ya pasaron por María (aprobados en adelante).
+    `aliases`: si viene, solo las filas donde esa psicóloga es la de la persona A o la de la persona B (propias o heredadas)."""
+    q = """
+        WITH ev AS (
+            SELECT match_id, MAX(created_at) AS ult, (ARRAY_AGG(event_type ORDER BY created_at DESC))[1] AS ultimo
+            FROM person_history WHERE match_id IS NOT NULL AND created_at >= NOW() - make_interval(days => :d)
+            GROUP BY match_id)
+        SELECT m.id, m.person_a, m.person_b, m.psychologist_name, m.status, m.approved_at, m.plan_tier, m.city, m.observations,
+               m.user_id_a, m.user_id_b, pA.responsable AS resp_a, pB.responsable AS resp_b, ev.ult, ev.ultimo,
+               sd.date_time, sd.venue, sd.had_date, mc.stage, mc.person_a_confirmation AS conf_a, mc.person_b_confirmation AS conf_b
+        FROM ev
+        JOIN operational_matches m ON m.id = ev.match_id
+        LEFT JOIN profiles pA ON pA.user_id = m.user_id_a
+        LEFT JOIN profiles pB ON pB.user_id = m.user_id_b
+        LEFT JOIN LATERAL (SELECT date_time, venue, had_date FROM scheduled_dates WHERE match_id = m.id ORDER BY id DESC LIMIT 1) sd ON TRUE
+        LEFT JOIN LATERAL (SELECT stage, person_a_confirmation, person_b_confirmation FROM match_confirmations WHERE match_id = m.id ORDER BY id DESC LIMIT 1) mc ON TRUE
+        WHERE (UPPER(COALESCE(m.status, '')) = ANY(:est) OR m.status ILIKE 'RECHAZADO%')
+          AND m.person_b IS NOT NULL AND TRIM(m.person_b) <> ''
+    """
+    params: Dict[str, Any] = {"d": int(max(1, min(dias, 120))), "est": list(_ESTADOS_SEGUIMIENTO)}
+    if aliases:
+        q += """ AND (UPPER(COALESCE(m.psychologist_name, '')) = ANY(:al) OR UPPER(COALESCE(pB.responsable, '')) = ANY(:al) OR UPPER(COALESCE(pA.responsable, '')) = ANY(:al))"""
+        params["al"] = [a.upper() for a in aliases]
+    q += " ORDER BY ev.ult DESC LIMIT 800"
+    rows = (await db.execute(text(q), params)).fetchall()
+    items, conteo = [], {}
+    for r in rows:
+        st = (r.status or "").upper().strip()
+        etiqueta = _ETIQUETA_ESTADO.get(st) or ("Rechazo (persona)" if st.startswith("RECHAZADO") else (r.status or ""))
+        psi_a = _mostrar_psicologa(r.psychologist_name or r.resp_a)
+        psi_b = _mostrar_psicologa(r.resp_b)
+        if estado and estado.lower() not in (etiqueta.lower(), st.lower()):
+            continue
+        if psicologa and psicologa.upper() not in (psi_a.upper(), psi_b.upper()):
+            continue
+        conteo[etiqueta] = conteo.get(etiqueta, 0) + 1
+        m_alerta = re.search(r"\[ALERTA TROUBLE: ([^\]]+)\]", r.observations or "")
+        items.append({
+            "id": r.id, "person_a": r.person_a, "person_b": r.person_b, "psicologa_a": psi_a, "psicologa_b": psi_b,
+            "estado": etiqueta, "status": r.status, "plan_tier": normalize_plan(r.plan_tier), "city": r.city or "",
+            "cita_fecha": r.date_time or "", "cita_lugar": r.venue or "", "cita_realizada": bool(r.had_date),
+            "etapa_cs": r.stage or "", "confirmacion_a": r.conf_a or "", "confirmacion_b": r.conf_b or "",
+            "motivo_rechazo": m_alerta.group(1) if m_alerta else "",
+            "ultimo_evento": r.ultimo or "", "ultima_novedad": r.ult.strftime("%Y-%m-%d %H:%M") if r.ult else "",
+            "aprobado_en": r.approved_at.strftime("%Y-%m-%d %H:%M") if r.approved_at else "",
+        })
+    return {"items": items, "conteo": conteo, "dias": params["d"], "total": len(items)}
+
+
+@router.get("/matches/seguimiento")
+async def seguimiento_matches(
+    dias: int = Query(21, ge=1, le=120),
+    estado: Optional[str] = Query(None),
+    psicologa: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """María y la dirección ven todo; cada psicóloga ve lo suyo, como psicóloga de la persona A o de la B."""
+    from app.routers.scheduling import hides_costs
+    aliases = None
+    if hides_costs(current_user):
+        code = await _psicologa_proponente(db, current_user)
+        if not code:
+            raise HTTPException(status_code=403, detail="El seguimiento es para las psicólogas, María y la dirección.")
+        aliases = get_psychologist_aliases(code)
+    return await _seguimiento(db, aliases, dias, estado, psicologa)
+
+
 @router.get("/mesa-psicologa")
 async def get_mesa_psicologa(
     psychologist: str = Query(...),
@@ -4071,7 +4158,7 @@ async def get_mesa_psicologa(
             ORDER BY m.id DESC LIMIT 200
         """), {"al": [a.upper() for a in aliases]})).fetchall():
             cruzados.append({
-                "id": r.id, "person_a": r.person_a, "person_b": r.person_b, "psychologist_a": normalize_psychologist(r.psychologist_name) or (r.psychologist_name or ""),
+                "id": r.id, "person_a": r.person_a, "person_b": r.person_b, "psychologist_a": _mostrar_psicologa(r.psychologist_name),
                 "city": normalize_city(r.city), "plan_tier": normalize_plan(r.plan_tier), "status": r.status, "observations": r.observations or "",
                 "person_a_photo_url": r.photo_a, "person_b_photo_url": r.photo_b, "person_a_age": r.age_a, "person_b_age": r.age_b,
                 "person_a_occupation": r.occ_a or "", "person_b_occupation": r.occ_b or "", "person_a_crm_id": r.person_a_crm_id or "", "person_b_crm_id": r.person_b_crm_id or "",
@@ -4136,6 +4223,7 @@ async def get_mesa_psicologa(
         "rechazados": rechazados,
         "troublemakers": troublemakers,
         "cruzados": cruzados,
+        "seguimiento": (await _seguimiento(db, aliases, 21))["items"],
         "summary": {
             "total_cruzados": len(cruzados),
             "total_troublemakers": len(troublemakers),
@@ -8351,8 +8439,8 @@ async def get_matches_pending_service(
     """
     params = {}
     if psychologist and psychologist.lower() not in ("all", "todas"):
-        query += " AND UPPER(m.psychologist_name) = UPPER(:psyc)"
-        params["psyc"] = psychologist.strip()
+        query += " AND UPPER(m.psychologist_name) = ANY(:psyc_al)"
+        params["psyc_al"] = [x.upper() for x in (get_psychologist_aliases(psychologist.strip()) or [psychologist.strip()])]
     if city and city.lower() not in ("all", "todas"):
         query += " AND m.city ILIKE :city"
         params["city"] = f"%{city.strip()}%"
