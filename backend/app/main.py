@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from app.config import get_settings, Settings
 from app.routers import admin, import_excel, auth, employees, commissions, payroll, finance, roles, user_accounts, incidents, vendors, reports, client, webhooks, cms_public, cms_admin, matchmaking, scheduling, form_builder, work_time
+from app.routers import finanzas as finanzas_router
 import structlog
 import os
 import asyncio
@@ -411,6 +412,7 @@ app.include_router(employees.router)
 app.include_router(commissions.router)
 app.include_router(payroll.router)
 app.include_router(finance.router)
+app.include_router(finanzas_router.router)
 app.include_router(roles.router)
 app.include_router(user_accounts.router)
 app.include_router(incidents.router)

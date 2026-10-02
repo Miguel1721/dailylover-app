@@ -145,6 +145,21 @@ async def run_checks(db: AsyncSession, notify: bool = True) -> Dict[str, Any]:
     try:
         st = await check_stripe_reconciliation(db)
         out["stripe"] = st
+        if notify and st["missing"] > 0:
+            # Los pagos exitosos que el webhook no registró se recuperan solos (así finanzas, planes y slots no dependen de que el webhook funcione)
+            try:
+                from app.services.stripe_recuperar import recuperar_pagos_faltantes
+                rec = await recuperar_pagos_faltantes(db)
+                out["stripe_recuperados"] = rec
+                if rec["registrados"] > 0:
+                    await _raise(db, "stripe_webhook_sin_eventos", "Stripe no avisó de pagos: se registraron solos",
+                                 f"Se registraron automáticamente {rec['registrados']} pago(s) exitoso(s) que el webhook de Stripe no avisó. "
+                                 "Falta activar en Stripe (Developers > Webhooks) los eventos checkout.session.completed, charge.succeeded y payment_intent.succeeded."
+                                 + (f" Pagos del plan VIP de 650k sin enlace enviado: {', '.join(rec['vip_sin_enlace'])}." if rec["vip_sin_enlace"] else ""), rec["registrados"])
+                st = await check_stripe_reconciliation(db)
+                out["stripe"] = st
+            except Exception as exc:
+                logger.warning("Recuperación automática de pagos de Stripe falló: %s", exc)
         if notify:
             if st["missing"] > 0:
                 vip = f" Incluye {st['missing_vip_650k']} de 650.000 (plan VIP: el cliente NO recibió su enlace para agendar)." if st["missing_vip_650k"] else ""

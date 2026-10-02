@@ -14,7 +14,9 @@ import re
 import base64
 from urllib.parse import quote
 
-router = APIRouter(prefix="/api/v1/admin/finance", tags=["Finance"])
+from app.routers.finanzas import solo_maria
+
+router = APIRouter(prefix="/api/v1/admin/finance", tags=["Finance"], dependencies=[Depends(solo_maria)])
 
 @router.get("/income", response_model=List[IncomeOut])
 async def list_income(

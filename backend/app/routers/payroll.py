@@ -8,7 +8,9 @@ from typing import List
 from uuid import UUID
 from datetime import datetime
 
-router = APIRouter(prefix="/api/v1/admin/payroll", tags=["Payroll"])
+from app.routers.finanzas import solo_maria
+
+router = APIRouter(prefix="/api/v1/admin/payroll", tags=["Payroll"], dependencies=[Depends(solo_maria)])
 
 DEDUCTION_RATE = 0.08  # 8% standard Colombian health + pension deduction
 

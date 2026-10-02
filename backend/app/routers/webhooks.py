@@ -206,7 +206,7 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                     :pi_id, :ch_id, :cust_id,
                     :c_name, :c_email, :c_phone,
                     :amt, :curr, :desc, :plan,
-                    'succeeded', NOW(), :meta, NOW(), NOW()
+                    'succeeded', (NOW() AT TIME ZONE 'America/Bogota'), :meta, NOW(), NOW()
                 )
                 ON CONFLICT (stripe_payment_intent_id) DO UPDATE SET
                     payment_status = 'succeeded',

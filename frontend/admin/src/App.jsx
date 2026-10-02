@@ -63,6 +63,7 @@ import SalaVideollamada from './pages/matchmaking/SalaVideollamada'
 import Videollamadas from './pages/matchmaking/Videollamadas'
 import SalaRedirect from './pages/matchmaking/SalaRedirect'
 import GestionarCita from './pages/public/GestionarCita'
+import Finanzas from './pages/Finanzas'
 import LlamadaPublica from './pages/LlamadaPublica'
 import MatchesAtrasados from './pages/matchmaking/MatchesAtrasados'
 import TroubleMatches from './pages/matchmaking/TroubleMatches'
@@ -384,6 +385,7 @@ function Sidebar({ isOpen, onClose, onOpenNequiModal }) {
       visible: isFullAdmin || isMariaOnly || isPsyc || isCs,
       items: [
         ...(isFullAdmin ? [{ to: '/', icon: LayoutDashboard, label: '🏛️ Dashboard Dirección', end: true }] : []),
+        ...(effectiveRole === 'Super Admin' ? [{ to: '/finanzas', icon: Wallet, label: '💰 Finanzas (solo María)' }] : []),
         ...(isMaria ? [{ to: '/matchmaking/supervision-maria', icon: Lock, label: '🔒 Supervisión & Auditoría María' }] : []),
         ...(isFullAdmin || isMariaOnly || isCs ? [{ to: '/kpis', icon: FileSpreadsheet, label: '📊 Tablero KPIs & Metas' }] : []),
         ...(isFullAdmin ? [
@@ -1012,6 +1014,7 @@ function AppContent() {
                     <Route path="/cms/ciudades" element={<AreaErrorBoundary areaName="CMS Ciudades"><ProtectedRoute module="eventos" action="view"><CmsCiudades /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/importar" element={<AreaErrorBoundary areaName="Importación de Datos"><ProtectedRoute module="importar" action="view"><Importar /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/empleados" element={<AreaErrorBoundary areaName="Gestión de Personal"><ProtectedRoute module="empleados" action="view"><Employees /></ProtectedRoute></AreaErrorBoundary>} />
+                    <Route path="/finanzas" element={<AreaErrorBoundary areaName="Finanzas"><Finanzas /></AreaErrorBoundary>} />
                     <Route path="/nomina" element={<AreaErrorBoundary areaName="Nómina"><ProtectedRoute module="nomina" action="view"><Payroll /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/comisiones" element={<AreaErrorBoundary areaName="Comisiones"><ProtectedRoute module="comisiones" action="view"><Commissions /></ProtectedRoute></AreaErrorBoundary>} />
                     <Route path="/ingresos" element={<AreaErrorBoundary areaName="Ingresos"><ProtectedRoute module="ingresos" action="view"><Income /></ProtectedRoute></AreaErrorBoundary>} />
