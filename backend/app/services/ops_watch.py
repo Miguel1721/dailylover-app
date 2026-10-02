@@ -77,6 +77,33 @@ async def check_crm_webhook(db: AsyncSession) -> Dict[str, Any]:
     return {"hours_since_last_event": hours, "working_hours": working, "silent": bool(working and (hours is None or hours > CRM_SILENCE_HOURS))}
 
 
+SHEET_SYNC_MAX_HOURS = 26   # la sincronizacion corre una vez al dia (04:30 hora Colombia)
+_SYNC_STATUS_FILES = ("/app/sync_sheet_status.json", "/home/ubuntu/dailylover/backend/sync_sheet_status.json")
+
+
+async def check_sheet_sync(db: AsyncSession) -> Dict[str, Any]:
+    """Hoja -> base: alerta si la ultima sincronizacion exitosa tiene mas de 26 h. Se apaga con staff_settings.sheet_sync_enabled = 0 (al cortar la hoja)."""
+    row = (await db.execute(text("SELECT value FROM staff_settings WHERE key = 'sheet_sync_enabled'"))).fetchone()
+    if row and str(row[0]).strip() in ("0", "false", "no"):
+        return {"enabled": False, "stale": False}
+    last, error = None, None
+    for path in _SYNC_STATUS_FILES:
+        if os.path.exists(path):
+            try:
+                j = json.load(open(path, encoding="utf-8"))
+                last = j.get("last_successful_sync")
+                error = j.get("last_error")
+                break
+            except Exception as exc:
+                error = f"no se pudo leer el estado: {exc}"[:120]
+    hours = None
+    if last:
+        l = datetime.fromisoformat(last.replace("Z", "+00:00"))
+        l = l if l.tzinfo else l.replace(tzinfo=timezone.utc)
+        hours = round((datetime.now(timezone.utc) - l).total_seconds() / 3600, 1)
+    return {"enabled": True, "hours_since_last_sync": hours, "last_error": error, "stale": hours is None or hours > SHEET_SYNC_MAX_HOURS}
+
+
 async def _alert_email(db: AsyncSession) -> str:
     row = (await db.execute(text("SELECT value FROM staff_settings WHERE key = 'ops_alert_email'"))).fetchone()
     return (row[0] if row else ALERT_EMAIL_DEFAULT).strip()
@@ -140,6 +167,20 @@ async def run_checks(db: AsyncSession, notify: bool = True) -> Dict[str, Any]:
                 await _clear(db, "crm_webhook_silent")
     except Exception as exc:
         out["crm_webhook"] = {"error": str(exc)[:160]}
+    try:
+        sy = await check_sheet_sync(db)
+        out["sheet_sync"] = sy
+        if notify:
+            if sy["stale"]:
+                h = sy["hours_since_last_sync"]
+                await _raise(db, "sheet_sync_stale", "La sincronización de la hoja a la base no corre",
+                             f"La última sincronización exitosa fue hace {h if h is not None else 'más de 26'} h (debería correr cada día a las 4:30 a. m.). "
+                             f"Revisar /home/ubuntu/dailylover/logs/cron_sheet_sync.log en el servidor. Si ya se congeló la hoja, apagar este aviso con staff_settings.sheet_sync_enabled = 0."
+                             + (f" Último error: {sy['last_error']}" if sy.get("last_error") else ""), int(h or 999))
+            else:
+                await _clear(db, "sheet_sync_stale")
+    except Exception as exc:
+        out["sheet_sync"] = {"error": str(exc)[:160]}
     return out
 
 

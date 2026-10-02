@@ -70,3 +70,4 @@ sync_sheet_status.json
 # Google Service Account (nunca commitear)
 *service_account*.json
 backend/.venv_asr/
+backend/exports/

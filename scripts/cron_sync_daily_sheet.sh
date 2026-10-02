@@ -57,7 +57,8 @@ log "INFO" "Backup validado exitosamente. Integridad confirmada."
 
 # 3. Ejecutar sincronización dentro del contenedor dl_api
 log "INFO" "Paso 2: Ejecutando sync_full_production_sheet.py en contenedor dl_api..."
-if docker exec -e PRE_SYNC_BACKUP_FILE="${BACKUP_FILE}" dl_api python /app/scripts/sync_full_production_sheet.py >> "${LOG_FILE}" 2>&1; then
+if docker exec -e PRE_SYNC_BACKUP_FILE="${BACKUP_FILE}" dl_api python /app/scripts/sync_full_production_sheet.py --discrepancies-out /app/exports/sync_discrepancias.json --fuzzy-out /app/exports/sync_fuzzy.json >> "${LOG_FILE}" 2>&1; then
+    docker exec dl_api python /app/scripts/sync_discrepancias_csv.py >> "${LOG_FILE}" 2>&1 || log "WARN" "No se pudo generar el CSV de discrepancias."
     log "INFO" "Sincronización completada exitosamente."
 else
     SYNC_EXIT=$?
